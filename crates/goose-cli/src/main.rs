@@ -35,6 +35,9 @@ async fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    // Decided before any styled write so the whole process is consistent.
+    goose_cli::session::output::apply_color_policy();
+
     #[cfg(windows)]
     enable_windows_vt_processing();
 

@@ -5,6 +5,7 @@ use super::{
 use crate::config::{self, Config};
 use crate::providers::acp_tooling::{acp_adapter_installed, resolved_acp_command};
 use crate::providers::amp_acp::{AMP_ACP_BINARY, AMP_ACP_PROVIDER_NAME};
+use crate::providers::antigravity::agy_login_available;
 use crate::providers::base::ProviderDescriptor;
 use crate::providers::chatgpt_codex::TokenCache as ChatGptCodexTokenCache;
 use crate::providers::claude_acp::{CLAUDE_ACP_BINARY, CLAUDE_ACP_PROVIDER_NAME};
@@ -211,6 +212,29 @@ pub fn chatgpt_codex_inventory() -> InventoryRegistration {
         configured: None,
     }
     .with_configured(|| ChatGptCodexTokenCache::new().has_token())
+}
+
+pub fn antigravity_inventory() -> InventoryRegistration {
+    InventoryRegistration::new(false, || {
+        Ok(InventoryIdentityInput::new("antigravity", "antigravity"))
+    })
+    .with_configured(agy_login_available)
+}
+
+pub fn open_design_inventory() -> InventoryRegistration {
+    InventoryRegistration::new(false, || {
+        let mut identity = InventoryIdentityInput::new("open_design", "open_design")
+            .with_public("host", "https://amr-link.open-design.ai/v1");
+        if let Some(key) = config_secret_value(Config::global(), "OPEN_DESIGN_API_KEY") {
+            identity = identity.with_secret("api_key", key);
+        }
+        Ok(identity)
+    })
+    .with_configured(|| {
+        Config::global()
+            .get_secret::<String>("OPEN_DESIGN_API_KEY")
+            .is_ok_and(|key| !key.trim().is_empty())
+    })
 }
 
 pub fn gemini_oauth_inventory() -> InventoryRegistration {

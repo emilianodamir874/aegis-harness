@@ -890,7 +890,12 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     )
     .await;
 
-    if !session_config.quiet {
+    let machine_readable_output = matches!(
+        session_config.output_format.as_str(),
+        "json" | "stream-json"
+    );
+
+    if !session_config.quiet && !machine_readable_output {
         output::display_session_info(
             session_config.resume,
             &effective_provider_name,

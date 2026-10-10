@@ -8,6 +8,7 @@ use super::local_inference::LocalInferenceProvider;
 use super::sagemaker_tgi::SageMakerTgiProvider;
 use super::{
     amp_acp::AmpAcpProvider,
+    antigravity::AntigravityProvider,
     avian::AvianProvider,
     azure::AzureProvider,
     base::{Provider, ProviderMetadata},
@@ -27,6 +28,7 @@ use super::{
     kimicode::KimiCodeProvider,
     litellm::LiteLLMProvider,
     nanogpt::NanoGptProvider,
+    open_design::OpenDesignProvider,
     pi_acp::PiAcpProvider,
     provider_registry::ProviderRegistry,
     snowflake_def::SnowflakeProviderDef,
@@ -64,6 +66,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register_with_inventory::<AmpAcpProvider>(
             false,
             Some(registrations::amp_acp_inventory()),
+        );
+        registry.register_with_inventory::<AntigravityProvider>(
+            false,
+            Some(registrations::antigravity_inventory()),
         );
         registry.register_with_inventory::<AnthropicProviderDef>(
             true,
@@ -160,6 +166,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register_with_inventory::<OpenAiProviderDef>(
             true,
             Some(registrations::openai_inventory()),
+        );
+        registry.register_with_inventory::<OpenDesignProvider>(
+            false,
+            Some(registrations::open_design_inventory()),
         );
         registry.register_with_inventory::<OpenRouterProviderDef>(
             true,

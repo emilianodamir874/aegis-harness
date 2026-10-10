@@ -1,5 +1,6 @@
 mod acp_tooling;
 pub mod amp_acp;
+pub mod antigravity;
 pub mod anthropic {
     pub use goose_providers::anthropic::*;
 }
@@ -83,6 +84,7 @@ pub mod provider_test;
 mod retry {
     pub use goose_providers::retry::*;
 }
+pub mod open_design;
 pub mod openai_def;
 #[cfg(feature = "aws-providers")]
 pub mod sagemaker_tgi;

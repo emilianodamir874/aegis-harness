@@ -8,19 +8,18 @@ use goose::conversation::message::{
     ActionRequiredData, Message, MessageContent, SystemNotificationContent, SystemNotificationType,
     ToolNameParts, ToolRequest, ToolResponse,
 };
-use goose::providers::canonical_cost::estimate_model_cost;
 #[cfg(target_os = "windows")]
 use goose::subprocess::SubprocessExt;
 use goose::utils::safe_truncate;
-use goose_providers::conversation::token_usage::Usage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument, Role};
 use serde_json::Value;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Display;
 use std::io::{Error, IsTerminal, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use super::streaming_buffer::MarkdownBuffer;
@@ -205,36 +204,70 @@ pub struct PromptInfo {
 // Global thinking indicator
 thread_local! {
     static THINKING: RefCell<ThinkingIndicator> = RefCell::new(ThinkingIndicator::default());
+    /// Latest activity label, mirrored into the concurrent composer's status row
+    /// while it solely owns the terminal.
+    static COMPOSER_ACTIVITY: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// When the concurrent composer is active it is the single owner of the
+/// terminal. Ambient writers (cliclack's spinner, indicatif progress bars) must
+/// then stay silent so nothing competes for the cursor or adds stray lines.
+static COMPOSER_OWNS_TERMINAL: AtomicBool = AtomicBool::new(false);
+
+pub fn set_composer_owns_terminal(active: bool) {
+    COMPOSER_OWNS_TERMINAL.store(active, Ordering::SeqCst);
+}
+
+pub fn composer_owns_terminal() -> bool {
+    COMPOSER_OWNS_TERMINAL.load(Ordering::SeqCst)
+}
+
+/// Mirror an activity label into the composer status row. No-op when no
+/// composer owns the terminal.
+fn note_activity(text: &str) {
+    if composer_owns_terminal() {
+        COMPOSER_ACTIVITY.with(|a| *a.borrow_mut() = Some(text.to_string()));
+    }
+}
+
+pub fn clear_activity() {
+    COMPOSER_ACTIVITY.with(|a| *a.borrow_mut() = None);
+}
+
+/// Latest label for the composer status line, if any.
+pub fn current_activity() -> Option<String> {
+    COMPOSER_ACTIVITY.with(|a| a.borrow().clone())
 }
 
 pub fn show_thinking() {
+    if composer_owns_terminal() {
+        note_activity(super::thinking::get_random_thinking_message());
+        return;
+    }
     if std::io::stdout().is_terminal() {
         THINKING.with(|t| t.borrow_mut().show());
     }
 }
 
 pub fn hide_thinking() {
+    clear_activity();
+    // Always stop a spinner that may have started before the composer took
+    // ownership; the call is a no-op when nothing is spinning.
     if std::io::stdout().is_terminal() {
         THINKING.with(|t| t.borrow_mut().hide());
     }
 }
 
 pub fn show_loading_extensions_background() {
-    eprintln!(
-        "  {}",
-        style("⏳ loading extensions in background...").dim()
-    );
+    eprintln!("  loading extensions...");
 }
 
 pub fn show_waiting_for_extensions() {
-    eprintln!(
-        "  {}",
-        style("⏳ waiting for extensions to finish loading...").dim()
-    );
+    eprintln!("  waiting for extensions...");
 }
 
 pub fn show_extensions_ready() {
-    eprintln!("  {}", style("✓ extensions ready").green());
+    eprintln!("  extensions ready");
 }
 
 pub fn show_extension_failures(failures: &[ExtensionFailure]) {
@@ -287,10 +320,17 @@ pub fn run_status_hook(status: &str) {
 }
 
 pub fn is_showing_thinking() -> bool {
+    if composer_owns_terminal() {
+        return current_activity().is_some();
+    }
     THINKING.with(|t| t.borrow().is_shown())
 }
 
 pub fn set_thinking_message(s: &String) {
+    if composer_owns_terminal() {
+        note_activity(s);
+        return;
+    }
     if std::io::stdout().is_terminal() {
         THINKING.with(|t| {
             if let Some(spinner) = t.borrow_mut().spinner.as_mut() {
@@ -366,6 +406,89 @@ pub fn render_message(message: &Message, debug: bool) {
     let _ = std::io::stdout().flush();
 }
 
+/// Successful command output stays in the conversation for the agent, but the
+/// terminal only shows a compact marker until the user requests `/output`.
+#[derive(Default)]
+pub struct ShellOutputState {
+    pending: HashSet<String>,
+    last_output: Option<String>,
+}
+
+impl ShellOutputState {
+    fn track_request(&mut self, request: &ToolRequest) {
+        if let Ok(call) = &request.tool_call {
+            let name = ToolNameParts::from(call.name.as_ref()).tool_name;
+            if matches!(name, "shell" | "execute_code" | "execute_typescript") {
+                self.pending.insert(request.id.clone());
+            }
+        }
+    }
+
+    fn fold_response(&mut self, response: &ToolResponse, debug: bool) -> bool {
+        if !self.pending.remove(&response.id) {
+            return false;
+        }
+        let Ok(result) = &response.tool_result else {
+            return false;
+        };
+        if result.is_error.unwrap_or(false) {
+            return false;
+        }
+        let min_priority = Config::global()
+            .get_param::<f32>("GOOSE_CLI_MIN_PRIORITY")
+            .unwrap_or(DEFAULT_MIN_PRIORITY);
+        let texts: Vec<&str> = result
+            .content
+            .iter()
+            .filter_map(|content| {
+                let text = content.as_text()?;
+                let annotations = text.annotations.as_ref();
+                if annotations
+                    .and_then(|a| a.audience.as_ref())
+                    .is_some_and(|audience| !audience.contains(&Role::User))
+                    || annotations.and_then(|a| a.priority).unwrap_or(0.0) < min_priority
+                {
+                    return None;
+                }
+                Some(text.text.as_str())
+            })
+            .collect();
+        self.last_output = Some(texts.join("\n"));
+        if debug || get_show_full_tool_output() || !std::io::stdout().is_terminal() {
+            return false;
+        }
+        let line_count = self
+            .last_output
+            .as_deref()
+            .unwrap_or_default()
+            .lines()
+            .count();
+        println!(
+            "    {}",
+            style(format!(
+                "▸ salida de comando plegada ({} líneas; /output para verla)",
+                line_count
+            ))
+            .dim()
+        );
+        true
+    }
+
+    pub fn show_last(&self) {
+        match self.last_output.as_deref() {
+            Some(text) if !text.is_empty() => {
+                println!();
+                for line in text.lines() {
+                    print_tool_output_line(line);
+                }
+                println!();
+            }
+            Some(_) => println!("  El último comando no produjo salida."),
+            None => println!("  Todavía no hay salida de comandos para mostrar."),
+        }
+    }
+}
+
 /// Render a streaming message, using a buffer to accumulate text content
 /// and only render when markdown constructs are complete.
 pub fn render_message_streaming(
@@ -373,6 +496,7 @@ pub fn render_message_streaming(
     buffer: &mut MarkdownBuffer,
     thinking_header_shown: &mut bool,
     debug: bool,
+    shell_outputs: &mut ShellOutputState,
 ) {
     if !message.is_user_visible() {
         return;
@@ -396,11 +520,14 @@ pub fn render_message_streaming(
             }
             MessageContent::ToolRequest(req) => {
                 flush_markdown_buffer(buffer, theme);
+                shell_outputs.track_request(req);
                 render_tool_request(req, theme, debug);
             }
             MessageContent::ToolResponse(resp) => {
                 flush_markdown_buffer(buffer, theme);
-                render_tool_response(resp, debug);
+                if !shell_outputs.fold_response(resp, debug) {
+                    render_tool_response(resp, debug);
+                }
             }
             MessageContent::ActionRequired(action) => {
                 flush_markdown_buffer(buffer, theme);
@@ -1121,9 +1248,126 @@ fn print_tool_header(call: &CallToolRequestParams) {
 }
 
 // Respect NO_COLOR, as https://crates.io/crates/console already does
-pub fn env_no_color() -> bool {
+pub fn colors_enabled_by_env() -> bool {
     // if NO_COLOR is defined at all disable colors
     std::env::var_os("NO_COLOR").is_none()
+}
+
+/// Reads a boolean-ish flag. Presence alone counts as enabled; an explicit
+/// falsy value (`0`, `false`, `no`, `off`) turns it off.
+fn env_flag(name: &str) -> Option<bool> {
+    let raw = std::env::var_os(name)?;
+    let text = raw.to_string_lossy().trim().to_ascii_lowercase();
+    Some(!matches!(text.as_str(), "0" | "false" | "no" | "off"))
+}
+
+/// True when the conversation should be rendered without ANSI styling.
+///
+/// Some bundled themes are unreadable on certain terminals, so plain output is
+/// available as a first-class mode instead of a workaround. `GOOSE_CLI_PLAIN`
+/// wins over `NO_COLOR`, which opts in as well and matches the rest of the
+/// ecosystem.
+///
+/// Deliberately environment-only: this is consulted on every streamed chunk, and
+/// `Config::global()` takes the process-wide environment lock, which deadlocks
+/// (and is pointless to pay for) inside code that already holds it.
+pub fn plain_output() -> bool {
+    if let Some(enabled) = env_flag("GOOSE_CLI_PLAIN") {
+        return enabled;
+    }
+    std::env::var_os("NO_COLOR").is_some()
+}
+
+static COLOR_POLICY: std::sync::Once = std::sync::Once::new();
+
+/// Apply the colour policy once, before any styled write.
+///
+/// `console` owns the process-wide switch consulted by every `style()` call and
+/// by cliclack's prompts, so disabling it there covers the whole CLI surface
+/// instead of patching each call site.
+pub fn apply_color_policy() {
+    COLOR_POLICY.call_once(|| {
+        console::set_colors_enabled(!plain_output());
+    });
+}
+
+/// Render Markdown as readable plain text.
+///
+/// The conversation streams Markdown source, so without colours the reader would
+/// see `**bold**`, fences and link syntax instead of prose. This strips the
+/// markers that carry no meaning in a terminal while leaving code, indentation
+/// and list structure intact. It works line by line because streaming chunks can
+/// end mid-document.
+fn plain_markdown(content: &str) -> String {
+    fn clean_line(line: &str) -> String {
+        static LINK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let indent_len = line.len() - line.trim_start().len();
+        let (indent, mut body) = line.split_at(indent_len);
+        if body.starts_with('>') {
+            body = body.trim_start_matches('>').trim_start();
+        }
+        let hashes = body.chars().take_while(|ch| *ch == '#').count();
+        if (1..=6).contains(&hashes) && body.chars().nth(hashes) == Some(' ') {
+            body = body
+                .trim_start_matches('#')
+                .trim_start()
+                .trim_end_matches('#')
+                .trim_end();
+        }
+        let link = LINK.get_or_init(|| regex::Regex::new(r"\[([^\]]*)\]\(([^)]*)\)").unwrap());
+        let with_links = link.replace_all(body, "$1 ($2)");
+
+        // Drop emphasis/code markers but keep the text they wrap. Single `*`/`_`
+        // are left alone so `a * b` and `foo_bar` stay intact.
+        let mut cleaned = String::with_capacity(with_links.len());
+        let mut chars = with_links.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(escaped) = chars.next() {
+                    cleaned.push(escaped);
+                }
+                continue;
+            }
+            if matches!(ch, '*' | '_' | '~' | '`') {
+                let mut run = 1;
+                while chars.peek() == Some(&ch) {
+                    chars.next();
+                    run += 1;
+                }
+                if ch == '`' || run >= 2 {
+                    continue; // marker run carries no meaning as plain text
+                }
+                cleaned.push(ch);
+                continue;
+            }
+            cleaned.push(ch);
+        }
+        format!("{indent}{cleaned}")
+    }
+
+    let mut out = String::with_capacity(content.len());
+    let mut in_fence = false;
+    for line in content.split_inclusive('\n') {
+        let (body, newline) = match line.strip_suffix('\n') {
+            Some(text) => (text, "\n"),
+            None => (line, ""),
+        };
+        let trimmed = body.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+            if !newline.is_empty() {
+                out.push('\n');
+            }
+            continue;
+        }
+        if in_fence {
+            out.push_str(body);
+        } else {
+            out.push_str(&clean_line(body));
+        }
+        out.push_str(newline);
+    }
+    out
 }
 
 fn print_markdown(content: &str, theme: Theme) {
@@ -1150,6 +1394,10 @@ fn print_markdown(content: &str, theme: Theme) {
 /// deserializes bat's bundled syntax/theme assets; `print()` drains the
 /// queued inputs but leaves the printer reusable.
 fn print_markdown_raw(content: &str, theme: Theme) {
+    if plain_output() {
+        print!("{}", plain_markdown(content));
+        return;
+    }
     use std::cell::RefCell;
     thread_local! {
         static PRINTER: RefCell<bat::PrettyPrinter<'static>> =
@@ -1162,7 +1410,7 @@ fn print_markdown_raw(content: &str, theme: Theme) {
                 content.as_bytes().to_vec(),
             ))))
             .theme(theme.as_str())
-            .colored_output(env_no_color())
+            .colored_output(colors_enabled_by_env())
             .language("Markdown")
             .wrapping_mode(WrappingMode::NoWrapping(true))
             .print()
@@ -1554,87 +1802,6 @@ pub fn display_banner(banners: &[String]) {
     }
 }
 
-pub fn display_context_usage(total_tokens: usize, context_limit: usize) {
-    use console::style;
-
-    if context_limit == 0 {
-        println!(
-            "  {}",
-            style("context usage unavailable (context limit is 0)").dim()
-        );
-        return;
-    }
-
-    let percentage =
-        (((total_tokens as f64 / context_limit as f64) * 100.0).round() as usize).min(100);
-
-    let bar_width = 20;
-    let filled = ((percentage as f64 / 100.0) * bar_width as f64).round() as usize;
-    let empty = bar_width - filled.min(bar_width);
-
-    let bar = format!("{}{}", "━".repeat(filled), "╌".repeat(empty));
-    let colored_bar = if percentage < 50 {
-        style(bar).green().dim()
-    } else if percentage < 85 {
-        style(bar).yellow()
-    } else {
-        style(bar).red()
-    };
-
-    fn format_tokens(n: usize) -> String {
-        if n >= 1_000_000 {
-            format!("{:.1}M", n as f64 / 1_000_000.0)
-        } else if n >= 1_000 {
-            format!("{:.0}k", n as f64 / 1_000.0)
-        } else {
-            n.to_string()
-        }
-    }
-
-    println!(
-        "  {} {} {}",
-        colored_bar,
-        style(format!("{}%", percentage)).dim(),
-        style(format!(
-            "{}/{}",
-            format_tokens(total_tokens),
-            format_tokens(context_limit)
-        ))
-        .dim(),
-    );
-}
-
-fn estimate_cost_usd(provider: &str, model: &str, usage: &Usage) -> Option<f64> {
-    estimate_model_cost(provider, model, usage)
-}
-
-/// Display cost information, if price data is available.
-pub fn display_cost_usage(provider: &str, model: &str, usage: &Usage) {
-    if let Some(cost) = estimate_cost_usd(provider, model, usage) {
-        use console::style;
-        let input_tokens = usage.input_tokens.unwrap_or(0);
-        let output_tokens = usage.output_tokens.unwrap_or(0);
-        let cache_read = usage.cache_read_input_tokens.unwrap_or(0);
-        let cache_write = usage.cache_write_input_tokens.unwrap_or(0);
-
-        let cache_breakdown = match (cache_read, cache_write) {
-            (0, 0) => String::new(),
-            (read, 0) => format!(" ({} cache read)", read),
-            (0, write) => format!(" ({} cache write)", write),
-            (read, write) => format!(" ({} cache read, {} cache write)", read, write),
-        };
-
-        eprintln!(
-            "Cost: {} USD ({} tokens: in {}{}, out {})",
-            style(format!("${:.4}", cost)).cyan(),
-            input_tokens + output_tokens,
-            input_tokens,
-            cache_breakdown,
-            output_tokens
-        );
-    }
-}
-
 pub struct McpSpinners {
     bars: HashMap<String, ProgressBar>,
     log_spinner: Option<ProgressBar>,
@@ -1653,13 +1820,21 @@ impl McpSpinners {
     }
 
     pub fn log(&mut self, message: &str) {
+        if composer_owns_terminal() {
+            note_activity(message);
+            return;
+        }
         let spinner = self.log_spinner.get_or_insert_with(|| {
             let bar = self.multi_bar.add(
                 ProgressBar::new_spinner()
                     .with_style(
-                        ProgressStyle::with_template("{spinner:.green} {msg}")
-                            .unwrap()
-                            .tick_chars("⠋⠙⠚⠛⠓⠒⠊⠉"),
+                        ProgressStyle::with_template(if plain_output() {
+                            "{spinner} {msg}"
+                        } else {
+                            "{spinner:.green} {msg}"
+                        })
+                        .unwrap()
+                        .tick_chars("⠋⠙⠚⠛⠓⠒⠊⠉"),
                     )
                     .with_message(message.to_string()),
             );
@@ -1678,6 +1853,12 @@ impl McpSpinners {
     }
 
     pub fn update(&mut self, token: &str, value: f64, total: Option<f64>, message: Option<&str>) {
+        if composer_owns_terminal() {
+            if let Some(message) = message {
+                note_activity(&format!("{} {:.0}%", message, value * 100_f64));
+            }
+            return;
+        }
         let bar = self.bars.entry(token.to_string()).or_insert_with(|| {
             if let Some(total) = total {
                 self.multi_bar.add(
@@ -1708,6 +1889,12 @@ impl McpSpinners {
     }
 }
 
+impl Default for McpSpinners {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn update_recent_lines(
     recent_lines: &mut VecDeque<String>,
     lines: impl IntoIterator<Item = String>,
@@ -1730,6 +1917,54 @@ mod tests {
     use serde_json::json;
     use std::env;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn command_output_state_tracks_only_matching_successful_calls() {
+        use rmcp::model::{CallToolResult, ContentBlock};
+        let mut state = ShellOutputState::default();
+        let shell = ToolRequest {
+            id: "cmd-1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__shell")),
+            metadata: None,
+            tool_meta: None,
+        };
+        state.track_request(&shell);
+        assert!(state.pending.contains("cmd-1"));
+        let response = ToolResponse {
+            id: "cmd-1".to_string(),
+            tool_result: Ok(CallToolResult::success(vec![ContentBlock::text(
+                "line one\nline two",
+            )])),
+            metadata: None,
+        };
+        // Tests run without a terminal: preserve ordinary stdout rendering,
+        // but keep the result available for /output.
+        assert!(!state.fold_response(&response, false));
+        assert_eq!(state.last_output.as_deref(), Some("line one\nline two"));
+        assert!(state.pending.is_empty());
+
+        let other = ToolRequest {
+            id: "read-1".to_string(),
+            tool_call: Ok(CallToolRequestParams::new("developer__read_file")),
+            metadata: None,
+            tool_meta: None,
+        };
+        state.track_request(&other);
+        assert!(state.pending.is_empty());
+        assert!(!state.fold_response(&response, false));
+        assert_eq!(state.last_output.as_deref(), Some("line one\nline two"));
+
+        state.track_request(&shell);
+        let error = ToolResponse {
+            id: "cmd-1".to_string(),
+            tool_result: Ok(CallToolResult::error(vec![ContentBlock::text(
+                "command failed",
+            )])),
+            metadata: None,
+        };
+        assert!(!state.fold_response(&error, false));
+        assert_eq!(state.last_output.as_deref(), Some("line one\nline two"));
+    }
 
     #[test]
     fn recent_lines_accumulate_across_updates() {
@@ -1967,6 +2202,9 @@ mod tests {
         );
     }
 
+    // Windows resolves the home directory from USERPROFILE, not HOME, so this
+    // Unix-path expectation cannot hold there.
+    #[cfg(unix)]
     #[test]
     fn test_home_directory_conversion() {
         // Save the current home dir
@@ -2085,5 +2323,64 @@ mod tests {
         let _guard = env_lock::lock_env([("GOOSE_CLI_SHOW_THINKING", Some("1"))]);
 
         assert_eq!(should_show_thinking(), std::io::stdout().is_terminal());
+    }
+
+    #[test]
+    fn composer_ownership_routes_activity_and_silences_ambient_writers() {
+        clear_activity();
+        set_composer_owns_terminal(false);
+        assert!(!is_showing_thinking());
+
+        set_composer_owns_terminal(true);
+        show_thinking();
+        assert!(is_showing_thinking());
+        assert!(current_activity().is_some());
+
+        set_thinking_message(&"compacting context".to_string());
+        assert_eq!(current_activity().as_deref(), Some("compacting context"));
+
+        let mut spinners = McpSpinners::new();
+        spinners.log("extension progress");
+        assert_eq!(current_activity().as_deref(), Some("extension progress"));
+
+        hide_thinking();
+        assert!(!is_showing_thinking());
+        assert!(current_activity().is_none());
+
+        set_composer_owns_terminal(false);
+        assert!(!is_showing_thinking());
+    }
+
+    #[test]
+    fn plain_output_prefers_the_explicit_flag_over_no_color() {
+        {
+            let _guard = env_lock::lock_env([("GOOSE_CLI_PLAIN", None), ("NO_COLOR", Some("1"))]);
+            assert!(plain_output(), "NO_COLOR opts into plain output");
+        }
+        {
+            let _guard =
+                env_lock::lock_env([("GOOSE_CLI_PLAIN", Some("0")), ("NO_COLOR", Some("1"))]);
+            assert!(!plain_output(), "an explicit falsy flag wins over NO_COLOR");
+        }
+        {
+            let _guard = env_lock::lock_env([("GOOSE_CLI_PLAIN", Some(""))]);
+            assert!(plain_output(), "bare presence counts as enabled");
+        }
+    }
+
+    #[test]
+    fn plain_markdown_strips_markers_but_keeps_code_and_prose() {
+        let rendered = plain_markdown(
+            "## Title\n\nUse **bold** and `code` and [docs](https://example.com).\n\n\
+             - item *kept*\n\n```rust\nlet a = 1 * 2;\n```\n\nfoo_bar stays\n",
+        );
+        assert!(rendered.contains("Title"));
+        assert!(!rendered.contains('#'));
+        assert!(rendered.contains("Use bold and code and docs (https://example.com)."));
+        assert!(rendered.contains("- item *kept*"));
+        assert!(rendered.contains("let a = 1 * 2;"));
+        assert!(!rendered.contains("```"));
+        assert!(rendered.contains("foo_bar stays"));
+        assert!(!rendered.contains('\u{1b}'), "plain markdown emits no ANSI");
     }
 }

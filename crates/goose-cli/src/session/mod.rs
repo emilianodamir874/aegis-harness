@@ -1,12 +1,14 @@
 mod builder;
 mod completion;
+mod composer;
 pub mod editor;
 mod elicitation;
 mod input;
-mod output;
+pub mod output;
 mod paste;
 pub mod streaming_buffer;
 mod task_execution_display;
+pub mod telemetry;
 mod thinking;
 
 use crate::session::task_execution_display::{
@@ -32,6 +34,25 @@ use goose::utils::safe_truncate;
 
 use anyhow::Result;
 use completion::GooseCompleter;
+use composer::{Composer, ComposerEvent};
+
+/// Marks the concurrent composer as the sole terminal owner for as long as it
+/// lives, so ambient writers (cliclack spinner, indicatif bars) stay silent.
+struct ComposerOwnership;
+
+impl ComposerOwnership {
+    fn acquire() -> Self {
+        output::set_composer_owns_terminal(true);
+        Self
+    }
+}
+
+impl Drop for ComposerOwnership {
+    fn drop(&mut self) {
+        output::set_composer_owns_terminal(false);
+        output::clear_activity();
+    }
+}
 use goose::agents::extension::{Envs, ExtensionConfig, PLATFORM_EXTENSIONS};
 use goose::agents::{
     context_management_unsupported_message, Agent, SessionConfig, COMPACT_TRIGGERS,
@@ -44,6 +65,7 @@ use rmcp::model::{ElicitationAction, PromptMessage};
 use rmcp::model::{ErrorCode, ErrorData};
 use strum::VariantNames;
 
+use chrono::Utc;
 use goose::config::paths::Paths;
 use goose::config::providers;
 use goose::conversation::message::{
@@ -54,7 +76,7 @@ use goose::session::SessionManager;
 use rustyline::EditMode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -242,6 +264,10 @@ pub struct CliSession {
     edit_mode: Option<EditMode>,
     output_format: String,
     stats: bool,
+    shell_outputs: output::ShellOutputState,
+    telemetry: telemetry::SessionTelemetry,
+    queued_inputs: VecDeque<String>,
+    pending_draft: String,
     /// Background extension loader; drained exclusively by
     /// [`CliSession::ensure_extensions_loaded`], the session's single loading
     /// gate.
@@ -295,13 +321,14 @@ impl CliSession {
         refresh_completions: bool,
         extension_loading: Option<AbortOnDropHandle<Result<Vec<ExtensionFailure>>>>,
     ) -> Self {
-        let messages = agent
+        let session = agent
             .config
             .session_manager
             .get_session(&session_id, true)
             .await
-            .map(|session| session.conversation.unwrap_or_default())
             .unwrap();
+        let telemetry = telemetry::SessionTelemetry::new(&session);
+        let messages = session.conversation.unwrap_or_default();
         let completion_cache = Arc::new(std::sync::RwLock::new(CompletionCache::new()));
         let extension_loading = extension_loading.map(|handle| {
             let agent = agent.clone();
@@ -329,6 +356,10 @@ impl CliSession {
             edit_mode,
             output_format,
             stats,
+            shell_outputs: output::ShellOutputState::default(),
+            telemetry,
+            queued_inputs: VecDeque::new(),
+            pending_draft: String::new(),
             extension_loading,
             loading_announced: false,
         }
@@ -624,7 +655,14 @@ impl CliSession {
                 .collect();
 
             output::run_status_hook("waiting");
-            let input = input::get_input(&mut editor, Some(&conversation_strings))?;
+            let input = if let Some(queued) = self.queued_inputs.pop_front() {
+                editor.add_history_entry(queued.as_str())?;
+                println!("  ↳ queued: {}", queued.lines().next().unwrap_or_default());
+                input::parse_submitted_input(&queued)?
+            } else {
+                let draft = std::mem::take(&mut self.pending_draft);
+                input::get_input(&mut editor, Some(&conversation_strings), Some(&draft))?
+            };
             if matches!(input, InputResult::Exit) {
                 break;
             }
@@ -690,6 +728,26 @@ impl CliSession {
             InputResult::ToggleFullToolOutput => {
                 history.save(editor);
                 self.handle_toggle_full_tool_output();
+            }
+            InputResult::ShowLastCommandOutput => {
+                history.save(editor);
+                self.shell_outputs.show_last();
+            }
+            InputResult::ShowUsage => {
+                history.save(editor);
+                self.refresh_telemetry().await;
+                println!("{}", self.telemetry.usage_report(Utc::now()));
+                println!("Queued messages: {}", self.queued_inputs.len());
+                println!(
+                    "Unsent draft: {}",
+                    if self.pending_draft.is_empty() {
+                        "none"
+                    } else {
+                        "present"
+                    }
+                );
+                println!("Permissions: {}", self.telemetry.mode);
+                println!("Battery / idle: unavailable (no system telemetry source)");
             }
             InputResult::SelectTheme(theme_name) => {
                 history.save(editor);
@@ -783,7 +841,9 @@ impl CliSession {
 
         println!();
         output::run_status_hook("thinking");
-        output::show_thinking();
+        if !self.concurrent_composer_enabled() {
+            output::show_thinking();
+        }
         let start_time = Instant::now();
         self.process_agent_response(true, CancellationToken::default())
             .await?;
@@ -872,7 +932,7 @@ impl CliSession {
         Ok(())
     }
 
-    async fn handle_model(&mut self, options: input::ModelCommandOptions) -> Result<()> {
+    async fn handle_model(&mut self, mut options: input::ModelCommandOptions) -> Result<()> {
         let provider = self.agent.provider(&self.session_id).await?;
         let current_provider_name = provider.get_name().to_string();
         let current_model_config = self
@@ -882,12 +942,68 @@ impl CliSession {
         let current_model_name = current_model_config.model_name.clone();
 
         if options.provider.is_none() && options.model.is_none() {
-            output::goose_mode_message(&format!(
-                "Current session model: '{}' (provider '{}')\n\
-                 Tip: use '/model <name>' to switch model, or '/model --provider <name> [model]' to switch provider.",
-                current_model_name, current_provider_name
-            ));
-            return Ok(());
+            if !std::io::stdin().is_terminal() {
+                output::goose_mode_message(&format!(
+                    "Current session model: '{}' (provider '{}'). Use '/model <name>' to switch.",
+                    current_model_name, current_provider_name
+                ));
+                return Ok(());
+            }
+            let entry = goose::providers::get_from_registry(&current_provider_name).await?;
+            let mut models: Vec<(String, String)> = entry
+                .metadata()
+                .known_models
+                .iter()
+                .map(|model| (current_provider_name.clone(), model.name.clone()))
+                .collect();
+            models.push((current_provider_name.clone(), current_model_name.clone()));
+
+            // Both integrations live in this Goose binary. Show them together so
+            // /model can switch between Gemini and DeepSeek without a new session.
+            let alternate = match current_provider_name.as_str() {
+                "antigravity" => Some("open_design"),
+                "open_design" => Some("antigravity"),
+                _ => None,
+            };
+            if let Some(alternate) = alternate {
+                let entry = goose::providers::get_from_registry(alternate).await?;
+                models.extend(
+                    entry
+                        .metadata()
+                        .known_models
+                        .iter()
+                        .map(|model| (alternate.to_string(), model.name.clone())),
+                );
+            }
+            models.sort();
+            models.dedup();
+            let choices: Vec<((String, String), String, String)> = models
+                .into_iter()
+                .map(|(provider, model)| {
+                    let description =
+                        if provider == current_provider_name && model == current_model_name {
+                            "Current model".to_string()
+                        } else {
+                            provider.clone()
+                        };
+                    let label = model.clone();
+                    ((provider, model), label, description)
+                })
+                .collect();
+            let (selected_provider, selected_model) =
+                match cliclack::select("Choose a provider and model for this session")
+                    .initial_value((current_provider_name.clone(), current_model_name.clone()))
+                    .items(&choices)
+                    .max_rows(15)
+                    .filter_mode()
+                    .interact()
+                {
+                    Ok(selection) => selection,
+                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => return Ok(()),
+                    Err(error) => return Err(error.into()),
+                };
+            options.provider = Some(selected_provider);
+            options.model = Some(selected_model);
         }
 
         let requested_provider = options
@@ -1276,6 +1392,7 @@ impl CliSession {
             output::show_thinking();
             self.process_agent_response(true, CancellationToken::default())
                 .await?;
+            self.telemetry.observe_compaction();
             output::hide_thinking();
         } else {
             println!("{}", console::style("Compaction cancelled.").yellow());
@@ -1296,6 +1413,27 @@ impl CliSession {
         Ok(())
     }
 
+    /// A text session on a real terminal hands rendering to the concurrent
+    /// composer, so the cliclack spinner must not start for it.
+    fn concurrent_composer_enabled(&self) -> bool {
+        self.output_format == "text"
+            && std::io::stdin().is_terminal()
+            && std::io::stdout().is_terminal()
+    }
+
+    /// Single activity indicator: the composer's status row mixes the queued
+    /// count, the live ambient activity label, and honest session telemetry.
+    fn composer_status(&self) -> String {
+        let telemetry = self.telemetry.status_bar(Utc::now());
+        match output::current_activity() {
+            Some(activity) => format!(
+                "{activity} | cola {} | {telemetry}",
+                self.queued_inputs.len()
+            ),
+            None => format!("cola {} | {telemetry}", self.queued_inputs.len()),
+        }
+    }
+
     async fn process_agent_response(
         &mut self,
         interactive: bool,
@@ -1303,6 +1441,16 @@ impl CliSession {
     ) -> Result<()> {
         let is_json_mode = self.output_format == "json";
         let is_stream_json_mode = self.output_format == "stream-json";
+        let composer_enabled = interactive
+            && !is_json_mode
+            && !is_stream_json_mode
+            && self.concurrent_composer_enabled();
+        // The concurrent composer replaces cliclack's spinner. Stop any spinner
+        // before the (possibly slow) provider handshake so it cannot repaint
+        // over the composer's region.
+        if composer_enabled {
+            output::hide_thinking();
+        }
 
         let session_config = SessionConfig {
             id: self.session_id.clone(),
@@ -1313,6 +1461,7 @@ impl CliSession {
             .messages
             .last()
             .ok_or_else(|| anyhow::anyhow!("No user message"))?;
+        self.telemetry.start_turn(Instant::now());
         let cancel_token_interrupt = cancel_token.clone();
         let handle = tokio::spawn(async move {
             if ctrl_c().await.is_ok() {
@@ -1320,9 +1469,8 @@ impl CliSession {
             }
         });
         let _drop_handle = AbortOnDropHandle::new(handle);
-
-        let mut stream = self
-            .agent
+        let agent = self.agent.clone();
+        let mut stream = agent
             .reply(
                 user_message.clone(),
                 session_config.clone(),
@@ -1330,6 +1478,12 @@ impl CliSession {
             )
             .await?;
 
+        let mut composer = Composer::new(composer_enabled)?;
+        let _terminal_owner = composer.as_ref().map(|_| ComposerOwnership::acquire());
+        if let Some(composer) = composer.as_mut() {
+            composer.set_draft(&self.pending_draft)?;
+            composer.set_status(&self.composer_status())?;
+        }
         let mut progress_bars = output::McpSpinners::new();
         let cancel_token_clone = cancel_token.clone();
         let mut markdown_buffer = streaming_buffer::MarkdownBuffer::new();
@@ -1339,19 +1493,61 @@ impl CliSession {
         let mut first_token_at: Option<Instant> = None;
         let mut last_usage: Option<ProviderUsage> = None;
         let mut stream_error = None;
+        let mut footer_tick = tokio::time::interval(Duration::from_millis(250));
 
         use futures::StreamExt;
         loop {
             tokio::select! {
+                event = async {
+                    match composer.as_mut() {
+                        Some(active) => active.next().await,
+                        None => std::future::pending().await,
+                    }
+                }, if composer.is_some() => {
+                    match event {
+                        Ok(ComposerEvent::Submitted(text)) => {
+                            self.queued_inputs.push_back(text);
+                            if let Some(active) = composer.as_mut() {
+                                active.set_status(&self.composer_status())?;
+                            }
+                        }
+                        Ok(ComposerEvent::Cancel) => cancel_token_clone.cancel(),
+                        Err(error) => {
+                            if let Some(mut active) = composer.take() {
+                                self.pending_draft = active.take_draft();
+                                active.suspend()?;
+                            }
+                            output::render_error(&format!("Concurrent input unavailable: {error}"));
+                        }
+                    }
+                },
+                _ = footer_tick.tick(), if interactive => {
+                    if let Some(active) = composer.as_mut() {
+                        active.set_status(&self.composer_status())?;
+                    }
+                },
                 result = stream.next() => {
                     match result {
                         Some(Ok(AgentEvent::Message(message))) => {
+                            for content in &message.content {
+                                if let MessageContent::ToolRequest(request) = content {
+                                    if let Ok(call) = &request.tool_call {
+                                        self.telemetry.record_tool_request(
+                                            &request.id, call.name.as_ref(), call.arguments.as_ref(),
+                                        );
+                                    }
+                                }
+                            }
                             if first_token_at.is_none() && message_has_text(&message) {
                                 first_token_at = Some(Instant::now());
+                                self.telemetry.observe_text(Instant::now());
                             }
                             if let Some(confirmation_request) = find_tool_confirmation(&message) {
                                 let selected_permission = if interactive {
-                                    prompt_tool_confirmation(&confirmation_request)?
+                                    if let Some(active) = composer.as_mut() { active.suspend()?; }
+                                    let permission = prompt_tool_confirmation(&confirmation_request)?;
+                                    if let Some(active) = composer.as_mut() { active.resume()?; }
+                                    permission
                                 } else {
                                     // Non-interactive/headless mode: refuse to run in
                                     // Approve/SmartApprove modes since auto-allowing would
@@ -1423,8 +1619,11 @@ impl CliSession {
 
                                 output::hide_thinking();
                                 let _ = progress_bars.hide();
+                                if let Some(active) = composer.as_mut() { active.suspend()?; }
+                                let elicitation_input = elicitation::collect_elicitation_input(&elicitation_message, &schema, &cancel_token_clone);
+                                if let Some(active) = composer.as_mut() { active.resume()?; }
 
-                                match elicitation::collect_elicitation_input(&elicitation_message, &schema, &cancel_token_clone) {
+                                match elicitation_input {
                                     Ok(input) => {
                                         match &input.action {
                                             ElicitationAction::Decline => {
@@ -1475,16 +1674,18 @@ impl CliSession {
                                 if is_stream_json_mode {
                                     emit_stream_event(&StreamEvent::Message { message: message.clone() });
                                 } else if !is_json_mode {
-                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug);
-                                    maybe_open_credits_top_up_url(
-                                        &message,
-                                        interactive,
-                                        &mut prompted_credits_urls,
-                                    );
+                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug, &mut self.shell_outputs);
+                                    if output::get_credits_top_up_url(&message).is_some() && interactive {
+                                        if let Some(active) = composer.as_mut() { active.suspend()?; }
+                                        maybe_open_credits_top_up_url(&message, interactive, &mut prompted_credits_urls);
+                                        if let Some(active) = composer.as_mut() { active.resume()?; }
+                                    }
                                 }
                             }
                         }
                         Some(Ok(AgentEvent::Usage(usage))) => {
+                            let duration = usage.stats.as_ref().and_then(|s| s.elapsed_ms).map(Duration::from_millis);
+                            self.telemetry.record_api_response(&usage, duration);
                             last_usage = Some(usage);
                         }
                         Some(Ok(AgentEvent::MessageUsage { .. })) => {}
@@ -1535,6 +1736,10 @@ impl CliSession {
             }
         }
 
+        if let Some(mut active) = composer.take() {
+            self.pending_draft = active.take_draft();
+            active.suspend()?;
+        }
         let terminal_error = headless_run_error(
             interactive,
             cancel_token_clone.is_cancelled(),
@@ -1632,6 +1837,8 @@ impl CliSession {
         }
 
         if interactive {
+            self.refresh_telemetry().await;
+            println!("{}", self.telemetry.turn_summary(Instant::now()));
             output::emit_attention_bell();
         }
 
@@ -1887,45 +2094,40 @@ impl CliSession {
         Ok(metadata.accumulated_usage.total_tokens)
     }
 
-    /// Display enhanced context usage with session totals
-    pub async fn display_context_usage(&self) -> Result<()> {
-        let provider = self.agent.provider(&self.session_id).await?;
-        let model_config = self
-            .agent
-            .model_config_for_session(&self.session_id)
-            .await?;
-        let context_limit =
-            goose::context_limit::get_context_limit(provider.as_ref(), &model_config.model_name)
-                .await?;
-
-        let config = Config::global();
-        let show_cost = config
-            .get_param::<bool>("GOOSE_CLI_SHOW_COST")
-            .unwrap_or(false);
-
-        let provider_name = config
-            .get_goose_provider()
-            .unwrap_or_else(|_| "unknown".to_string());
-
-        match self.get_session().await {
-            Ok(metadata) => {
-                let total_tokens = metadata.usage.total_tokens.unwrap_or(0) as usize;
-
-                output::display_context_usage(total_tokens, context_limit);
-
-                if show_cost {
-                    output::display_cost_usage(
-                        &provider_name,
-                        &model_config.model_name,
-                        &metadata.usage,
-                    );
-                }
-            }
-            Err(_) => {
-                output::display_context_usage(0, context_limit);
-            }
+    async fn refresh_telemetry(&mut self) {
+        if let Ok(metadata) = self.get_session().await {
+            self.telemetry.refresh_session(&metadata);
         }
+        if let (Ok(provider), Ok(model_config)) = (
+            self.agent.provider(&self.session_id).await,
+            self.agent.model_config_for_session(&self.session_id).await,
+        ) {
+            let limit = goose::context_limit::get_context_limit(
+                provider.as_ref(),
+                &model_config.model_name,
+            )
+            .await
+            .ok();
+            self.telemetry.set_context_limit(limit);
+            self.telemetry.provider = Some(provider.get_name().to_string());
+            self.telemetry.model = Some(model_config.model_name);
+        }
+    }
 
+    /// Show live essentials; `/usage` contains the full inventory.
+    pub async fn display_context_usage(&mut self) -> Result<()> {
+        self.refresh_telemetry().await;
+        let git = std::process::Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(&self.telemetry.cwd)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty());
+        self.telemetry.set_git_branch(git);
+        println!("  {}", self.telemetry.status_bar(Utc::now()));
         Ok(())
     }
 
@@ -2428,7 +2630,7 @@ fn display_shell_output_notification(
     params: ShellOutputNotificationParams,
     progress_bars: &mut output::McpSpinners,
 ) {
-    if params.truncated {
+    if params.truncated || !output::get_show_full_tool_output() {
         return;
     }
 

@@ -28,6 +28,8 @@ pub enum InputResult {
     New,
     Compact,
     ToggleFullToolOutput,
+    ShowLastCommandOutput,
+    ShowUsage,
     Edit(Option<String>),
     ListSkills,
     LoadSkills(Vec<String>),
@@ -116,6 +118,7 @@ fn should_use_editor_always(
 pub fn get_input(
     editor: &mut Editor<GooseCompleter, rustyline::history::DefaultHistory>,
     conversation_messages: Option<&Vec<String>>,
+    initial: Option<&str>,
 ) -> Result<InputResult> {
     let config = Config::global();
     let prompt_editor = config.get_goose_prompt_editor().ok().flatten();
@@ -180,7 +183,7 @@ pub fn get_input(
         rustyline::EventHandler::Conditional(Box::new(CtrlCHandler::new(completion_cache))),
     );
 
-    let input = match read_paste_aware_input(editor, paste_state) {
+    let input = match read_paste_aware_input(editor, paste_state, initial) {
         Ok(text) => text,
         Err(e) => match e {
             rustyline::error::ReadlineError::Interrupted => return Ok(InputResult::Exit),
@@ -194,6 +197,10 @@ pub fn get_input(
         editor.add_history_entry(input.as_str())?;
     }
 
+    parse_submitted_input(&input)
+}
+
+pub(super) fn parse_submitted_input(input: &str) -> Result<InputResult> {
     // Handle non-slash commands first
     if !input.starts_with('/') {
         let trimmed = input.trim();
@@ -211,7 +218,7 @@ pub fn get_input(
     }
 
     // Handle slash commands
-    match handle_slash_command(&input) {
+    match handle_slash_command(input) {
         Some(result) => Ok(result),
         None => Ok(InputResult::Message(input.trim().to_string())),
     }
@@ -339,6 +346,8 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             Some(InputResult::Compact)
         }
         "/r" => Some(InputResult::ToggleFullToolOutput),
+        "/output" => Some(InputResult::ShowLastCommandOutput),
+        "/usage" => Some(InputResult::ShowUsage),
         s if s == CMD_EDIT => Some(InputResult::Edit(None)),
         s if s.starts_with(CMD_EDIT_WITH_SPACE) => {
             let prefill = s
@@ -423,13 +432,15 @@ fn help_text() -> String {
 /exit or /quit - Exit the session
 /t - Toggle Light/Dark/Ansi theme
 /t <name> - Set theme directly (light, dark, ansi)
-/r - Toggle full tool output display (show complete tool parameters without truncation)
+/r - Toggle full tool output display (also shows command output as it runs)
+/output - Show the full output of the most recent command
+/usage - Detailed session tokens, cache hit, speed, latency, cost provenance and timings
 /extension <command> - Add a stdio extension (format: ENV1=val1 command args...)
 /builtin <names> - Add builtin extensions by name (comma-separated)
 /prompts [--extension <name>] - List all available prompts, optionally filtered by extension
 /prompt <n> [--info] [key=value...] - Get prompt info or execute a prompt
 /mode <name> - Set the goose mode to use ({modes})
-/model [name] - Show the current model, or switch models for this session while keeping the same provider
+/model [name] - Open a picker for Gemini/DeepSeek provider and model, or switch directly to a named model
 /model --provider <name> [model] - Switch to a different provider (optionally specifying a model)
 /compact - Compact the current conversation to reduce context length while preserving key information.
 {additional_builtin_help}/status - Show session status: model, provider, mode, and token usage.
@@ -527,6 +538,12 @@ mod tests {
             handle_slash_command("/r"),
             Some(InputResult::ToggleFullToolOutput)
         ));
+
+        assert!(matches!(
+            handle_slash_command("/output"),
+            Some(InputResult::ShowLastCommandOutput)
+        ));
+        assert!(handle_slash_command("/output-other").is_none());
 
         // Test extension command
         if let Some(InputResult::AddExtension(cmd)) = handle_slash_command("/extension foo bar") {
