@@ -758,7 +758,10 @@ impl CliSession {
             }
             InputResult::CommandMenu => {
                 history.save(editor);
-                self.open_command_menu()?;
+                if let Some(selection) = input::pick_slash_command() {
+                    println!("  {} {}", console::style("›").green(), selection);
+                    self.pending_draft = selection;
+                }
             }
             InputResult::SelectTheme(theme_name) => {
                 history.save(editor);
@@ -2160,40 +2163,6 @@ impl CliSession {
         self.refresh_telemetry().await;
         self.refresh_git_branch();
         println!("  {}", self.telemetry.status_bar(Utc::now()));
-        Ok(())
-    }
-
-    /// Interactive command list for a bare `/`: arrow-scroll (or type to
-    /// filter), Enter loads the command into the next prompt (run it as-is
-    /// or add arguments), Esc cancels. Same cliclack pattern as /model.
-    fn open_command_menu(&mut self) -> Result<()> {
-        let choices: Vec<(String, String, String)> = input::SLASH_COMMANDS
-            .iter()
-            .map(|(command, description)| {
-                (
-                    command.to_string(),
-                    command.to_string(),
-                    description.to_string(),
-                )
-            })
-            .collect();
-        match cliclack::select("Slash commands")
-            .items(&choices)
-            .max_rows(15)
-            .filter_mode()
-            .interact()
-        {
-            Ok(selection) => {
-                println!(
-                    "  {} {} — edit it or press Enter to run",
-                    console::style("›").green(),
-                    selection
-                );
-                self.pending_draft = selection;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-            Err(error) => return Err(error.into()),
-        }
         Ok(())
     }
 

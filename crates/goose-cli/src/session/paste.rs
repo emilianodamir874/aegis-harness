@@ -223,6 +223,33 @@ fn console_has_pending_char() -> bool {
     false
 }
 
+/// True when no further key characters are queued behind the current event:
+/// a lone typed character rather than a paste burst or fast type-ahead.
+/// Always false off Windows.
+#[cfg(windows)]
+pub(super) fn no_pending_chars() -> bool {
+    match peek_pending_chars() {
+        None => true,
+        Some(PeekedBurst::Chars(chars)) => chars.is_empty(),
+        Some(PeekedBurst::TooLarge) => false,
+    }
+}
+
+#[cfg(not(windows))]
+pub(super) fn no_pending_chars() -> bool {
+    false
+}
+
+/// Re-route a key event through the paste-capture logic from another
+/// binding: the `/` command-menu handler owns the `/` event and must keep
+/// paste bursts starting with `/` working exactly as before.
+pub(super) fn capture_char(
+    state: &Arc<std::sync::RwLock<PasteState>>,
+    first: char,
+) -> Option<rustyline::Cmd> {
+    capture_paste(state, first)
+}
+
 /// If `first` begins a multi-line paste burst, capture the whole burst and
 /// return the command that renders it — a `[Pasted N lines]` chip, or the literal
 /// text when it is too small to collapse. Returns `None` for ordinary keystrokes

@@ -94,6 +94,67 @@ impl rustyline::ConditionalEventHandler for CtrlCHandler {
 /// Characters already bound to other actions are rejected: `m` (Ctrl+M is Enter)
 /// and `c` (Ctrl+C interrupts), both of which would otherwise shadow the paste
 /// and interrupt handlers.
+/// Opens the slash-command picker on a lone `/` typed at the start of an
+/// empty line — the list appears as soon as `/` is pressed, no Enter.
+/// Any other `/` (mid-line, paste burst, fast type-ahead) falls through to
+/// the regular paste-capture behavior byte for byte.
+pub(super) struct SlashMenuHandler {
+    paste_state: Arc<std::sync::RwLock<PasteState>>,
+}
+
+impl SlashMenuHandler {
+    pub(super) fn new(paste_state: Arc<std::sync::RwLock<PasteState>>) -> Self {
+        Self { paste_state }
+    }
+}
+
+impl rustyline::ConditionalEventHandler for SlashMenuHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: u16,
+        _positive: bool,
+        ctx: &rustyline::EventContext,
+    ) -> Option<rustyline::Cmd> {
+        if ctx.line().is_empty() && ctx.pos() == 0 && super::paste::no_pending_chars() {
+            // The picker runs between key events with the terminal to
+            // itself; cliclack restores raw mode on exit, so re-enable it
+            // for the line editor before returning.
+            let selection = pick_slash_command();
+            let _ = crossterm::terminal::enable_raw_mode();
+            return Some(match selection {
+                Some(command) => rustyline::Cmd::Insert(1, command),
+                None => rustyline::Cmd::Noop,
+            });
+        }
+        super::paste::capture_char(&self.paste_state, '/')
+    }
+}
+
+/// Interactive command menu (cliclack), the same picker style as /model:
+/// scroll with the arrows or type to filter, Enter picks, Esc cancels.
+pub(super) fn pick_slash_command() -> Option<String> {
+    let choices: Vec<(String, String, String)> = SLASH_COMMANDS
+        .iter()
+        .map(|(command, description)| {
+            (
+                command.to_string(),
+                command.to_string(),
+                description.to_string(),
+            )
+        })
+        .collect();
+    match cliclack::select("Slash commands")
+        .items(&choices)
+        .max_rows(15)
+        .filter_mode()
+        .interact()
+    {
+        Ok(selection) => Some(selection),
+        Err(_) => None,
+    }
+}
+
 pub fn get_newline_key() -> char {
     Config::global()
         .get_param::<String>("GOOSE_CLI_NEWLINE_KEY")
@@ -183,6 +244,13 @@ pub fn get_input(
     editor.bind_sequence(
         rustyline::KeyEvent(rustyline::KeyCode::Char('c'), rustyline::Modifiers::CTRL),
         rustyline::EventHandler::Conditional(Box::new(CtrlCHandler::new(completion_cache))),
+    );
+
+    editor.bind_sequence(
+        rustyline::KeyEvent(rustyline::KeyCode::Char('/'), rustyline::Modifiers::NONE),
+        rustyline::EventHandler::Conditional(Box::new(SlashMenuHandler::new(
+            paste_state.clone(),
+        ))),
     );
 
     let input = match read_paste_aware_input(editor, paste_state, initial) {
@@ -459,7 +527,7 @@ fn help_text() -> String {
 Navigation:
 Enter - Send message
 Ctrl+{newline_key} - Add a newline (configurable via GOOSE_CLI_NEWLINE_KEY)
-Type / and press Enter - Open the interactive command menu
+Type / - Open the interactive command menu (Esc cancels)
 Ctrl+C - Clear current line if text is entered, otherwise exit the session
 Up/Down arrows - Navigate through command history
 GOOSE_CLI_BELL=true - Ring the terminal bell when goose finishes a turn or needs approval"

@@ -933,4 +933,57 @@ fn approval_modal_suspends_the_composer_and_the_draft_survives() {
         terminal.screen()
     );
     assert!(model.requests() >= 3, "mock did not receive the tool turn");
+
+#[test]
+fn lone_slash_opens_the_command_picker_without_enter() {
+    let model = MockModel::start();
+    let root = sandbox("slashmenu");
+    let env = session_env(&model, &root, &[("GOOSE_CLI_PLAIN", "1")]);
+    let mut terminal = Terminal::spawn(
+        goose_exe(),
+        &[
+            "session",
+            "--provider",
+            "openai",
+            "--model",
+            "mock-model",
+            "--no-profile",
+        ],
+        &env,
+        30,
+        100,
+    );
+
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("goose is ready"),
+            Duration::from_secs(60)
+        ),
+        "session never reached the ready banner:\n{}",
+        terminal.screen()
+    );
+
+    // A lone `/` must open the picker immediately, without pressing Enter.
+    terminal.type_text("/");
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("Slash commands"),
+            Duration::from_secs(30)
+        ),
+        "the command picker never opened:\n{}",
+        terminal.screen()
+    );
+
+    // Filter down to /usage and pick it; the choice lands in the prompt.
+    terminal.type_text("usage");
+    terminal.press_enter();
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("> /usage"),
+            Duration::from_secs(10)
+        ),
+        "the picked command never reached the prompt:\n{}",
+        terminal.screen()
+    );
+}
 }
