@@ -599,8 +599,32 @@ fn goose_exe() -> &'static str {
     env!("CARGO_BIN_EXE_goose")
 }
 
+/// Each run gets a fresh pid-tagged root. Stale roots from earlier runs are
+/// pruned on the way in (older than two hours — parallel tests in this run
+/// share the pid and must not be disturbed), so the temp dir does not
+/// accumulate one sandbox per test run.
 fn sandbox(tag: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!("goose-ui-{tag}-{}", std::process::id()));
+    let base = std::env::temp_dir();
+    if let Ok(entries) = std::fs::read_dir(&base) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if name.to_string_lossy().starts_with("goose-ui-") {
+                let stale = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .map(|modified| {
+                        modified
+                            .elapsed()
+                            .map_or(false, |age| age.as_secs() > 7200)
+                    })
+                    .unwrap_or(false);
+                if stale {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+        }
+    }
+    let root = base.join(format!("goose-ui-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("sandbox root");
     root
