@@ -1011,7 +1011,7 @@ impl Provider for GeminiOAuthProvider {
             while let Some(message) = message_stream.next().await {
                 let (message, usage) = message.map_err(|e| {
                     e.downcast::<ProviderError>()
-                        .unwrap_or_else(ProviderError::stream_decode_error)
+                        .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
                 })?;
                 if message.is_some() || usage.is_some() {
                     log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;

@@ -87,6 +87,13 @@ impl RetryConfig {
     }
 }
 
+/// Sleeps on the platform's timer: tokio on the host, the browser's timer on
+/// wasm32 (which has no tokio runtime). Exposed so callers outside this crate
+/// can back off between retries of a streaming request.
+pub async fn backoff_sleep(duration: Duration) {
+    sleep(duration).await;
+}
+
 /// Substrings marking a `RequestFailed` (4xx) as deterministically permanent:
 /// Anthropic rejects signed `thinking`/`redacted_thinking` blocks as immutable
 /// once a thinking model's config changes mid-conversation, and the identical

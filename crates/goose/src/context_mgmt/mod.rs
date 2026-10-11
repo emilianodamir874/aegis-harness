@@ -1,3 +1,5 @@
+mod recent;
+
 pub use goose_context_management::structured;
 
 use crate::conversation::message::MessageMetadata;
@@ -22,13 +24,10 @@ use tracing::log::warn;
 
 pub use goose_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
-/// Starts compaction with headroom below OpenAI's long-context price tier
-/// (above 272k input tokens). This is not a maximum request size.
-pub const DEFAULT_AUTO_COMPACT_TOKEN_LIMIT: usize = 225_000;
-
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 
-/// The configured threshold, lowered so compaction starts by the token limit.
+/// Optional per-process absolute cap for users who intentionally prefer early compaction.
+/// Without an explicit cap, the model's own context window and threshold apply.
 pub fn auto_compact_threshold(context_limit: usize) -> f64 {
     let config = Config::global();
     let threshold = config
@@ -37,10 +36,13 @@ pub fn auto_compact_threshold(context_limit: usize) -> f64 {
     if threshold <= 0.0 || threshold >= 1.0 || context_limit == 0 {
         return threshold;
     }
-    let token_limit = config
+    config
         .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
-        .unwrap_or(DEFAULT_AUTO_COMPACT_TOKEN_LIMIT);
-    threshold.min(token_limit as f64 / context_limit as f64)
+        .ok()
+        .filter(|limit| *limit > 0)
+        .map_or(threshold, |limit| {
+            threshold.min(limit as f64 / context_limit as f64)
+        })
 }
 
 pub(crate) fn tool_pair_summarization_enabled() -> bool {
@@ -52,16 +54,19 @@ pub(crate) fn tool_pair_summarization_enabled() -> bool {
 const CONVERSATION_CONTINUATION_TEXT: &str =
     "Your context was compacted. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
+Recent turns may follow verbatim. If an older detail is needed, use chatrecall with current_session=true when available to retrieve the original message rather than guessing.
 Just continue the conversation naturally based on the summarized context.";
 
 const TOOL_LOOP_CONTINUATION_TEXT: &str =
     "Your context was compacted. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
+Recent turns may follow verbatim. Retrieve missing older details through chatrecall current_session=true when available.
 Continue calling tools as necessary to complete the task.";
 
 const MANUAL_COMPACT_CONTINUATION_TEXT: &str =
     "Your context was compacted at the user's request. The previous message contains a summary of the conversation so far.
 Do not mention that you read a summary or that conversation summarization occurred.
+Recent turns may follow verbatim. If an older detail is needed, use chatrecall with current_session=true when available to retrieve the original message rather than guessing.
 Just continue the conversation naturally based on the summarized context.";
 
 pub struct CompactionResult {
@@ -148,9 +153,15 @@ pub async fn compact_messages(
     };
 
     let messages_to_compact = messages.as_slice();
+    let context_limit =
+        crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
+    let recent_start = recent::recent_start(messages_to_compact, context_limit).await?;
+    let older_messages = recent_start
+        .map(|index| &messages_to_compact[..index])
+        .unwrap_or(messages_to_compact);
 
     let (summary_message, summarization_usage) =
-        do_compact(provider, model_config, session_id, messages_to_compact).await?;
+        do_compact(provider, model_config, session_id, older_messages).await?;
 
     // Create the final message list with updated visibility metadata:
     // 1. Original messages become user_visible but not agent_visible
@@ -184,10 +195,22 @@ pub async fn compact_messages(
 
     let (merged_continuation, _issues) = merge_consecutive_messages(continuation_messages);
     final_messages.extend(merged_continuation);
+    if let Some(start) = recent_start {
+        for message in &messages_to_compact[start..] {
+            if message.is_agent_visible() && !message.is_turn_context() {
+                let mut replay = message.agent_visible_content().with_visibility(false, true);
+                replay.id = None;
+                replay.created = continuation_created;
+                final_messages.push(replay);
+            }
+        }
+    }
 
     if let Some(mut user_msg) = preserved_user_message {
-        user_msg.created = continuation_created;
-        final_messages.push(user_msg);
+        if !preserved_idx.is_some_and(|index| recent_start.is_some_and(|start| index >= start)) {
+            user_msg.created = continuation_created;
+            final_messages.push(user_msg);
+        }
     }
 
     // Carry the turn's own context event (it follows the preserved prompt) so
@@ -296,6 +319,7 @@ struct GooseCompactionModel<'a> {
     provider: &'a dyn Provider,
     model_config: &'a ModelConfig,
     session_id: &'a str,
+    output_budget: i32,
 }
 
 #[async_trait::async_trait]
@@ -307,7 +331,10 @@ impl goose_context_management::CompactionModel for GooseCompactionModel<'_> {
     ) -> Result<(Message, ProviderUsage), ProviderError> {
         crate::model_config::complete_one_shot(
             self.provider,
-            self.model_config,
+            &self
+                .model_config
+                .clone()
+                .with_max_tokens(Some(self.output_budget)),
             self.session_id,
             system,
             messages,
@@ -317,28 +344,18 @@ impl goose_context_management::CompactionModel for GooseCompactionModel<'_> {
     }
 }
 
-struct GooseTokenEstimator;
+struct GooseTokenEstimator {
+    counter: crate::token_counter::TokenCounter,
+}
 
 #[async_trait::async_trait]
 impl goose_context_management::TokenEstimator for GooseTokenEstimator {
     async fn count_chat_tokens(&self, system: &str, messages: &[Message]) -> usize {
-        match create_token_counter().await {
-            Ok(counter) => counter.count_chat_tokens(system, messages, &[]),
-            Err(error) => {
-                warn!("Failed to create token counter: {error}");
-                0
-            }
-        }
+        self.counter.count_chat_tokens(system, messages, &[])
     }
 
     async fn count_text_tokens(&self, text: &str) -> usize {
-        match create_token_counter().await {
-            Ok(counter) => counter.count_tokens(text),
-            Err(error) => {
-                warn!("Failed to create token counter: {error}");
-                0
-            }
-        }
+        self.counter.count_tokens(text)
     }
 }
 
@@ -364,16 +381,25 @@ async fn do_compact(
     )
     .agent_visible_messages();
 
+    let context_limit =
+        crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
+    let output_budget = (context_limit / 8).clamp(1_024, 8_192);
     let model = GooseCompactionModel {
         provider,
         model_config,
         session_id,
+        output_budget: output_budget as i32,
     };
-    let summary = goose_context_management::summarize(
+    let estimator = GooseTokenEstimator {
+        counter: create_token_counter().await.map_err(anyhow::Error::msg)?,
+    };
+    let summary = goose_context_management::summarize_in_chunks(
         &model,
-        Some(&GooseTokenEstimator),
+        &estimator,
         &compaction_templates()?,
         &agent_visible_messages,
+        (context_limit * 3 / 5).min(64_000),
+        output_budget,
     )
     .await?;
 
@@ -648,6 +674,16 @@ mod tests {
 
     impl MockProvider {
         fn new(message: Message, context_limit: usize) -> Self {
+            let message =
+                if goose_context_management::StructuredSummary::parse(&message.as_concat_text())
+                    .is_some()
+                {
+                    message
+                } else {
+                    Message::assistant().with_text(
+                        serde_json::json!({"user_intent": [message.as_concat_text()]}).to_string(),
+                    )
+                };
             Self {
                 message,
                 config: ModelConfig {
@@ -688,7 +724,7 @@ mod tests {
             &self,
             _model_config: &ModelConfig,
             system: &str,
-            messages: &[Message],
+            _messages: &[Message],
             _tools: &[Tool],
         ) -> Result<MessageStream, ProviderError> {
             self.calls
@@ -696,14 +732,7 @@ mod tests {
             *self.captured_system.lock().unwrap() = Some(system.to_string());
             // If max_tool_responses is set, fail if we have too many
             if let Some(max) = self.max_tool_responses {
-                let tool_response_count = messages
-                    .iter()
-                    .filter(|m| {
-                        m.content
-                            .iter()
-                            .any(|c| matches!(c, MessageContent::ToolResponse(_)))
-                    })
-                    .count();
+                let tool_response_count = system.matches("response").count();
 
                 if tool_response_count > max {
                     return Err(ProviderError::ContextLengthExceeded(format!(
@@ -726,7 +755,7 @@ mod tests {
     #[tokio::test]
     async fn test_keeps_tool_request() {
         let response_message = Message::assistant().with_text("<mock summary>");
-        let provider = MockProvider::new(response_message, 1);
+        let provider = MockProvider::new(response_message, 128_000);
         let basic_conversation = vec![
             Message::user().with_text("read hello.txt"),
             Message::assistant()
@@ -788,8 +817,14 @@ mod tests {
 
         let summary_text = compaction.conversation.agent_visible_messages()[0].as_concat_text();
         assert!(summary_text.contains("# Conversation Summary"));
-        assert!(summary_text.contains("## User Intent"));
+        assert!(summary_text.contains("## Current User Intent and Constraints"));
         assert!(summary_text.contains("- Fix the parser bug"));
+        assert!(summary_text.contains("## Current Work and Verification"));
+        assert!(summary_text.contains("## Pending Tasks"));
+        assert!(
+            summary_text.find("## Pending Tasks").unwrap()
+                < summary_text.find("### src/parser.rs").unwrap()
+        );
         assert!(summary_text.contains("### src/parser.rs"));
         assert!(
             !summary_text.contains("```json"),
@@ -857,7 +892,7 @@ mod tests {
             Message::assistant().with_text("earlier response"),
             current_request,
         ]);
-        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 128_000);
 
         let compacted = compact_messages(
             &provider,
@@ -920,7 +955,7 @@ mod tests {
                 .with_text("<turn-context>frozen block</turn-context>")
                 .with_metadata(MessageMetadata::agent_only().with_turn_context()),
         ]);
-        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 128_000);
 
         let compacted = compact_messages(
             &provider,
@@ -985,7 +1020,7 @@ mod tests {
             Message::assistant().with_text("earlier response"),
             Message::user().with_text("the new prompt"),
         ]);
-        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 128_000);
 
         let compacted = compact_messages(
             &provider,
@@ -1010,8 +1045,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recent_literal_tail_survives_storage_reload_without_duplicate_user_prompt() {
+        let provider = MockProvider::new(Message::assistant().with_text("older summary"), 128_000);
+        let mut archived = Message::user().with_text("ancient evidence");
+        archived.created -= 3600;
+        let mut response = Message::assistant().with_text("ancient answer");
+        response.created -= 3600;
+        let conversation = Conversation::new_unvalidated([
+            archived,
+            response,
+            Message::user().with_text("recent exact request 🦀"),
+        ]);
+        let compacted = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            false,
+        )
+        .await
+        .unwrap()
+        .conversation;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let manager = crate::session::SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "literal tail".to_string(),
+                crate::session::session_manager::SessionType::User,
+                crate::config::GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .replace_conversation(&session.id, &compacted)
+            .await
+            .unwrap();
+        let stored = manager
+            .get_session(&session.id, true)
+            .await
+            .unwrap()
+            .conversation
+            .unwrap();
+        let visible = stored.agent_visible_messages();
+        assert!(visible[0].as_concat_text().contains("older summary"));
+        assert_eq!(
+            visible
+                .iter()
+                .filter(|message| message.as_concat_text().contains("recent exact request 🦀"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            visible.last().unwrap().as_concat_text(),
+            "recent exact request 🦀"
+        );
+        assert!(stored.messages().iter().any(|message| {
+            message.as_concat_text().contains("ancient evidence") && !message.is_agent_visible()
+        }));
+    }
+
+    #[tokio::test]
     async fn carried_turn_context_stays_last_after_persist_and_reload() {
-        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 128_000);
         let mut prompt = Message::user().with_text("the real current request");
         prompt.created -= 3600;
         let mut block = Message::user()
@@ -1064,7 +1160,7 @@ mod tests {
 
     #[tokio::test]
     async fn summarizer_input_excludes_turn_context_events() {
-        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 128_000);
         let turn_context = |text: &str| {
             Message::user()
                 .with_text(text)
@@ -1104,7 +1200,7 @@ mod tests {
 
     #[tokio::test]
     async fn tool_pair_summary_projects_nested_audiences_before_provider_input() {
-        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 128_000);
         let conversation =
             Conversation::new_unvalidated([
                 Message::assistant()
@@ -1164,7 +1260,7 @@ mod tests {
 
     #[tokio::test]
     async fn tool_pair_summary_rejects_agent_hidden_response() {
-        let provider = MockProvider::new(Message::assistant().with_text("summary"), 1000);
+        let provider = MockProvider::new(Message::assistant().with_text("summary"), 128_000);
         let conversation = Conversation::new_unvalidated([
             Message::assistant()
                 .with_tool_request("tool_0", Ok(CallToolRequestParams::new("read_file"))),
@@ -1244,10 +1340,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_progressive_removal_on_context_exceeded() {
+    async fn test_provider_overflow_does_not_silently_drop_tool_responses() {
         let response_message = Message::assistant().with_text("<mock summary>");
-        // Set max to 2 tool responses - will trigger progressive removal
-        let provider = MockProvider::new(response_message, 1000).with_max_tool_responses(2);
+        let provider = MockProvider::new(response_message, 128_000).with_max_tool_responses(0);
 
         // Create a conversation with many tool responses
         let mut messages = vec![Message::user().with_text("start")];
@@ -1276,9 +1371,16 @@ mod tests {
         .await;
 
         assert!(
-            result.is_ok(),
-            "Should succeed with progressive removal: {:?}",
-            result.err()
+            result.is_err(),
+            "provider refused an unsplittable tool response"
+        );
+        assert!(
+            conversation
+                .messages()
+                .iter()
+                .filter(|m| m.is_tool_response())
+                .count()
+                == 10
         );
     }
 

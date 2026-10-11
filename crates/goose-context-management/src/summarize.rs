@@ -25,6 +25,7 @@ struct SummarizeContext {
 pub struct Summary {
     pub message: Message,
     pub usage: ProviderUsage,
+    pub structured: bool,
 }
 
 fn has_tool_response(msg: &Message) -> bool {
@@ -77,18 +78,23 @@ fn filter_tool_responses(messages: &[Message], remove_percent: u32) -> Vec<&Mess
 /// When the model didn't follow the structured output format (schema-ignoring
 /// models, user-customized prompts), the raw response text is kept unchanged
 /// as the summary.
-fn apply_structured_summary(response: &mut Message, summary_template: &str) {
+fn apply_structured_summary(response: &mut Message, summary_template: &str) -> bool {
     let Some(summary) = StructuredSummary::parse(&response.as_concat_text()) else {
-        return;
+        return false;
     };
     match summary.render_with(summary_template) {
         Ok(rendered) if !rendered.trim().is_empty() => {
             response.content = vec![MessageContent::text(rendered)];
+            true
         }
-        Ok(_) => warn!(
-            "Structured compaction summary rendered empty (broken template override?), keeping raw output"
-        ),
-        Err(e) => warn!("Failed to render structured compaction summary, keeping raw output: {e}"),
+        Ok(_) => {
+            warn!("Structured compaction summary rendered empty (broken template override?), keeping raw output");
+            false
+        }
+        Err(e) => {
+            warn!("Failed to render structured compaction summary, keeping raw output: {e}");
+            false
+        }
     }
 }
 
@@ -127,10 +133,25 @@ pub async fn summarize(
     templates: &Templates,
     messages: &[Message],
 ) -> Result<Summary> {
+    summarize_with_policy(model, estimator, templates, messages, true).await
+}
+
+pub(crate) async fn summarize_with_policy(
+    model: &dyn CompactionModel,
+    estimator: Option<&dyn TokenEstimator>,
+    templates: &Templates,
+    messages: &[Message],
+    allow_tool_drop: bool,
+) -> Result<Summary> {
     let request = vec![Message::user().with_text(SUMMARIZE_REQUEST_TEXT)];
     let has_tool_responses = messages.iter().any(has_tool_response);
+    let percentages: &[u32] = if allow_tool_drop {
+        &REMOVAL_PERCENTAGES
+    } else {
+        &[0]
+    };
 
-    for (attempt, &remove_percent) in REMOVAL_PERCENTAGES.iter().enumerate() {
+    for (attempt, &remove_percent) in percentages.iter().enumerate() {
         let filtered = filter_tool_responses(messages, remove_percent);
         let context = SummarizeContext {
             messages: filtered
@@ -153,12 +174,18 @@ pub async fn summarize(
                         .await;
                 }
 
-                apply_structured_summary(&mut response, &templates.summary);
+                let structured = apply_structured_summary(&mut response, &templates.summary);
 
                 return Ok(Summary {
                     message: response,
                     usage,
+                    structured,
                 });
+            }
+            Err(ProviderError::ContextLengthExceeded(_)) if !allow_tool_drop => {
+                return Err(anyhow::anyhow!(
+                    "Compaction chunk exceeded effective context limit"
+                ));
             }
             Err(ProviderError::ContextLengthExceeded(_)) if !has_tool_responses => {
                 return Err(anyhow::anyhow!(

@@ -817,6 +817,6 @@ extensions:
     fn test_default_off_extension_disabled_when_config_empty() {
         let (config, _config_file, _secrets_file) = test_config("");
 
-        assert_eq!(configured_enabled_state(&config, "chatrecall"), Some(false));
+        assert_eq!(configured_enabled_state(&config, "todo"), Some(false));
     }
 }

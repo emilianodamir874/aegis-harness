@@ -1,3 +1,5 @@
+mod current_history;
+
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
@@ -33,6 +35,18 @@ struct ChatRecallParams {
     /// ISO 8601 date (e.g., '2025-10-15T23:59:59Z'). Search mode only.
     #[serde(skip_serializing_if = "Option::is_none")]
     before_date: Option<String>,
+    /// Search only this conversation, including original messages hidden from inference by compaction. Requires query.
+    #[serde(default)]
+    current_session: bool,
+    /// Retrieve an exact message from the current conversation by ID (use with offset for long messages).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message_id: Option<String>,
+    /// Character offset for message_id retrieval (default: 0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    offset: Option<usize>,
+    /// Maximum returned characters (default: 4000; maximum: 12000).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_chars: Option<usize>,
 }
 
 pub struct ChatRecallClient {
@@ -101,11 +115,14 @@ impl ChatRecallClient {
             .with_instructions(indoc! {r#"
                 Chat Recall
 
-                Search past conversations and load session summaries when the user expects some memory or context.
-
-                Two modes:
-                - Search mode: Use query with keywords/synonyms to find relevant messages
-                - Load mode: Use session_id to get first and last messages of a specific session
+                Search past conversations when the user expects memory or context. After compaction,
+                use current_session=true with a query to search this session's archived messages,
+                then message_id and offset to recover the original text. The compacted summary is
+                an index, not proof that every detail survived. Search other sessions only when needed.
+                - query: keywords for search
+                - session_id: first and last messages of another session
+                - current_session: search this session, including pre-compaction originals
+                - message_id: exact current-session message, with optional offset/max_chars
             "#}.to_string());
 
         Ok(Self { info, context })
@@ -130,6 +147,44 @@ impl ChatRecallClient {
         arguments: Option<JsonObject>,
     ) -> Result<Vec<ContentBlock>, String> {
         let arguments = arguments.ok_or("Missing arguments")?;
+        let current = arguments
+            .get("current_session")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+        let message_id = arguments.get("message_id").and_then(|v| v.as_str());
+        if current || message_id.is_some() {
+            if arguments.get("session_id").is_some() {
+                return Err("Current-session recall cannot load another session".to_string());
+            }
+            let session = self
+                .context
+                .session_manager
+                .get_session(current_session_id, true)
+                .await
+                .map_err(|error| error.to_string())?;
+            let conversation = session
+                .conversation
+                .as_ref()
+                .ok_or("Current session has no conversation")?;
+            let text = current_history::retrieve(
+                conversation,
+                arguments.get("query").and_then(|v| v.as_str()),
+                message_id,
+                arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(10) as usize,
+                arguments
+                    .get("offset")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as usize,
+                arguments
+                    .get("max_chars")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(4000) as usize,
+            )?;
+            return Ok(vec![agent_only_history(text)]);
+        }
 
         let target_session_id = arguments
             .get("session_id")
@@ -278,10 +333,10 @@ impl ChatRecallClient {
         vec![Tool::new(
             "chatrecall".to_string(),
             indoc! {r#"
-                Search past chat or load session summaries. Use when it is clear user expects some memory or context.
-
-                search mode (query): Use multiple keywords/synonyms. Returns messages grouped by session, ordered by recency. Supports date filters.
-                load mode (session_id): Returns first/last 3 messages of a session.
+                Search prior sessions or recover exact messages from this session after compaction.
+                current_session=true with query: search archived current-session messages; results include message IDs.
+                message_id with optional offset/max_chars: retrieve an exact current-session message in pages.
+                query alone: search other sessions by keywords; session_id alone: first/last 3 messages of another session.
             "#}
             .to_string(),
             input_schema,
@@ -482,5 +537,73 @@ mod tests {
                 .contains("agent-only secret marker"));
             assert!(!projected_tool_text(output, Role::User).contains("agent-only secret marker"));
         }
+    }
+
+    #[tokio::test]
+    async fn current_session_recovers_archived_original_without_cross_session_access() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = Arc::new(SessionManager::new(dir.path().to_path_buf()));
+        let current = manager
+            .create_session(
+                dir.path().to_path_buf(),
+                "current".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let other = manager
+            .create_session(
+                dir.path().to_path_buf(),
+                "other".to_string(),
+                SessionType::User,
+                GooseMode::default(),
+            )
+            .await
+            .unwrap();
+        let mut archived = Message::user()
+            .with_text("Archival sentinel: Córdoba 73")
+            .with_metadata(MessageMetadata::user_only());
+        archived.id = Some("archived-73".to_string());
+        manager.add_message(&current.id, &archived).await.unwrap();
+        manager
+            .add_message(
+                &other.id,
+                &Message::user().with_text("Other session sentinel"),
+            )
+            .await
+            .unwrap();
+        let client = ChatRecallClient::new(PlatformExtensionContext {
+            extension_manager: None,
+            providers: Default::default(),
+            session_manager: manager,
+            scheduler: None,
+            use_login_shell_path: false,
+        })
+        .unwrap();
+        let lookup = |value: serde_json::Value| Some(value.as_object().unwrap().clone());
+        let result = client
+            .handle_chatrecall(
+                &current.id,
+                lookup(serde_json::json!({"current_session": true, "query": "Córdoba"})),
+            )
+            .await
+            .unwrap();
+        assert!(projected_tool_text(result, Role::Assistant).contains("archived-73"));
+        let exact = client
+            .handle_chatrecall(
+                &current.id,
+                lookup(serde_json::json!({"message_id": "archived-73"})),
+            )
+            .await
+            .unwrap();
+        assert!(projected_tool_text(exact, Role::Assistant).contains("Córdoba 73"));
+        assert!(client
+            .handle_chatrecall(
+                &current.id,
+                lookup(serde_json::json!({"current_session": true, "session_id": other.id, "query": "sentinel"})),
+            )
+            .await
+            .is_err());
     }
 }

@@ -185,7 +185,7 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             Ok(result) => result,
             Err(error) => {
                 span.record("error.type", "compaction_error");
-                return Self::command_error(conversation, error.to_string(), emit);
+                return Self::command_error(conversation, format!("{error:#}"), emit);
             }
         };
         let compacted = result.conversation;
@@ -330,8 +330,12 @@ impl Operation<Session, GooseEffect> for CompactionOperation {
             }
             Err(e) => {
                 span.record("error.type", "compaction_error");
+                // The whole chain, not just the outermost label: a bare
+                // "Compaction stage 1 batch 6..7" told nobody anything.
+                let details = format!("{e:#}");
+                tracing::warn!(error = %details, "Compaction failed; original context preserved");
                 emit.message(Message::assistant().with_text(format!(
-                    "Ran into this error trying to compact: {e}.\n\n\
+                    "Ran into this error trying to compact: {details}.\n\n\
                      Please try again or create a new session"
                 )));
                 yielded()

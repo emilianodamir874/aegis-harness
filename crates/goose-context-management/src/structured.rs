@@ -454,11 +454,21 @@ in {brace handling} and patched it.
     fn renders_markdown_sections() {
         let summary = StructuredSummary::parse(FULL_RESPONSE).unwrap();
         let rendered = summary.render().expect("should render");
-        assert!(rendered.contains("## User Intent"));
+        assert!(rendered.contains("## Current User Intent and Constraints"));
         assert!(rendered.contains("- Fix the parser bug"));
         assert!(rendered.contains("### src/parser.rs"));
         assert!(rendered.contains("fn scan(&mut self) { .. }"));
         assert!(rendered.contains("## Next Step"));
+        assert!(
+            rendered
+                .find("## Current User Intent and Constraints")
+                .unwrap()
+                < rendered.find("## Pending Tasks").unwrap()
+        );
+        assert!(
+            rendered.find("## Pending Tasks").unwrap()
+                < rendered.find("## Relevant Files and Code").unwrap()
+        );
     }
 
     #[test]
@@ -476,9 +486,9 @@ in {brace handling} and patched it.
         };
         let rendered = summary.render().expect("should render");
         // key_code's longest backtick run is four, so the fence must be five
-        assert_eq!(rendered.matches("\n`````\n").count(), 2);
-        let errors_heading = rendered.find("## Errors + Fixes").unwrap();
-        let closing_fence = rendered.rfind("\n`````\n").unwrap();
-        assert!(errors_heading > closing_fence);
+        assert_eq!(rendered.lines().filter(|line| *line == "`````").count(), 2);
+        let errors_heading = rendered.find("## Errors and Fixes").unwrap();
+        let closing_fence = rendered.rfind("`````").unwrap();
+        assert!(errors_heading < closing_fence);
     }
 }

@@ -235,6 +235,23 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
+    fn subagent_prompt_preserves_tool_budget_and_verification() {
+        let prompt = render_template(
+            "subagent_system.md",
+            &serde_json::json!({
+                "max_turns": 12,
+                "tool_count": 2,
+                "available_tools": "developer__shell, developer__edit"
+            }),
+        )
+        .expect("subagent prompt renders");
+        assert!(prompt.contains("at most 12 turns"));
+        assert!(prompt.contains("Available tools (2): developer__shell, developer__edit"));
+        assert!(prompt.contains("necessary verification"));
+        assert!(prompt.contains("what the parent must do next"));
+    }
+
+    #[test]
     fn test_get_template() {
         let template = get_template("system.md");
         assert!(template.is_some(), "system.md should be registered");

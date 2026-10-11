@@ -26,6 +26,10 @@ pub struct SessionTelemetry {
     pub turn_started_at: Option<Instant>,
     pub response_ttft: Option<Duration>,
     pub context_limit: Option<usize>,
+    /// Token ceiling where goose starts compacting; the status bar shows this
+    /// instead of the provider's advertised window, which is the one that does
+    /// not actually bite.
+    compaction_limit: Option<usize>,
     pub compaction_count: Option<u64>,
     pub background_jobs: Option<usize>,
     pub git_branch: Option<String>,
@@ -62,6 +66,7 @@ impl SessionTelemetry {
             turn_started_at: None,
             response_ttft: None,
             context_limit: None,
+            compaction_limit: None,
             compaction_count: None,
             background_jobs: None,
             git_branch: None,
@@ -121,6 +126,13 @@ impl SessionTelemetry {
     /// Set only after querying the active provider; do not use a default model limit.
     pub fn set_context_limit(&mut self, limit: Option<usize>) {
         self.context_limit = limit.filter(|limit| *limit > 0);
+    }
+
+    /// `GOOSE_AUTO_COMPACT_TOKEN_LIMIT`, when configured. Shown in the status bar
+    /// beside the model window so an oversized request is visible before the
+    /// provider or the compactor rejects it.
+    pub fn set_compaction_limit(&mut self, limit: Option<usize>) {
+        self.compaction_limit = limit.filter(|limit| *limit > 0);
     }
 
     pub fn start_turn(&mut self, now: Instant) {
@@ -286,9 +298,13 @@ impl SessionTelemetry {
     pub fn status_bar(&self, now: DateTime<Utc>) -> String {
         let context = match (self.context_usage.total_tokens, self.context_limit) {
             (Some(used), Some(limit)) if used >= 0 => {
+                let cap = self.compaction_limit.filter(|cap| *cap > 0);
+                let shown = cap.map_or(limit, |cap| limit.min(cap));
+                let over = cap.is_some_and(|cap| used as u64 >= cap as u64);
                 format!(
-                    "{used}/{limit} ({:.0}%)",
-                    used as f64 / limit as f64 * 100.0
+                    "{used}/{shown} ({:.0}%){}",
+                    used as f64 / shown as f64 * 100.0,
+                    if over { " ⚠ compactar" } else { "" }
                 )
             }
             _ => "—".into(),

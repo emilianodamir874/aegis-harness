@@ -1029,7 +1029,7 @@ impl Provider for ChatGptCodexProvider {
             while let Some(message) = message_stream.next().await {
                 let (message, usage) = message.map_err(|e| {
                     e.downcast::<ProviderError>()
-                        .unwrap_or_else(ProviderError::stream_decode_error)
+                        .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
                 })?;
                 yield (message, usage);
             }

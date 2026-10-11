@@ -94,7 +94,13 @@ fn serve(mut stream: TcpStream, requests: Arc<AtomicUsize>) -> std::io::Result<(
 
     requests.fetch_add(1, Ordering::SeqCst);
     let payload = String::from_utf8_lossy(&body);
-    let step = if payload.contains("call_mock_1") || payload.contains("mock-tool-ok") {
+    let step = if payload.contains("PRESENTACION_TERMINAL_PROBE") {
+        if payload.contains("This is an interactive terminal chat") {
+            4
+        } else {
+            5
+        }
+    } else if payload.contains("call_mock_1") || payload.contains("mock-tool-ok") {
         3
     } else if payload.contains("segundo") {
         2
@@ -122,7 +128,24 @@ fn respond_sse(stream: &mut TcpStream, index: usize) -> std::io::Result<()> {
     )?;
     stream.flush()?;
 
-    if index == 2 {
+    if index == 4 || index == 5 {
+        let marker = if index == 4 {
+            "PROMPT_TERMINAL_OK"
+        } else {
+            "PROMPT_TERMINAL_MISSING"
+        };
+        for part in [
+            format!("{marker}\n\n| Proyecto | Estado | Descripción |\n| --- | --- | --- |\n| Servo | activo | Una comparación larga que no cabe en columnas y debe leerse en vertical. "),
+            "Incluye detalles sin perder una sola celda. |\n| Gosub | beta | Motor alternativo en Rust. |\n\nListo.".to_string(),
+        ] {
+            chunk(stream, &content_chunk(&part))?;
+            thread::sleep(Duration::from_millis(40));
+        }
+        chunk(
+            stream,
+            &json!({"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}).to_string(),
+        )?;
+    } else if index == 2 {
         for word in ["Necesito", "una", "herramienta."] {
             chunk(stream, &content_chunk(word))?;
         }
@@ -610,6 +633,75 @@ fn color_sequences(raw: &str) -> Vec<String> {
 }
 
 // -------------------------------------------------------------------- tests
+
+#[test]
+fn terminal_chat_uses_effective_prompt_and_streams_wide_table_as_cards() {
+    let model = MockModel::start();
+    let root = sandbox("adaptive-table");
+    let env = session_env(
+        &model,
+        &root,
+        &[("GOOSE_CLI_PLAIN", "1"), ("GOOSE_MODE", "auto")],
+    );
+    let mut terminal = Terminal::spawn(
+        goose_exe(),
+        &[
+            "session",
+            "--provider",
+            "openai",
+            "--model",
+            "mock-model",
+            "--no-profile",
+        ],
+        &env,
+        30,
+        80,
+    );
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("Chat interactivo"),
+            Duration::from_secs(60)
+        ),
+        "chat did not start: {}",
+        terminal.screen()
+    );
+    terminal.type_text("PRESENTACION_TERMINAL_PROBE");
+    terminal.press_enter();
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("Listo.") && screen.contains("Proyecto: Servo"),
+            Duration::from_secs(40)
+        ),
+        "table did not render: {}",
+        terminal.screen()
+    );
+    let screen = terminal.screen();
+    assert!(
+        screen.contains("PROMPT_TERMINAL_OK"),
+        "effective model prompt missing: {screen}"
+    );
+    assert!(
+        screen.contains("Estado: activo"),
+        "first row lost: {screen}"
+    );
+    assert!(
+        screen.contains("Proyecto: Gosub"),
+        "second row lost: {screen}"
+    );
+    assert!(
+        screen.contains("sin perder una sola celda"),
+        "streamed long cell lost: {screen}"
+    );
+    assert!(
+        !screen.contains("| ---"),
+        "unrendered Markdown table: {screen}"
+    );
+    assert!(
+        screen.contains("Goose"),
+        "assistant label missing: {screen}"
+    );
+    assert!(terminal.raw().contains("Listo."));
+}
 
 #[test]
 fn concurrent_ui_streams_without_colour_and_keeps_one_line_turn_summary() {

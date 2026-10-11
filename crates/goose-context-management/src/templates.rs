@@ -57,3 +57,25 @@ pub fn render<T: Serialize>(template: &str, context: &T) -> Result<String, MiniJ
         .render(MJValue::from_serialize(context))?;
     Ok(rendered.trim().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compaction_prompt_keeps_structured_contract_and_latest_user_priority() {
+        let template = builtin_template(COMPACTION_TEMPLATE).unwrap();
+        let rendered = render(
+            &template,
+            &serde_json::json!({"messages": "user: do not push"}),
+        )
+        .expect("compaction prompt renders");
+        assert!(rendered.contains("user: do not push"));
+        assert!(rendered.contains("most recent user correction"));
+        assert!(rendered.contains("verified observations"));
+        assert!(rendered.contains("pending_tasks"));
+        assert!(rendered.contains("current_work"));
+        assert!(rendered.contains("```json"));
+        assert!(!rendered.contains("spend your entire length budget"));
+    }
+}

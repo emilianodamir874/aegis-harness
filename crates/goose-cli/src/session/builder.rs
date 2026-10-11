@@ -615,12 +615,28 @@ async fn collect_extension_configs(
     Ok(all.into_iter().map(|(_, config)| config).collect())
 }
 
+const INTERACTIVE_TERMINAL_FORMAT: &str = "This is an interactive terminal chat. Format replies for readable terminal scrollback: use short headings, paragraphs and bullets. Use Markdown tables only for compact comparisons with brief cells that would fit in an approximately 80-column terminal; put long explanations in labeled sections or one block per item instead of wide tables. Do not pad tables manually or draw fixed-width ASCII layouts. Keep commands and code in fenced blocks without changing their contents. If the user specifically requests a table, provide one; the terminal renderer will adapt its layout. Never omit requested detail for presentation alone.";
+
+fn terminal_format_instructions(session_config: &SessionBuilderConfig) -> Option<&'static str> {
+    (session_config.interactive && session_config.output_format == "text")
+        .then_some(INTERACTIVE_TERMINAL_FORMAT)
+}
+
 async fn configure_session_prompts(
     session_manager: &SessionManager,
     session_id: &str,
     config: &Config,
     session_config: &SessionBuilderConfig,
 ) -> anyhow::Result<()> {
+    if let Some(instructions) = terminal_format_instructions(session_config) {
+        session_manager
+            .set_system_prompt_extra(
+                session_id,
+                "terminal_display",
+                Some(instructions.to_string()),
+            )
+            .await?;
+    }
     if let Some(ref additional_prompt) = session_config.additional_system_prompt {
         session_manager
             .set_system_prompt_extra(session_id, "additional", Some(additional_prompt.clone()))
@@ -901,6 +917,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             &effective_provider_name,
             &effective_model_name,
             &Some(session_id),
+            session_config.interactive,
         );
     }
     session
@@ -919,6 +936,24 @@ mod tests {
     use goose::config::{set_provider_entry, ProviderEntry};
     use goose::session::SessionManager;
     use tempfile::TempDir;
+
+    #[test]
+    fn terminal_formatting_only_for_interactive_text_sessions() {
+        let mut config = SessionBuilderConfig {
+            interactive: true,
+            ..Default::default()
+        };
+        let instructions = terminal_format_instructions(&config).unwrap();
+        assert!(instructions.contains("interactive terminal chat"));
+        assert!(instructions.contains("wide tables"));
+        config.output_format = "json".into();
+        assert!(terminal_format_instructions(&config).is_none());
+        config.output_format = "stream-json".into();
+        assert!(terminal_format_instructions(&config).is_none());
+        config.output_format = "text".into();
+        config.interactive = false;
+        assert!(terminal_format_instructions(&config).is_none());
+    }
 
     fn stdio_names(extensions: &[&str]) -> Vec<String> {
         let parsed = parse_cli_flag_extensions(

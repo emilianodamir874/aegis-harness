@@ -1,3 +1,4 @@
+mod adaptive_table;
 mod builder;
 mod completion;
 mod composer;
@@ -1489,6 +1490,7 @@ impl CliSession {
         let mut markdown_buffer = streaming_buffer::MarkdownBuffer::new();
         let mut prompted_credits_urls: HashSet<String> = HashSet::new();
         let mut thinking_header_shown = false;
+        let mut assistant_header_shown = false;
         let run_started = Instant::now();
         let mut first_token_at: Option<Instant> = None;
         let mut last_usage: Option<ProviderUsage> = None;
@@ -1674,6 +1676,10 @@ impl CliSession {
                                 if is_stream_json_mode {
                                     emit_stream_event(&StreamEvent::Message { message: message.clone() });
                                 } else if !is_json_mode {
+                                    if interactive && !assistant_header_shown && message.is_user_visible() && message_has_text(&message) {
+                                        output::render_chat_turn_header();
+                                        assistant_header_shown = true;
+                                    }
                                     output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug, &mut self.shell_outputs);
                                     if output::get_credits_top_up_url(&message).is_some() && interactive {
                                         if let Some(active) = composer.as_mut() { active.suspend()?; }
@@ -2109,6 +2115,12 @@ impl CliSession {
             .await
             .ok();
             self.telemetry.set_context_limit(limit);
+            self.telemetry.set_compaction_limit(
+                goose::config::Config::global()
+                    .get_param::<usize>("GOOSE_AUTO_COMPACT_TOKEN_LIMIT")
+                    .ok()
+                    .filter(|limit| *limit > 0),
+            );
             self.telemetry.provider = Some(provider.get_name().to_string());
             self.telemetry.model = Some(model_config.model_name);
         }

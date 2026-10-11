@@ -14,12 +14,17 @@ use crate::conversation::Conversation;
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
 
+/// The compaction engine only accepts the structured JSON summary the
+/// compaction prompt asks for, so the mock must answer with a real document.
+const SUMMARY_REPLY: &str =
+    r#"{"user_intent": ["the conversation was summarized and older turns were collapsed into this structured briefing so the run could continue"]}"#;
+
 #[tokio::test]
 async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("fill the context").reply("filled");
     api.on("check the budget").reply("budget checked");
-    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on(SUMMARIZE_HISTORY).reply(SUMMARY_REPLY);
     api.on("Your context was compacted")
         .reply("continued after compaction");
     api.on("after manual compaction").reply("still working");
@@ -155,7 +160,7 @@ async fn tokenless_provider_compacts_estimated_context() -> Result<()> {
         .await?;
     assert!(pipeline.session().await?.usage.total_tokens.is_none());
 
-    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on(SUMMARIZE_HISTORY).reply(SUMMARY_REPLY);
     api.on("Your context was compacted")
         .reply("continued after estimated compaction");
 
@@ -236,7 +241,7 @@ async fn text_that_looks_like_a_context_error_does_not_compact() -> Result<()> {
 async fn context_errors_compact_and_retry() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("overflow once").context_limit_error("too long");
-    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on(SUMMARIZE_HISTORY).reply(SUMMARY_REPLY);
     api.on("Your context was compacted")
         .reply("recovered after compaction");
 
@@ -258,13 +263,13 @@ async fn context_errors_compact_and_retry() -> Result<()> {
     assert_eq!(
         recovered.session.accumulated_usage.total_tokens,
         Some(
-            summary.input_tokens() + "summary".len() as i32 + retry.input_tokens() + output_tokens
+            summary.input_tokens() + SUMMARY_REPLY.len() as i32 + retry.input_tokens() + output_tokens
         )
     );
 
     api.on("Your context was compacted")
         .server_error("provider unavailable");
-    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on(SUMMARIZE_HISTORY).reply(SUMMARY_REPLY);
     api.on("real error")
         .context_limit_error("too long")
         .times(1);
@@ -289,7 +294,7 @@ async fn context_errors_compact_and_retry() -> Result<()> {
 async fn repeated_context_errors_stop_compacting() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     api.on("keep overflowing").context_limit_error("too long");
-    api.on(SUMMARIZE_HISTORY).reply("summary");
+    api.on(SUMMARIZE_HISTORY).reply(SUMMARY_REPLY);
     api.on("Your context was compacted")
         .context_limit_error("too long");
 
@@ -501,7 +506,7 @@ async fn a_small_model_compacts_a_large_tool_result_out_of_the_conversation() ->
     let filled_usage = (pipeline.context_limit() as f64 * 0.85) as i32;
     pipeline.set_total_tokens(filled_usage).await;
 
-    api.on(SUMMARIZE_HISTORY).reply("large work summarized");
+    api.on(SUMMARIZE_HISTORY).reply(SUMMARY_REPLY);
     api.on("Your context was compacted").reply("continued");
 
     let compacted = pipeline.run(["continue"]).await?;

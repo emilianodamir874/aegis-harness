@@ -1,45 +1,37 @@
-## Task Context
-- An llm context limit was reached when a user was in a working session with an agent (you)
-- Distill the conversation below into a structured summary with only the most verbose parts removed
-- Include user requests, your responses, all technical content, and as much of the original context as possible
-- This will be used to let the user continue the working session
-- The summary will be read by an agent (you) on a next exchange to allow for continuation of the session
+## Goal
+You are compacting a working conversation so the same agent can resume it accurately. Preserve the current task and its constraints, not a transcript of everything said. The most recent user correction or change of scope takes precedence over earlier plans.
 
-**Conversation History:**
+## Selection and fidelity
+- First capture the active request, explicit prohibitions, decisions already made, what has actually been completed, and the exact next action if the user has authorized it.
+- Preserve essential paths, commands, identifiers, parameters, error messages, test results and environment details needed to continue. Include exact text only when a mismatch would affect the next step; summarize long logs and repeated tool output.
+- Separate verified observations from untested assumptions, proposals, and pending checks. A passing mock or replay is not proof of a live system. Do not turn planned or delegated work into completed work.
+- Record failures that still matter and their fixes; omit detours whose outcome is fully superseded. Do not invent missing information or infer that a tool action succeeded merely because it was requested.
+- Capture durable user preferences only when they affect this task. Do not copy secrets, access tokens, passwords, or full credentials into the summary; describe where they are stored instead.
+- Keep the summary concise enough to resume efficiently. Spend space on continuation-critical details, not every message, path or code block. If the history is extensive, retain more necessary detail rather than imposing a rigid length cap.
+
+**Conversation history:**
 {{ messages }}
 
-Wrap reasoning in `<analysis>` tags:
-- Review conversation chronologically: user goals, your methods, key decisions, files, errors, fixes
-- Keep this brief - the analysis is discarded, so it is a checklist of what to include, not the place for detail
-
-After the closing `</analysis>` tag, output exactly one ```json code block and nothing else, matching this schema:
+Review the history privately, then output exactly one fenced ```json block and no other text. Keep the keys and types below; omit a field when no information belongs in it:
 
 ```json
 {
-  "user_intent": ["every user goal and request, most important first"],
-  "technical_concepts": ["all discussed tools, methods, and concepts"],
+  "user_intent": ["current user goal and operative constraints; include earlier goals only if still active"],
+  "pending_tasks": ["unfinished tasks with status and acceptance criteria, most urgent first"],
+  "current_work": "where work stopped, what is running or awaiting a result, and what was last verified",
+  "next_step": "only an action that directly continues a user instruction; otherwise omit",
+  "problem_solving": ["decisions, tradeoffs, verified outcomes, and important rejected approaches"],
+  "errors_and_fixes": ["unresolved failures or fixes necessary to avoid repeating a failure"],
   "files": [
     {
-      "path": "path of a file that was viewed or edited",
-      "summary": "what was done to it and why",
-      "key_code": "important code, signatures, or diffs from this file (omit if none)"
+      "path": "precise path of a relevant file",
+      "summary": "observed or performed change and its verification status",
+      "key_code": "only a small essential snippet or exact signature, if necessary"
     }
   ],
-  "errors_and_fixes": ["bugs hit, their resolutions, and user-driven changes"],
-  "problem_solving": ["issues solved or in progress, and key decisions: what was chosen, what was rejected, and why"],
-  "user_messages": ["all user messages, truncating long tool call arguments or results"],
-  "pending_tasks": ["all unresolved user requests, most important first"],
-  "current_work": "active work at summary request time: filenames, code, alignment to latest instruction",
-  "next_step": "include only if it directly continues a user instruction, otherwise omit"
+  "technical_concepts": ["only tools, methods and environment details needed to continue"],
+  "user_messages": ["exact latest correction or constraint only when its wording matters"]
 }
 ```
 
-Rules for the JSON:
-- The `<analysis>` block is a discarded scratchpad: only the JSON survives, so it must be self-contained and repeat every detail from the analysis that matters for continuing
-- Order every list from most to least important
-- Every list entry must be a plain string, not a nested object - except `files`, whose entries are objects shaped as shown above
-- Quote error messages, panic text, and failing test output verbatim in `errors_and_fixes` - exact strings including numbers, identifiers, and paths, not paraphrases
-- This summary will only be read by you, so it is ok to make it much longer than a normal summary you would show to a human: spend your entire length budget on the JSON fields, and quote liberally - full output blocks, complete code snippets, exact user wording
-- Do not exclude any information that might be important to continuing a session working with you
-- Omit a field rather than inventing content for it
-- No new ideas unless user confirmed
+Rules: all list entries are strings except `files`, whose entries are objects with the keys shown. Order lists by importance. Do not include placeholder entries, unsupported claims, scratch analysis, or text outside the JSON fence.

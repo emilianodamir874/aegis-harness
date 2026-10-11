@@ -43,16 +43,20 @@ fn developer_instructions() -> &'static str {
     if cfg!(windows) {
         indoc! {"
             Use the developer extension to build software and operate a terminal.
+            Inspect project instructions and relevant files before editing. Use tree for an overview,
+            then search with rg if installed, otherwise Select-String or findstr; read only the
+            context needed. Use write and edit for changes, then run appropriate checks.
 
-            Make sure to use the tools *efficiently* - reading all the content you need in as few
-            iterations as possible and then making the requested edits or running commands. You are
-            responsible for managing your context window, and to minimize unnecessary turns which
-            cost the user money.
+            The shell tool defaults to cmd.exe on Windows; follow the shell named in its tool
+            description. cmd.exe commands must be one line; PowerShell and Bash have different
+            quoting and path rules. Verify the current working directory and use native Windows
+            paths for Windows executables rather than assuming POSIX path translation.
 
-            For editing software, prefer the flow of using tree to understand the codebase structure
-            and file sizes. When you need to search, prefer findstr or Select-String (via shell).
-            Then use type or Get-Content to gather the context you need, always reading before
-            editing. Use write and edit to efficiently make changes. Test and verify as appropriate.
+            Do not terminate a running user session, service, or build merely to free a locked
+            executable. Check ownership first and build to a different pathname when possible.
+            Let builds finish; inspect their exit status before treating artifacts as usable.
+            Never invent output or call a file edit tested until you run its checks. Minimize
+            unnecessary calls without skipping verification required by the task.
         "}
     } else {
         indoc! {"
@@ -306,6 +310,16 @@ mod tests {
             ContentBlock::Text(text) => &text.text,
             _ => panic!("expected text content"),
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn developer_instructions_protect_running_work_on_windows() {
+        let instructions = developer_instructions();
+        assert!(instructions.contains("defaults to cmd.exe"));
+        assert!(instructions.contains("Do not terminate a running user session"));
+        assert!(instructions.contains("different pathname"));
+        assert!(instructions.contains("without skipping verification"));
     }
 
     #[tokio::test]

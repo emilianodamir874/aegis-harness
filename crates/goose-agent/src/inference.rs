@@ -14,6 +14,7 @@ use goose_provider_types::conversation::{
 };
 use goose_provider_types::errors::ProviderError;
 use goose_provider_types::model::ModelConfig;
+use goose_provider_types::retry::{backoff_sleep, should_retry, RetryConfig};
 use tracing_futures::Instrument;
 
 use crate::operation::{
@@ -341,6 +342,46 @@ impl<'a, S: MaybeSync, E: InferenceEffect> InferenceRunner<'a, S, E> {
         emit.message(message);
     }
 
+    /// Waits out the backoff before retrying a transient provider failure, and
+    /// says why in the logs. Returns `false` if the user cancelled first.
+    async fn wait_to_retry(
+        &self,
+        err: &ProviderError,
+        attempt: usize,
+        config: &RetryConfig,
+        emit: &Emitter,
+    ) -> bool {
+        let delay = match err {
+            ProviderError::RateLimitExceeded {
+                retry_delay: Some(delay),
+                ..
+            } => *delay,
+            _ => config.delay_for_attempt(attempt + 1),
+        };
+        tracing::warn!(
+            %err,
+            attempt = attempt + 1,
+            max_retries = config.max_retries(),
+            delay_ms = delay.as_millis() as u64,
+            "Provider stream failed before its first item; retrying the same request"
+        );
+
+        // The same escape hatch the legacy agent path exposes: tests, and users
+        // on a fast-but-flaky network, can skip the wait.
+        if std::env::var("GOOSE_PROVIDER_SKIP_BACKOFF")
+            .unwrap_or_default()
+            .parse::<bool>()
+            .unwrap_or(false)
+        {
+            return !emit.cancel_token().is_cancelled();
+        }
+
+        tokio::select! {
+            _ = backoff_sleep(delay) => true,
+            _ = emit.cancelled() => false,
+        }
+    }
+
     fn error_outcome(&self, err: &ProviderError, emit: &Emitter) -> Result<OperationResult<E>> {
         tracing::Span::current().record("error.type", err.telemetry_type());
         tracing::error!("LLM provider error: {err}");
@@ -434,7 +475,14 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             let successful_tool_response =
                 ends_with_successful_tool_response(conversation.messages());
             let mut empty_responses = 0;
-            let empty_output = loop {
+            // Same contract as the legacy agent path
+            // (`stream_response_from_provider`): the provider's own retry policy,
+            // transient failures only, and no retry at all for providers that own
+            // their conversation state, where re-running a request could
+            // duplicate work.
+            let retry_config = self.provider.retry_config().transient_only();
+            let mut transient_retries = 0;
+            let empty_output = 'attempt: loop {
             let attempt_start = self.output().usage.len();
             let stream = self
                 .provider
@@ -448,7 +496,19 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
 
             let mut stream = match stream {
                 Ok(stream) => stream,
-                Err(err) => return self.error_outcome(&err, emit),
+                Err(err) => {
+                    if !self.provider.manages_own_context()
+                        && should_retry(&err, &retry_config)
+                        && transient_retries < retry_config.max_retries()
+                        && self
+                            .wait_to_retry(&err, transient_retries, &retry_config, emit)
+                            .await
+                    {
+                        transient_retries += 1;
+                        continue;
+                    }
+                    return self.error_outcome(&err, emit);
+                }
             };
 
             let requested_model = self.model_config.model_name.clone();
@@ -467,10 +527,30 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
             });
 
             let mut tool_request_ids = std::collections::HashSet::new();
+            let mut emitted_output = false;
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = match result {
                     Ok(chunk) => chunk,
-                    Err(err) => return self.error_outcome(&err, emit),
+                    Err(err) => {
+                        // The stream died mid-flight. Re-sending the request is
+                        // only safe while nothing was shown yet: with content
+                        // already on screen the retry would duplicate it.
+                        if !emitted_output
+                            && !self.provider.manages_own_context()
+                            && should_retry(&err, &retry_config)
+                            && transient_retries < retry_config.max_retries()
+                            && self
+                                .wait_to_retry(&err, transient_retries, &retry_config, emit)
+                                .await
+                        {
+                            transient_retries += 1;
+                            let mut output = self.output();
+                            output.accumulator.clear();
+                            output.usage.truncate(attempt_start);
+                            continue 'attempt;
+                        }
+                        return self.error_outcome(&err, emit);
+                    }
                 };
                 if let Some(usage) = usage_opt {
                     record_chat_usage(&tracing::Span::current(), &usage);
@@ -492,6 +572,7 @@ impl<S: MaybeSync, E: InferenceEffect> Inference<S, E> for InferenceRunner<'_, S
                     if chunk.content.is_empty() && !chunk.metadata.output_token_limit_reached {
                         self.output().accumulator.push(chunk);
                     } else {
+                        emitted_output = true;
                         self.emit_message(chunk, emit);
                     }
                 }

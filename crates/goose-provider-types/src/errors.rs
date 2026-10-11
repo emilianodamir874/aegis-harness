@@ -65,6 +65,21 @@ impl ProviderError {
         ProviderError::NetworkError(format!("Stream decode error: {error}"))
     }
 
+    /// Like [`Self::stream_decode_error`], but keeps the whole cause chain of an
+    /// `anyhow::Error` instead of only its outermost message.
+    ///
+    /// Transport failures are why this exists: `reqwest` reports a bare
+    /// `error decoding response body` at the top level and keeps the real reason
+    /// (`connection reset by peer`, `unexpected EOF during chunk size line`, ...)
+    /// in the sources below it. Dropping them made a connection dropped
+    /// mid-stream indistinguishable from a broken decoder.
+    pub fn stream_decode_error_with_causes(error: &anyhow::Error) -> Self {
+        ProviderError::NetworkError(format!(
+            "Stream decode error: {}",
+            redact_credentials(&format!("{error:#}"))
+        ))
+    }
+
     pub fn telemetry_type(&self) -> &'static str {
         match self {
             ProviderError::NotConfigured => "not_configured",
@@ -94,7 +109,7 @@ impl ProviderError {
     pub fn from_stream_error(error: anyhow::Error) -> Self {
         error
             .downcast()
-            .unwrap_or_else(ProviderError::stream_decode_error)
+            .unwrap_or_else(|error| ProviderError::stream_decode_error_with_causes(&error))
     }
 }
 
@@ -120,6 +135,30 @@ fn sanitized_reqwest_url(error: &reqwest::Error) -> Option<String> {
     url.set_query(None);
     url.set_fragment(None);
     Some(url.to_string())
+}
+
+/// Strips `user:password@` userinfo from every `scheme://...` token in `text`.
+///
+/// Provider diagnostics quote URLs verbatim, and the cause chain ends up in
+/// stored conversations and logs, so credentials must not ride along.
+fn redact_credentials(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((head, tail)) = rest.split_once("://") {
+        out.push_str(head);
+        out.push_str("://");
+        let authority_end = tail
+            .find(|c: char| c == '/' || c.is_whitespace())
+            .unwrap_or(tail.len());
+        let (authority, remainder) = tail.split_at(authority_end);
+        match authority.rsplit_once('@') {
+            Some((_userinfo, host)) => out.push_str(host),
+            None => out.push_str(authority),
+        }
+        rest = remainder;
+    }
+    out.push_str(rest);
+    out
 }
 
 fn reqwest_error_category(error: &reqwest::Error) -> &'static str {
@@ -278,6 +317,51 @@ mod tests {
         assert!(!message.contains("url-password"));
         assert!(message.contains("status: 401 Unauthorized"));
         assert!(message.contains(&format!("http://{address}/chat")));
+    }
+
+    #[test]
+    fn stream_decode_error_keeps_the_cause_chain() {
+        #[derive(Debug)]
+        struct Cause;
+        impl std::fmt::Display for Cause {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("connection reset by peer")
+            }
+        }
+        impl std::error::Error for Cause {}
+
+        #[derive(Debug)]
+        struct Transport(Cause);
+        impl std::fmt::Display for Transport {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("error decoding response body")
+            }
+        }
+        impl std::error::Error for Transport {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        let error = anyhow::Error::new(Transport(Cause));
+        let message = ProviderError::stream_decode_error_with_causes(&error).to_string();
+        assert_eq!(
+            message,
+            "Network error: Stream decode error: error decoding response body: connection reset by peer"
+        );
+    }
+
+    #[test]
+    fn credential_redaction_covers_the_cause_chain() {
+        assert_eq!(redact_credentials("no url here"), "no url here");
+        assert_eq!(
+            redact_credentials("error decoding: ftp://user:secret@provider.invalid/chat"),
+            "error decoding: ftp://provider.invalid/chat"
+        );
+        assert_eq!(
+            redact_credentials("https://a:hidden@x.invalid/v1 and https://plain.invalid/v1"),
+            "https://x.invalid/v1 and https://plain.invalid/v1"
+        );
     }
 }
 

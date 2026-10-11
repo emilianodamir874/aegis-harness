@@ -416,6 +416,15 @@ mod tests {
     }
 
     #[test]
+    fn main_prompt_requires_real_work_and_verification() {
+        let prompt = PromptManager::new().builder().build();
+        assert!(prompt.contains("use available tools to perform the work"));
+        assert!(prompt.contains("Check results before declaring completion"));
+        assert!(prompt.contains("Do not fabricate tool output"));
+        assert!(prompt.contains("Never publish, push, or change credentials"));
+    }
+
+    #[test]
     fn test_basic() {
         let manager = PromptManager::with_timestamp(DateTime::<Utc>::from_timestamp(0, 0).unwrap());
 

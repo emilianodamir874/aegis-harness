@@ -83,8 +83,8 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 name: chatrecall::EXTENSION_NAME,
                 display_name: "Chat Recall",
                 description:
-                    "Search past conversations and load session summaries for contextual memory",
-                default_enabled: false,
+                    "Search other sessions and retrieve original messages in this session after compaction",
+                default_enabled: true,
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| {

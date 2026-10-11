@@ -1323,8 +1323,12 @@ fn plain_markdown(content: &str) -> String {
         let mut chars = with_links.chars().peekable();
         while let Some(ch) = chars.next() {
             if ch == '\\' {
-                if let Some(escaped) = chars.next() {
-                    cleaned.push(escaped);
+                if chars.peek().is_some_and(|next| {
+                    matches!(next, '`' | '*' | '_' | '~' | '[' | ']' | '(' | ')' | '|')
+                }) {
+                    cleaned.push(chars.next().unwrap());
+                } else {
+                    cleaned.push(ch);
                 }
                 continue;
             }
@@ -1500,87 +1504,13 @@ fn extract_markdown_table(content: &str) -> Option<(String, Vec<&str>, &str)> {
 }
 
 fn print_table(table_lines: &[&str], theme: Theme) {
-    use comfy_table::{presets, Cell, CellAlignment, ContentArrangement, Table};
-
-    let mut table = Table::new();
-    table.set_content_arrangement(ContentArrangement::Dynamic);
-
-    table.load_style(presets::ASCII_MARKDOWN);
-
-    let mut rows: Vec<Vec<String>> = Vec::new();
-    let mut alignments: Vec<CellAlignment> = Vec::new();
-    let mut separator_idx = None;
-
-    for (i, line) in table_lines.iter().enumerate() {
-        let cells: Vec<String> = line
-            .trim()
-            .trim_matches('|')
-            .split('|')
-            .map(|s| s.trim().to_string())
-            .collect();
-
-        let is_separator = cells.iter().all(|c| {
-            let t = c.trim();
-            t.chars().all(|ch| ch == '-' || ch == ':') && t.contains('-')
-        });
-        if is_separator {
-            separator_idx = Some(i);
-            alignments = cells
-                .iter()
-                .map(|c| {
-                    let t = c.trim();
-                    if t.starts_with(':') && t.ends_with(':') {
-                        CellAlignment::Center
-                    } else if t.ends_with(':') {
-                        CellAlignment::Right
-                    } else {
-                        CellAlignment::Left
-                    }
-                })
-                .collect();
-        } else {
-            rows.push(cells);
-        }
-    }
-
-    if separator_idx.is_none() && !rows.is_empty() {
-        alignments = vec![CellAlignment::Left; rows[0].len()];
-    }
-
-    if let Some(header) = rows.first() {
-        let header_cells: Vec<Cell> = header
-            .iter()
-            .enumerate()
-            .map(|(i, text)| {
-                let cell = Cell::new(text);
-                if let Some(align) = alignments.get(i) {
-                    cell.set_alignment(*align)
-                } else {
-                    cell
-                }
-            })
-            .collect();
-        table.set_header(header_cells);
-    }
-
-    for row in rows.iter().skip(1) {
-        let cells: Vec<Cell> = row
-            .iter()
-            .enumerate()
-            .map(|(i, text)| {
-                let cell = Cell::new(text);
-                if let Some(align) = alignments.get(i) {
-                    cell.set_alignment(*align)
-                } else {
-                    cell
-                }
-            })
-            .collect();
-        table.add_row(cells);
-    }
-
-    let table_str = table.to_string();
-    print_markdown_raw(&table_str, theme);
+    let width = Term::stdout()
+        .size_checked()
+        .map(|(_, columns)| usize::from(columns))
+        .unwrap_or(80);
+    let formatted = super::adaptive_table::format_table(table_lines, width, plain_markdown)
+        .unwrap_or_else(|| table_lines.join("\n"));
+    print_markdown_raw(&formatted, theme);
 }
 
 const INDENT: &str = "    ";
@@ -1726,6 +1656,7 @@ pub fn display_session_info(
     provider: &str,
     model: &str,
     session_id: &Option<String>,
+    interactive: bool,
 ) {
     set_terminal_title();
 
@@ -1776,6 +1707,38 @@ pub fn display_session_info(
         "  {}  {}",
         style("   L L").white(),
         style("   goose is ready").white()
+    );
+    if interactive {
+        let columns = Term::stdout()
+            .size_checked()
+            .map(|(_, width)| usize::from(width))
+            .unwrap_or(80);
+        let hint = if columns < 24 {
+            "  /help"
+        } else if columns < 65 {
+            "  /help · /model · /exit"
+        } else {
+            "                 Chat interactivo · /help · /model · /exit"
+        };
+        println!("{}", style(hint).dim());
+    }
+}
+
+pub fn render_chat_turn_header() {
+    let columns = Term::stdout()
+        .size_checked()
+        .map(|(_, width)| usize::from(width))
+        .unwrap_or(80);
+    if columns < 17 {
+        println!("\nGoose");
+        return;
+    }
+    let rule = "─".repeat(columns.saturating_sub(13).min(36));
+    println!(
+        "\n  {} {} {}",
+        style("──").dim(),
+        style("Goose").cyan(),
+        style(rule).dim()
     );
 }
 
@@ -2382,5 +2345,15 @@ mod tests {
         assert!(!rendered.contains("```"));
         assert!(rendered.contains("foo_bar stays"));
         assert!(!rendered.contains('\u{1b}'), "plain markdown emits no ANSI");
+    }
+
+    #[test]
+    fn plain_markdown_keeps_literal_windows_paths_and_escaped_pipes() {
+        let rendered = plain_markdown(
+            r"C:\Users\Emiliano\.agents\notes.txt and \\server\share\file.txt; a\|b",
+        );
+        assert!(rendered.contains(r"C:\Users\Emiliano\.agents\notes.txt"));
+        assert!(rendered.contains(r"\\server\share\file.txt"));
+        assert!(rendered.contains("a|b"));
     }
 }

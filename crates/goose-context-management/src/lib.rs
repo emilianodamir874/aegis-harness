@@ -11,6 +11,7 @@
 //! Cross-language (Python/Kotlin) access is exposed by `goose-sdk`, which
 //! wraps this crate in its uniffi bindings.
 
+pub mod chunked;
 pub mod format;
 pub mod model;
 pub mod provider;
@@ -22,6 +23,7 @@ use anyhow::Result;
 use goose_provider_types::conversation::message::Message;
 use goose_provider_types::conversation::token_usage::ProviderUsage;
 
+pub use chunked::summarize_in_chunks;
 pub use format::format_message_for_compacting;
 pub use model::{CompactionModel, ProviderModel, TokenEstimator};
 pub use provider::CompactingProvider;

@@ -74,7 +74,7 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
         ("GOOSE_DISABLE_SESSION_NAMING", Some("true")),
     ]);
     let config = Config::global();
-    assert_eq!(auto_compact_threshold(1_000_000), 0.225);
+    assert_eq!(auto_compact_threshold(1_000_000), 0.8);
     assert_eq!(auto_compact_threshold(200_000), 0.8);
     assert_eq!(auto_compact_threshold(0), 0.8);
 
@@ -89,6 +89,11 @@ async fn effective_trigger_and_agent_execution_follow_the_current_model() -> Res
             GooseMode::default(),
         )
         .await?;
+
+    for (context, trigger) in [(1_000_000, 800_000), (200_000, 160_000)] {
+        verify_reply(&agent, &session.id, context, trigger - 1, false).await?;
+        verify_reply(&agent, &session.id, context, trigger + 1, true).await?;
+    }
 
     for (percentage, cap, context, trigger) in [
         (0.8_f64, 225_000, 1_000_000, 225_000),

@@ -250,7 +250,7 @@ pub fn stream_openai_compat(
         while let Some(message) = message_stream.next().await {
             let (message, usage) = message.map_err(|e|
                 e.downcast::<ProviderError>()
-                    .unwrap_or_else(ProviderError::stream_decode_error)
+                    .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
             )?;
             log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
             yield (message, usage);
@@ -274,7 +274,7 @@ pub fn stream_responses_compat(
         while let Some(message) = message_stream.next().await {
             let (message, usage) = message.map_err(|e|
                 e.downcast::<ProviderError>()
-                    .unwrap_or_else(ProviderError::stream_decode_error)
+                    .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
             )?;
             log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
             yield (message, usage);

@@ -1,5 +1,7 @@
 use crate::conversation::message::Message;
-use crate::providers::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use crate::providers::base::{
+    ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata,
+};
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
 use anyhow::{anyhow, Result};
 use async_stream::try_stream;
@@ -24,6 +26,19 @@ use uuid::Uuid;
 const NAME: &str = "antigravity";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const DEFAULT_MODEL: &str = "gemini-3.8-flash-medium";
+const GEMINI_38_CONTEXT_LIMIT: usize = 1_048_576;
+
+fn advertised_context_limit(model: &str) -> Option<usize> {
+    matches!(
+        model,
+        "gemini-3.8-flash"
+            | "gemini-3.8-flash-high"
+            | "gemini-3.8-flash-medium"
+            | "gemini-3.8-flash-low"
+    )
+    .then_some(GEMINI_38_CONTEXT_LIMIT)
+}
+
 const ENDPOINTS: &[&str] = &[
     "https://daily-cloudcode-pa.googleapis.com",
     "https://daily-cloudcode-pa.sandbox.googleapis.com",
@@ -453,12 +468,21 @@ fn unwrap_sse(line: &str) -> String {
 
 impl goose_providers::base::ProviderDescriptor for AntigravityProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        ProviderMetadata::with_models(
             NAME,
             "Antigravity",
             "Use your existing agy login via Windows Credential Manager",
             DEFAULT_MODEL,
-            MODELS.to_vec(),
+            MODELS
+                .iter()
+                .map(|name| {
+                    let info = ModelInfo::new(*name);
+                    match advertised_context_limit(name) {
+                        Some(limit) => info.with_context_limit(limit),
+                        None => info,
+                    }
+                })
+                .collect(),
             "https://github.com/aaif-goose/goose",
             vec![ConfigKey::new_oauth(
                 "ANTIGRAVITY_TOKEN",
@@ -485,6 +509,15 @@ impl ProviderDef for AntigravityProvider {
 impl Provider for AntigravityProvider {
     fn get_name(&self) -> &str {
         NAME
+    }
+
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        if let Some(limit) = override_limit.or_else(|| advertised_context_limit(model)) {
+            return limit;
+        }
+        goose_providers::context_limit::ContextLimitResolver::new(NAME)
+            .resolve(model, None, || async { Ok(None) })
+            .await
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
@@ -579,8 +612,10 @@ impl Provider for AntigravityProvider {
             let parsed = response_to_streaming_message(lines);
             pin!(parsed);
             while let Some(item) = parsed.next().await {
-                let (message, usage) = item.map_err(|e| e.downcast::<ProviderError>()
-                    .unwrap_or_else(ProviderError::stream_decode_error))?;
+                let (message, usage) = item.map_err(|e| {
+                    e.downcast::<ProviderError>()
+                        .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
+                })?;
                 if message.is_some() || usage.is_some() {
                     log.write(&message, usage.as_ref().map(|u| u.usage).as_ref())?;
                 }
@@ -593,6 +628,42 @@ impl Provider for AntigravityProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use goose_providers::base::ProviderDescriptor;
+
+    #[tokio::test]
+    async fn gemini_38_aliases_have_documented_context_with_override_precedence() {
+        let provider = AntigravityProvider {
+            http: reqwest::Client::new(),
+            session: Mutex::new(None),
+            conversation_id: String::new(),
+            trajectory_id: String::new(),
+        };
+        for alias in [
+            "gemini-3.8-flash",
+            "gemini-3.8-flash-high",
+            "gemini-3.8-flash-medium",
+            "gemini-3.8-flash-low",
+        ] {
+            assert_eq!(provider.get_context_limit(alias, None).await, 1_048_576);
+            assert_eq!(
+                provider.get_context_limit(alias, Some(64_000)).await,
+                64_000
+            );
+            let info = AntigravityProvider::metadata()
+                .known_models
+                .into_iter()
+                .find(|info| info.name == alias)
+                .unwrap();
+            assert_eq!(info.context_limit, Some(1_048_576));
+        }
+        assert_eq!(
+            provider
+                .get_context_limit("unknown-antigravity-alias", None)
+                .await,
+            goose_providers::model::DEFAULT_CONTEXT_LIMIT
+        );
+    }
+
     #[test]
     fn envelope_places_session_inside_request() {
         let body = wrap_request(

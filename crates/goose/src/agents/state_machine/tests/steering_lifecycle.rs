@@ -6,6 +6,10 @@ use crate::conversation::message::Message;
 
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 
+/// The compaction engine only accepts structured summary JSON; keep the mock valid.
+const SUMMARY_REPLY: &str =
+    r#"{"user_intent": ["the steered work was summarized and the run continued with the latest steering applied"]}"#;
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn steering_is_fifo_during_inference_and_survives_compaction() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -44,10 +48,12 @@ async fn steering_is_fifo_during_inference_and_survives_compaction() -> Result<(
     assert!(calls[1].input_contains("first use blue"));
     assert!(calls[1].input_contains("then make it matte"));
 
+    // Large enough to cross the auto-compact threshold, small enough that the
+    // follow-up request stays under the mock's character-counted limit.
     let large_response = "x"
-        .repeat((pipeline.context_limit() as f64 * pipeline::COMPACTION_THRESHOLD * 1.01) as usize);
+        .repeat((pipeline.context_limit() as f64 * pipeline::COMPACTION_THRESHOLD * 0.85) as usize);
     let held_response = api.on("continue near the limit").hold_reply(large_response);
-    api.on(SUMMARIZE_HISTORY).reply("steered work summarized");
+    api.on(SUMMARIZE_HISTORY).reply(SUMMARY_REPLY);
     api.on("Your context was compacted")
         .reply("continued after steering compaction");
 
@@ -70,7 +76,12 @@ async fn steering_is_fifo_during_inference_and_survives_compaction() -> Result<(
         .into_iter()
         .find(|call| call.input_contains(SUMMARIZE_HISTORY))
         .expect("compaction request");
-    assert!(summarization.system_contains("redirect before compaction"));
+    // The steer is the most recent turn, so it follows the summary verbatim
+    // instead of entering it; it must survive in the next request instead.
+    assert!(!summarization.system_contains("redirect before compaction"));
+    let after_compaction = api.calls();
+    let after_compaction = after_compaction.last().expect("post-compaction request");
+    assert!(after_compaction.input_contains("redirect before compaction"));
 
     Ok(())
 }

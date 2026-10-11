@@ -57,6 +57,57 @@ pub fn process_tool_response(
                 }
             }
 
+            // Many blocks each under the threshold can still add up to a request
+            // the provider refuses to accept (a 2.3 MB tool message did). When
+            // the remaining text still exceeds the threshold, spill all of it
+            // to a single file and leave one pointer behind.
+            let remaining_total: usize = processed_contents
+                .iter()
+                .filter_map(|content| content.as_text())
+                .map(|text| text.text.chars().count())
+                .sum();
+            let remaining_blocks = processed_contents
+                .iter()
+                .filter(|content| content.as_text().is_some())
+                .count();
+            if remaining_blocks > 0 && remaining_total > threshold {
+                let joint = processed_contents
+                    .iter()
+                    .filter_map(|content| content.as_text())
+                    .map(|text| text.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let replacement = match write_large_text_to_file(&joint) {
+                    Ok(file_path) => ContentBlock::text(format!(
+                        "The response returned from the tool call was larger ({} characters across {} blocks) and is stored in the file which you can use other tools to examine or search in: {}",
+                        remaining_total, remaining_blocks, file_path
+                    )),
+                    Err(e) => {
+                        tracing::warn!(
+                            %e,
+                            "Failed to write an oversized tool response to a file"
+                        );
+                        ContentBlock::text(format!(
+                            "Warning: Failed to write large response to file: {}. Showing full content instead.\n\n{}",
+                            e, joint
+                        ))
+                    }
+                };
+                let mut rebuilt = Vec::with_capacity(processed_contents.len());
+                let mut replaced = false;
+                for content in processed_contents {
+                    if content.as_text().is_some() {
+                        if !replaced {
+                            rebuilt.push(replacement.clone());
+                            replaced = true;
+                        }
+                    } else {
+                        rebuilt.push(content);
+                    }
+                }
+                processed_contents = rebuilt;
+            }
+
             result.content = processed_contents;
             Ok(result)
         }
@@ -246,6 +297,37 @@ mod tests {
         assert!(paths_are_distinct);
         assert_eq!(first_content, "first response");
         assert_eq!(second_content, "second response");
+    }
+
+    #[test]
+    fn test_aggregate_text_over_threshold_is_redirected_to_one_file() {
+        let threshold = max_tool_response_size();
+        let chunk = "b".repeat((threshold / 2).max(1));
+        let blocks = (0..4)
+            .map(|_| ContentBlock::text(chunk.clone()))
+            .collect::<Vec<_>>();
+
+        let processed = process_tool_response(Ok(CallToolResult::success(blocks))).unwrap();
+
+        assert_eq!(processed.content.len(), 1);
+        let text_content = processed.content[0].as_text().expect("reference message");
+        assert!(text_content
+            .text
+            .contains("The response returned from the tool call was larger"));
+        assert!(text_content.text.contains("across 4 blocks"));
+
+        let file_path = text_content
+            .text
+            .rsplit_once(": ")
+            .expect("spill message should contain a file path")
+            .1;
+        let path = Path::new(file_path.trim());
+        let expected = (0..4)
+            .map(|_| chunk.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(fs::read_to_string(path).unwrap(), expected);
+        fs::remove_file(path).unwrap();
     }
 
     #[cfg(unix)]

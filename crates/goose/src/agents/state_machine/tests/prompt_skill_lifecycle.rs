@@ -14,6 +14,10 @@ use crate::config::GooseMode;
 #[cfg(feature = "code-mode")]
 use crate::conversation::message::MessageContent;
 
+/// The compaction engine only accepts structured summary JSON; keep the mock valid.
+const SUMMARY_REPLY: &str =
+    r#"{"user_intent": ["the conversation was summarized so the compacted session could continue"]}"#;
+
 #[tokio::test]
 async fn prompt_and_skill_lifecycle() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
@@ -39,13 +43,15 @@ async fn prompt_and_skill_lifecycle() -> Result<()> {
     assert!(calls[calls.len() - 1].system_contains("NESTED_PROJECT_INSTRUCTION"));
 
     api.on("Please summarize the conversation history")
-        .reply("summary");
+        .reply(SUMMARY_REPLY);
     pipeline.run(["/compact"]).await?;
     api.on("after compaction").reply("continuing");
     pipeline.run(["after compaction"]).await?;
     let after_compaction = api.calls().pop().unwrap();
     assert!(after_compaction.system_contains("ROOT_PROJECT_INSTRUCTION"));
-    assert!(!after_compaction.system_contains("NESTED_PROJECT_INSTRUCTION"));
+    // The nested work is the most recent turn, kept verbatim through
+    // compaction, so its subdirectory hint stays active for this request.
+    assert!(after_compaction.system_contains("NESTED_PROJECT_INSTRUCTION"));
 
     let skill_dir = pipeline.working_dir().join(".agents/skills/review");
     std::fs::create_dir_all(&skill_dir)?;
