@@ -508,11 +508,32 @@ impl Completer for GooseCompleter {
 // Implement the Helper trait which is required by rustyline
 impl Helper for GooseCompleter {}
 
+/// Inline list of slash commands matching a partial prefix — shown as a dim
+/// hint as soon as `/` is typed, so the full menu appears without pressing
+/// Tab, and narrows as typing continues. Exact matches return None.
+pub(crate) fn slash_command_suggestions(line: &str) -> Option<String> {
+    if !line.starts_with('/') || line.contains(' ') {
+        return None;
+    }
+    let matches: Vec<&str> = super::input::COMPLETION_COMMANDS
+        .iter()
+        .copied()
+        .filter(|command| command.starts_with(line) && *command != line)
+        .collect();
+    if matches.is_empty() {
+        return None;
+    }
+    Some(matches.join(" "))
+}
+
 // Implement required traits with default implementations
 impl Hinter for GooseCompleter {
     type Hint = String;
 
     fn hint(&self, line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<Self::Hint> {
+        if let Some(suggestions) = slash_command_suggestions(line) {
+            return Some(suggestions);
+        }
         let cache = self.completion_cache.read().unwrap();
 
         if !line.is_empty() && cache.hint_status != HintStatus::Default {
@@ -901,5 +922,22 @@ mod tests {
             .complete_argument_keys("/prompt nonexistent")
             .unwrap();
         assert_eq!(candidates.len(), 0);
+    }
+
+    #[test]
+    fn slash_hint_lists_all_commands_and_narrows() {
+        let all = slash_command_suggestions("/").expect("bare slash lists commands");
+        assert!(all.contains("/clear"));
+        assert!(all.contains("/compact"));
+        assert!(all.contains("/ctx"));
+        assert!(all.contains("/usage"));
+        let narrowed = slash_command_suggestions("/c").expect("prefix narrows the list");
+        assert!(narrowed.contains("/clear"));
+        assert!(narrowed.contains("/compact"));
+        assert!(narrowed.contains("/ctx"));
+        assert!(!narrowed.contains("/usage"));
+        assert!(slash_command_suggestions("/clear").is_none());
+        assert!(slash_command_suggestions("/nope").is_none());
+        assert!(slash_command_suggestions("plain text").is_none());
     }
 }

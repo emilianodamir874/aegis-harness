@@ -206,7 +206,8 @@ thread_local! {
     static THINKING: RefCell<ThinkingIndicator> = RefCell::new(ThinkingIndicator::default());
     /// Latest activity label, mirrored into the concurrent composer's status row
     /// while it solely owns the terminal.
-    static COMPOSER_ACTIVITY: RefCell<Option<String>> = const { RefCell::new(None) };
+    static COMPOSER_ACTIVITY: RefCell<Option<(String, std::time::Instant)>> =
+        const { RefCell::new(None) };
 }
 
 /// When the concurrent composer is active it is the single owner of the
@@ -226,7 +227,9 @@ pub fn composer_owns_terminal() -> bool {
 /// composer owns the terminal.
 fn note_activity(text: &str) {
     if composer_owns_terminal() {
-        COMPOSER_ACTIVITY.with(|a| *a.borrow_mut() = Some(text.to_string()));
+        COMPOSER_ACTIVITY.with(|a| {
+            *a.borrow_mut() = Some((text.to_string(), std::time::Instant::now()));
+        });
     }
 }
 
@@ -236,7 +239,16 @@ pub fn clear_activity() {
 
 /// Latest label for the composer status line, if any.
 pub fn current_activity() -> Option<String> {
-    COMPOSER_ACTIVITY.with(|a| a.borrow().clone())
+    COMPOSER_ACTIVITY.with(|a| a.borrow().as_ref().map(|(text, _)| text.clone()))
+}
+
+/// Activity label plus how many seconds it has been showing.
+pub fn current_activity_elapsed() -> Option<(String, u64)> {
+    COMPOSER_ACTIVITY.with(|a| {
+        a.borrow()
+            .as_ref()
+            .map(|(text, since)| (text.clone(), since.elapsed().as_secs()))
+    })
 }
 
 pub fn show_thinking() {
@@ -1297,14 +1309,29 @@ pub fn apply_color_policy() {
 /// see `**bold**`, fences and link syntax instead of prose. This strips the
 /// markers that carry no meaning in a terminal while leaving code, indentation
 /// and list structure intact. It works line by line because streaming chunks can
-/// end mid-document.
+/// end mid-document. `GOOSE_CLI_PLAIN_HIERARCHY=1` keeps minimal structural
+/// cues (■ headings, │ quotes) instead of flattening them away.
 fn plain_markdown(content: &str) -> String {
-    fn clean_line(line: &str) -> String {
+    plain_markdown_with(
+        content,
+        env_flag("GOOSE_CLI_PLAIN_HIERARCHY").unwrap_or(false),
+    )
+}
+
+/// `hierarchy` keeps the minimal structural cues enabled by
+/// `GOOSE_CLI_PLAIN_HIERARCHY`; the default form is fully flattened.
+fn plain_markdown_with(content: &str, hierarchy: bool) -> String {
+    fn clean_line(line: &str, hierarchy: bool) -> String {
         static LINK: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
         let indent_len = line.len() - line.trim_start().len();
         let (indent, mut body) = line.split_at(indent_len);
+        let mut cue = String::new();
         if body.starts_with('>') {
+            let depth = body.chars().take_while(|ch| *ch == '>').count();
             body = body.trim_start_matches('>').trim_start();
+            if hierarchy {
+                cue = format!("{} ", "│".repeat(depth.min(3)));
+            }
         }
         let hashes = body.chars().take_while(|ch| *ch == '#').count();
         if (1..=6).contains(&hashes) && body.chars().nth(hashes) == Some(' ') {
@@ -1313,6 +1340,9 @@ fn plain_markdown(content: &str) -> String {
                 .trim_start()
                 .trim_end_matches('#')
                 .trim_end();
+            if hierarchy {
+                cue = "■ ".into();
+            }
         }
         let link = LINK.get_or_init(|| regex::Regex::new(r"\[([^\]]*)\]\(([^)]*)\)").unwrap());
         let with_links = link.replace_all(body, "$1 ($2)");
@@ -1346,7 +1376,7 @@ fn plain_markdown(content: &str) -> String {
             }
             cleaned.push(ch);
         }
-        format!("{indent}{cleaned}")
+        format!("{indent}{cue}{cleaned}")
     }
 
     let mut out = String::with_capacity(content.len());
@@ -1367,7 +1397,7 @@ fn plain_markdown(content: &str) -> String {
         if in_fence {
             out.push_str(body);
         } else {
-            out.push_str(&clean_line(body));
+            out.push_str(&clean_line(body, hierarchy));
         }
         out.push_str(newline);
     }
@@ -2355,5 +2385,29 @@ mod tests {
         assert!(rendered.contains(r"C:\Users\Emiliano\.agents\notes.txt"));
         assert!(rendered.contains(r"\\server\share\file.txt"));
         assert!(rendered.contains("a|b"));
+    }
+
+    #[test]
+    fn plain_hierarchy_cues_are_opt_in() {
+        let flat = plain_markdown_with("# Title\n> quoted\nbody **b**\n", false);
+        assert!(flat.contains("Title"));
+        assert!(!flat.contains('■') && !flat.contains('│') && !flat.contains('#'));
+        let structured = plain_markdown_with("# Title\n> quoted\nbody **b**\n", true);
+        assert!(structured.contains("■ Title"));
+        assert!(structured.contains("│ quoted"));
+        assert!(!structured.contains('#'));
+        assert!(structured.contains("body b"));
+    }
+
+    #[test]
+    fn plain_hierarchy_flag_reaches_the_wrapper() {
+        {
+            let _guard = env_lock::lock_env([("GOOSE_CLI_PLAIN_HIERARCHY", Some("1"))]);
+            assert!(plain_markdown("# H\n").contains("■ H"));
+        }
+        {
+            let _guard = env_lock::lock_env([("GOOSE_CLI_PLAIN_HIERARCHY", None::<&str>)]);
+            assert!(!plain_markdown("# H\n").contains('■'));
+        }
     }
 }

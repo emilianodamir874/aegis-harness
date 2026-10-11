@@ -105,6 +105,114 @@ impl EditBuffer {
     fn pop(&mut self) -> Option<ComposerEvent> {
         self.pending.pop_front().map(ComposerEvent::Submitted)
     }
+
+    fn set_text(&mut self, text: &str) {
+        self.text = text.to_string();
+        self.cursor = self.text.len();
+    }
+}
+
+/// In-session recall for the composer: Up/Down walk the messages submitted
+/// in this process and restore the in-progress draft past the newest entry.
+#[derive(Default)]
+struct History {
+    entries: Vec<String>,
+    index: Option<usize>,
+    saved: String,
+}
+
+impl History {
+    fn commit(&mut self, text: &str) {
+        self.entries.push(text.to_string());
+        self.index = None;
+        self.saved.clear();
+    }
+
+    fn previous(&mut self, buffer: &mut EditBuffer) -> bool {
+        if self.entries.is_empty() {
+            return false;
+        }
+        let next = match self.index {
+            None => {
+                self.saved = buffer.text.clone();
+                self.entries.len() - 1
+            }
+            Some(0) => return false,
+            Some(index) => index - 1,
+        };
+        self.index = Some(next);
+        buffer.set_text(&self.entries[next]);
+        true
+    }
+
+    fn next(&mut self, buffer: &mut EditBuffer) -> bool {
+        let Some(index) = self.index else {
+            return false;
+        };
+        if index + 1 < self.entries.len() {
+            self.index = Some(index + 1);
+            buffer.set_text(&self.entries[index + 1]);
+        } else {
+            self.index = None;
+            buffer.set_text(&std::mem::take(&mut self.saved));
+        }
+        true
+    }
+}
+
+/// Last completion offered for a `/command` prefix, so repeated Tab presses
+/// cycle through the matches instead of restarting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Completion {
+    prefix: String,
+    index: usize,
+    shown: String,
+}
+
+fn completion_cycle(text: &str, previous: Option<&Completion>) -> Option<Completion> {
+    if text.contains('\n') || text.contains(' ') || !text.starts_with('/') {
+        return None;
+    }
+    let prefix = match previous {
+        Some(previous) if previous.shown == text => previous.prefix.as_str(),
+        _ => text,
+    };
+    let candidates: Vec<&str> = super::input::COMPLETION_COMMANDS
+        .iter()
+        .copied()
+        .filter(|command| command.starts_with(prefix))
+        .collect();
+    if candidates.is_empty() {
+        return None;
+    }
+    let index = match previous {
+        Some(previous) if previous.shown == text && previous.prefix == prefix => {
+            (previous.index + 1) % candidates.len()
+        }
+        _ => 0,
+    };
+    Some(Completion {
+        prefix: prefix.to_string(),
+        index,
+        shown: candidates[index].to_string(),
+    })
+}
+
+/// Live candidate menu for the footer's status row while a slash command is
+/// being typed: `/` alone lists every command, typing narrows the list.
+fn command_suggestions(text: &str) -> Option<String> {
+    if !text.starts_with('/') || text.contains(' ') || text.contains('\n') {
+        return None;
+    }
+    let matches: Vec<&str> = super::input::COMPLETION_COMMANDS
+        .iter()
+        .copied()
+        .filter(|command| command.starts_with(text) && *command != text)
+        .collect();
+    if matches.is_empty() {
+        return None;
+    }
+    Some(format!("  {}", matches.join(" ")))
 }
 
 /// Owns raw stdin and the terminal's scroll region while active. Never call a
@@ -115,6 +223,8 @@ pub struct Composer {
     input: Option<EventStream>,
     height: Option<u16>,
     status: String,
+    history: History,
+    completion: Option<Completion>,
 }
 
 impl Composer {
@@ -132,6 +242,8 @@ impl Composer {
             input: None,
             height: None,
             status: "Responding".into(),
+            history: History::default(),
+            completion: None,
         };
         composer.resume()?;
         Ok(Some(composer))
@@ -142,6 +254,9 @@ impl Composer {
     pub async fn next(&mut self) -> Result<ComposerEvent> {
         loop {
             if let Some(submission) = self.buffer.pop() {
+                if let ComposerEvent::Submitted(text) = &submission {
+                    self.history.commit(text);
+                }
                 return Ok(submission);
             }
             let Some(input) = &mut self.input else {
@@ -149,7 +264,26 @@ impl Composer {
             };
             match input.next().await {
                 Some(Ok(Event::Key(key))) => {
-                    let outcome = self.buffer.handle_key(key);
+                    let outcome = match key.code {
+                        KeyCode::Up => {
+                            self.completion = None;
+                            self.history.previous(&mut self.buffer);
+                            None
+                        }
+                        KeyCode::Down => {
+                            self.completion = None;
+                            self.history.next(&mut self.buffer);
+                            None
+                        }
+                        KeyCode::Tab => {
+                            self.complete();
+                            None
+                        }
+                        _ => {
+                            self.completion = None;
+                            self.buffer.handle_key(key)
+                        }
+                    };
                     self.render()?;
                     if let Some(event) = outcome {
                         return Ok(event);
@@ -191,6 +325,14 @@ impl Composer {
             .filter(|ch| !ch.is_control() && *ch != '\u{1b}')
             .collect();
         self.refresh()
+    }
+
+    /// Tab-complete a `/command` in the draft; repeats cycle the matches.
+    fn complete(&mut self) {
+        if let Some(next) = completion_cycle(&self.buffer.text, self.completion.as_ref()) {
+            self.buffer.set_text(&next.shown);
+            self.completion = Some(next);
+        }
     }
 
     /// End raw input and restore the full scroll region before modal prompts.
@@ -315,7 +457,10 @@ impl Composer {
         };
         let mut out = io::stdout().lock();
         // Save/restore the streaming cursor while holding stdout's process-wide lock.
-        let status = trim_cells(&format!("  {}", self.status), columns);
+        let status = match command_suggestions(&self.buffer.text) {
+            Some(suggestions) => trim_cells(&suggestions, columns),
+            None => trim_cells(&format!("  {}", self.status), columns),
+        };
         write!(
             out,
             "\x1b7\x1b[{};1H\x1b[2K{}\x1b[{};1H\x1b[2K{}{}\x1b[7m{}\x1b[27m{}\x1b8",
@@ -448,5 +593,58 @@ mod tests {
         assert_eq!(trim_cells("中a👩‍💻x", 5), "中a👩‍💻");
         assert_eq!(suffix_cells("中ab", 2), "ab");
         assert_eq!(display_text("a\nb"), "a↵b");
+
+
+    }
+
+    #[test]
+    fn history_restores_draft_and_walks_entries() {
+        let mut history = History::default();
+        let mut buffer = EditBuffer::default();
+        history.commit("one");
+        history.commit("two");
+        buffer.insert("draft");
+        assert!(history.previous(&mut buffer));
+        assert_eq!(buffer.text, "two");
+        assert!(history.previous(&mut buffer));
+        assert_eq!(buffer.text, "one");
+        assert!(!history.previous(&mut buffer));
+        assert!(history.next(&mut buffer));
+        assert_eq!(buffer.text, "two");
+        assert!(history.next(&mut buffer));
+        assert_eq!(buffer.text, "draft");
+        assert!(!history.next(&mut buffer));
+    }
+
+    #[test]
+    fn tab_completion_cycles_prefix_matches() {
+        let mut completion = None;
+        for expected in ["/clear", "/compact", "/ctx", "/clear"] {
+            let text = completion
+                .as_ref()
+                .map(|last: &Completion| last.shown.clone())
+                .unwrap_or_else(|| "/c".to_string());
+            let next = completion_cycle(&text, completion.as_ref()).unwrap();
+            assert_eq!(next.shown, expected);
+            completion = Some(next);
+        }
+        assert!(completion_cycle("plain", None).is_none());
+        assert!(completion_cycle("/x", None).is_none());
+    }
+
+    #[test]
+    fn draft_command_lists_suggestions_in_the_status_row() {
+        let all = command_suggestions("/").expect("bare slash lists every command");
+        assert!(all.contains("/clear"));
+        assert!(all.contains("/usage"));
+        let narrowed = command_suggestions("/mo").expect("typing narrows the menu");
+        assert!(narrowed.contains("/mode"));
+        assert!(narrowed.contains("/model"));
+        assert!(!narrowed.contains("/clear"));
+        assert!(command_suggestions("/usage").is_none());
+        // `/mode` is a prefix of `/model`, so the longer command stays offered.
+        assert_eq!(command_suggestions("/mode").as_deref(), Some("  /model"));
+        assert!(command_suggestions("/mode x").is_none());
+        assert!(command_suggestions("plain").is_none());
     }
 }

@@ -12,6 +12,14 @@ use goose::session::Session;
 
 const ROLLING_WINDOW: usize = 8;
 
+/// Distance between the live context and its effective limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextLevel {
+    Normal,
+    Near,
+    Over,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ApiSample {
     duration: Option<Duration>,
@@ -296,16 +304,61 @@ impl SessionTelemetry {
 
     /// Compact live readout; the full set of counters is in `/usage`.
     pub fn status_bar(&self, now: DateTime<Utc>) -> String {
+        self.status_bar_inner(now, false)
+    }
+
+    /// Same line, with the context segment coloured when the terminal accepts
+    /// ANSI; it degrades to the plain form under plain output.
+    pub fn status_bar_styled(&self, now: DateTime<Utc>) -> String {
+        self.status_bar_inner(now, true)
+    }
+
+    /// Ceiling the context is measured against: the model window or
+    /// GOOSE_AUTO_COMPACT_TOKEN_LIMIT, whichever bites first.
+    fn effective_limit(&self) -> Option<u64> {
+        let window = self.context_limit? as u64;
+        Some(match self.compaction_limit.filter(|cap| *cap > 0) {
+            Some(cap) => window.min(cap as u64),
+            None => window,
+        })
+    }
+
+    /// `Near` at 80% of the effective limit, `Over` once it is passed.
+    pub fn context_level(&self) -> Option<ContextLevel> {
+        let used = u64::try_from(self.context_usage.total_tokens?).ok()?;
+        let limit = self.effective_limit().filter(|limit| *limit > 0)?;
+        Some(if used >= limit {
+            ContextLevel::Over
+        } else if used as f64 >= limit as f64 * 0.8 {
+            ContextLevel::Near
+        } else {
+            ContextLevel::Normal
+        })
+    }
+
+    fn status_bar_inner(&self, now: DateTime<Utc>, styled: bool) -> String {
         let context = match (self.context_usage.total_tokens, self.context_limit) {
             (Some(used), Some(limit)) if used >= 0 => {
-                let cap = self.compaction_limit.filter(|cap| *cap > 0);
-                let shown = cap.map_or(limit, |cap| limit.min(cap));
-                let over = cap.is_some_and(|cap| used as u64 >= cap as u64);
-                format!(
+                let shown = self.effective_limit().unwrap_or(limit as u64).max(1);
+                let marker = match self.context_level() {
+                    Some(ContextLevel::Over) => " ⚠ compactar",
+                    Some(ContextLevel::Near) => " !",
+                    _ => "",
+                };
+                let segment = format!(
                     "{used}/{shown} ({:.0}%){}",
                     used as f64 / shown as f64 * 100.0,
-                    if over { " ⚠ compactar" } else { "" }
-                )
+                    marker
+                );
+                if styled {
+                    match self.context_level() {
+                        Some(ContextLevel::Over) => console::style(segment).red().to_string(),
+                        Some(ContextLevel::Near) => console::style(segment).yellow().to_string(),
+                        _ => segment,
+                    }
+                } else {
+                    segment
+                }
             }
             _ => "—".into(),
         };
@@ -318,8 +371,18 @@ impl SessionTelemetry {
         let turn = self
             .turn_started_at
             .and_then(|start| Instant::now().checked_duration_since(start));
+        let git = self
+            .git_branch
+            .as_deref()
+            .map(|branch| {
+                format!(
+                    " | git {}",
+                    one_line(branch).chars().take(24).collect::<String>()
+                )
+            })
+            .unwrap_or_default();
         format!(
-            "{} / {} | ctx {} | cache {} | {} | turno {} | sesion {}",
+            "{} / {} | ctx {} | cache {} | {} | turno {} | sesion {}{}",
             one_line(self.provider.as_deref().unwrap_or("—")),
             one_line(self.model.as_deref().unwrap_or("—")),
             context,
@@ -327,7 +390,64 @@ impl SessionTelemetry {
             speed,
             fmt_duration(turn),
             fmt_duration(elapsed_since(self.session_started_at, now)),
+            git,
         )
+    }
+
+    /// Compact context breakdown for `/ctx`; `/usage` keeps the full inventory.
+    pub fn context_report(&self, now: DateTime<Utc>) -> String {
+        let window = fmt_option(self.context_limit);
+        let ceiling = self
+            .compaction_limit
+            .filter(|cap| *cap > 0)
+            .map_or_else(|| "none".into(), |cap| cap.to_string());
+        let effective = self
+            .effective_limit()
+            .map_or_else(|| "unavailable".into(), |limit| limit.to_string());
+        let level = match self.context_level() {
+            Some(ContextLevel::Over) => " ⚠ compactar",
+            Some(ContextLevel::Near) => " !",
+            _ => "",
+        };
+        let last_output = self
+            .samples
+            .back()
+            .and_then(|sample| sample.output_tokens)
+            .map_or_else(|| "unavailable".into(), |tokens| tokens.to_string());
+        let cache_hit = self
+            .cache_hit_pct()
+            .map_or_else(|| "unavailable".into(), |pct| format!("{pct:.1}%"));
+        [
+            format!(
+                "Context: {} / {} tokens{}",
+                fmt_option(self.context_usage.total_tokens),
+                effective,
+                level
+            ),
+            format!("Window: {window} | auto-compact ceiling: {ceiling}"),
+            format!(
+                "Observed for this model: in {} (cache read {}, write {}), last out {last_output}",
+                fmt_option(self.input_for_model),
+                fmt_option(self.cache_read_for_model),
+                fmt_option(self.cache_write_for_model),
+            ),
+            format!(
+                "Cache hit: {cache_hit} | rolling {} | last-8 avg api {}",
+                self.rolling_tokens_per_second()
+                    .map_or_else(|| "unavailable".into(), |v| format!("{v:.0} t/s")),
+                fmt_duration(self.rolling_api_duration()),
+            ),
+            format!(
+                "Compactions: {} | turno {} | sesion {}",
+                fmt_option(self.compaction_count),
+                fmt_duration(
+                    self.turn_started_at
+                        .and_then(|start| Instant::now().checked_duration_since(start))
+                ),
+                fmt_duration(elapsed_since(self.session_started_at, now)),
+            ),
+        ]
+        .join("\n")
     }
 
     /// Plain-text detailed `/usage` output. Persistent usage is not the current context size.
@@ -664,5 +784,46 @@ mod tests {
         assert!(report.contains("Background jobs: 0"));
         assert!(report.contains("Compactions: 1"));
         assert!(report.contains("last 8 responses"));
+    }
+
+    #[test]
+    fn context_markers_track_the_effective_limit_and_git_segment() {
+        let mut s = session();
+        s.usage = Usage::new(None, None, Some(250_000));
+        let mut t = SessionTelemetry::new(&s);
+        t.set_context_limit(Some(1_048_576));
+        t.set_compaction_limit(Some(300_000));
+        assert_eq!(t.context_level(), Some(ContextLevel::Near));
+        let bar = t.status_bar(Utc::now());
+        assert!(bar.contains("250000/300000"));
+        assert!(bar.contains(" !"));
+        assert!(!bar.contains('\u{1b}'));
+
+        s.usage = Usage::new(None, None, Some(310_000));
+        t.refresh_session(&s);
+        assert_eq!(t.context_level(), Some(ContextLevel::Over));
+        assert!(t.status_bar(Utc::now()).contains("⚠ compactar"));
+
+        t.set_compaction_limit(None);
+        s.usage = Usage::new(None, None, Some(500_000));
+        t.refresh_session(&s);
+        assert_eq!(t.context_level(), Some(ContextLevel::Normal));
+
+        t.set_git_branch(Some("feat/x".to_string()));
+        assert!(t.status_bar(Utc::now()).contains("git feat/x"));
+        let report = t.context_report(Utc::now());
+        assert!(report.contains("auto-compact ceiling: none"));
+        assert!(report.contains("Context: 500000 / "));
+    }
+
+    #[test]
+    fn styled_status_bar_keeps_the_plain_content() {
+        let mut s = session();
+        s.usage = Usage::new(None, None, Some(10));
+        let mut t = SessionTelemetry::new(&s);
+        t.set_context_limit(Some(100));
+        let styled = t.status_bar_styled(Utc::now());
+        assert!(styled.contains("10/100"));
+        assert!(styled.contains(" ctx "));
     }
 }

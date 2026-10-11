@@ -705,6 +705,7 @@ impl CliSession {
         self.ensure_extensions_loaded(true).await?;
         match input {
             InputResult::Message(content) => {
+                self.refresh_git_branch();
                 self.handle_message_input(&content, history, editor).await?;
             }
             InputResult::Exit => unreachable!("Exit is handled in the main loop"),
@@ -749,6 +750,11 @@ impl CliSession {
                 );
                 println!("Permissions: {}", self.telemetry.mode);
                 println!("Battery / idle: unavailable (no system telemetry source)");
+            }
+            InputResult::ShowContext => {
+                history.save(editor);
+                self.refresh_telemetry().await;
+                println!("{}", self.telemetry.context_report(Utc::now()));
             }
             InputResult::SelectTheme(theme_name) => {
                 history.save(editor);
@@ -1425,9 +1431,13 @@ impl CliSession {
     /// Single activity indicator: the composer's status row mixes the queued
     /// count, the live ambient activity label, and honest session telemetry.
     fn composer_status(&self) -> String {
-        let telemetry = self.telemetry.status_bar(Utc::now());
-        match output::current_activity() {
-            Some(activity) => format!(
+        let telemetry = self.telemetry.status_bar_styled(Utc::now());
+        match output::current_activity_elapsed() {
+            Some((activity, secs)) if secs >= 3 => format!(
+                "{activity} ({secs}s) | cola {} | {telemetry}",
+                self.queued_inputs.len()
+            ),
+            Some((activity, _)) => format!(
                 "{activity} | cola {} | {telemetry}",
                 self.queued_inputs.len()
             ),
@@ -2127,9 +2137,10 @@ impl CliSession {
     }
 
     /// Show live essentials; `/usage` contains the full inventory.
-    pub async fn display_context_usage(&mut self) -> Result<()> {
-        self.refresh_telemetry().await;
-        let git = std::process::Command::new("git")
+    /// Refresh the branch shown in the status bar. One git invocation per
+    /// turn: cheap, and the footer never pays for a subprocess per repaint.
+    fn refresh_git_branch(&mut self) {
+        let branch = std::process::Command::new("git")
             .args(["branch", "--show-current"])
             .current_dir(&self.telemetry.cwd)
             .output()
@@ -2138,7 +2149,12 @@ impl CliSession {
             .and_then(|o| String::from_utf8(o.stdout).ok())
             .map(|s| s.trim().to_owned())
             .filter(|s| !s.is_empty());
-        self.telemetry.set_git_branch(git);
+        self.telemetry.set_git_branch(branch);
+    }
+
+    pub async fn display_context_usage(&mut self) -> Result<()> {
+        self.refresh_telemetry().await;
+        self.refresh_git_branch();
         println!("  {}", self.telemetry.status_bar(Utc::now()));
         Ok(())
     }

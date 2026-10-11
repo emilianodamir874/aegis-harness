@@ -30,6 +30,7 @@ pub enum InputResult {
     ToggleFullToolOutput,
     ShowLastCommandOutput,
     ShowUsage,
+    ShowContext,
     Edit(Option<String>),
     ListSkills,
     LoadSkills(Vec<String>),
@@ -246,6 +247,11 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
+        "/" => {
+            print_help();
+            print_editor_help();
+            Some(InputResult::Retry)
+        }
         "/?" | "/help" => {
             print_help();
             print_editor_help();
@@ -348,6 +354,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         "/r" => Some(InputResult::ToggleFullToolOutput),
         "/output" => Some(InputResult::ShowLastCommandOutput),
         "/usage" => Some(InputResult::ShowUsage),
+        "/ctx" => Some(InputResult::ShowContext),
         s if s == CMD_EDIT => Some(InputResult::Edit(None)),
         s if s.starts_with(CMD_EDIT_WITH_SPACE) => {
             let prefill = s
@@ -435,6 +442,7 @@ fn help_text() -> String {
 /r - Toggle full tool output display (also shows command output as it runs)
 /output - Show the full output of the most recent command
 /usage - Detailed session tokens, cache hit, speed, latency, cost provenance and timings
+/ctx - Compact context readout: usage vs effective limit, last observed counters, compactions
 /extension <command> - Add a stdio extension (format: ENV1=val1 command args...)
 /builtin <names> - Add builtin extensions by name (comma-separated)
 /prompts [--extension <name>] - List all available prompts, optionally filtered by extension
@@ -454,11 +462,35 @@ fn help_text() -> String {
 Navigation:
 Enter - Send message
 Ctrl+{newline_key} - Add a newline (configurable via GOOSE_CLI_NEWLINE_KEY)
+Type / - Show the available slash commands
 Ctrl+C - Clear current line if text is entered, otherwise exit the session
 Up/Down arrows - Navigate through command history
 GOOSE_CLI_BELL=true - Ring the terminal bell when goose finishes a turn or needs approval"
     )
 }
+
+/// Slash commands offered by the concurrent composer's Tab completion.
+pub(crate) const COMPLETION_COMMANDS: &[&str] = &[
+    "/clear",
+    "/compact",
+    "/ctx",
+    "/edit",
+    "/exit",
+    "/help",
+    "/mode",
+    "/model",
+    "/new",
+    "/output",
+    "/prompt",
+    "/prompts",
+    "/quit",
+    "/r",
+    "/skills",
+    "/status",
+    "/t",
+    "/usage",
+    "/?",
+];
 
 fn additional_builtin_help() -> String {
     const DOCUMENTED_BUILTINS: &[&str] =
@@ -544,6 +576,15 @@ mod tests {
             Some(InputResult::ShowLastCommandOutput)
         ));
         assert!(handle_slash_command("/output-other").is_none());
+        assert!(matches!(
+            handle_slash_command("/ctx"),
+            Some(InputResult::ShowContext)
+        ));
+        assert!(handle_slash_command("/ctxx").is_none());
+        assert!(matches!(
+            handle_slash_command("/"),
+            Some(InputResult::Retry)
+        ));
 
         // Test extension command
         if let Some(InputResult::AddExtension(cmd)) = handle_slash_command("/extension foo bar") {
