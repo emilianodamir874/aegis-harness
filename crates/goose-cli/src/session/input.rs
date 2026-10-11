@@ -31,6 +31,8 @@ pub enum InputResult {
     ShowLastCommandOutput,
     ShowUsage,
     ShowContext,
+    Rewind(Option<usize>),
+    Undo,
     CommandMenu,
     Edit(Option<String>),
     ListSkills,
@@ -313,6 +315,8 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_EDIT: &str = "/edit";
     const CMD_EDIT_WITH_SPACE: &str = "/edit ";
     const CMD_SKILLS: &str = "/skills";
+    const CMD_REWIND: &str = "/rewind";
+    const CMD_REWIND_WITH_SPACE: &str = "/rewind ";
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
@@ -416,6 +420,27 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             println!("{}", console::style("⚠️  Note: /summarize has been renamed to /compact and will be removed in a future release.").yellow());
             Some(InputResult::Compact)
         }
+        "/undo" => Some(InputResult::Undo),
+        s if s == CMD_REWIND => Some(InputResult::Rewind(None)),
+        s if s.starts_with(CMD_REWIND_WITH_SPACE) => {
+            let turns = s
+                .strip_prefix(CMD_REWIND_WITH_SPACE)
+                .unwrap_or_default()
+                .trim();
+            match turns.parse::<usize>() {
+                Ok(turns) if turns >= 1 => Some(InputResult::Rewind(Some(turns))),
+                _ => {
+                    println!(
+                        "{}",
+                        console::style(
+                            "Usage: /rewind [turns] - give a positive number of turns to go back (1 = the last turn)."
+                        )
+                        .yellow()
+                    );
+                    Some(InputResult::Retry)
+                }
+            }
+        }
         "/r" => Some(InputResult::ToggleFullToolOutput),
         "/output" => Some(InputResult::ShowLastCommandOutput),
         "/usage" => Some(InputResult::ShowUsage),
@@ -508,6 +533,8 @@ fn help_text() -> String {
 /output - Show the full output of the most recent command
 /usage - Detailed session tokens, cache hit, speed, latency, cost provenance and timings
 /ctx - Compact context readout: usage vs effective limit, last observed counters, compactions
+/rewind [turns] - Rewind the conversation: hide everything after an earlier turn from the model and load that message for editing
+/undo - Hide your last message and the agent's replies after it from the model (the transcript stays on screen)
 /extension <command> - Add a stdio extension (format: ENV1=val1 command args...)
 /builtin <names> - Add builtin extensions by name (comma-separated)
 /prompts [--extension <name>] - List all available prompts, optionally filtered by extension
@@ -554,9 +581,11 @@ pub(crate) const SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/prompts", "List available prompts"),
     ("/quit", "Exit the session"),
     ("/r", "Toggle full tool output display"),
+    ("/rewind", "Go back to an earlier turn and edit from there"),
     ("/skills", "List or load skills by name"),
     ("/status", "Show session status and token usage"),
     ("/t", "Toggle the light/dark/ansi theme"),
+    ("/undo", "Hide the last exchange from the model"),
     ("/usage", "Detailed tokens, cache, speed and cost report"),
 ];
 
@@ -579,9 +608,11 @@ pub(crate) const COMPLETION_COMMANDS: &[&str] = &[
     "/prompts",
     "/quit",
     "/r",
+    "/rewind",
     "/skills",
     "/status",
     "/t",
+    "/undo",
     "/usage",
 ];
 
@@ -764,6 +795,32 @@ mod tests {
 
         // Test unknown commands
         assert!(handle_slash_command("/unknown").is_none());
+    }
+
+    #[test]
+    fn test_rewind_and_undo_commands() {
+        assert!(matches!(
+            handle_slash_command("/rewind"),
+            Some(InputResult::Rewind(None))
+        ));
+        assert!(matches!(
+            handle_slash_command("/rewind 2"),
+            Some(InputResult::Rewind(Some(2)))
+        ));
+        assert!(matches!(
+            handle_slash_command("/rewind 0"),
+            Some(InputResult::Retry)
+        ));
+        assert!(matches!(
+            handle_slash_command("/rewind abc"),
+            Some(InputResult::Retry)
+        ));
+        assert!(matches!(
+            handle_slash_command("/undo"),
+            Some(InputResult::Undo)
+        ));
+        assert!(handle_slash_command("/rewindx").is_none());
+        assert!(handle_slash_command("/undo2").is_none());
     }
 
     #[test]

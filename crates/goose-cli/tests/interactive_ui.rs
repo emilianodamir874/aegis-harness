@@ -32,6 +32,7 @@ const MODEL: &str = "mock-model";
 struct MockModel {
     port: u16,
     requests: Arc<AtomicUsize>,
+    bodies: Arc<Mutex<Vec<String>>>,
 }
 
 impl MockModel {
@@ -39,16 +40,23 @@ impl MockModel {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock model");
         let port = listener.local_addr().expect("mock addr").port();
         let requests = Arc::new(AtomicUsize::new(0));
+        let bodies = Arc::new(Mutex::new(Vec::new()));
         let counter = Arc::clone(&requests);
+        let captured = Arc::clone(&bodies);
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let counter = Arc::clone(&counter);
+                let captured = Arc::clone(&captured);
                 thread::spawn(move || {
-                    let _ = serve(stream, counter);
+                    let _ = serve(stream, counter, captured);
                 });
             }
         });
-        Self { port, requests }
+        Self {
+            port,
+            requests,
+            bodies,
+        }
     }
 
     fn base_url(&self) -> String {
@@ -58,9 +66,18 @@ impl MockModel {
     fn requests(&self) -> usize {
         self.requests.load(Ordering::SeqCst)
     }
+
+    /// Chat-completion request bodies the mock saw, oldest first.
+    fn bodies(&self) -> Vec<String> {
+        self.bodies.lock().expect("bodies lock").clone()
+    }
 }
 
-fn serve(mut stream: TcpStream, requests: Arc<AtomicUsize>) -> std::io::Result<()> {
+fn serve(
+    mut stream: TcpStream,
+    requests: Arc<AtomicUsize>,
+    bodies: Arc<Mutex<Vec<String>>>,
+) -> std::io::Result<()> {
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
     while head.len() < 16384 {
@@ -94,6 +111,9 @@ fn serve(mut stream: TcpStream, requests: Arc<AtomicUsize>) -> std::io::Result<(
 
     requests.fetch_add(1, Ordering::SeqCst);
     let payload = String::from_utf8_lossy(&body);
+    if let Ok(mut captured) = bodies.lock() {
+        captured.push(payload.to_string());
+    }
     let step = if payload.contains("PRESENTACION_TERMINAL_PROBE") {
         if payload.contains("This is an interactive terminal chat") {
             4
@@ -933,6 +953,7 @@ fn approval_modal_suspends_the_composer_and_the_draft_survives() {
         terminal.screen()
     );
     assert!(model.requests() >= 3, "mock did not receive the tool turn");
+}
 
 #[test]
 fn lone_slash_opens_the_command_picker_without_enter() {
@@ -986,4 +1007,107 @@ fn lone_slash_opens_the_command_picker_without_enter() {
         terminal.screen()
     );
 }
+
+#[test]
+fn rewind_picks_an_earlier_turn_and_the_model_stops_seeing_its_tail() {
+    let model = MockModel::start();
+    let root = sandbox("rewind");
+    let env = session_env(
+        &model,
+        &root,
+        &[
+            ("GOOSE_CLI_PLAIN", "1"),
+            ("GOOSE_DISABLE_SESSION_NAMING", "true"),
+        ],
+    );
+    let mut terminal = Terminal::spawn(
+        goose_exe(),
+        &[
+            "session",
+            "--provider",
+            "openai",
+            "--model",
+            "mock-model",
+            "--no-profile",
+        ],
+        &env,
+        30,
+        100,
+    );
+
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("goose is ready"),
+            Duration::from_secs(60)
+        ),
+        "session never reached the ready banner:\n{}",
+        terminal.screen()
+    );
+
+    // First turn: the message the user will later rewind to.
+    terminal.type_text("alpha_origin");
+    terminal.press_enter();
+    assert!(
+        terminal.wait_for(|screen| screen.contains("luna."), Duration::from_secs(60)),
+        "the first reply never arrived:\n{}",
+        terminal.screen()
+    );
+    assert!(
+        model
+            .bodies()
+            .iter()
+            .any(|body| body.contains("alpha_origin")),
+        "the mock never saw the first turn"
+    );
+
+    // /rewind opens the picker; with a single turn it is preselected.
+    terminal.type_text("/rewind");
+    terminal.press_enter();
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("Rewind to an earlier turn")
+                && screen.contains("alpha_origin"),
+            Duration::from_secs(30)
+        ),
+        "the rewind picker never listed the earlier turn:\n{}",
+        terminal.screen()
+    );
+    terminal.press_enter();
+    assert!(
+        terminal.wait_for(
+            |screen| screen.contains("> alpha_origin"),
+            Duration::from_secs(15)
+        ),
+        "the chosen message never reached the prompt:\n{}",
+        terminal.screen()
+    );
+
+    // Edit the prefilled turn and resend it: from here on the model must see
+    // the edited message but not the reply that was rewound away.
+    terminal.type_text(" v2");
+    terminal.press_enter();
+    assert!(
+        terminal.wait_for(
+            |screen| screen.matches("luna.").count() >= 2,
+            Duration::from_secs(60)
+        ),
+        "the edited resend never completed:\n{}",
+        terminal.screen()
+    );
+
+    let resent_requests: Vec<String> = model
+        .bodies()
+        .into_iter()
+        .filter(|body| body.contains("alpha_origin v2"))
+        .collect();
+    assert!(
+        !resent_requests.is_empty(),
+        "the mock never received the edited resend"
+    );
+    for body in resent_requests {
+        assert!(
+            !body.contains("respira"),
+            "a request sent after the rewind still carried the rewound turn's reply:\n{body}"
+        );
+    }
 }

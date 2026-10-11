@@ -7,6 +7,7 @@ mod elicitation;
 mod input;
 pub mod output;
 mod paste;
+mod rewind;
 pub mod streaming_buffer;
 mod task_execution_display;
 pub mod telemetry;
@@ -756,6 +757,14 @@ impl CliSession {
                 self.refresh_telemetry().await;
                 println!("{}", self.telemetry.context_report(Utc::now()));
             }
+            InputResult::Rewind(back) => {
+                history.save(editor);
+                self.handle_rewind(back).await?;
+            }
+            InputResult::Undo => {
+                history.save(editor);
+                self.handle_undo().await?;
+            }
             InputResult::CommandMenu => {
                 history.save(editor);
                 if let Some(selection) = input::pick_slash_command() {
@@ -1221,6 +1230,102 @@ impl CliSession {
         output::render_message(
             &Message::assistant().with_text("Chat context cleared.\n"),
             self.debug,
+        );
+        Ok(())
+    }
+
+    /// Fetch the stored conversation the model will actually see.
+    async fn stored_conversation(&self) -> Result<Conversation> {
+        let session = self
+            .agent
+            .config
+            .session_manager
+            .get_session(&self.session_id, true)
+            .await?;
+        Ok(session.conversation.unwrap_or_else(Conversation::empty))
+    }
+
+    /// Flip `agent_visible` off for every stored message from `from_index`
+    /// on, and return how many the model stopped seeing.
+    async fn hide_tail_from(
+        &self,
+        conversation: &Conversation,
+        from_index: usize,
+    ) -> Result<usize> {
+        let mut hidden = 0usize;
+        for message in conversation.messages().iter().skip(from_index) {
+            if !message.is_agent_visible() {
+                continue;
+            }
+            if let Some(message_id) = message.id.as_deref() {
+                self.agent
+                    .config
+                    .session_manager
+                    .update_message_metadata(&self.session_id, message_id, |mut metadata| {
+                        metadata.agent_visible = false;
+                        metadata
+                    })
+                    .await?;
+            }
+            hidden += 1;
+        }
+        Ok(hidden)
+    }
+
+    /// `/rewind [turns]` — go back to an earlier user turn. Everything from
+    /// that turn on stops being sent to the model, and the turn's message is
+    /// loaded into the prompt for editing and resending.
+    async fn handle_rewind(&mut self, back: Option<usize>) -> Result<()> {
+        let conversation = self.stored_conversation().await?;
+        let turns = rewind::collect_turns(&conversation);
+        if turns.is_empty() {
+            println!("Nothing to rewind: no earlier user turns the model can see.");
+            return Ok(());
+        }
+        let target = match back {
+            Some(turns_back) => match rewind::resolve_back(&turns, turns_back) {
+                Some(index) => index,
+                None => {
+                    println!("Only {} rewindable turn(s) available.", turns.len());
+                    return Ok(());
+                }
+            },
+            None => match rewind::pick_turn(&turns, conversation.len()) {
+                Some(index) => index,
+                None => {
+                    println!("Rewind cancelled.");
+                    return Ok(());
+                }
+            },
+        };
+        let Some(turn) = turns.iter().find(|turn| turn.message_index == target) else {
+            return Ok(());
+        };
+        let hidden = self.hide_tail_from(&conversation, target).await?;
+        self.pending_draft = turn.text.clone();
+        println!(
+            "{} Rewound to \"{}\": hid {} message(s) from the model. The message is waiting in the prompt — edit it and press Enter to continue from there.",
+            console::style("↩").cyan(),
+            turn.preview,
+            hidden
+        );
+        Ok(())
+    }
+
+    /// `/undo` — hide the last user turn and everything after it.
+    async fn handle_undo(&mut self) -> Result<()> {
+        let conversation = self.stored_conversation().await?;
+        let turns = rewind::collect_turns(&conversation);
+        let Some(last) = turns.last() else {
+            println!("Nothing to undo: no earlier user turns the model can see.");
+            return Ok(());
+        };
+        let target = last.message_index;
+        let hidden = self.hide_tail_from(&conversation, target).await?;
+        println!(
+            "{} Undid the last exchange: hid {} message(s) from the model (the transcript stays on screen).",
+            console::style("↩").cyan(),
+            hidden
         );
         Ok(())
     }
