@@ -31,6 +31,7 @@ pub enum InputResult {
     ShowLastCommandOutput,
     ShowUsage,
     ShowContext,
+    CommandMenu,
     Edit(Option<String>),
     ListSkills,
     LoadSkills(Vec<String>),
@@ -247,11 +248,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
 
     match input {
         "/exit" | "/quit" => Some(InputResult::Exit),
-        "/" => {
-            print_help();
-            print_editor_help();
-            Some(InputResult::Retry)
-        }
+        "/" => Some(InputResult::CommandMenu),
         "/?" | "/help" => {
             print_help();
             print_editor_help();
@@ -462,20 +459,49 @@ fn help_text() -> String {
 Navigation:
 Enter - Send message
 Ctrl+{newline_key} - Add a newline (configurable via GOOSE_CLI_NEWLINE_KEY)
-Type / - Show the available slash commands
+Type / and press Enter - Open the interactive command menu
 Ctrl+C - Clear current line if text is entered, otherwise exit the session
 Up/Down arrows - Navigate through command history
 GOOSE_CLI_BELL=true - Ring the terminal bell when goose finishes a turn or needs approval"
     )
 }
 
-/// Slash commands offered by the concurrent composer's Tab completion.
+/// Slash commands with one-line descriptions: the single source for the
+/// composer Tab completion, the rustyline hint, and the interactive `/` menu.
+pub(crate) const SLASH_COMMANDS: &[(&str, &str)] = &[
+    ("/?", "Show the command list and navigation help"),
+    ("/builtin", "Add builtin extensions by name"),
+    ("/clear", "Clear the current chat history"),
+    ("/compact", "Compact the conversation to reduce context length"),
+    ("/ctx", "Compact context readout: usage vs effective limit"),
+    ("/edit", "Compose the next message in your editor"),
+    ("/exit", "Exit the session"),
+    ("/extension", "Add a stdio extension (ENV=val command args...)"),
+    ("/help", "Show the command list and navigation help"),
+    ("/mode", "Set the goose permission mode"),
+    ("/model", "Switch provider or model (Antigravity / Open Design)"),
+    ("/new", "Start a fresh session keeping provider and extensions"),
+    ("/output", "Show the full output of the most recent command"),
+    ("/prompt", "Run a prompt (key=value arguments)"),
+    ("/prompts", "List available prompts"),
+    ("/quit", "Exit the session"),
+    ("/r", "Toggle full tool output display"),
+    ("/skills", "List or load skills by name"),
+    ("/status", "Show session status and token usage"),
+    ("/t", "Toggle the light/dark/ansi theme"),
+    ("/usage", "Detailed tokens, cache, speed and cost report"),
+];
+
+/// Command names in menu order, for completion lists. Kept in sync by test.
 pub(crate) const COMPLETION_COMMANDS: &[&str] = &[
+    "/?",
+    "/builtin",
     "/clear",
     "/compact",
     "/ctx",
     "/edit",
     "/exit",
+    "/extension",
     "/help",
     "/mode",
     "/model",
@@ -489,7 +515,6 @@ pub(crate) const COMPLETION_COMMANDS: &[&str] = &[
     "/status",
     "/t",
     "/usage",
-    "/?",
 ];
 
 fn additional_builtin_help() -> String {
@@ -583,7 +608,7 @@ mod tests {
         assert!(handle_slash_command("/ctxx").is_none());
         assert!(matches!(
             handle_slash_command("/"),
-            Some(InputResult::Retry)
+            Some(InputResult::CommandMenu)
         ));
 
         // Test extension command
@@ -941,5 +966,14 @@ mod tests {
             handle_slash_command("/skills   "),
             Some(InputResult::ListSkills)
         ));
+    }
+
+    #[test]
+    fn slash_commands_and_completion_lists_agree() {
+        let names: Vec<&str> = SLASH_COMMANDS.iter().map(|(command, _)| *command).collect();
+        assert_eq!(names, COMPLETION_COMMANDS);
+        assert!(SLASH_COMMANDS
+            .iter()
+            .all(|(_, description)| !description.is_empty()));
     }
 }
