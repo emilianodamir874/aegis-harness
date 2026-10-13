@@ -1011,6 +1011,45 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
     }
 }
 
+/// Creates the sessions row for session_id when it is missing.
+///
+/// The messages and usage_ledger tables reference sessions(id), so a session
+/// row that disappears under a live agent (a maintenance delete, or a crash
+/// while the row itself was being written) makes every later write fail with a
+/// foreign-key violation and kills the run with an unrecoverable error.
+/// Recreating a minimal row keeps the conversation writable; the next regular
+/// save restores the remaining metadata.
+async fn ensure_session_row(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    session_id: &str,
+) -> Result<()> {
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = ?)")
+            .bind(session_id)
+            .fetch_one(&mut **tx)
+            .await?;
+    if exists {
+        return Ok(());
+    }
+
+    let working_dir = std::env::current_dir()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    sqlx::query(
+        "INSERT INTO sessions (id, name, working_dir) VALUES (?, 'Recovered session', ?) ON CONFLICT(id) DO NOTHING",
+    )
+    .bind(session_id)
+    .bind(working_dir)
+    .execute(&mut **tx)
+    .await?;
+
+    tracing::warn!(
+        session_id,
+        "session row was missing; recreated it so the conversation stays writable"
+    );
+    Ok(())
+}
 async fn insert_usage_ledger_row(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     session_id: &str,
@@ -1766,33 +1805,60 @@ impl SessionStorage {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         let today = chrono::Utc::now().format("%Y%m%d").to_string();
+
+        // Session ids are of the form YYYYMMDD_<n>. Deriving <n> from the rows
+        // that exist right now reuses the number of every session deleted
+        // earlier the same day, so a new session inherits a deleted session
+        // identity (and its ledger history). The counter is seeded from the
+        // existing ids once per day and only ever moves forward.
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_id_counters (
+                day TEXT PRIMARY KEY,
+                last_index INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO session_id_counters (day, last_index)
+            VALUES (
+                ?,
+                COALESCE((SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER)) FROM sessions WHERE id LIKE ? || '_%'), 0)
+            )
+            ON CONFLICT(day) DO NOTHING
+            "#,
+        )
+        .bind(&today)
+        .bind(&today)
+        .execute(&mut *tx)
+        .await?;
+
+        let next_index: i64 = sqlx::query_scalar(
+            "UPDATE session_id_counters SET last_index = last_index + 1 WHERE day = ? RETURNING last_index",
+        )
+        .bind(&today)
+        .fetch_one(&mut *tx)
+        .await?;
+
         let session = sqlx::query_as(
             r#"
                 INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, goose_mode)
-                VALUES (
-                    ? || '_' || CAST(COALESCE((
-                        SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
-                        FROM sessions
-                        WHERE id LIKE ? || '_%'
-                    ), 0) + 1 AS TEXT),
-                    ?,
-                    FALSE,
-                    ?,
-                    ?,
-                    '{}',
-                    ?
-                )
+                VALUES (? || '_' || CAST(? AS TEXT), ?, FALSE, ?, ?, '{}', ?)
                 RETURNING *
                 "#,
         )
-            .bind(&today)
-            .bind(&today)
-            .bind(&name)
-            .bind(session_type.to_string())
-            .bind(&*working_dir.to_string_lossy())
-            .bind(goose_mode.to_string())
-            .fetch_one(&mut *tx)
-            .await?;
+        .bind(&today)
+        .bind(next_index)
+        .bind(&name)
+        .bind(session_type.to_string())
+        .bind(&*working_dir.to_string_lossy())
+        .bind(goose_mode.to_string())
+        .fetch_one(&mut *tx)
+        .await?;
 
         tx.commit().await?;
         #[cfg(feature = "telemetry")]
@@ -2105,6 +2171,8 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
+        ensure_session_row(&mut tx, session_id).await?;
+
         let metadata_json = serde_json::to_string(&message.metadata)?;
         // Messages are read back ordered by (created_timestamp, id), so one built
         // before the messages it is appended after would sort ahead of them —
@@ -2152,6 +2220,8 @@ impl SessionStorage {
         conversation: &Conversation,
     ) -> Result<()> {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        ensure_session_row(&mut tx, session_id).await?;
 
         sqlx::query("DELETE FROM messages WHERE session_id = ?")
             .bind(session_id)
@@ -2202,6 +2272,8 @@ impl SessionStorage {
     ) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        ensure_session_row(&mut tx, session_id).await?;
 
         for message in conversation.messages() {
             let message_id = message
@@ -2544,6 +2616,8 @@ impl SessionStorage {
     ) -> Result<()> {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        ensure_session_row(&mut tx, session_id).await?;
 
         sqlx::query(
             r#"
@@ -5267,5 +5341,52 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(remaining, 0);
+    }
+    #[tokio::test]
+    async fn test_session_ids_are_not_reused_after_delete() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        let first = new_session(&sm).await;
+        let second = new_session(&sm).await;
+        assert_ne!(first, second);
+
+        // A deleted number stays retired: a later session must not inherit the
+        // identity (and the ledger history) of the session that was removed.
+        sm.delete_session(&second).await.unwrap();
+        let third = new_session(&sm).await;
+        assert_ne!(third, second);
+        assert_eq!(
+            third.rsplit('_').next().unwrap().parse::<u32>().unwrap(),
+            3
+        );
+    }
+
+    #[tokio::test]
+    async fn test_message_write_recreates_a_missing_session_row() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+
+        // A session row deleted from under a live agent used to make every
+        // later write fail with a foreign-key violation.
+        let pool = sm.storage().pool().await.unwrap();
+        sqlx::query("DELETE FROM messages WHERE session_id = ?")
+            .bind(&id)
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(&id)
+            .execute(pool)
+            .await
+            .unwrap();
+
+        sm.add_message(&id, &Message::user().with_text("still writable"))
+            .await
+            .unwrap();
+
+        let stored = sm.get_session(&id, true).await.unwrap();
+        assert_eq!(stored.conversation.unwrap().messages().len(), 1);
     }
 }
