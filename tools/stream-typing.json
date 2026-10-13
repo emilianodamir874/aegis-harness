@@ -1,0 +1,82 @@
+{
+ "cpuThrottle": 4,
+ "bigSession": {
+  "id": "20261011_6",
+  "n": 1167
+ },
+ "reposo": {
+  "keys": 40,
+  "p50": 3.2,
+  "p95": 78.1,
+  "max": 89.1,
+  "longTasks": 14,
+  "longMax": 323,
+  "renders": 198,
+  "renderAvgMs": 0.4,
+  "renderMaxMs": 2.8,
+  "composerRuns": 40,
+  "composerAvgMs": 0.79,
+  "composerMaxMs": 2,
+  "domNodes": 13343
+ },
+ "streaming1": {
+  "keys": 40,
+  "p50": 8.9,
+  "p95": 17.9,
+  "max": 18.7,
+  "longTasks": 0,
+  "longMax": 0,
+  "renders": 0,
+  "renderAvgMs": 0,
+  "renderMaxMs": 0,
+  "composerRuns": 40,
+  "composerAvgMs": 0.8,
+  "composerMaxMs": 1.2,
+  "domNodes": 67
+ },
+ "streaming2": {
+  "keys": 200,
+  "p50": 18.9,
+  "p95": 19.4,
+  "max": 22.6,
+  "longTasks": 0,
+  "longMax": 0,
+  "renders": 1,
+  "renderAvgMs": 3,
+  "renderMaxMs": 3,
+  "composerRuns": 200,
+  "composerAvgMs": 0.71,
+  "composerMaxMs": 1.9,
+  "domNodes": 78
+ },
+ "streaming3": {
+  "keys": 40,
+  "p50": 19,
+  "p95": 20.5,
+  "max": 21.3,
+  "longTasks": 0,
+  "longMax": 0,
+  "renders": 0,
+  "renderAvgMs": 0,
+  "renderMaxMs": 3,
+  "composerRuns": 40,
+  "composerAvgMs": 0.79,
+  "composerMaxMs": 1.9,
+  "domNodes": 88
+ },
+ "trasTerminar": {
+  "keys": 40,
+  "p50": 2.8,
+  "p95": 8.1,
+  "max": 18.8,
+  "longTasks": 0,
+  "longMax": 0,
+  "renders": 0,
+  "renderAvgMs": 0,
+  "renderMaxMs": 0,
+  "composerRuns": 40,
+  "composerAvgMs": 0.68,
+  "composerMaxMs": 1,
+  "domNodes": 172
+ }
+}

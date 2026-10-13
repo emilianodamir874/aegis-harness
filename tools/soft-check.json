@@ -1,0 +1,105 @@
+STAGE import {"sid":"20261012_26"}
+STAGE adoptado {"ms":5117,"watch":{"ticks":1,"infos":1,"infoErrs":0,"keyChanges":0,"softResyncs":0,"softMs":0,"maxSoftMs":0,"softDeferred":0,"softThrottled":0,"interrupted":0,"lastSoft":null},"dom":{"nodes":12934,"msgs":731},"busy":true,"adopted":true,"longTasks":0,"longMax":0}
+STAGE fase1-tecleando {"ms":25087,"keys":520,"p50":19.7,"p95":20.5,"max":25,"dbg":{"watch":{"ticks":11,"infos":11,"infoErrs":0,"keyChanges":0,"softResyncs":0,"softMs":0,"maxSoftMs":0,"softDeferred":8,"softThrottled":0,"interrupted":0,"lastSoft":null},"dom":{"nodes":12934,"msgs":731},"busy":true,"adopted":true,"longTasks":0,"longMax":0}}
+STAGE fase2-reposo {"domAntes":{"nodes":12934,"msgs":731},"domDespues":{"nodes":12934,"msgs":731},"softResyncs":1,"softMs":895,"maxSoftMs":895,"lastSoft":{"ms":895,"text":0,"tool":1,"user":0,"updated":0,"interrupted":0},"longTasks":0,"longMax":0,"keyChanges":0,"softDeferred":9}
+STAGE fase3-interrumpidas {"tools":395,"girando":0,"interrumpidas":0,"ejemplo":null}
+{
+ "origen": {
+  "id": "20261012_25",
+  "msgs": 781,
+  "bytes": 3484924
+ },
+ "runId": "run_d07a6115-7509-4b7c-9b15-496a7139104f",
+ "cpuThrottle": 4,
+ "adoptMs": 5117,
+ "antes": {
+  "watch": {
+   "ticks": 1,
+   "infos": 1,
+   "infoErrs": 0,
+   "keyChanges": 0,
+   "softResyncs": 0,
+   "softMs": 0,
+   "maxSoftMs": 0,
+   "softDeferred": 0,
+   "softThrottled": 0,
+   "interrupted": 0,
+   "lastSoft": null
+  },
+  "dom": {
+   "nodes": 12934,
+   "msgs": 731
+  },
+  "busy": true,
+  "adopted": true,
+  "longTasks": 0,
+  "longMax": 0
+ },
+ "fase1": {
+  "ms": 25087,
+  "keys": 520,
+  "p50": 19.7,
+  "p95": 20.5,
+  "max": 25,
+  "dbg": {
+   "watch": {
+    "ticks": 11,
+    "infos": 11,
+    "infoErrs": 0,
+    "keyChanges": 0,
+    "softResyncs": 0,
+    "softMs": 0,
+    "maxSoftMs": 0,
+    "softDeferred": 8,
+    "softThrottled": 0,
+    "interrupted": 0,
+    "lastSoft": null
+   },
+   "dom": {
+    "nodes": 12934,
+    "msgs": 731
+   },
+   "busy": true,
+   "adopted": true,
+   "longTasks": 0,
+   "longMax": 0
+  }
+ },
+ "fase2": {
+  "domAntes": {
+   "nodes": 12934,
+   "msgs": 731
+  },
+  "domDespues": {
+   "nodes": 12934,
+   "msgs": 731
+  },
+  "softResyncs": 1,
+  "softMs": 895,
+  "maxSoftMs": 895,
+  "lastSoft": {
+   "ms": 895,
+   "text": 0,
+   "tool": 1,
+   "user": 0,
+   "updated": 0,
+   "interrupted": 0
+  },
+  "longTasks": 0,
+  "longMax": 0,
+  "keyChanges": 0,
+  "softDeferred": 9
+ },
+ "prompt": {
+  "stopReason": "cancelled"
+ },
+ "detenerMs": 2816,
+ "fase3": {
+  "tools": 395,
+  "girando": 0,
+  "interrumpidas": 0,
+  "ejemplo": null
+ },
+ "interruptedGlobal": 0,
+ "promptFinal": "cancelled"
+}

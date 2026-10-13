@@ -1,0 +1,145 @@
+{
+ "sid": "20261012_25",
+ "preparacion": {
+  "ms": 49764,
+  "stopReason": "end_turn"
+ },
+ "runId": "run_fb93c77b-4d21-4145-833f-ace515025580",
+ "cpuThrottle": 4,
+ "adoptMs": 695,
+ "trasRecarga": {
+  "busy": true,
+  "adopted": true,
+  "runId": "run_0cebd260-480b-421f-b8c7-69729db64f2e",
+  "msgs": 4,
+  "nodes": 75,
+  "runbar": {
+   "text": "Turno en curso (seguía corriendo al recargar)",
+   "time": "0.0 s",
+   "stop": true
+  },
+  "steerNotes": []
+ },
+ "A": {
+  "windowMs": 25078,
+  "keys": 520,
+  "p50": 19,
+  "p95": 19.7,
+  "max": 40.6,
+  "loads": 5,
+  "steers": 9,
+  "longTasks": 0,
+  "longMs": 0,
+  "maxLong": 0,
+  "renders": 15,
+  "renderAvgMs": 0.8,
+  "renderMaxMs": 2.3,
+  "composerRuns": 520,
+  "composerAvgMs": 0.85,
+  "composerMaxMs": 1.9,
+  "domNodes": 98,
+  "tras": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_0cebd260-480b-421f-b8c7-69729db64f2e",
+   "msgs": 8,
+   "nodes": 98,
+   "runbar": {
+    "text": "Turno en curso (lo arrancó otra conexión)",
+    "time": "25.1 s",
+    "stop": true
+   },
+   "steerNotes": []
+  }
+ },
+ "B": {
+  "windowMs": 25347,
+  "keys": 530,
+  "p50": 18.9,
+  "p95": 19.4,
+  "max": 38.1,
+  "loads": 0,
+  "steers": 0,
+  "longTasks": 0,
+  "longMs": 0,
+  "maxLong": 0,
+  "renders": 0,
+  "renderAvgMs": 0,
+  "renderMaxMs": 2.3,
+  "composerRuns": 530,
+  "composerAvgMs": 0.79,
+  "composerMaxMs": 2.5,
+  "domNodes": 98,
+  "tras": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_0cebd260-480b-421f-b8c7-69729db64f2e",
+   "msgs": 8,
+   "nodes": 98,
+   "runbar": {
+    "text": "Turno en curso (lo arrancó otra conexión)",
+    "time": "51.9 s",
+    "stop": true
+   },
+   "steerNotes": []
+  }
+ },
+ "C": {
+  "antes": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_0cebd260-480b-421f-b8c7-69729db64f2e",
+   "msgs": 8,
+   "nodes": 98,
+   "runbar": {
+    "text": "Turno en curso (lo arrancó otra conexión)",
+    "time": "54.4 s",
+    "stop": true
+   },
+   "steerNotes": []
+  },
+  "marca": "INDICACION-TIPEO 23847",
+  "despuesDeEnviar": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_0cebd260-480b-421f-b8c7-69729db64f2e",
+   "msgs": 9,
+   "nodes": 101,
+   "runbar": {
+    "text": "Turno en curso (lo arrancó otra conexión)",
+    "time": "56.1 s",
+    "stop": true
+   },
+   "steerNotes": [
+    "indicación en cola para el agente."
+   ]
+  }
+ },
+ "prompt": {
+  "stopReason": "cancelled"
+ },
+ "D": {
+  "detenerMs": 960,
+  "trasDetener": {
+   "busy": false,
+   "adopted": false,
+   "runId": null,
+   "msgs": 12,
+   "nodes": 119,
+   "runbar": {
+    "text": "El turno terminó (otra conexión)",
+    "time": "57.1 s",
+    "stop": false
+   },
+   "steerNotes": []
+  },
+  "runbar": {
+   "text": "El turno terminó (otra conexión)",
+   "stop": false
+  }
+ },
+ "promptFinal": {
+  "runId": "run_0cebd260-480b-421f-b8c7-69729db64f2e",
+  "stopReason": "cancelled"
+ }
+}

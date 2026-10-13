@@ -1,0 +1,74 @@
+
+
+## BUG CRÍTICO CONFIRMADO: recargar la página MATA el turno en curso (Ctrl+F5)
+
+**Síntoma que reportó Emiliano**: al refrescar se pierde el streaming "y creo que incluso se
+detienen los turnos". Verificado: **se detienen**.
+
+### Evidencia (medida, no inferida)
+
+Sesiones de test `20261012_53` y `_54` (turno lanzado desde el navegador, tool de 25 s, reload a
+los 6 s). Lo que quedó persistido en `sessions.db`:
+
+```
+user      >> "Usá execute_typescript con: await new Promise(r => setTimeout(r, 25000))..."
+user      >> <turn-context>
+assistant >> [{"type":"thinking","thinking":"The user wants me to run execute_typescript with..."}]
+```
+
+Ni `toolRequest`, ni `toolResponse`, ni respuesta final. **El turno muere justo después del
+thinking**, en el instante de la recarga. El mismo prompt SIN recargar completa normalmente
+(medido: título generado + tool + respuesta).
+
+Del lado del cliente, tras el reload y antes del arreglo (`ui/desktop/scripts/goose-web-reload3.mjs`):
+
+```
+watchDbg: ticks: 0        <- el watcher de turno adoptado NUNCA arranca
+          interrupted: 1  <- y la carta pendiente queda marcada como interrumpida
+```
+
+### Mecanismo (código)
+
+- `server.rs:2357`: `on_prompt` crea `let _run_guard = ActiveRunDropGuard { ... }`.
+- `server.rs:257-259`: `impl Drop for ActiveRunDropGuard` → **`self.cancel_token.cancel()`**.
+- El guard vive en el scope del handler de `on_prompt`, cuya task pertenece a **la conexión**. Al
+  cerrarse el WebSocket, esa task/futuro se dropea → el guard se dropea → **el run se cancela**.
+- Además el stream de eventos está atado al `cx` capturado al lanzar el prompt
+  (`forward_agent_stream`), que ya está muerto; los envíos fallidos se tragan
+  (`Emitter::emit`), así que la conexión nueva no recibe nada.
+
+Es la misma familia del punto 1 de la ronda (muertes silenciosas del run), pero con un disparador
+distinto: no un stall del proveedor, sino el cierre de la conexión.
+
+### Mitigación aplicada HOY (cliente, sin Rust) — mejora parcial, no cura
+
+En `checkAdoptedRun` (app.js) se agregó un camino de recuperación por **actividad de la sesión**:
+si el probe del run no lo ve desde una conexión nueva pero la sesión estuvo activa hace <150 s,
+se asume que el turno sigue, **no se barren las cartas**, se muestra la barra y se refresca la
+conversación cada 2,5 s hasta que la sesión se enfría (`startHotWatch`/`hotTick`).
+
+Medido antes → después del mismo test de reload:
+
+| | antes | después |
+|---|---|---|
+| watcher adoptado | `ticks 0` (no arranca) | `adopted: true` |
+| carta marcada interrumpida | `interrupted: 1` | `interrupted: 0` |
+| refrescos efectivos | 0 | `softResyncs 5 → 32` |
+| barra de turno tras F5 | ausente | presente hasta que la sesión se enfría |
+
+Ojo: el refresco pasa a ser **incondicional** porque el `messageCount` que ve una conexión que no
+es dueña del run **viene congelado** (ya estaba documentado en el código).
+
+**Lo que esta mitigación NO arregla**: el texto final, porque el turno ya murió en el servidor. Con
+el fix de servidor abajo, este refresco es exactamente lo que hace aparecer el contenido.
+
+### Fix de fondo (Rust, pendiente — requiere rebuild del serve)
+
+1. **Desacoplar el run de la conexión**: ejecutar el cuerpo de `on_prompt` en una task propia
+   (`tokio::spawn`) y que el guard viva ahí, de modo que el cierre del socket no lo dropee. El
+   `cancel_token` ya es explícito (lo usa `on_cancel`), así que `Detener` sigue funcionando.
+2. **Sink de eventos por sesión**: que `forward_agent_stream` resuelva el destino por sesión (el
+   último conexión conectada a esa sesión) en vez de capturar el `cx` al lanzar el prompt. Con eso,
+   al volver a la pestaña, el streaming **se reanuda** en vivo en vez de depender del refresco.
+3. Verificación: el mismo `goose-web-reload3.mjs` debe mostrar la respuesta final apareciendo sola,
+   y la DB debe avanzar hasta el `toolResponse` + texto final.

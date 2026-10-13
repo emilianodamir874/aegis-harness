@@ -1,0 +1,83 @@
+{
+ "marca": "STEER-VIVO 79082",
+ "pasos": [
+  {
+   "k": "sesion",
+   "sid": "20261012_27"
+  },
+  {
+   "k": "tool-iniciada",
+   "t": 1791833590331
+  },
+  {
+   "k": "adoptado",
+   "ms": 983,
+   "busy": true,
+   "adopted": true,
+   "runId": "run_3df7c71e-0db7-42f9-b14e-c7db1c4932ae",
+   "runbar": "Turno en curso (seguía corriendo al recargar)",
+   "stop": true,
+   "steerNotes": [],
+   "cola": 0,
+   "steers": 0,
+   "composerText": "",
+   "sysnotes": [
+    "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+   ]
+  },
+  {
+   "k": "tras-enviar",
+   "busy": true,
+   "adopted": true,
+   "runId": "run_3df7c71e-0db7-42f9-b14e-c7db1c4932ae",
+   "runbar": "Turno en curso (seguía corriendo al recargar)",
+   "stop": true,
+   "steerNotes": [],
+   "cola": 0,
+   "steers": 1,
+   "composerText": "",
+   "sysnotes": [
+    "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+   ]
+  },
+  {
+   "k": "fin-turno",
+   "stopReason": "end_turn"
+  },
+  {
+   "k": "post-turno-ui",
+   "busy": false,
+   "adopted": false,
+   "runId": null,
+   "runbar": "El turno terminó (otra conexión)",
+   "stop": false,
+   "steerNotes": [],
+   "cola": 0,
+   "steers": 0,
+   "composerText": "",
+   "sysnotes": [
+    "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+   ]
+  }
+ ],
+ "enCola": false,
+ "reencolada": false,
+ "siguienteTurno": false,
+ "enServidor": true,
+ "posicion": {
+  "userMsgs": 2,
+  "idx": 1,
+  "esUltimoMensaje": true
+ },
+ "trasMarca": [
+  "tool_call",
+  "message_usage",
+  "tool_call_update",
+  "user_message_chunk",
+  "agent_thought_chunk",
+  "tool_call"
+ ],
+ "consumida": false,
+ "errores": [],
+ "limpieza": "sesion borrada: 20261012_27"
+}

@@ -1,0 +1,43 @@
+
+
+## Iconos, animaciones y caché (2ª pasada del rediseño)
+
+**Iconos (SVG reales, se fueron los glifos de texto)**
+- Chips: chevron SVG en `mask` que **rota 180°** al abrir el menú (antes `▾` de texto).
+- Menú: el check de la opción elegida es un SVG (`mask`) en color acento.
+- Sidebar: el caret de "archivadas" es un SVG que rota.
+- **Tool cards: icono por tipo de herramienta** (`toolIconSvg`, elige por nombre: shell / read /
+  write / image / search / glob / code, y **X** cuando falló). 395 de 395 cartas con icono.
+  Se comió el `✓` de CSS: hacía falta `.tool.ok .tool-ic::before, .tool.err .tool-ic::before { content: none }`
+  (mayor especificidad que `.tool-ic::before`).
+
+**LIMITACIÓN REAL (fix server-side pendiente)**: en el **replay** todas las cartas caen al icono
+genérico y el título es el fallback "Herramienta", porque el payload del historial
+(`session/load` → `tool_call`) **no trae `title`, `kind` ni `rawInput`**. El cliente ahora los
+deriva del `rawInput` cuando existe (turnos en vivo), pero en el replay no hay de dónde sacarlos.
+Arreglo de fondo en Rust: incluir esos campos al serializar las tool calls del historial.
+
+**Animaciones**
+- Entrada de mensajes (fade + 9px, 300ms) **sólo en vivo** (`.in`): durante el replay no se anima,
+  para no sumar 1000 animaciones al render.
+- `popIn` en menús/chips/slash/popover; `msgIn` en perm cards, toasts y runbar; fade del overlay.
+- Bienvenida escalonada: título → sub → 3 sugerencias (delays 40/100/160/210/260ms).
+- Runbar con **brillo que la recorre** (`shimmer`) mientras trabaja; se apaga en `done`/`cancelling`.
+- Cursor de streaming con pulso (reemplaza el bloque de CSS viejo).
+- Punto de "Conectando" con `pulse`; transiciones en chips, botones, items y `:active` con scale.
+- Todo respeta `prefers-reduced-motion`.
+- **Nuevo botón "ir al final"** (FAB circular abajo a la derecha): aparece al alejarte >240px del
+  último mensaje. Verificado: `FAB {existe: true, visible: true}`.
+
+**Caché: andaba bien, mi número estaba mal**
+
+Medido en la DB (`usage_ledger`, 4705 mensajes con input > 5000):
+```
+n|pct
+4705|96.7
+```
+O sea **96,7% del prompt se sirve de cache**. Mi fórmula sumaba
+`cacheReadTokens + inputTokens` en el denominador, así que mostraba **50%** donde había ~100%.
+`input_tokens` **ya incluye** lo cacheado: 225.223 de entrada contra 225.024 cacheados (99,9%), y el
+contexto total de la sesión era 226k, así que no pueden ser conjuntos disjuntos. Corregido a
+`cacheReadTokens / inputTokens`, y la fila ahora muestra los tokens: `cache 100% (225k de 225k)`.

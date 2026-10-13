@@ -1,0 +1,188 @@
+{
+ "sid": "20261012_24",
+ "runId": "run_a9ee3016-2db7-45ef-914e-b8b0c259eda0",
+ "adoptMs": 469,
+ "trasRecarga": {
+  "busy": true,
+  "adopted": true,
+  "runId": "run_a9ee3016-2db7-45ef-914e-b8b0c259eda0",
+  "queue": 0,
+  "msgs": 1,
+  "nodes": 3,
+  "runbar": {
+   "text": "Turno en curso (seguía corriendo al recargar)",
+   "time": "0.0 s",
+   "stop": true
+  },
+  "steerNotes": [],
+  "sysnotes": [
+   "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+  ]
+ },
+ "A": {
+  "typing1": {
+   "keys": 25,
+   "p50": 7.7,
+   "p95": 8.3,
+   "max": 17,
+   "frameP95": 17,
+   "frameMax": 17
+  },
+  "typingLong": {
+   "keys": 150,
+   "p50": 12.7,
+   "p95": 13.3,
+   "max": 16.6,
+   "frameP95": 17,
+   "frameMax": 17
+  },
+  "typing2": {
+   "keys": 25,
+   "p50": 7.7,
+   "p95": 8.2,
+   "max": 16.6,
+   "frameP95": 17,
+   "frameMax": 17
+  },
+  "windowMs": 7922,
+  "loads": 0,
+  "steers": 3,
+  "longTasks": 0,
+  "longMs": 0,
+  "maxLong": 0,
+  "tras": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_a9ee3016-2db7-45ef-914e-b8b0c259eda0",
+   "queue": 0,
+   "msgs": 1,
+   "nodes": 3,
+   "runbar": {
+    "text": "Turno en curso (seguía corriendo al recargar)",
+    "time": "7.8 s",
+    "stop": true
+   },
+   "steerNotes": [],
+   "sysnotes": [
+    "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+   ]
+  }
+ },
+ "B": {
+  "typing1": {
+   "keys": 25,
+   "p50": 7.7,
+   "p95": 8.2,
+   "max": 16.6,
+   "frameP95": 17,
+   "frameMax": 17
+  },
+  "typingLong": {
+   "keys": 150,
+   "p50": 12.6,
+   "p95": 13.3,
+   "max": 16.5,
+   "frameP95": 17,
+   "frameMax": 17
+  },
+  "typing2": {
+   "keys": 25,
+   "p50": 7.8,
+   "p95": 8.3,
+   "max": 16.6,
+   "frameP95": 17,
+   "frameMax": 17
+  },
+  "windowMs": 7920,
+  "loads": 0,
+  "steers": 0,
+  "longTasks": 0,
+  "longMs": 0,
+  "maxLong": 0,
+  "tras": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_a9ee3016-2db7-45ef-914e-b8b0c259eda0",
+   "queue": 0,
+   "msgs": 1,
+   "nodes": 3,
+   "runbar": {
+    "text": "Turno en curso (seguía corriendo al recargar)",
+    "time": "17.3 s",
+    "stop": true
+   },
+   "steerNotes": [],
+   "sysnotes": [
+    "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+   ]
+  }
+ },
+ "C": {
+  "antes": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_a9ee3016-2db7-45ef-914e-b8b0c259eda0",
+   "queue": 0,
+   "msgs": 1,
+   "nodes": 3,
+   "runbar": {
+    "text": "Turno en curso (seguía corriendo al recargar)",
+    "time": "17.3 s",
+    "stop": true
+   },
+   "steerNotes": [],
+   "sysnotes": [
+    "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+   ]
+  },
+  "marca": "INDICACION-TIPEO 34997",
+  "despuesDeEnviar": {
+   "busy": true,
+   "adopted": true,
+   "runId": "run_a9ee3016-2db7-45ef-914e-b8b0c259eda0",
+   "queue": 0,
+   "msgs": 2,
+   "nodes": 6,
+   "runbar": {
+    "text": "Turno en curso (seguía corriendo al recargar)",
+    "time": "18.5 s",
+    "stop": true
+   },
+   "steerNotes": [
+    "indicación en cola para el agente."
+   ],
+   "sysnotes": [
+    "Este turno ya estaba en curso cuando abriste la página: se sigue con refresco periódico (el streaming en vivo va a la conexión que lo arrancó)."
+   ]
+  }
+ },
+ "prompt": {
+  "stopReason": "cancelled"
+ },
+ "D": {
+  "detenerMs": 1317,
+  "trasDetener": {
+   "busy": false,
+   "adopted": false,
+   "runId": null,
+   "queue": 0,
+   "msgs": 4,
+   "nodes": 20,
+   "runbar": {
+    "text": "El turno terminó (otra conexión)",
+    "time": "19.9 s",
+    "stop": false
+   },
+   "steerNotes": [],
+   "sysnotes": []
+  },
+  "runbar": {
+   "text": "El turno terminó (otra conexión)",
+   "stop": false
+  }
+ },
+ "promptFinal": {
+  "runId": "run_a9ee3016-2db7-45ef-914e-b8b0c259eda0",
+  "stopReason": "cancelled"
+ }
+}

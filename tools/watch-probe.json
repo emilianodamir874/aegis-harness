@@ -1,0 +1,71 @@
+STAGE export {"id":"20261011_6","m":1167,"bytes":19681075}
+STAGE export {"id":"20261011_9","m":836,"bytes":9349322}
+STAGE export {"id":"20261012_25","m":781,"bytes":3484924}
+STAGE import {"sid":"20261012_26"}
+STAGE adoptado {"adoptMs":5031}
+STAGE ventana {"ms":45326,"keys":930,"p50":19.7,"p95":20.4,"max":38.4}
+STAGE watch {"ticks":18,"infos":18,"infoErrs":0,"resyncs":0,"resyncMs":0,"maxResyncMs":0}
+{
+ "origen": {
+  "id": "20261012_25",
+  "msgs": 781,
+  "bytes": 3484924
+ },
+ "runId": "run_0a6c6d81-bc6b-4c1a-a4d1-bcbcafa61e94",
+ "cpuThrottle": 4,
+ "adoptMs": 5031,
+ "ventana": {
+  "ms": 45326,
+  "keys": 930,
+  "p50": 19.7,
+  "p95": 20.4,
+  "max": 38.4
+ },
+ "watch": {
+  "ticks": 18,
+  "infos": 18,
+  "infoErrs": 0,
+  "keys": [
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z",
+   "782|2026-10-12T18:42:22Z"
+  ],
+  "resyncs": 0,
+  "resyncMs": 0,
+  "maxResyncMs": 0,
+  "lastKey": "782|2026-10-12T18:42:22Z",
+  "prevKey": "782|2026-10-12T18:42:22Z"
+ },
+ "metrics": {
+  "renders": 327,
+  "renderMs": 185.1000002026558,
+  "maxRenderMs": 4.300000011920929,
+  "lastRenderMs": 0.800000011920929,
+  "composerRuns": 930,
+  "composerMs": 907.5000002980232,
+  "maxComposerMs": 2.300000011920929
+ },
+ "dom": {
+  "nodes": 12934,
+  "msgs": 731
+ },
+ "prompt": {
+  "stopReason": "cancelled"
+ },
+ "promptFinal": "cancelled"
+}

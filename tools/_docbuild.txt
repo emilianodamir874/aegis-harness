@@ -1,0 +1,34 @@
+
+
+### Estado del fix de servidor (NO compilado — bloqueado por sccache)
+
+El cambio en `crates/goose/src/acp/server.rs` (`impl Drop for ActiveRunDropGuard`: se quito el
+`self.cancel_token.cancel()`) **esta escrito y en el arbol**, pero **no se pudo compilar**: todas las
+compilaciones fallan con
+
+```
+sccache: error: failed to execute compile
+sccache: caused by: failed to fill whole buffer
+error: could not compile `goose` (lib)
+```
+
+El wrapper viene de `C:\Users\Emiliano\.cargo\config.toml` (`[build] rustc-wrapper = "sccache"`).
+Se probo sin exito: `SCCACHE_DISABLE=1`, `RUSTC_WRAPPER=`, `CARGO_BUILD_RUSTC_WRAPPER=`,
+`CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTC_WRAPPER=`, `--config build.rustc-wrapper=` (error de TOML) y
+`taskkill /f /im sccache.exe`. Comentar la linea del config y compilar **tampoco** llego al final
+(el link falla, exit 2). **El sccache de esta maquina quedo roto a mitad de la sesion** — hay que
+repararlo (`sccache --stop-server` + limpiar su cache, o dejarlo desactivado) antes de poder construir
+cualquier binario nuevo.
+
+**Nada de esto toco el serve desplegado**: v2 sigue corriendo en 3284, v3 sigue siendo el build de
+las 17:11 (watchdog + spill de imagenes) y el `config.toml` del usuario quedo **restaurado y
+verificado** tras el intento.
+
+### Orden recomendado cuando haya build
+
+1. `cargo build -p goose-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode`
+2. copiar `target\debug\goose.exe` → `goose-serve-v3.exe`
+3. smoke en 3391 (`tools/smoke-v3.ps1`) + watchdog (`tools/smoke-watchdog.ps1`)
+4. **El test que importa**: `ui/desktop/scripts/goose-web-reload3.mjs` apuntando a v3 → la DB debe
+   avanzar hasta `toolResponse` + texto final, y la respuesta debe aparecer sola en la UI.
+5. Recien despues, el swap (`scripts/swap-serve-v3.ps1`).

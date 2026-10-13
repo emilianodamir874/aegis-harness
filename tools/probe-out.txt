@@ -1,0 +1,36 @@
+{
+ "ok": true,
+ "puerto": "3284",
+ "sid": "20261012_25",
+ "conTitulo": 395,
+ "sinTitulo": 0,
+ "ejemplos": [
+  {
+   "title": "chatrecall: chatrecall",
+   "kind": null
+  },
+  {
+   "title": "chatrecall: chatrecall · navegadores tablet",
+   "kind": null
+  },
+  {
+   "title": "chatrecall: chatrecall · tablet navegador instalar",
+   "kind": null
+  },
+  {
+   "title": "shell · dir /b \"%APPDATA%\\Block\\goose\" 2>nul & echo --- & dir ...…",
+   "kind": null
+  },
+  {
+   "title": "shell · powershell -NoProfile -Command \"Get-ChildItem -Path $e...…",
+   "kind": null
+  },
+  {
+   "title": "shell · dir /b \"%APPDATA%\\Block\\goose\\data\\sessions\" 2>nul | f...…",
+   "kind": null
+  }
+ ],
+ "fases": [
+  "init ok"
+ ]
+}

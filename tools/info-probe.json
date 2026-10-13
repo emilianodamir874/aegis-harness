@@ -1,0 +1,275 @@
+{
+ "sid": "20261012_24",
+ "series": [
+  {
+   "t": 2,
+   "messageCount": 1,
+   "lastMessageAt": "2026-10-12T17:53:17Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 4,
+   "messageCount": 1,
+   "lastMessageAt": "2026-10-12T17:53:17Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 6.1,
+   "messageCount": 2,
+   "lastMessageAt": "2026-10-12T17:53:19Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 8.1,
+   "messageCount": 2,
+   "lastMessageAt": "2026-10-12T17:53:19Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 10.1,
+   "messageCount": 2,
+   "lastMessageAt": "2026-10-12T17:53:19Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 12.1,
+   "messageCount": 4,
+   "lastMessageAt": "2026-10-12T17:53:29Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 14.2,
+   "messageCount": 4,
+   "lastMessageAt": "2026-10-12T17:53:29Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 16.2,
+   "messageCount": 4,
+   "lastMessageAt": "2026-10-12T17:53:29Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 18.2,
+   "messageCount": 4,
+   "lastMessageAt": "2026-10-12T17:53:29Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 20.2,
+   "messageCount": 5,
+   "lastMessageAt": "2026-10-12T17:53:35Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 22.2,
+   "messageCount": 6,
+   "lastMessageAt": "2026-10-12T17:53:37Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 24.3,
+   "messageCount": 6,
+   "lastMessageAt": "2026-10-12T17:53:37Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 26.3,
+   "messageCount": 6,
+   "lastMessageAt": "2026-10-12T17:53:37Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 28.3,
+   "messageCount": 7,
+   "lastMessageAt": "2026-10-12T17:53:44Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "_goose/unstable/session/steer: {\"code\":-32602,\"message\":\"Invalid params\",\"data\":{\"message\":\"expected active run id `probe-inexistente` but found `run_e386a0b8-8",
+   "promptDone": null
+  },
+  {
+   "t": 30.3,
+   "messageCount": 8,
+   "lastMessageAt": "2026-10-12T17:53:45Z",
+   "keys": [
+    "messageCount",
+    "createdAt",
+    "lastMessageAt",
+    "userSetName",
+    "sessionType",
+    "hasRecipe",
+    "providerId",
+    "modelId"
+   ],
+   "steer": "no active run to steer",
+   "promptDone": {
+    "stopReason": "end_turn"
+   }
+  }
+ ],
+ "kinds": {
+  "session_info_update": 3,
+  "usage_update": 6,
+  "available_commands_update": 1,
+  "agent_thought_chunk": 375,
+  "tool_call": 3,
+  "tool_call_update": 6,
+  "agent_message_chunk": 4
+ },
+ "activos": 1,
+ "fin": {
+  "stopReason": "end_turn"
+ }
+}

@@ -1,0 +1,82 @@
+STAGE trasSteer {"busy":true,"queue":0,"steers":0,"queued":["MARCATEST 06822: avisá que la recibisteindicación en cola pa"],"userMsgs":["Ejecutá con shell, en orden, estos 3 comandos: (paso 1) powe","MARCATEST 06822: avisá que la recibisteindicación en cola pa"],"steerNotes":["indicación en cola para el agente."],"sysnotes":[],"runbar":"Goose está trabajando."}
+STAGE trasDetener {"busy":false,"queue":0,"steers":0,"queued":["MARCATEST 06822: avisá que la recibisteindicación en cola pa"],"userMsgs":["Ejecutá con shell, en orden, estos 3 comandos: (paso 1) powe","MARCATEST 06822: avisá que la recibisteindicación en cola pa"],"steerNotes":["indicación en cola para el agente."],"sysnotes":["Cancelando…","Respuesta detenida."],"runbar":"El turno terminó"}
+STAGE settled {"busy":true,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 3 comandos: (paso 1) powe","MARCATEST 06822: avisá que la recibiste"],"steerNotes":[],"sysnotes":["Cancelando…","Respuesta detenida.","Una indicación quedó sin respuesta en ese turno: se reenvía como mensaje."],"runbar":"Goose está trabajando."}
+STAGE historial {"userMsgs":2,"contieneMarca":true}
+{
+ "marca": "MARCATEST 06822",
+ "sid": "20261012_27",
+ "antesDelSteer": {
+  "busy": true,
+  "queue": 0,
+  "steers": 0,
+  "queued": [],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 3 comandos: (paso 1) powe"
+  ],
+  "steerNotes": [],
+  "sysnotes": [],
+  "runbar": "Goose está trabajando."
+ },
+ "trasSteer": {
+  "busy": true,
+  "queue": 0,
+  "steers": 0,
+  "queued": [
+   "MARCATEST 06822: avisá que la recibisteindicación en cola pa"
+  ],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 3 comandos: (paso 1) powe",
+   "MARCATEST 06822: avisá que la recibisteindicación en cola pa"
+  ],
+  "steerNotes": [
+   "indicación en cola para el agente."
+  ],
+  "sysnotes": [],
+  "runbar": "Goose está trabajando."
+ },
+ "detenerMs": true,
+ "trasDetener": {
+  "busy": false,
+  "queue": 0,
+  "steers": 0,
+  "queued": [
+   "MARCATEST 06822: avisá que la recibisteindicación en cola pa"
+  ],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 3 comandos: (paso 1) powe",
+   "MARCATEST 06822: avisá que la recibisteindicación en cola pa"
+  ],
+  "steerNotes": [
+   "indicación en cola para el agente."
+  ],
+  "sysnotes": [
+   "Cancelando…",
+   "Respuesta detenida."
+  ],
+  "runbar": "El turno terminó"
+ },
+ "settled": {
+  "busy": true,
+  "queue": 0,
+  "steers": 0,
+  "queued": [],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 3 comandos: (paso 1) powe",
+   "MARCATEST 06822: avisá que la recibiste"
+  ],
+  "steerNotes": [],
+  "sysnotes": [
+   "Cancelando…",
+   "Respuesta detenida.",
+   "Una indicación quedó sin respuesta en ese turno: se reenvía como mensaje."
+  ],
+  "runbar": "Goose está trabajando."
+ },
+ "reenviado": {
+  "sysnote": true,
+  "burbuja": true,
+  "turnoNuevo": true
+ },
+ "enServidor": true,
+ "userMsgsServidor": 2
+}

@@ -1,0 +1,79 @@
+STAGE trasSteer {"busy":true,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow","MARCATEST 70667: avisá que la recibisteindicación recibida p"],"steerNotes":["indicación recibida por el agente"],"sysnotes":[],"runbar":"Goose está trabajando."}
+STAGE trasDetener {"busy":false,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow","MARCATEST 70667: avisá que la recibisteindicación recibida p"],"steerNotes":["indicación recibida por el agente"],"sysnotes":["Cancelando…","Respuesta detenida."],"runbar":"El turno terminó"}
+STAGE settled {"busy":false,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow","MARCATEST 70667: avisá que la recibisteindicación recibida p"],"steerNotes":["indicación recibida por el agente"],"sysnotes":["Cancelando…","Respuesta detenida."],"runbar":null}
+STAGE historial {"userMsgs":2,"contieneMarca":true}
+{
+ "marca": "MARCATEST 70667",
+ "sid": "20261012_27",
+ "antesDelSteer": {
+  "busy": true,
+  "queue": 0,
+  "steers": 0,
+  "queued": [],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow"
+  ],
+  "steerNotes": [],
+  "sysnotes": [],
+  "runbar": "Goose está trabajando."
+ },
+ "trasSteer": {
+  "busy": true,
+  "queue": 0,
+  "steers": 0,
+  "queued": [],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow",
+   "MARCATEST 70667: avisá que la recibisteindicación recibida p"
+  ],
+  "steerNotes": [
+   "indicación recibida por el agente"
+  ],
+  "sysnotes": [],
+  "runbar": "Goose está trabajando."
+ },
+ "detenerMs": true,
+ "trasDetener": {
+  "busy": false,
+  "queue": 0,
+  "steers": 0,
+  "queued": [],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow",
+   "MARCATEST 70667: avisá que la recibisteindicación recibida p"
+  ],
+  "steerNotes": [
+   "indicación recibida por el agente"
+  ],
+  "sysnotes": [
+   "Cancelando…",
+   "Respuesta detenida."
+  ],
+  "runbar": "El turno terminó"
+ },
+ "settled": {
+  "busy": false,
+  "queue": 0,
+  "steers": 0,
+  "queued": [],
+  "userMsgs": [
+   "Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow",
+   "MARCATEST 70667: avisá que la recibisteindicación recibida p"
+  ],
+  "steerNotes": [
+   "indicación recibida por el agente"
+  ],
+  "sysnotes": [
+   "Cancelando…",
+   "Respuesta detenida."
+  ],
+  "runbar": null
+ },
+ "reenviado": {
+  "sysnote": false,
+  "burbuja": true,
+  "turnoNuevo": false
+ },
+ "enServidor": true,
+ "userMsgsServidor": 2
+}

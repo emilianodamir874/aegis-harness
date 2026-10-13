@@ -1,0 +1,39 @@
+
+
+## Rediseño "Claude-like" de la UI (capa de override en app.css)
+
+Al final de `app/app.css` hay un bloque `/* ================= rediseno "Claude-like" =================` con
+todas las reglas nuevas: mismas selectividades y **después** de las viejas, así que gana por orden y
+se puede revertir borrando ese bloque (no se tocó ninguna regla existente).
+
+**Qué cambió**
+
+| | antes | ahora |
+|---|---|---|
+| Paleta | gris frío casi negro (`#0d0d0e`), acento azul `#0053fd` | carbón cálido `#262624`, sidebar `#1f1e1c`, acento **coral** `#d97757` (estilo Claude) |
+| Texto del asistente | sans 15px, interlineado 1.5 | **serif** 16px, interlineado 1.72 (la firma del look Claude) |
+| Mensaje del usuario | izquierda, bloque | **derecha**, burbuja con esquina asimétrica (18/18/5/18), borde suave |
+| Composer | caja chica | tarjeta grande redondeada (22px) con sombra y **anillo coral** al enfocar |
+| Enviar | botón cuadrado | **circular coral** con hover/active |
+| Tema | radius 12/9 | radius 14/11, pills (chips, permiso, runbar) a `99px` |
+| Código | `#0f1115` | warm dark `#1e1d1b`, bloques a 13px de radius |
+| Sidebar | item activo con barra azul | pill rellena suave, hover con transición 130ms |
+| Herramientas | caja con borde duro | tarjeta suave redondeada con hover |
+
+Metas: `index.html` sigue con `theme-color #0d0d0e` (queda como está, es sólo el color de la barra
+de estado en móvil).
+
+**Verificación visual** (screenshots en `tools/`): `shot-pop.png` (antes, 19:14) vs
+`shot-claude.png` / `shot-mid.png` (después). En `shot-mid.png` se ve la prosa del asistente en
+serif, el código inline en pastillas y las tarjetas de herramientas. Móvil: `shot-mobile.png`.
+Scripts: `ui/desktop/scripts/goose-web-theme-shot{,2,3}.mjs`.
+
+**OJO con los screenshots**: headless Chrome no tiene "Segoe WPC"/"Segoe UI", así que cae al serif
+del sistema y **todo** se ve con serif. En tu navegador sólo las respuestas del asistente van en
+serif; el resto usa la stack sans de `--font`.
+
+**Bug arreglado de paso** (medido): en un chat nuevo el readout mostraba el costo de la sesión
+anterior (`0/1M tok · $0.5056`). Ahora `setUsage`/`setMsgUsage` llaman primero a
+`resetUsageForSession()` (auto-sanador, no depende de por dónde se abra el chat):
+`ANTES "22% · 226.7k/1M tok · $0.5056"` -> chat nuevo -> `"0% · 0/1M tok"`.
+Script: `ui/desktop/scripts/goose-web-usage-leak.mjs`.

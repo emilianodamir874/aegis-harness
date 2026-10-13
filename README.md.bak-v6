@@ -1,0 +1,206 @@
+# goose-web
+
+Acceso a goose del fork de Emiliano desde el navegador por LAN (sin instalar nada en los dispositivos).
+
+- **UI (web):** http://192.168.100.34:3788  (local: http://127.0.0.1:3788)
+- **Backend:** `goose serve` (ACP sobre WebSocket) en 0.0.0.0:3284
+- Comparte sesiones, proveedores y configuración con el CLI/desktop (misma máquina).
+
+## Qué es (v3 — cliente de chat propio, tipo Hermes web)
+
+`app/` contiene un cliente de chat propio — HTML + CSS + JS sin dependencias, sin Electron:
+sidebar de sesiones (búsqueda, grupos por fecha, renombrar y borrar inline), chat con streaming
+en vivo, tarjetas de tool calls (expandibles), bloques de pensamiento colapsables, chips de
+Proveedor / Mode / Modelo, **tarjeta de permisos con botones** (permitir/una vez/siempre/rechazar),
+**adjuntar imágenes** (pegar captura o botón +, con redimensionado automático), copiar código y
+mensajes, markdown con listas/títulos/citas, atajos (Ctrl+K buscar, Esc cerrar), drawer en móvil,
+reconexión automática y manifest para "Agregar a pantalla de inicio". Estética oscura basada en
+los tokens de Hermes web (chrome `#0d0d0e`, tarjetas `#161618`, acento `#0053fd`).
+
+- `server.mjs` sirve `app/` y genera `/config.js` en cada request (URL del WS con token —
+  los secretos nunca viven en archivos estáticos), con `ETag` + `no-cache`, CSP y `/client-log`.
+- La v1 (renderer del desktop embutido con shim) quedó archivada en `dist/` como rollback — no se sirve.
+
+## Files
+
+- `app/` — index.html, app.css, app.js (el cliente de chat).
+- `config.json` — puertos, host LAN, secret key, cwd, appConfig.
+- `server.mjs` — static server + `/config.js` + `/client-log` + `/healthz`.
+- `tools/` — probes ACP (`probe2.mjs`, `probe-config.mjs`, `ls-sessions.mjs`),
+  `cleanup-test-sessions.mjs`, `sample-context.txt` (archivo de prueba para adjuntos), `shots/` (capturas).
+- `scripts/` — start/stop/setup/launch (tarea programada `Goose_Web`).
+- `logs/` — server/serve + `requests.log` + `client.log` (reportes de dispositivos reales).
+
+## Qué hay de nuevo en v5 (2026-10-12 · feedback del celular)
+
+Tres cosas reportadas desde el teléfono (390 px), con medición antes/después usando
+`ui/desktop/scripts/goose-web-phone-audit.mjs` (Playwright, viewport 390×844, isMobile):
+
+- **Los desplegables del header no se veían.** En ≤880 px los chips vivían en la misma fila
+  del título: el chip de **proveedor se ocultaba** (`display:none` en ≤480 px) y el del
+  **modelo se truncaba a 88 px** (`deepseek-v4.1-f…`). Medido: 2 de 3 visibles, 1 legible.
+  Ahora en móvil el header va en **dos líneas** — ☰ + título arriba, y los chips en su propia
+  fila a ancho completo, alineados a la izquierda, sin máscara de corte y con tope de 64vw.
+  Medido: **3 de 3 visibles y sin truncar** (`Open Design` 107 px, `auto` 61 px,
+  `deepseek-v4.1-flash-max` 174 px), sin scroll horizontal a 390 px. El topbar pasa de 51 a 90 px.
+- **Escribir rápido en el composer perdía caracteres.** El trabajo no estaba en un solo lugar:
+  el handler de `input` leía layout (`autosize()`) *dentro* del evento que ve el teclado, no había
+  guard de composición del IME, y mientras el agente streameaba el cliente re-parseaba el markdown
+  y reemplazaba el `innerHTML` de **todo** el mensaje hasta 60 veces por segundo (costo que crece
+  con el largo del texto). Ahora: (a) el trabajo del composer va agrupado en un
+  `requestAnimationFrame` (`scheduleComposer`) y no se toca el textarea durante
+  `compositionstart/end`; (b) el mensaje que está creciendo se re-renderiza como máximo cada
+  `STREAM_RENDER_MS = 90 ms` (con borde final garantizado) y el throttle no aplica en el replay;
+  (c) el textarea pide `enterkeyhint="send"` para que el teclado del teléfono muestre "Enviar".
+
+  **Lo medido, sin maquillar** (`goose-web-phone-audit.mjs`, 390×844, sesión de 1080 mensajes):
+  tecla → frame pintado p50 **7.9 ms en reposo** y **12.7 ms con texto entrando en vivo**, sin un
+  solo frame perdido (17 ms), con el renderer en ~0.6% de CPU y ~5 layouts/s durante el stream.
+  La comparación A/B del throttle (activado vs `live=false`, o sea el comportamiento viejo) dio
+  **12.7 vs 12.7 ms**: en este equipo, con CPU de escritorio y mensajes de 2-3 KB, el costo por
+  frame es submilisegundo y el techo de 11 renders/s no se nota. Es una medida preventiva para
+  mensajes largos en la CPU de un teléfono, no algo que pueda demostrar acá.
+  Y el síntoma original (**teclas que se pierden**) es del IME de Android: chrome headless no tiene
+  teclado de Android, así que no se puede reproducir experimentalmente — lo que sí se hizo es quitar
+  del camino del evento todo lo que puede desincronizarlo. Si vuelve a pasar, mirar `logs/client.log`
+  (reporta `error`/`rejection` del cliente) antes de tocar el código.
+- **No se notaba cuándo terminaba el streaming ni se podía cortar.** El único indicio era el
+  cursor ▍ (que cualquier tool call borraba) y el ícono del botón de enviar cambiando de ↑ a ■.
+  Ahora hay una **barra de turno** arriba del composer: spinner + cronómetro + botón
+  **Detener** grande, y al terminar pasa a "Respuesta completa · 12,3 s" (6 s) más una marca
+  `fin del turno · 12,3 s` en la conversación, que queda donde terminó el texto. Medido: con el
+  turno en curso, `#btn-stop` visible y la barra con el cronómetro corriendo; **Detener corta en
+  75 ms** (runbar → "Turno detenido · 34,8 s") y el composer vuelve a aceptar texto enseguida.
+  Ojo con este detalle del modelo: `deepseek-v4.1-flash-max` pasó **~30 s sin emitir un solo
+  carácter** antes del primer chunk de texto — con la UI vieja eso era una pantalla muda.
+  Además el cliente ahora **adopta** runs que no arrancó él (chunks que llegan sin turno local:
+  otra conexión, o la pestaña recargada mid-turn) y el corte se puede pedir igual.
+- **Bugs de fondo que dejaban la UI trabada** (por eso "no puedo detenerlo"): las peticiones RPC
+  pendientes **nunca se rechazaban** cuando caía el WebSocket, así que un `session/prompt`
+  colgado dejaba `state.busy = true` para siempre — sin envío y sin Detener hasta recargar.
+  Ahora `ws.onclose` rechaza lo pendiente, el turno se cierra con aviso ("Se cortó la conexión:
+  el turno se interrumpió") y la cola de mensajes espera a la reconexión. Verificado cortando el
+  socket real en medio de un turno (`__gooseWeb.dropSocket()`): la UI sale de "busy" sola, la barra
+  avisa del corte, el composer vuelve a aceptar texto y la reconexión no deja nada trabado.
+  Y si el server no confirma el corte en 12 s, la barra lo dice y deja reintentar en vez de
+  quedarse en "Deteniendo…".
+
+## Qué hay de nuevo en v4 (2026-10-12)
+
+Sobre la base v3, todo verificado con los checks de `ui/desktop/scripts`:
+
+- **Estado vacío explícito**: al abrir una sesión sin mensajes se imprime un welcome propio
+  ("Sesión sin mensajes" + título de la sesión); el welcome de chat nuevo mantiene saludo + sugerencias.
+- **Adjuntos**: además de imágenes (pegar / botón +), se adjuntan **archivos de texto** como contexto
+  (`file input` y **arrastrar y soltar sobre la ventana** con overlay `#dropzone`). Límites: 6 adjuntos,
+  256 KB por archivo de texto (se recortan los primeros 80 000 caracteres), 12 MB por imagen.
+- **Menú por sesión (⋮)**: renombrar, **exportar a Markdown / JSON** (`_goose/unstable/session/export`,
+  descarga real vía Blob) y **archivar / desarchivar** (`_goose/unstable/session/archive|unarchive`).
+  Las archivadas van a un grupo "Archivadas" plegable, con tag y acciones propias.
+- **Slash commands**: autocompletado en el composer (`_goose/unstable/slash-commands/list` y/o la
+  notificación `available_commands_update`): ↑↓ para elegir, Tab/Enter inserta, Esc cierra.
+- **Steering**: con el agente trabajando, **Enter manda una indicación al vuelo**
+  (`_goose/unstable/session/steer` con `expectedRunId`, tomado de
+  `session_info_update._meta.goose.activeRunId`). La burbuja se marca "en cola" y pasa a
+  "indicación recibida por el agente" cuando el server la levanta. Si no hay run al que apuntar
+  (o el steer falla), el mensaje queda en cola local y sale al terminar el turno.
+- **Paginación del sidebar**: `session/list` devuelve 50 por página con `nextCursor`; ahora se
+  sigue el cursor con botón "Cargar más sesiones" (antes las sesiones >50 eran invisibles).
+- **Rendimiento del replay**: un solo `requestAnimationFrame` para todos los registros sucios y sin
+  autoscroll durante la carga. Sesión de 1166 mensajes: primera pintura 431 ms → 23 ms, total
+  2.78 s → 1.35 s (medido con `goose-web-perf.mjs`).
+- Toasts para confirmaciones, `#meta-left` con atajos (oculto en teléfono), hint de steering mientras
+  el agente trabaja, y `window.__gooseWeb` como superficie mínima de depuración (estado + showWelcome).
+
+## Backend / auth
+
+`C:/goose/target/debug/goose-serve-v1.exe serve --host 0.0.0.0 --port 3284 --platform desktop
+--enable-scheduler --with-builtin developer --allowed-origin http://192.168.100.34:3788
+--allowed-origin http://127.0.0.1:3788 --allowed-origin http://localhost:3788`, con
+`GOOSE_SERVER__SECRET_KEY` (de `config.json`). Los browsers no pueden setear headers en un
+WebSocket: la autenticación va como `?token=` en la URL del WS (el server lo acepta).
+
+## Verificación
+
+```bash
+cd C:/goose/ui/desktop
+node scripts/goose-web-app-check.mjs     # e2e completo: conexión, enviar+streaming, chips,
+                                         # permisos, rename, imagen, borrado, replay, móvil
+node scripts/goose-web-viewports.mjs     # barrido 360→1920 (abre una sesión para medir los chips;
+                                         # cero desbordes horizontales)
+node scripts/goose-web-features.mjs      # features v4: welcome vacío, adjuntos de texto + drag&drop,
+                                         # export md/json (descarga), archivar/desarchivar, slash, steering
+node scripts/goose-web-perf.mjs          # tiempo de replay de las 3 sesiones más grandes
+node scripts/goose-web-shots.mjs         # capturas desktop/móvil
+node scripts/goose-web-phone-audit.mjs   # móvil 390×844: desplegables del header, costo de tipear
+                                         # (reposo / streaming, A/B del throttle) y estado del turno
+                                         # (Detener, caída del WebSocket, reconexión)
+```
+
+Probes ACP crudos y utilidades en `C:/goose-web/tools/` (probe2/3/4/5, ls-sessions,
+cleanup-test-sessions). Los checks se corren DESPRENDIDOS (Start-Process + log):
+el wrapper de background mata node con "stdin is not a tty".
+
+## Ops
+
+```powershell
+# start/stop (no elevado)
+powershell -NoProfile -File C:\goose-web\scripts\start-goose-web.ps1
+powershell -NoProfile -File C:\goose-web\scripts\stop-goose-web.ps1
+
+# autostart (ya instalado; corre al iniciar sesión)
+schtasks /Run /TN Goose_Web
+```
+
+Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Goose_Web` ya instalados el 2026-10-12.
+
+## Security notes
+
+- Solo LAN (bind 0.0.0.0 + firewall acotado a Private/LocalSubnet). NO exponer a internet.
+- Auth = secret key de `config.json` (inyectada al vuelo en `/config.js`); rotar editando el config y reiniciando ambos procesos.
+- Sin TLS: http/ws plano en la red local (mismo modelo que el dashboard de Hermes).
+
+## Pitfalls / reglas para agentes (leer antes de tocar el código)
+
+- `app/*` son estáticos: no hay build; recargar y probar. `server.mjs` mantiene `no-cache` + ETag y el token se inyecta por request en `/config.js` — nunca en archivos estáticos.
+- `[hidden]` es pisado por cualquier `display:` — existe la regla global `[hidden]{display:none!important}`; no la saques.
+- Menús flotantes (chips): se abren como "portal" a `document.body` con `position:fixed` (`openMenu`). NO volver a anidarlos: la fila de chips tiene overflow + máscara y cualquier menú anidado queda clipeado (bug ya sufrido).
+- Streaming: UNA entrada por messageId en `state.msgs`; cuando una herramienta cierra el bloque, el siguiente chunk reemplaza la entrada — no re-indexar la clave (fragmenta el texto en un elemento por chunk).
+- UI inline (renombrar / confirmar borrado): `state.hold` pausa `renderList()` mientras hay un editor abierto, y tras cada refresh hay que re-buscar las entradas por id (los objetos de sesión se reemplazan).
+- Código: `.msg-a pre { white-space: pre }` (sin wrap; scroll horizontal). El wrap por herencia rompe los comandos.
+- Permisos de herramientas PERSISTEN en el server por herramienta: contestar "allow always" en una prueba desactiva los prompts futuros. Reset: `_goose/unstable/tools/permissions/set` con `{toolPermissions:[{toolName, permission:'ask_before'}]}`.
+- Pruebas: correr los checks DESPRENDIDOS (`Start-Process` + log) — el wrapper de background mata node con "stdin is not a tty". Limpiar sesiones de prueba con `tools/cleanup-test-sessions.mjs`.
+- Menús portal: el navegador hace `scrollIntoView` al clickear un botón fuera de vista, y ese scroll
+  cerraba el menú antes de poder tocarlo. `openMenu` deja una ventana de 500 ms (`menuOpenedAt`) en la
+  que el scroll no cierra menús. No sacarla.
+- Título: el server **auto-titula** la sesión después del primer turno (con su propia llamada al modelo)
+  y puede anunciarlo *después* de un rename del usuario. `titleLock` ignora `session_info_update.title`
+  por 15 s tras un rename manual. No tocar el orden.
+- Replay: un solo `flushRender` por frame para todos los registros sucios y `scrollBottom` no hace nada
+  con `state.replaying = true`. Si volvés a medir `scrollHeight` por chunk (o a scrollear por mensaje)
+  el replay de 1000+ mensajes se cae a ~3 s por layout thrashing.
+- Steering: requiere `expectedRunId`; se obtiene de `session_info_update._meta.goose.activeRunId` (null
+  cuando el run termina). La confirmación de pickup llega como `user_message_chunk` con el **mismo
+  messageId** que devolvió `session/steer` — por eso la burbuja local no se duplica.
+- Archivadas: el server **no** filtra archivadas en `session/list`; vienen con `_meta.archivedAt` y el
+  cliente las separa en el grupo "Archivadas". `session/list` pagina de a 50: seguir `nextCursor`.
+- Todo es LAN: no exponer a internet; no tocar `config.json` (secret key), los scripts de arranque ni las reglas de firewall.
+- **Header en móvil**: en ≤880 px los chips van en su PROPIA fila (`flex: 1 0 100%`, `order: 5`).
+  No volver a meterlos en la fila del título, ni ocultar el chip de proveedor, ni truncar el del
+  modelo a 88 px: era exactamente el reporte "no veo todos los desplegables". Sin `mask-image`
+  en esa fila (el degradado hacía parecer cortado lo que sí estaba).
+- **Composer/IME**: el handler de `input` NO puede leer layout ni re-renderizar nada. Todo el
+  trabajo va por `scheduleComposer()` (un rAF por ráfaga) y se ignora mientras `composing`
+  (composición del teclado Android/iOS): tocar el textarea en medio de una composición es lo que
+  hacía perder caracteres al tipear rápido. `autosize()` deja `lastComposerValue` sincronizado.
+- **Streaming**: un registro con `live = true` (mensaje que está creciendo) se re-renderiza como
+  máximo cada 90 ms; el borde final lo garantiza el `setTimeout` de `flushRender`. Durante el
+  replay todos los registros quedan con `live = false` (se pinta una sola vez al final) — si el
+  throttle se activa en el replay, la primera pintura de una sesión de 1000+ mensajes se cae.
+- **Estado del turno**: los indicadores no pueden depender solo del `session/prompt` local. Si
+  llegan chunks/herramientas con `!state.busy` el run se adopta (`noteRunActivity`), y
+  `session_info_update._meta.goose.activeRunId = null` cierra el turno adoptado. `stopRun()`
+  notifica `session/cancel` y tiene red de seguridad a los 12 s (no dejar "Deteniendo…" eterno).
+- **RPC colgado**: `rpc.onclose` rechaza las promesas pendientes. Sacarlo reintroduce la UI trabada
+  (`state.busy` en true para siempre → no envía, no corta, y todo lo que escribís se va a steering).
+- `window.__gooseWeb` ahora también expone `dropSocket()` (solo para los checks: cortar el WS real).

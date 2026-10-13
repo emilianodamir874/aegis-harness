@@ -1,0 +1,41 @@
+{
+  "url": "http://192.168.100.34:3788/",
+  "desktop": {
+    "conn": "Conectado",
+    "sessions": 46,
+    "chips": 3,
+    "sentUserBubble": 1,
+    "reply": "OK-WEB",
+    "metaRight": "7.7k tok",
+    "chipTextBefore": "deepseek-v4.1-flash-max",
+    "menuRows": 5,
+    "chipSwitched": true,
+    "chipTextAfter": "deepseek-v4.1-flash",
+    "sysnotes": 0,
+    "toolCards": 1,
+    "toolText": "shell · echo TOOL-TEST-OK",
+    "modeSet": "approve",
+    "permCards": 1,
+    "permClicked": true,
+    "permAnswered": 1,
+    "renameError": "TimeoutError: page.fill: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.sb-edit')\u001b[22m\n",
+    "attThumbs": 1,
+    "imgUserBubbleImgs": 1,
+    "imgReply": "Gris",
+    "confirmShown": 0,
+    "delError": "TimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.sb-row:has(.sb-item.active)').first().locator('.sb-confirm .ym')\u001b[22m\n",
+    "openedSessionIndex": 1,
+    "msgsAfterLoad": 158,
+    "titleAfterLoad": "Aegis OS castor rebuild"
+  },
+  "phone": {
+    "conn": "Conectado",
+    "composerVisible": true,
+    "drawerOpen": true,
+    "sessionsInDrawer": 47,
+    "openedTitle": "OK-WEB tool test",
+    "msgsOnPhone": 12,
+    "drawerClosedAfterOpen": true
+  },
+  "errors": []
+}

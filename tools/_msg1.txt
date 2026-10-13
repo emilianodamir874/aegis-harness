@@ -1,0 +1,3 @@
+fix(acp): keep runs alive and visible instead of dying silently
+
+Add a per-run stall watchdog that closes a wedged run with a visible error instead of leaving the client mute with spinning tool cards; stop ActiveRunDropGuard from cancelling the run when the carrying connection is dropped; spill oversized tool images to a file with a pointer instead of keeping megabytes of base64 in history. Measured: 3s stall -> error chunk + activeRunId cleared + stopReason cancelled.

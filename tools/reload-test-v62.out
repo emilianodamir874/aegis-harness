@@ -1,0 +1,112 @@
+{
+ "pasos": [
+  {
+   "paso": "1-run-iniciado",
+   "runbar": true,
+   "runbarText": "Goose está trabajando.",
+   "runbarTime": "0.0 s",
+   "stopVisible": true,
+   "sendVisible": false,
+   "msgsLen": 212,
+   "busy": true,
+   "runId": "run_b5e9ee47-f6a3-4086-ae80-8a1fdf849652",
+   "adopted": false,
+   "queuedNotes": [],
+   "turnEnd": [],
+   "sysnotes": []
+  },
+  {
+   "paso": "2-tras-reload",
+   "runbar": false,
+   "runbarText": null,
+   "runbarTime": null,
+   "stopVisible": false,
+   "sendVisible": true,
+   "msgsLen": 429,
+   "busy": false,
+   "runId": null,
+   "adopted": false,
+   "queuedNotes": [],
+   "turnEnd": [],
+   "sysnotes": []
+  },
+  {
+   "paso": "2b-adopta-sigue",
+   "runbar": false,
+   "runbarText": null,
+   "runbarTime": null,
+   "stopVisible": false,
+   "sendVisible": true,
+   "msgsLen": 429,
+   "busy": false,
+   "runId": null,
+   "adopted": false,
+   "queuedNotes": [],
+   "turnEnd": [],
+   "sysnotes": [],
+   "crecio": true,
+   "timer": null
+  },
+  {
+   "paso": "3-mientras-busy",
+   "sysnotes": [],
+   "queuedNotes": [],
+   "runbar": true,
+   "runbarText": "Goose está trabajando.",
+   "runbarTime": "1.0 s",
+   "stopVisible": true,
+   "sendVisible": false,
+   "msgsLen": 256,
+   "busy": true,
+   "runId": "run_45bf30aa-9e16-44fe-8069-497b7441899b",
+   "adopted": false,
+   "turnEnd": []
+  },
+  {
+   "paso": "4-fin-turno",
+   "seEnvioCola": true,
+   "termino": true,
+   "runbar": false,
+   "runbarText": null,
+   "runbarTime": null,
+   "stopVisible": false,
+   "sendVisible": true,
+   "msgsLen": 894,
+   "busy": false,
+   "runId": null,
+   "adopted": false,
+   "queuedNotes": [],
+   "turnEnd": [
+    "fin del turno · 1:19"
+   ],
+   "sysnotes": []
+  },
+  {
+   "paso": "5-detener-click",
+   "ok": true
+  },
+  {
+   "paso": "5b-tras-detener",
+   "corto": true,
+   "runbar": false,
+   "runbarText": null,
+   "runbarTime": null,
+   "stopVisible": false,
+   "sendVisible": true,
+   "msgsLen": 2386,
+   "busy": false,
+   "runId": null,
+   "adopted": false,
+   "queuedNotes": [],
+   "turnEnd": [
+    "fin del turno · 6.0 s"
+   ],
+   "sysnotes": [
+    "Cancelando…",
+    "Respuesta detenida."
+   ]
+  }
+ ],
+ "sid": "20261012_27",
+ "limpieza": "sesion borrada: 20261012_27"
+}

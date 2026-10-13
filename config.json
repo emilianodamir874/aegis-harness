@@ -1,0 +1,16 @@
+{
+  "webPort": 3788,
+  "servePort": 3284,
+  "publicHost": "192.168.100.34",
+  "secretKey": "99744b0f36b41d02aacd4d872e07f45bd423687192f0e192bd40b942153cd220",
+  "appConfig": {
+    "GOOSE_VERSION": "1.54.0-web",
+    "GOOSE_DEFAULT_PROVIDER": "antigravity",
+    "GOOSE_DEFAULT_MODEL": "gemini-3.8-flash-medium",
+    "GOOSE_PREDEFINED_MODELS": [],
+    "GOOSE_PATH_ROOT": "C:\\Users\\Emiliano\\AppData\\Roaming\\Block\\goose",
+    "GOOSE_CONFIG_DIR": "C:\\Users\\Emiliano\\AppData\\Roaming\\Block\\goose\\config",
+    "GOOSE_WORKING_DIR": "C:\\Users\\Emiliano"
+  },
+  "cwd": "C:\\Users\\Emiliano"
+}

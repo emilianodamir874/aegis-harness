@@ -1,0 +1,15 @@
+{
+  "silentMs": "ok",
+  "frameP50": 17,
+  "frameMax": 17,
+  "windowSec": 4,
+  "charsStreamed": 1958,
+  "layouts": 19,
+  "layoutDurationSec": 0.0108,
+  "recalcStyle": 769,
+  "scriptDurationSec": 0.0234,
+  "taskDurationSec": 0.136,
+  "layoutsPerSec": 4.8,
+  "stillBusy": true,
+  "note": "LayoutCount/RecalcStyleCount del CDP cuentan TODO el layout del renderer (incluye los forzados por leer scrollHeight)."
+}

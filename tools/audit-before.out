@@ -1,0 +1,87 @@
+16:25:58 A header: {"configOptions":["provider","mode","model"],"topbarH":51,"title":{"text":"Tablet ebook reader","w":172},"chipsBox":{"w":148,"scrollW":148,"clientW":148,"scrollable":false},"chips":[{"opt":"provider","label":"Open Design","display":"none","left":0,"right":0,"w":0,"fullyVisible":false,"visiblePct":0,"truncatedLabel":false},{"opt":"mode","label":"auto","display":"block","left":232,"right":286,"w":54,"fullyVisible":true,"visiblePct":100,"truncatedLabel":false},{"opt":"model","label":"deepseek-v4.1-flash-max","display":"block","left":292,"right":380,"w":88,"fullyVisible":true,"visiblePct":100,"truncatedLabel":true}],"chipsShown":2,"chipsFullyVisible":1}
+16:25:59 B reposo: {"keys":30,"paintLatencyMs":{"p50":7.3,"p95":8.3,"max":16.7},"frameGapMs":{"p50":17,"p95":17,"max":17,"frames":60}}
+RESULT {
+  "url": "http://127.0.0.1:3788/",
+  "header": {
+    "configOptions": [
+      "provider",
+      "mode",
+      "model"
+    ],
+    "topbarH": 51,
+    "title": {
+      "text": "Tablet ebook reader",
+      "w": 172
+    },
+    "chipsBox": {
+      "w": 148,
+      "scrollW": 148,
+      "clientW": 148,
+      "scrollable": false
+    },
+    "chips": [
+      {
+        "opt": "provider",
+        "label": "Open Design",
+        "display": "none",
+        "left": 0,
+        "right": 0,
+        "w": 0,
+        "fullyVisible": false,
+        "visiblePct": 0,
+        "truncatedLabel": false
+      },
+      {
+        "opt": "mode",
+        "label": "auto",
+        "display": "block",
+        "left": 232,
+        "right": 286,
+        "w": 54,
+        "fullyVisible": true,
+        "visiblePct": 100,
+        "truncatedLabel": false
+      },
+      {
+        "opt": "model",
+        "label": "deepseek-v4.1-flash-max",
+        "display": "block",
+        "left": 292,
+        "right": 380,
+        "w": 88,
+        "fullyVisible": true,
+        "visiblePct": 100,
+        "truncatedLabel": true
+      }
+    ],
+    "chipsShown": 2,
+    "chipsFullyVisible": 1
+  },
+  "idle": {
+    "keys": 30,
+    "paintLatencyMs": {
+      "p50": 7.3,
+      "p95": 8.3,
+      "max": 16.7
+    },
+    "frameGapMs": {
+      "p50": 17,
+      "p95": 17,
+      "max": 17,
+      "frames": 60
+    }
+  },
+  "streaming": {},
+  "run": {},
+  "errors": [],
+  "bigSession": {
+    "id": "20261011_6",
+    "title": "Tablet ebook reader",
+    "n": 1167
+  },
+  "dom": {
+    "nodes": 13343,
+    "msgs": 1080
+  },
+  "fatal": "page.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#btn-new')\u001b[22m\n\u001b[2m    - locator resolved to <button id=\"btn-new\" class=\"btn-new\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - element is outside of the viewport\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - element is outside of the viewport\u001b[22m\n\u001b[2m  "
+}
