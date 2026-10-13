@@ -226,7 +226,8 @@ fn next_connection_key() -> u64 {
     NEXT_CONNECTION_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-pub(super) const DEFAULT_PROVIDER_ID: &str = "goose";pub(super) const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
+pub(super) const DEFAULT_PROVIDER_ID: &str = "goose";
+pub(super) const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
 const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 
 /// In-memory state for an active ACP session.
@@ -877,6 +878,7 @@ pub(super) fn build_usage_updates(
         to_nonnegative_u64(totals.accumulated_usage.input_tokens).unwrap_or(0);
     let accumulated_output_tokens =
         to_nonnegative_u64(totals.accumulated_usage.output_tokens).unwrap_or(0);
+    let breakdown = context_breakdown(session, used);
     UsageUpdates {
         custom: GooseSessionNotification {
             session_id: session.id.clone(),
@@ -886,6 +888,7 @@ pub(super) fn build_usage_updates(
                 accumulated_input_tokens,
                 accumulated_output_tokens,
                 accumulated_cost: totals.accumulated_cost,
+                context_breakdown: breakdown,
             }),
         },
         standard: {
@@ -895,6 +898,214 @@ pub(super) fn build_usage_updates(
             }
             standard
         },
+    }
+}
+
+/// Breakdown row labels for `SessionUsageUpdate::context_breakdown`. ASCII
+/// Spanish (no accents) because clients render them verbatim.
+const CONTEXT_PART_TURN_CONTEXT: &str = "turn-context (MOIM)";
+const CONTEXT_PART_TOOL_RESULTS: &str = "resultados de herramientas";
+const CONTEXT_PART_TOOL_CALLS: &str = "llamadas a herramientas";
+const CONTEXT_PART_USER: &str = "tus pedidos";
+const CONTEXT_PART_ASSISTANT: &str = "respuestas del asistente";
+const CONTEXT_PART_HIDDEN: &str = "oculto por compactacion";
+const CONTEXT_PART_FIXED: &str = "sistema + herramientas (est.)";
+
+/// Running totals for one breakdown category.
+#[derive(Default, Clone, Copy)]
+struct ContextBucket {
+    tokens: u64,
+    count: u64,
+    largest: u64,
+}
+
+impl ContextBucket {
+    fn add(&mut self, tokens: u64, count: u64) {
+        self.tokens += tokens;
+        self.count += count;
+        self.largest = self.largest.max(tokens);
+    }
+}
+
+/// Cheap token proxy for one message: serialized content chars / 4. The message
+/// envelope (id, role, timestamps, metadata) is skipped on purpose: providers
+/// never see it, so counting it would inflate every row.
+fn estimate_message_tokens(message: &Message) -> u64 {
+    let chars = serde_json::to_string(&message.content)
+        .map(|payload| payload.chars().count())
+        .unwrap_or(0);
+    (chars / 4) as u64
+}
+
+/// A message counts as per-turn MOIM context when the agent tagged it, or when
+/// its text carries the `<turn-context>` block (older rows only have the text).
+fn is_turn_context_message(message: &Message) -> bool {
+    message.is_turn_context()
+        || message.content.iter().any(|content| match content {
+            MessageContent::Text(text) => text.text.trim_start().starts_with("<turn-context>"),
+            _ => false,
+        })
+}
+
+fn scale_tokens(tokens: u64, numerator: u64, denominator: u64) -> u64 {
+    if denominator == 0 {
+        return tokens;
+    }
+    ((tokens as u128 * numerator as u128) / denominator as u128) as u64
+}
+
+fn count_content(message: &Message, predicate: impl Fn(&MessageContent) -> bool) -> u64 {
+    message
+        .content
+        .iter()
+        .filter(|content| predicate(content))
+        .count() as u64
+}
+
+fn tool_results_detail(count: u64, largest: u64) -> String {
+    let noun = if count == 1 {
+        "respuesta"
+    } else {
+        "respuestas"
+    };
+    format!(
+        "{count} {noun}, la mayor {:.1}k tok",
+        largest as f64 / 1000.0
+    )
+}
+
+/// Estimate what composes the context sent to the model, calibrated so the rows
+/// that are actually sent (plus the fixed row) add up to the real `used` total.
+///
+/// `used` is the provider-reported total of the last request, so the residual
+/// (`used` minus the estimated conversation) is the system prompt + tool schemas
+/// + skills, which are not part of the persisted conversation. Messages hidden
+/// by compaction (`agent_visible == false`) are reported but deliberately kept
+/// out of that arithmetic: they are no longer sent to the provider.
+pub(super) fn context_breakdown(session: &Session, used: u64) -> Vec<ContextPart> {
+    let Some(conversation) = session.conversation.as_ref() else {
+        return Vec::new();
+    };
+
+    let mut turn_context = ContextBucket::default();
+    let mut tool_results = ContextBucket::default();
+    let mut tool_calls = ContextBucket::default();
+    let mut user_requests = ContextBucket::default();
+    let mut assistant_replies = ContextBucket::default();
+    let mut hidden = ContextBucket::default();
+
+    for message in conversation.messages() {
+        let tokens = estimate_message_tokens(message);
+        let responses = count_content(message, |content| {
+            matches!(content, MessageContent::ToolResponse(_))
+        });
+        let requests = count_content(message, |content| {
+            matches!(content, MessageContent::ToolRequest(_))
+        });
+
+        if !message.is_agent_visible() {
+            hidden.add(tokens, 1);
+        } else if is_turn_context_message(message) {
+            turn_context.add(tokens, 1);
+        } else if responses > 0 {
+            tool_results.add(tokens, responses);
+        } else if requests > 0 {
+            tool_calls.add(tokens, requests);
+        } else if message.role == Role::User && message.is_user_visible() {
+            user_requests.add(tokens, 1);
+        } else if message.role == Role::Assistant {
+            assistant_replies.add(tokens, 1);
+        }
+    }
+
+    let sent_total = turn_context.tokens
+        + tool_results.tokens
+        + tool_calls.tokens
+        + user_requests.tokens
+        + assistant_replies.tokens;
+
+    // Residual = what the estimate cannot explain = fixed overhead. If the
+    // estimate overshoots the real total, clamp the overhead at zero and scale
+    // the conversation down instead, so the rows still add up to `used`.
+    let (fixed_tokens, scale_numerator, scale_denominator) = if used > 0 && sent_total > used {
+        (0, used, sent_total)
+    } else {
+        (used.saturating_sub(sent_total), 1, 1)
+    };
+
+    let mut parts: Vec<ContextPart> = Vec::new();
+    for (label, bucket) in [
+        (CONTEXT_PART_TURN_CONTEXT, turn_context),
+        (CONTEXT_PART_TOOL_RESULTS, tool_results),
+        (CONTEXT_PART_TOOL_CALLS, tool_calls),
+        (CONTEXT_PART_USER, user_requests),
+        (CONTEXT_PART_ASSISTANT, assistant_replies),
+    ] {
+        if bucket.count == 0 {
+            continue;
+        }
+        let detail = (label == CONTEXT_PART_TOOL_RESULTS).then(|| {
+            tool_results_detail(
+                bucket.count,
+                scale_tokens(bucket.largest, scale_numerator, scale_denominator),
+            )
+        });
+        parts.push(ContextPart {
+            label: label.to_string(),
+            tokens: scale_tokens(bucket.tokens, scale_numerator, scale_denominator),
+            count: bucket.count,
+            detail,
+        });
+    }
+
+    if used > 0 {
+        parts.push(ContextPart {
+            label: CONTEXT_PART_FIXED.to_string(),
+            tokens: fixed_tokens,
+            count: 1,
+            detail: None,
+        });
+    }
+
+    if hidden.count > 0 {
+        parts.push(ContextPart {
+            label: CONTEXT_PART_HIDDEN.to_string(),
+            tokens: scale_tokens(hidden.tokens, scale_numerator, scale_denominator),
+            count: hidden.count,
+            detail: None,
+        });
+    }
+
+    // Messages the estimate cannot attribute (user-invisible injections,
+    // thinking-only blocks) are left out on purpose: they land in the fixed row.
+    distribute_rounding_remainder(&mut parts, used);
+    parts.sort_by(|left, right| right.tokens.cmp(&left.tokens));
+    parts
+}
+
+/// Integer scaling can lose a few tokens; hand them back to the biggest row so
+/// the rows that were sent add up to `used` exactly.
+fn distribute_rounding_remainder(parts: &mut [ContextPart], used: u64) {
+    if used == 0 {
+        return;
+    }
+    let sent_total: u64 = parts
+        .iter()
+        .filter(|part| part.label != CONTEXT_PART_HIDDEN)
+        .map(|part| part.tokens)
+        .sum();
+    let remainder = used.saturating_sub(sent_total);
+    if remainder == 0 {
+        return;
+    }
+    let largest = parts
+        .iter()
+        .enumerate()
+        .filter(|(_, part)| part.label != CONTEXT_PART_HIDDEN)
+        .max_by_key(|(_, part)| part.tokens)
+        .map(|(index, _)| index);
+    if let Some(index) = largest {
+        parts[index].tokens += remainder;
     }
 }
 
@@ -1489,7 +1700,10 @@ impl GooseAcpAgent {
                     Role::User => SessionUpdate::UserMessageChunk(chunk),
                     Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
                 };
-                bus.emit(session_id.0.as_ref(), SessionNotification::new(session_id.clone(), update));
+                bus.emit(
+                    session_id.0.as_ref(),
+                    SessionNotification::new(session_id.clone(), update),
+                );
             }
             MessageContent::ToolRequest(tool_request) => {
                 self.handle_tool_request(tool_request, message, session_id, &target.agent, bus)
@@ -1577,7 +1791,10 @@ impl GooseAcpAgent {
                     Role::User => SessionUpdate::UserMessageChunk(chunk),
                     Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
                 };
-                bus.emit(session_id.0.as_ref(), SessionNotification::new(session_id.clone(), update));
+                bus.emit(
+                    session_id.0.as_ref(),
+                    SessionNotification::new(session_id.clone(), update),
+                );
             }
             MessageContent::SystemNotification(notification) => {
                 send_status_message_update(
@@ -2211,7 +2428,7 @@ impl GooseAcpAgent {
     ) -> Result<Session, agent_client_protocol::Error> {
         let session = self
             .session_manager
-            .get_session(session_id, false)
+            .get_session(session_id, true)
             .await
             .internal_err_ctx("Failed to load session")?;
         let totals = self
@@ -2955,6 +3172,7 @@ pub async fn run(builtins: Vec<String>, enable_scheduler: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::message::MessageMetadata;
     use crate::session::session_manager::SessionType;
     use agent_client_protocol::schema::v1::{
         EmbeddedResource, EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse,
@@ -2965,6 +3183,7 @@ mod tests {
     use goose_providers::thinking::{
         ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
     };
+    use rmcp::model::{CallToolRequestParams, CallToolResult};
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
@@ -3853,6 +4072,95 @@ print(\"hello, world\")
     }
 
     #[test]
+    fn test_build_usage_update_reports_calibrated_context_breakdown() {
+        let user = Message::user()
+            .with_id("msg-user")
+            .with_text("arregla el bug del panel de contexto");
+        let tool_call = Message::assistant()
+            .with_id("msg-tool-call")
+            .with_tool_request("req-1", Ok(CallToolRequestParams::new("developer__shell")));
+        let tool_result = Message::user()
+            .with_id("msg-tool-result")
+            .with_tool_response(
+                "req-1",
+                Ok(CallToolResult::success(vec![
+                    rmcp::model::ContentBlock::text("shell output ".repeat(230)),
+                ])),
+            );
+        let turn_context = Message::user()
+            .with_id("msg-turn-context")
+            .with_metadata(MessageMetadata::agent_only().with_turn_context())
+            .with_text("<turn-context>cwd /repo</turn-context>");
+        let hidden = Message::assistant()
+            .with_id("msg-hidden")
+            .with_metadata(MessageMetadata::agent_only().with_agent_invisible())
+            .with_text("mensaje viejo archivado por compactacion");
+
+        let mut session = make_session_with_usage(
+            TokenUsage::new(Some(900), Some(100), Some(1000)),
+            TokenUsage::default(),
+        );
+        session.conversation = Some(Conversation::new_unvalidated(vec![
+            user,
+            tool_call,
+            tool_result,
+            turn_context,
+            hidden,
+        ]));
+
+        let totals = SessionUsageTotals {
+            accumulated_usage: session.accumulated_usage,
+            accumulated_cost: session.accumulated_cost,
+        };
+        let updates = build_usage_updates(&session, &totals, 258_000);
+        let usage = match updates.custom.update {
+            GooseSessionUpdate::UsageUpdate(usage) => usage,
+            other => panic!("expected usage update, got {other:?}"),
+        };
+        let parts = usage.context_breakdown;
+        let part = |label: &str| {
+            parts
+                .iter()
+                .find(|part| part.label == label)
+                .unwrap_or_else(|| panic!("missing breakdown row {label:?} in {parts:?}"))
+        };
+
+        // (a) the fixed row exists and is non-trivial...
+        let fixed = part("sistema + herramientas (est.)");
+        assert!(fixed.tokens > 0, "fixed row must be non-trivial: {parts:?}");
+        // ...and it is the residual the estimate cannot explain.
+        let sent_sum: u64 = parts
+            .iter()
+            .filter(|part| part.label != "oculto por compactacion")
+            .map(|part| part.tokens)
+            .sum();
+        assert_eq!(
+            sent_sum, 1000,
+            "sent rows + fixed must equal used: {parts:?}"
+        );
+
+        // (b) compaction-hidden rows are reported but sit outside that sum.
+        let hidden = part("oculto por compactacion");
+        assert!(hidden.count == 1 && hidden.tokens > 0);
+        let all_sum: u64 = parts.iter().map(|part| part.tokens).sum();
+        assert_eq!(all_sum, 1000 + hidden.tokens);
+
+        // (c) the big tool result dominates.
+        assert_eq!(parts[0].label, "resultados de herramientas");
+        assert!(parts[0].tokens > fixed.tokens);
+        assert_eq!(parts[0].count, 1);
+        assert!(parts[0].detail.is_some(), "tool results carry a detail");
+        assert!(part("turn-context (MOIM)").tokens > 0);
+        assert!(part("llamadas a herramientas").count == 1);
+        assert!(part("tus pedidos").count == 1);
+
+        // Rows are sorted by descending size.
+        assert!(parts
+            .windows(2)
+            .all(|pair| pair[0].tokens >= pair[1].tokens));
+    }
+
+    #[test]
     fn test_goose_custom_notifications_capability_defaults_to_false() {
         let request = InitializeRequest::new(agent_client_protocol::schema::ProtocolVersion::V1);
         let goose_client_capabilities =
@@ -3893,9 +4201,9 @@ print(\"hello, world\")
             session_cwd: None,
             active_runs,
             live_voice,
-        hub: Arc::new(SessionHub::new()),
-        session_manager: None,
-        agent_manager: None,
+            hub: Arc::new(SessionHub::new()),
+            session_manager: None,
+            agent_manager: None,
         })
         .await
         .unwrap();
@@ -4028,9 +4336,9 @@ print(\"hello, world\")
                 session_cwd: None,
                 active_runs,
                 live_voice,
-            hub: Arc::new(SessionHub::new()),
-            session_manager: None,
-            agent_manager: None,
+                hub: Arc::new(SessionHub::new()),
+                session_manager: None,
+                agent_manager: None,
             })
             .await
             .unwrap(),

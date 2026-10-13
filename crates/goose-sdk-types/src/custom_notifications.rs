@@ -80,6 +80,25 @@ pub struct SessionUsageUpdate {
     pub accumulated_output_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accumulated_cost: Option<f64>,
+    /// Desglose estimado de que compone el contexto enviado (calibrado al total real `used`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_breakdown: Vec<ContextPart>,
+}
+
+/// One row of `SessionUsageUpdate::context_breakdown`: an estimated slice of
+/// the context that gets sent to the model, expressed in tokens.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextPart {
+    /// Short ASCII Spanish label (no accents) so clients can render it as-is.
+    pub label: String,
+    /// Estimated tokens, calibrated so the rows add up to the real `used` total.
+    pub tokens: u64,
+    /// Number of messages/items folded into this row.
+    pub count: u64,
+    /// Optional short annotation; only set where it is cheap to compute.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// Per-message token usage/cost/timing, keyed by the message id used for

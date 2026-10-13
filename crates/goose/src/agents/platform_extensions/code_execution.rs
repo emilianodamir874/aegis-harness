@@ -612,9 +612,7 @@ impl McpClientTrait for CodeExecutionClient {
 
         Some(format!(
             indoc::indoc! {r#"
-                ALWAYS batch multiple tool operations into ONE execute_typescript call.
-                - WRONG: Separate execute_typescript calls for read file, then write file
-                - RIGHT: One execute_typescript with an async run() function that reads AND writes AND logs/returns as little information as needed for the next step.
+                Batch several tool operations into ONE execute_typescript call when they belong to the same step (read, edit and verify inside a single async run()).
 
                 {}
             "#},
