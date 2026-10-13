@@ -817,7 +817,7 @@
   function thoughtKeyFor(u) {
     const wrap = msgWrap();
     const prev = state.thoughtRec;
-    if (prev && !prev.closed && prev.el.parentElement === wrap && prev.el === wrap.lastElementChild) {
+    if (prev && prev.el.parentElement === wrap && prev.el === wrap.lastElementChild) {
       return state.thoughtKey;
     }
     state.thoughtKey = 'think:' + (u.messageId || 'a') + ':' + Date.now().toString(36);
@@ -846,7 +846,14 @@
     // conexión (o sobrevivió a un reload): lo adoptamos para poder mostrarlo y cortarlo.
     noteRunActivity();
     let rec = state.msgs.get(key);
-    if (rec && rec.closed) rec = null;
+    if (rec && rec.closed) {
+      // (v6.6) Un cierre a mitad de turno (closeAllRecs) partia el razonamiento en dos
+      // cajas. Si la caja sigue siendo lo ultimo pintado, se reusa en vez de abrir otra;
+      // si algo se interpuso (tool, respuesta, burbuja), se abre una nueva.
+      const w = msgWrap();
+      if (thought && rec.el.parentElement === w && rec.el === w.lastElementChild) rec.closed = false;
+      else rec = null;
+    }
     if (!rec) {
       if (!thought) clearStreaming();
       const el = document.createElement('div');
