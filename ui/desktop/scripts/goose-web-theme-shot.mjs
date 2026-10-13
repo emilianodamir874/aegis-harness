@@ -1,0 +1,17 @@
+import { readFile } from 'node:fs/promises';
+import { chromium } from '@playwright/test';
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
+const sid = process.argv[2] || '20261012_25';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 1000, height: 700 }, deviceScaleFactor: 2 });
+await page.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch {} }, ['gweb.last', sid]);
+await page.goto(url);
+await page.waitForFunction(() => window.__gooseWeb && window.__gooseWeb.rpc && window.__gooseWeb.rpc.ready, null, { timeout: 30000 });
+await page.waitForTimeout(9000);
+await page.evaluate(() => document.querySelector('.messages').scrollTop = document.querySelector('.messages').scrollHeight);
+await page.waitForTimeout(700);
+await page.screenshot({ path: 'C:/goose-web/tools/shot-claude.png' });
+console.log('ok');
+await browser.close();
+process.exit(0);

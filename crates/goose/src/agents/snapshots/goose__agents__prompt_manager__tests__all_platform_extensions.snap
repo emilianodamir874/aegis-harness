@@ -123,16 +123,18 @@ You have these skills at your disposal, when it is clear they can help you solve
 • desktop-bridge-architecture-analysis - Use when analyzing desktop bridges. Check auth and exposure.
 • external-tool-evaluation - Use when asked if an external repo, CLI or MCP is usable.
 • github - GitHub via gh CLI: PRs, issues, reviews, repos, auth.
-• goose-antigravity-windows - Use when working on the Goose Antigravity provider fork.
+• goose-antigravity-windows - Use when working on Emiliano's Goose fork: Antigravity & Open Design providers, CLI terminal UI, context/compaction, skills, builds, tests, launcher.
 • goose-doc-guide - Reference goose documentation to create, configure, or explain goose-specific features like recipes, extensions, sessions, and providers. You MUST read the relevant goose docs before answering. You MUST NOT rely on training data or assumptions for any goose-specific fields, values, names, syntax, or commands.
 • linux-kernel-rebuild-diagnosis - Use when a rebuilt Linux kernel misbehaves.
 • llm-model-selection - Use when choosing or comparing LLM models for a task.
 • ml-experiment-discipline - Use when designing or judging ML strategy experiments.
 • obsidian-boveda - Use when working with Emiliano's Obsidian vault/bóveda.
 • run-log-audit - Use when verifying what a local app run actually did.
+• rust-fast-iteration - Use when iterating on big Rust workspaces on Windows.
 • ubereats-web-api - Use when extracting Uber Eats stores, menus or prices.
 • web-search - Search the web and extract page content using DuckDuckGo (no API key required), Tavily, or SearXNG. Use whenever the task needs current information, facts not in training data, or content from a specific URL.
 • windows-batch-launchers - Use when writing or fixing a Windows .bat launcher.
+• windows-cli-toolkit - Use when shelling out on this Windows host (Goose cmd shell): fast search/read/transform tools and token-efficient command habits.
 • windows-pc-audit-cleanup - Use when cleaning this PC's C:, WSL VHDX, startup and junk.
 • wsl-from-windows - Use when operating inside WSL from this Windows host.
 • z-library-books - Use when fetching Z-Library books for Emiliano.## summarize

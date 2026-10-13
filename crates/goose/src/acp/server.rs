@@ -46,7 +46,7 @@ use crate::utils::sanitize_unicode_tags;
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
     AuthenticateResponse, CancelNotification, CloseSessionRequest, CloseSessionResponse,
-    ConfigOptionUpdate, ContentBlock, Cost, CurrentModeUpdate, DeleteSessionRequest,
+    ConfigOptionUpdate, ContentBlock, ContentChunk, Cost, CurrentModeUpdate, DeleteSessionRequest,
     DeleteSessionResponse, EmbeddedResourceResource, FileSystemCapabilities, ForkSessionRequest,
     ForkSessionResponse, ImageContent, Implementation, InitializeRequest, InitializeResponse,
     ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
@@ -256,7 +256,13 @@ struct ActiveRunDropGuard {
 
 impl Drop for ActiveRunDropGuard {
     fn drop(&mut self) {
-        self.cancel_token.cancel();
+        // NO cancelamos aca: este guard vive en el scope del handler de on_prompt, cuya task
+        // pertenece a la CONEXION. Si el cliente recarga (Ctrl+F5) o pierde el socket, el
+        // futuro se dropea y este cancel MATA el turno en curso a mitad de camino (medido:
+        // la conversacion persistida quedaba cortada en el bloque de thinking, sin toolRequest
+        // ni respuesta). Los caminos explicitos de cancelacion siguen intactos: on_cancel
+        // (boton Detener) y el watchdog de stall usan el token del registro, no este guard.
+        // El run termina solo y persiste; el cliente lo recupera refrescando la sesion.
         let session_id = std::mem::take(&mut self.session_id);
         let run_id = std::mem::take(&mut self.run_id);
         let agent = self.registry.remove_agent_run(&session_id, &run_id);
@@ -730,6 +736,79 @@ fn build_prompt_usage(session: &Session) -> Option<Usage> {
     let input = to_nonnegative_u64(session.usage.input_tokens).unwrap_or(0);
     let output = to_nonnegative_u64(session.usage.output_tokens).unwrap_or(0);
     Some(Usage::new(total, input, output))
+}
+
+/// Stall watchdog timeout. GOOSE_RUN_STALL_TIMEOUT_SECS (default 900, 0 disables).
+fn run_watchdog_stall_timeout() -> Option<std::time::Duration> {
+    let secs = Config::global()
+        .get_param::<u64>("GOOSE_RUN_STALL_TIMEOUT_SECS")
+        .unwrap_or(900);
+    if secs == 0 {
+        None
+    } else {
+        Some(std::time::Duration::from_secs(secs))
+    }
+}
+
+/// How often the watchdog samples progress. GOOSE_RUN_WATCHDOG_POLL_SECS (default 30).
+fn run_watchdog_poll_interval() -> std::time::Duration {
+    let secs = Config::global()
+        .get_param::<u64>("GOOSE_RUN_WATCHDOG_POLL_SECS")
+        .unwrap_or(30);
+    std::time::Duration::from_secs(secs.max(5))
+}
+
+/// Closes a run that stopped making progress, with an error the client can see.
+fn spawn_run_watchdog(
+    registry: Arc<ActiveRunRegistry>,
+    cx: ConnectionTo<Client>,
+    session_id: String,
+    run_id: String,
+    cancel_token: CancellationToken,
+) {
+    let Some(stall) = run_watchdog_stall_timeout() else {
+        return;
+    };
+    let poll = run_watchdog_poll_interval();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(poll).await;
+            let Some(age) = registry.progress_age_secs(&session_id, &run_id) else {
+                // The run finished (or was replaced): stop watching.
+                return;
+            };
+            if age < stall.as_secs() {
+                continue;
+            }
+            warn!(
+                session_id = %session_id,
+                run_id = %run_id,
+                stalled_secs = age,
+                "closing stalled run: no progress within the watchdog window"
+            );
+            registry.mark_stalled(&session_id, &run_id);
+            let acp_session = SessionId::new(session_id.clone());
+            let seconds = stall.as_secs();
+            let window = if seconds < 60 {
+                format!("{} segundos", seconds)
+            } else {
+                format!("{} minuto(s)", seconds / 60)
+            };
+            let text = format!(
+                "El turno se cerro automaticamente: {} sin ningun avance del proveedor. Se cancelo el run; las herramientas en curso quedaron sin resultado.",
+                window
+            );
+            let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(text)));
+            let _ = cx.send_notification(SessionNotification::new(
+                acp_session.clone(),
+                SessionUpdate::AgentMessageChunk(chunk),
+            ));
+            let _ = GooseAcpAgent::send_active_run_update(&cx, &acp_session, None);
+            registry.cancel_agent_run(&session_id);
+            cancel_token.cancel();
+            return;
+        }
+    });
 }
 
 fn prompt_stop_reason(was_cancelled: bool, output_token_limit_reached: bool) -> StopReason {
@@ -2135,6 +2214,8 @@ impl GooseAcpAgent {
         };
 
         while let Some(event) = stream.next().await {
+            self.active_runs.touch_progress(session_id);
+
             if cancel_token.is_cancelled() {
                 continue;
             }
@@ -2286,6 +2367,17 @@ impl GooseAcpAgent {
             cancel_token: cancel_token.clone(),
         };
 
+        // Stall watchdog: a run that stops making progress (provider hang, a
+        // dropped tool result) used to die silently, leaving the client mute
+        // and tool cards spinning. This closes it with a visible error.
+        spawn_run_watchdog(
+            self.active_runs.clone(),
+            cx.clone(),
+            session_id.clone(),
+            run_id.clone(),
+            cancel_token.clone(),
+        );
+
         if cancel_token.is_cancelled() {
             self.clear_active_run(&session_id, &run_id).await;
             Self::send_active_run_update(cx, &args.session_id, None)?;
@@ -2335,9 +2427,25 @@ impl GooseAcpAgent {
                 stream,
             )
             .await;
+        // Read the run flags before clearing the registry entry: a cancellation
+        // nobody asked for (a lost connection, an internal cancel) used to end
+        // the turn with no error at all, leaving the UI mute.
+        let was_stalled = self.active_runs.was_stalled(&session_id, &run_id);
+        let client_cancelled = self
+            .active_runs
+            .was_client_cancelled(&session_id, &run_id)
+            .unwrap_or(true);
         self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
         let outcome = stream_result?;
+        if outcome.was_cancelled && !was_stalled && !client_cancelled {
+            let text = "El turno se interrumpio de forma inesperada (no lo pediste). El run se cerro y las herramientas en curso pueden haber quedado sin resultado.";
+            let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(text)));
+            let _ = cx.send_notification(SessionNotification::new(
+                args.session_id.clone(),
+                SessionUpdate::AgentMessageChunk(chunk),
+            ));
+        }
 
         let session = self
             .send_session_usage_updates(cx, &args.session_id, &session_id, &agent, &mut None)
@@ -2402,6 +2510,7 @@ impl GooseAcpAgent {
         debug!(?args, "cancel request");
 
         let session_id = args.session_id.0.to_string();
+        self.active_runs.mark_client_cancelled(&session_id);
         let token = self.active_runs.agent_cancel_token(&session_id);
 
         if let Some(token) = token {

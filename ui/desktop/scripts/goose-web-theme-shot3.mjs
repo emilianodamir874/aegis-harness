@@ -1,0 +1,20 @@
+import { readFile } from 'node:fs/promises';
+import { chromium } from '@playwright/test';
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+await page.addInitScript(([k, v]) => { try { localStorage.setItem(k, v); } catch {} }, ['gweb.last', '20261012_25']);
+await page.goto(url);
+await page.waitForFunction(() => window.__gooseWeb && window.__gooseWeb.rpc && window.__gooseWeb.rpc.ready, null, { timeout: 30000 });
+await page.waitForTimeout(9000);
+await page.evaluate(() => { const m = document.querySelector('.messages'); m.scrollTop = m.scrollHeight; });
+await page.waitForTimeout(600);
+await page.screenshot({ path: 'C:/goose-web/tools/shot-mobile.png' });
+// drawer abierto para ver el sidebar en movil
+await page.click('#btn-menu');
+await page.waitForTimeout(700);
+await page.screenshot({ path: 'C:/goose-web/tools/shot-mobile-drawer.png' });
+console.log('ok');
+await browser.close();
+process.exit(0);

@@ -1,0 +1,36 @@
+// Web build of the goose Desktop renderer (for goose-web: browser + goose serve backend).
+// Differences vs the electron build: only index.html is an input (no electron main),
+// output goes to dist-web/ and is copied to C:/goose-web/dist by scripts/copy-web-build.sh.
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    {
+      // Changes the entry chunk content on every build so asset filenames
+      // change and stale browser caches are bypassed (goose-web deploy).
+      name: 'goose-web-build-stamp',
+      renderChunk(code, chunk) {
+        return chunk.isEntry ? code + `\n// goose-web build ${Date.now()}\n` : null;
+      },
+    },
+  ],
+  base: './',
+  build: {
+    outDir: 'dist-web',
+    emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        index: resolve(__dirname, 'index.html'),
+      },
+    },
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),
+    'process.env.GOOSE_BUNDLE_NAME': JSON.stringify('Goose Web'),
+    'process.env.GITHUB_OWNER': JSON.stringify('aaif-goose'),
+    'process.env.GITHUB_REPO': JSON.stringify('goose'),
+  },
+});

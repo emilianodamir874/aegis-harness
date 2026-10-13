@@ -498,3 +498,41 @@ build-test-tools:
 record-mcp-tests: build-test-tools
   GOOSE_RECORD_MCP=1 cargo test --package goose --test mcp_integration_test
   git add crates/goose/tests/mcp_replays/
+
+# =============================================================================
+# Fork-local recipes (Windows host, Emiliano): canonical build/test loop.
+# Feature sets match the installed CLI binaries. Added 2026-10-11.
+# =============================================================================
+
+# (fork) Format the workspace
+fmt:
+    cargo fmt --all
+
+# (fork) Compile gate for the CLI (installed feature set) INCLUDING tests
+check-tests:
+    cargo check --tests -p goose-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall
+
+# (fork) Build the reduced-feature CLI variant (debug)
+build-cli:
+    cargo build -p goose-cli --bin goose --no-default-features --features rustls-tls,scheduler,bundled-mcp
+
+# (fork) Ship a new-named debug binary: just ship goose-terminal-vN
+ship name:
+    cargo rustc -p goose-cli --bin goose --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall -- -o target/debug/{{name}}.exe
+
+# (fork) Run the goose lib suite with CI's feature set
+test-lib:
+    cargo test -p goose --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
+
+# (fork) Run the PTY integration suite (interactive_ui)
+test-ui:
+    cargo test -j 1 -p goose-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp --test interactive_ui -- --test-threads=1
+
+# (fork) Provider tests (antigravity + open_design)
+test-providers:
+    cargo test -p goose --features scheduler --lib providers::antigravity::tests
+    cargo test -p goose --features scheduler --lib providers::open_design::tests
+
+# (fork) Regenerate prompt_manager snapshots (they embed ~/.agents/skills)
+snap:
+    $env:INSTA_UPDATE="always"; cargo test -j 1 -p goose --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http --lib agents::prompt_manager::tests

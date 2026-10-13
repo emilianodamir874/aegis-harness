@@ -1,15 +1,48 @@
 use crate::agents::Agent;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex,
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio_util::sync::CancellationToken;
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 struct ActiveRun {
     run_id: String,
     cancel_token: CancellationToken,
     /// Routes steering from another roaming connection to the run owner.
     agent: Arc<Agent>,
+    /// Epoch millis of the last observed progress (stream event, tool call,
+    /// tool result). The stall watchdog compares this against the configured
+    /// timeout so a run that stops advancing is closed with a visible error.
+    last_progress_ms: Arc<AtomicU64>,
+    /// Set by the watchdog when it closed the run for lack of progress.
+    stalled: Arc<AtomicBool>,
+    /// Set when the client itself asked to cancel, so a normal stop is not
+    /// later reported as an unexpected interruption.
+    client_cancelled: Arc<AtomicBool>,
+}
+
+impl ActiveRun {
+    fn new(run_id: String, cancel_token: CancellationToken, agent: Arc<Agent>) -> Self {
+        Self {
+            run_id,
+            cancel_token,
+            agent,
+            last_progress_ms: Arc::new(AtomicU64::new(now_millis())),
+            stalled: Arc::new(AtomicBool::new(false)),
+            client_cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
 }
 
 struct SessionRunState {
@@ -53,11 +86,7 @@ impl ActiveRunRegistry {
         runs.insert(
             session_id.to_string(),
             SessionRunState {
-                agent_run: Some(ActiveRun {
-                    run_id,
-                    cancel_token,
-                    agent,
-                }),
+                agent_run: Some(ActiveRun::new(run_id, cancel_token, agent)),
                 live_active: false,
             },
         );
@@ -83,11 +112,7 @@ impl ActiveRunRegistry {
                 run_id: agent_run.run_id.clone(),
             });
         }
-        state.agent_run = Some(ActiveRun {
-            run_id,
-            cancel_token,
-            agent,
-        });
+        state.agent_run = Some(ActiveRun::new(run_id, cancel_token, agent));
         Ok(())
     }
 
@@ -160,6 +185,81 @@ impl ActiveRunRegistry {
                 runs.remove(session_id);
             }
         }
+    }
+
+    /// Records progress for the session's active run. Called on every event the
+    /// ACP server forwards (message chunks, tool calls, tool results), so the
+    /// stall watchdog only fires when nothing at all is happening.
+    pub(crate) fn touch_progress(&self, session_id: &str) {
+        let runs = self
+            .runs_by_session
+            .lock()
+            .expect("active run lock poisoned");
+        if let Some(run) = runs.get(session_id).and_then(|state| state.agent_run.as_ref()) {
+            run.last_progress_ms.store(now_millis(), Ordering::Relaxed);
+        }
+    }
+
+    /// Seconds since the given run last made progress. None once the run is
+    /// gone (finished or replaced), which also stops the watchdog.
+    pub(crate) fn progress_age_secs(&self, session_id: &str, run_id: &str) -> Option<u64> {
+        let runs = self
+            .runs_by_session
+            .lock()
+            .expect("active run lock poisoned");
+        let run = runs.get(session_id)?.agent_run.as_ref()?;
+        if run.run_id != run_id {
+            return None;
+        }
+        let last = run.last_progress_ms.load(Ordering::Relaxed);
+        Some(now_millis().saturating_sub(last) / 1000)
+    }
+
+    pub(crate) fn mark_stalled(&self, session_id: &str, run_id: &str) {
+        let runs = self
+            .runs_by_session
+            .lock()
+            .expect("active run lock poisoned");
+        if let Some(run) = runs.get(session_id).and_then(|state| state.agent_run.as_ref()) {
+            if run.run_id == run_id {
+                run.stalled.store(true, Ordering::Relaxed);
+            }
+        }
+    }
+
+    pub(crate) fn was_stalled(&self, session_id: &str, run_id: &str) -> bool {
+        let runs = self
+            .runs_by_session
+            .lock()
+            .expect("active run lock poisoned");
+        runs.get(session_id)
+            .and_then(|state| state.agent_run.as_ref())
+            .filter(|run| run.run_id == run_id)
+            .map(|run| run.stalled.load(Ordering::Relaxed))
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn mark_client_cancelled(&self, session_id: &str) {
+        let runs = self
+            .runs_by_session
+            .lock()
+            .expect("active run lock poisoned");
+        if let Some(run) = runs.get(session_id).and_then(|state| state.agent_run.as_ref()) {
+            run.client_cancelled.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Some(true)/Some(false) for the live run; None when it is gone.
+    pub(crate) fn was_client_cancelled(&self, session_id: &str, run_id: &str) -> Option<bool> {
+        let runs = self
+            .runs_by_session
+            .lock()
+            .expect("active run lock poisoned");
+        let run = runs.get(session_id)?.agent_run.as_ref()?;
+        if run.run_id != run_id {
+            return None;
+        }
+        Some(run.client_cancelled.load(Ordering::Relaxed))
     }
 
     pub(crate) fn is_active(&self, session_id: &str) -> bool {
