@@ -175,6 +175,29 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOp
     providers.sort_by(|left, right| left.id.cmp(&right.id));
     providers.dedup_by(|left, right| left.id == right.id);
 
+    // (2026-10-13) Solo se ofrecen providers utilizables: el servidor ya rechaza seleccionar
+    // uno sin credenciales ("Provider is not configured: X"), asi que listarlos es ruido puro
+    // en el desplegable. Se usa lista NEGRA a proposito: un provider que no figure en el
+    // inventario sigue visible, de modo que solo se oculta lo que el inventario declara
+    // explicitamente inutilizable. El provider en uso nunca se oculta.
+    let ids: Vec<String> = providers.iter().map(|provider| provider.id.clone()).collect();
+    let storage = crate::session::SessionManager::instance().storage().clone();
+    let sin_credenciales: std::collections::HashSet<String> =
+        ProviderInventoryService::new(storage)
+            .entries(&ids)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|entry| !entry.configured)
+            .map(|entry| entry.provider_id)
+            .collect();
+    if !sin_credenciales.is_empty() {
+        providers.retain(|provider| {
+            !sin_credenciales.contains(&provider.id)
+                || current_provider == Some(provider.id.as_str())
+        });
+    }
+
     if let Some(current_provider) = current_provider {
         if current_provider != DEFAULT_PROVIDER_ID
             && !providers
