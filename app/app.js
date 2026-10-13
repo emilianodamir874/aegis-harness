@@ -188,6 +188,12 @@
     cursor: null,
     showArchived: false,
     welcomeMode: 'new',
+    // ---------- v6.4: watch por sesión (hub con fan-out) ----------
+    hubWatch: undefined, // true = el server implementa _goose/unstable/session/watch; false = v2/v3
+    hubCursor: null, // último cursor del hub para la sesión en pantalla (re-watch al reconectar)
+    hubWatchSid: null, // sesión a la que está enganchada esta conexión
+    hubWatchers: null, // watcherCount que reportó el server (hint de UI)
+    hubReplay: false, // true mientras se aplica el replay de un watch
   };
 
   // ---------- RPC / WS ----------
@@ -216,10 +222,16 @@
             finishStream();
             // El run que estaba en curso murió con la conexión vieja: la UI no puede
             // quedarse mostrando "detener" para un turno que ya no existe.
-            if (state.busy) setBusy(false, 'Se cortó la conexión: el turno se interrumpió');
+            // (v6.4) Con watch por sesión el run NO muere con la conexión: si estábamos
+            // enganchados al hub decide el re-watch (su respuesta trae `activeRunId`) y no
+            // corresponde declarar el turno interrumpido.
+            if (state.hubWatch === true) await hubRewatch();
+            else if (state.busy) setBusy(false, 'Se cortó la conexión: el turno se interrumpió');
             flushQueue();
           }
-          checkAdoptedRun();
+          // (v6.4) Con hub no se sondea al abrir: el estado del run viene en la respuesta de
+          // watch y el fin de turno por evento. Sin soporte de watch, camino viejo intacto.
+          if (state.hubWatch !== true) checkAdoptedRun();
         } catch (e) {
           report('error', 'initialize: ' + e.message);
           try { ws.close(); } catch {}
@@ -247,6 +259,9 @@
       ws.onclose = () => {
         this.ready = false;
         state.suppressSettle = true; // caida de red != turno terminado
+        // (v6.4) El hub desengancha al watcher cuando muere la conexión: al reconectar hay
+        // que volver a engancharse (con el último cursor) para no quedar mudo.
+        state.hubWatchSid = null;
         // Nadie va a contestar por esta conexión: rechazamos lo pendiente. Si no,
         // un `session/prompt` colgado deja state.busy=true para siempre y la UI
         // queda muda (no envía ni responde a Detener) hasta recargar la página.
@@ -281,6 +296,8 @@
     if (m.method === 'session/update') return onUpdate(m.params || {});
     if (m.method === '_goose/unstable/session/update') return onGooseUpdate(m.params || {});
     if (m.method === 'session/request_permission') return showPermCard(m);
+    // (v6.4) El hub avisa que truncó su ring: hay que recargar la conversación completa.
+    if (m.method === '_goose/unstable/session/replay_gap') return onReplayGap(m.params || {});
     if (m.id !== undefined) {
       try { rpc.ws.send(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'no soportado: ' + m.method } })); } catch {}
     }
@@ -297,6 +314,11 @@
         // en ese caso la burbuja ya está en pantalla y solo se destilda "en cola".
         const mid = u.messageId;
         if (mid && state.steers.has(mid)) { markSteerDelivered(mid); break; }
+        // (v6.4) Con el hub, el eco del propio prompt también llega como notificación (en
+        // v3 iba sólo a la conexión dueña, que ya lo tenía pintado) y el replay puede
+        // repetir lo que ya trajo el session/load: se adopta o se descarta, sin duplicar.
+        if (mid && userBubbleOnScreen(mid)) break;
+        if (mid && u.content && u.content.type === 'text' && adoptLocalEcho(mid, u.content.text)) break;
         if (u.content && u.content.type === 'text') addUser(u.content.text, true, null, { mid });
         else if (u.content && u.content.type === 'image') addUser('', true, [u.content], { mid });
         break;
@@ -326,13 +348,9 @@
         break;
       case 'session_info_update': {
         const g = (u._meta && u._meta.goose) || {};
-        if (g.activeRunId !== undefined) {
-          const rid = g.activeRunId || null;
-          state.runId = rid;
-          // Si el server dice que el run terminó y nosotros lo adoptamos, el turno
-          // acabó: sin esto la barra "trabajando…" quedaba para siempre.
-          if (!rid && state.busy && state.adopted) endRun('El turno terminó');
-        }
+        // (v6.4) El estado del run pasa por applyActiveRunId: con el hub es también el
+        // aviso de fin de turno del DUEÑO del prompt, no sólo del turno adoptado.
+        if (g.activeRunId !== undefined) applyActiveRunId(g.activeRunId || null);
         if (g.queuedSteer && state.steers.has(g.queuedSteer.messageId)) {
           state.steers.get(g.queuedSteer.messageId).serverQueued = true;
           setQueuedNote(state.steers.get(g.queuedSteer.messageId), 'indicación encolada en el server…');
@@ -350,8 +368,14 @@
 
   function onGooseUpdate(params) {
     const cur = state.current;
-    if (!cur || params.sessionId !== cur.id) return;
+    if (!cur) return;
     const u = params.update || {};
+    // (v6.4) El arranque y el FIN de turno llegan por acá (`params.goose.activeRunId`): con
+    // el hub es el único aviso cuando el response del prompt se pierde (reload, socket
+    // caído) o cuando el turno lo arrancó otra conexión.
+    const g = params.goose || (u._meta && u._meta.goose) || (params._meta && params._meta.goose);
+    if (g && g.activeRunId !== undefined && (!params.sessionId || params.sessionId === cur.id)) applyActiveRunId(g.activeRunId || null);
+    if (params.sessionId !== cur.id) return; // el resto de las notificaciones sí son de esta sesión
     if (u.sessionUpdate === 'usage_update') setUsage(u);
     if (u.sessionUpdate === 'message_usage') setMsgUsage(u.usage);
     if (u.sessionUpdate === 'status_message' && u.status && u.status.type === 'progress' && u.status.message) {
@@ -774,6 +798,14 @@
   }
 
   function streamAppend(key, text, thought) {
+    // (v6.4) Replay del hub: el mismo mensaje parcial puede haberlo traído ya el
+    // session/load, así que el texto del replay se acumula aparte y se reconcilia por
+    // prefijo común (hubApplyReplayText) en vez de pegarse dos veces.
+    if (state.hubReplay) {
+      HUB.text.set(key, (HUB.text.get(key) || '') + text);
+      HUB.kind.set(key, !!thought);
+      return;
+    }
     // Refresco suave: acumular sin tocar el DOM (se aplica al final, sólo lo nuevo).
     if (SOFT.on) {
       SOFT.text.set(key, (SOFT.text.get(key) || '') + text);
@@ -969,6 +1001,9 @@
   // Refresco del turno adoptado sin reconstruir el DOM. force = fin de turno (no se
   // posterga por tecleo: el costo ya no depende del tamaño de la conversación).
   async function softResync(force) {
+    // (v6.4) Con el hub, el refresco periódico sobra: existía sólo porque una conexión que
+    // no arrancó el turno no recibía el streaming (y su messageCount venía congelado).
+    if (state.hubWatch === true) return false;
     if (!state.current || !rpc.ready || state.resyncing) return false;
     const now = performance.now();
     if (!force && now - lastTypedAt < SOFT_QUIET_MS) { WATCH_DBG.softDeferred++; return false; }
@@ -1207,6 +1242,24 @@
       popRow('cache', cachePct + (mu.timeToFirstTokenMs != null ? '  ·  1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')) +
       popRow('sesion', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok)) +
       popRow('margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok antes de compactar' : '--');
+    // DESGLOSE: donde se va la ventana. tool results, MOIM por turno, historial
+    // oculto por compactar y el prompt fijo (sistema + esquemas de tools). Las partes
+    // las estima el server y suman exactamente el 'usado' de arriba.
+    const cbd = Array.isArray(s.contextBreakdown) ? s.contextBreakdown : null;
+    if (cbd && cbd.length) {
+      const tot = cbd.reduce((a, p) => a + (p.tokens || 0), 0) || 1;
+      const sep = '<div class="up-row" style="border-top:1px solid var(--line,#3a3a3a);margin-top:6px;padding-top:6px">'
+        + '<span class="k">desglose del contexto</span><span class="v">' + niceTok(tot) + ' tok</span></div>';
+      const body = cbd.map((p) => {
+        const share = Math.round(((p.tokens || 0) / tot) * 100);
+        const d = [p.count ? p.count + ' msj' : null, p.detail || null].filter(Boolean).join(' &middot; ');
+        return '<div class="up-row" style="padding-left:10px"><span class="k">' + esc(p.label) + '</span>'
+          + '<span class="v">' + niceTok(p.tokens) + ' &middot; ' + share + '%'
+          + (d ? '<span style="display:block;font-size:11px;opacity:.62">' + esc(d) + '</span>' : '')
+          + '</span></div>';
+      }).join('');
+      w.querySelector('.up-rows').insertAdjacentHTML('beforeend', sep + body);
+    }
     w.querySelector('.up-foot').textContent =
       (mp.model || 'modelo ?') + (mp.effort ? '  ·  esfuerzo ' + mp.effort + (mp.fromAlias ? ' (alias)' : '') : '') + (s.cost != null ? '  ·  ' + fmtCost(s.cost) : '');
     w.hidden = false;
@@ -1271,6 +1324,9 @@
     if (u.cost != null && s.cost == null) s.cost = u.cost;
     if (u.accumulatedInputTokens != null) s.inTok = u.accumulatedInputTokens;
     if (u.accumulatedOutputTokens != null) s.outTok = u.accumulatedOutputTokens;
+    // Desglose de que compone el contexto (usage_update -> contextBreakdown, lo manda
+    // el server). Se guarda tal cual para que el popover lo muestre cuando se abra.
+    if (Array.isArray(u.contextBreakdown) && u.contextBreakdown.length) s.contextBreakdown = u.contextBreakdown;
     renderUsage();
   }
   // message_usage (goose-sdk-types): uso POR PASO, con cache y tiempos. El cliente lo ignoraba.
@@ -1307,6 +1363,9 @@
     state.attachments = [];
     state.runId = null;
     state.adopted = false;
+    // (v6.4) El cursor del hub es por sesión: al cambiar de conversación arranca de cero.
+    state.hubCursor = null;
+    state.hubWatchSid = null;
     state.steers.clear();
     state.queue = [];
     stopRunWatch();
@@ -1328,6 +1387,9 @@
       localStorage.setItem('gweb.last', res.sessionId);
       closeDrawer();
       $('#input').focus();
+      // (v6.4) Sesión nueva: engancharse al hub ya mismo (no hay historial que cargar) para
+      // que el primer turno lo vean TODAS las conexiones y no sólo la que lo arranca.
+      startHubWatch().catch(() => {});
       refreshSessions();
     } catch (e) {
       systemNote('No se pudo crear la sesión: ' + e.message);
@@ -1341,7 +1403,10 @@
     detachRunView();
     stopRunWatch();
     await renderSession(entry);
-    await checkAdoptedRun();
+    // (v6.4) Engancharse al hub después del load + render: la respuesta trae el run activo
+    // (adopción sin sondeo) y el replay de lo que pasó mientras no estábamos. Si el server
+    // no tiene watch, startHubWatch cae al camino viejo (checkAdoptedRun).
+    await startHubWatch();
   }
 
   // Carga una sesión en pantalla (replay del historial + chips). Sin la guarda de
@@ -1479,24 +1544,33 @@
   // dueños (no adoptado) y el server ya no tiene run activo, el prompt quedo sin
   // respuesta para siempre -> la consola no acepta mas mensajes. Sondeamos y liberamos.
   let orphanTimer = 0;
+  // (v6.4) Con hub esta red de seguridad sigue existiendo pero SIN sondeos caros: se espacia
+  // a 30 s y consulta `session/info` (no `steer`). Si no hay run y el prompt no tuvo
+  // respuesta, a los ~90 s se libera la consola igual que antes.
+  const orphanTickMs = () => (state.hubWatch === true ? 30000 : 15000);
   function startOrphanWatch() {
     clearInterval(orphanTimer);
-    orphanTimer = setInterval(async () => {
-      if (!state.busy || state.adopted || state.resyncing || !rpc.ready || !state.current) return;
-      const probe = await activeRunId().catch(() => ({ known: false, runId: null }));
-      if (!state.current || !state.busy || state.adopted) return;
-      if (probe.known && !probe.runId) {
-        // Doble sonda con 4 s de gracia: evita liberar si la respuesta viene en camino.
-        await new Promise((r) => setTimeout(r, 4000));
-        if (!state.busy || state.adopted || !state.current) return;
-        const again = await activeRunId().catch(() => ({ known: false, runId: null }));
-        if (!(again.known && !again.runId)) return;
-        // Sin run en el server y sin respuesta al prompt: turno huerfano.
-        report('adopt', 'turno huerfano detectado: se libera la consola (prompt sin respuesta)');
-        systemNote('El turno anterior quedo sin cerrar (no hay run activo): se libero la consola para seguir.');
-        setBusy(false, 'Sin respuesta del turno anterior');
-      }
-    }, 15000);
+    HUB.orphanMissAt = 0;
+    orphanTimer = setInterval(() => {
+      if (state.hubWatch === true) hubOrphanTick(); // camino nuevo: info, sin steer
+      else orphanTickLegacy(); // camino viejo, intacto
+    }, orphanTickMs());
+  }
+  async function orphanTickLegacy() {
+    if (!state.busy || state.adopted || state.resyncing || !rpc.ready || !state.current) return;
+    const probe = await activeRunId().catch(() => ({ known: false, runId: null }));
+    if (!state.current || !state.busy || state.adopted) return;
+    if (probe.known && !probe.runId) {
+      // Doble sonda con 4 s de gracia: evita liberar si la respuesta viene en camino.
+      await new Promise((r) => setTimeout(r, 4000));
+      if (!state.busy || state.adopted || !state.current) return;
+      const again = await activeRunId().catch(() => ({ known: false, runId: null }));
+      if (!(again.known && !again.runId)) return;
+      // Sin run en el server y sin respuesta al prompt: turno huerfano.
+      report('adopt', 'turno huerfano detectado: se libera la consola (prompt sin respuesta)');
+      systemNote('El turno anterior quedo sin cerrar (no hay run activo): se libero la consola para seguir.');
+      setBusy(false, 'Sin respuesta del turno anterior');
+    }
   }
   function stopOrphanWatch() { clearInterval(orphanTimer); orphanTimer = 0; }
 
@@ -1550,12 +1624,15 @@
   function updateMetaHints() {
     const l = $('#meta-left');
     if (!l) return;
+    // (v6.4) Hint del hub: con más de una conexión sobre la misma sesión, el streaming les
+    // llega a todas (ya no hay que refrescar a mano en la otra pestaña o el celular).
+    const hub = state.hubWatch === true && state.hubWatchers > 1 ? ' · ' + state.hubWatchers + ' conexiones sobre esta sesión' : '';
     if (state.busy) {
-      l.innerHTML = 'El agente está trabajando · <b>Enter</b> manda una indicación al vuelo · <b>Detener</b> corta el turno';
+      l.innerHTML = 'El agente está trabajando · <b>Enter</b> manda una indicación al vuelo · <b>Detener</b> corta el turno' + esc(hub);
     } else if (state.slashLoaded && state.slash.length) {
-      l.textContent = 'Enter envía · Shift+Enter salto de línea · / comandos · Ctrl+K buscar';
+      l.textContent = 'Enter envía · Shift+Enter salto de línea · / comandos · Ctrl+K buscar' + hub;
     } else {
-      l.textContent = 'Enter envía · Shift+Enter salto de línea · Ctrl+K buscar';
+      l.textContent = 'Enter envía · Shift+Enter salto de línea · Ctrl+K buscar' + hub;
     }
   }
 
@@ -1719,7 +1796,9 @@
   // que el turno persiste mensajes, sin recargar a mano.
   // Diagnóstico del poll de adopción (para verificar en el teléfono): ticks, session/info,
   // cambios de messageCount y resyncs efectivos (con su costo).
-  const WATCH_DBG = { ticks: 0, infos: 0, infoErrs: 0, keys: [], resyncs: 0, resyncMs: 0, maxResyncMs: 0, lastKey: '', prevKey: '', softResyncs: 0, softMs: 0, maxSoftMs: 0, softDeferred: 0, softThrottled: 0, interrupted: 0, lastSoft: null };
+  const WATCH_DBG = { ticks: 0, infos: 0, infoErrs: 0, keys: [], resyncs: 0, resyncMs: 0, maxResyncMs: 0, lastKey: '', prevKey: '', softResyncs: 0, softMs: 0, maxSoftMs: 0, softDeferred: 0, softThrottled: 0, interrupted: 0, lastSoft: null,
+    // (v6.4) diagnóstico del hub por sesión (watch / replay / reconexión)
+    hubWatches: 0, hubRewatches: 0, hubGaps: 0, hubErrs: 0, hubInfoErrs: 0, hubUnsupported: 0, hubRunStarts: 0, hubOrphanFrees: 0 };
   const RUN_WATCH_MS = 2500;
   let runWatch = 0;
   let watchKey = '';
@@ -1727,11 +1806,281 @@
   const ADOPTED_NOTE = 'Turno en curso (lo arrancó otra conexión)';
   const setRunBarText = (t) => { const b = $('#runbar-text'); if (b) b.textContent = t; };
 
+  // ==================== v6.4: watch por sesión (fan-out del hub) ====================
+  // El server v4 replica las notificaciones de una sesión a TODAS las conexiones
+  // enganchadas (`_goose/unstable/session/watch`): un turno ya no pertenece a la conexión
+  // que lo arrancó, así que dos pestañas y el celular ven el mismo streaming y el fin de
+  // turno llega como evento (`_goose/unstable/session/update` con activeRunId=null), sin
+  // sondeos ni refrescos periódicos. Si el server no tiene el método (v2/v3) se marca
+  // hubWatch=false y nada de esto corre: queda el comportamiento viejo (soft-poll +
+  // sondeo por steer + orphan watch) tal como estaba.
+  const HUB = { text: new Map(), kind: new Map(), gapRecovering: false, orphanMissAt: 0 };
+
+  // El replay del hub se pinta con los MISMOS handlers que un evento vivo (onUpdate /
+  // onGooseUpdate), en orden; los chunks de texto se acumulan en HUB.text y se reconcilian
+  // acá contra lo que ya está pintado (el session/load pudo traer el mismo mensaje parcial)
+  // por prefijo común: nunca se pega el mismo texto dos veces.
+  function hubApplyReplayText() {
+    for (const [key, text] of HUB.text) {
+      const thought = HUB.kind.get(key);
+      const rec = state.msgs.get(key);
+      if (!rec || rec.closed) { streamAppend(key, text, thought); continue; }
+      const shown = rec.text || '';
+      let n = 0;
+      while (n < shown.length && n < text.length && shown[n] === text[n]) n++;
+      if (n < text.length) streamAppend(key, text.slice(n), thought);
+    }
+    HUB.text.clear(); HUB.kind.clear();
+  }
+
+  // ¿El server no implementa el método? (v2/v3) -> fallback al comportamiento viejo.
+  function hubMethodUnsupported(e) {
+    const txt = String((e && e.message) || '') + ' ' + (e && e.data ? JSON.stringify(e.data) : '');
+    return (e && e.code === -32601) || /method not found|not supported|no soportado|unknown method|unsupported/i.test(txt);
+  }
+
+  // Estado del run sin tocar `steer` (con hub no se sondea con steer: ese sondeo era el
+  // que dejaba 2505 ERROR "no active run to steer" en el log del server).
+  async function runIdFromInfo() {
+    if (!rpc.ready || !state.current) return { known: false, runId: null };
+    try {
+      const info = await rpc.request('_goose/unstable/session/info', { sessionId: state.current.id });
+      const meta = (info && info.session && info.session._meta) || {};
+      if (typeof meta.watcherCount === 'number') state.hubWatchers = meta.watcherCount;
+      if (meta.activeRunId === undefined) return { known: false, runId: null };
+      return { known: true, runId: meta.activeRunId || null };
+    } catch {
+      WATCH_DBG.hubInfoErrs++;
+      return { known: false, runId: null };
+    }
+  }
+
+  // Desengancha esta conexión de una sesión (al cambiar de chat o cerrar). Si el server no
+  // tiene `unwatch` no pasa nada: el hub poda al watcher cuando muere la conexión.
+  async function hubUnwatch(sessionId) {
+    try { await rpc.request('_goose/unstable/session/unwatch', { sessionId }); } catch {}
+  }
+
+  // ¿La burbuja del usuario ya está pintada con ese messageId? (el load o el propio envío
+  // pueden haberla puesto antes de que llegue el eco del hub: no se duplica).
+  function userBubbleOnScreen(mid) {
+    const nodes = document.querySelectorAll('#msg-inner .msg-user');
+    for (let i = nodes.length - 1; i >= 0 && i >= nodes.length - 3; i--) if (nodes[i].dataset.mid === mid) return true;
+    return false;
+  }
+
+  // El eco del prompt propio (burbuja local sin messageId) ahora también llega como
+  // notificación: se le pega el id en vez de pintar una segunda burbuja igual.
+  function adoptLocalEcho(mid, text) {
+    const nodes = document.querySelectorAll('#msg-inner .msg-user');
+    const needle = wordsOf(text);
+    for (let i = nodes.length - 1; i >= 0 && i >= nodes.length - 4; i--) {
+      const el = nodes[i];
+      if (el.dataset.mid) continue;
+      const shown = wordsOf(el.textContent);
+      if (shown && needle && (shown === needle || needle.startsWith(shown))) { el.dataset.mid = mid; return true; }
+    }
+    return false;
+  }
+
+  // Aplica el replay de la respuesta de watch, en orden, por el mismo camino que un evento
+  // vivo. Devuelve true si el hub avisó que truncó el ring (replay_gap).
+  function hubApplyReplay(replay) {
+    let gap = false;
+    state.hubReplay = true;
+    HUB.text.clear(); HUB.kind.clear();
+    try {
+      for (const n of replay || []) {
+        if (!n || !n.method) continue;
+        if (n.method === '_goose/unstable/session/replay_gap') { gap = true; continue; }
+        handleServerMessage(n);
+      }
+    } finally {
+      state.hubReplay = false;
+      hubApplyReplayText();
+    }
+    return gap;
+  }
+
+  // Engancha la conexión a la sesión en pantalla. since = último cursor (reconexión) o null
+  // (primera vez: el server manda el run en curso desde su inicio).
+  // Devuelve 'ok' | 'gap' | 'unsupported' | 'error'.
+  async function watchSession(since, opts) {
+    if (!state.current || !rpc.ready) return 'error';
+    const sid = state.current.id;
+    if (state.hubWatchSid && state.hubWatchSid !== sid) {
+      const prev = state.hubWatchSid;
+      state.hubWatchSid = null; state.hubCursor = null;
+      hubUnwatch(prev);
+    }
+    try {
+      // El watch no puede colgar la apertura de sesión: si el server no contesta,
+      // caemos al camino viejo (que sí tiene red de seguridad propia).
+      const res = await Promise.race([
+        rpc.request('_goose/unstable/session/watch', { sessionId: sid, since: since == null ? null : since }),
+        new Promise((res2) => setTimeout(() => res2(null), 8000)),
+      ]);
+      if (res === null) { report('watch', 'session/watch sin respuesta en 8 s: se mantiene el refresco viejo'); return 'unsupported'; }
+      if (!(state.current && state.current.id === sid)) { hubUnwatch(sid); return 'ok'; } // cambió de chat mientras respondía
+      // Capacidad REAL: el contrato contesta un objeto con `cursor`. Si el server no tiene
+      // el método y devuelve null/vacío, no hay watch que valga: comportamiento viejo.
+      if (!res || typeof res !== 'object' || typeof res.cursor !== 'number') {
+        state.hubWatch = false;
+        state.hubWatchSid = null;
+        WATCH_DBG.hubUnsupported = 1;
+        report('watch', 'respuesta de session/watch sin cursor: se mantiene el refresco viejo');
+        return 'unsupported';
+      }
+      state.hubWatch = true;
+      state.hubWatchSid = sid;
+      if (res && typeof res.cursor === 'number') state.hubCursor = res.cursor;
+      // El hub no manda watcherCount en la respuesta de watch: se lee de session/info.
+      if (res && typeof res.watcherCount === 'number') state.hubWatchers = res.watcherCount;
+      WATCH_DBG.hubWatches++;
+      const gap = hubApplyReplay(res && res.replay);
+      // Un cursor que RETROCEDE significa que el hub soltó el ring de la sesión (TTL de
+      // inactividad) y volvió a empezar: lo tratamos como replay_gap y recargamos todo.
+      const rewound = typeof since === 'number' && typeof res.cursor === 'number' && res.cursor < since;
+      // La respuesta manda sobre el replay: es el estado del run AHORA (el replay puede
+      // incluir eventos viejos del ring y no debe animar la UI por ellos).
+      if (res && res.activeRunId !== undefined) applyActiveRunId(res.activeRunId || null);
+      if (!opts || !opts.quiet) report('watch', 'enganchado ' + sid.slice(0, 12) + ' cursor=' + state.hubCursor + ' replay=' + ((res && res.replay && res.replay.length) || 0) + (res && res.activeRunId ? ' run=' + res.activeRunId : ''));
+      updateMetaHints();
+      return (gap || rewound) ? 'gap' : 'ok';
+    } catch (e) {
+      if (hubMethodUnsupported(e)) {
+        // Server v2/v3: no hay watch. Fallback COMPLETO al comportamiento viejo.
+        state.hubWatch = false;
+        state.hubWatchSid = null;
+        WATCH_DBG.hubUnsupported = 1;
+        report('watch', 'server sin _goose/unstable/session/watch: se mantiene el refresco viejo (' + String((e && e.message) || '').slice(0, 120) + ')');
+        return 'unsupported';
+      }
+      WATCH_DBG.hubErrs++;
+      report('watch', 'watch falló: ' + String((e && e.message) || e).slice(0, 200));
+      return 'error';
+    }
+  }
+
+  // Recarga completa conservando el turno en curso (igual que resyncAdoptedRun): barra,
+  // cronómetro, indicaciones en cola. Se usa cuando el hub truncó su ring.
+  async function hubLoadAndRewatch() {
+    if (!state.current || !rpc.ready) return 'error';
+    const keep = {
+      runId: state.runId, adopted: state.adopted, busy: state.busy, start: runStart,
+      atts: state.attachments.slice(), queue: state.queue.slice(), steers: [...state.steers.entries()],
+    };
+    state.hubCursor = null;
+    state.resyncing = true;
+    try { await renderSession(state.current, { quiet: true }); }
+    catch (e) { report('error', 'recarga por hub: ' + e.message); }
+    state.runId = keep.runId;
+    state.adopted = keep.adopted;
+    state.queue = keep.queue;
+    state.steers = new Map(keep.steers);
+    state.attachments = keep.atts;
+    renderAttachments();
+    if (keep.busy) {
+      runStart = keep.start || performance.now();
+      setBusy(true, ADOPTED_NOTE);
+      const bar = $('#runbar');
+      if (bar && bar.hidden) runBarShow(ADOPTED_NOTE);
+    }
+    state.resyncing = false;
+    return await watchSession(null, { quiet: true });
+  }
+
+  // El hub truncó el ring: session/load completo + re-watch desde cero (una sola vez).
+  async function hubFullResync() {
+    if (HUB.gapRecovering) return false;
+    HUB.gapRecovering = true;
+    try {
+      WATCH_DBG.hubGaps++;
+      report('watch', 'replay_gap: session/load completo + re-watch');
+      await hubLoadAndRewatch();
+      return true;
+    } finally { HUB.gapRecovering = false; }
+  }
+
+  function onReplayGap(params) {
+    const sid = params && params.sessionId;
+    if (sid && state.current && sid !== state.current.id) return;
+    if (state.hubWatch !== true) return; // sin cursores no hay gap que recuperar
+    hubFullResync().catch(() => {});
+  }
+
+  // Al reconectar el WS: re-watch con el último cursor para no perderse lo que pasó
+  // mientras estábamos caídos.
+  async function hubRewatch() {
+    if (!state.current || !rpc.ready) return false;
+    WATCH_DBG.hubRewatches++;
+    const r = await watchSession(state.hubCursor);
+    if (r === 'unsupported' || r === 'error') { await checkAdoptedRun(); return false; }
+    if (r === 'gap') { await hubFullResync(); return true; }
+    if (!state.busy) { sweepInterruptedTools(); flushPendingSteers(); }
+    return true;
+  }
+
+  // Enganche inicial (después del session/load + render, o al crear la sesión). Si el server
+  // no tiene watch o falla la red, cae al camino viejo: checkAdoptedRun (sondeo + hot watch).
+  async function startHubWatch() {
+    if (state.hubWatch === false) { await checkAdoptedRun(); return false; }
+    const r = await watchSession(null);
+    if (r !== 'ok' && r !== 'gap') { await checkAdoptedRun(); return false; }
+    if (r === 'gap') return await hubFullResync();
+    // Equivalente liviano de checkAdoptedRun: el run ya vino en la respuesta de watch; si no
+    // hay ninguno, lo que quedó girando en pantalla es una interrupción real.
+    if (!state.busy) { sweepInterruptedTools(); flushPendingSteers(); }
+    return true;
+  }
+
+  // Red de seguridad del hub: consulta `session/info` (NO `steer`) y libera la consola sólo
+  // si el server dice que no hay run y el prompt quedó sin respuesta (~90 s de margen).
+  async function hubOrphanTick() {
+    const probe = await runIdFromInfo();
+    if (!state.current || !state.busy || state.adopted) return;
+    if (!probe.known || probe.runId) { HUB.orphanMissAt = 0; return; }
+    if (!HUB.orphanMissAt) { HUB.orphanMissAt = performance.now(); return; }
+    if (performance.now() - HUB.orphanMissAt < 60000) return;
+    HUB.orphanMissAt = 0;
+    WATCH_DBG.hubOrphanFrees++;
+    report('adopt', 'turno huerfano (hub): se libera la consola (prompt sin respuesta)');
+    systemNote('El turno anterior quedó sin cerrar (no hay run activo): se liberó la consola para seguir.');
+    setBusy(false, 'Sin respuesta del turno anterior');
+  }
+
+  // `activeRunId` de la sesión: arranque y fin de turno. Con watch es el ÚNICO aviso de fin
+  // para el DUEÑO del prompt (su response puede perderse: reload, socket caído) y también
+  // para el turno adoptado. Guarda: un `null` viejo no cierra un turno recién lanzado que
+  // todavía no registró su run (no vimos ningún run ni lo adoptamos).
+  function applyActiveRunId(rid) {
+    const prev = state.runId;
+    state.runId = rid || null;
+    // Replay: sólo se registra el estado; decide la respuesta de watch (ver watchSession).
+    if (state.hubReplay) return state.runId;
+    if (rid) {
+      if (!prev) WATCH_DBG.hubRunStarts++;
+      // Run vivo que no arrancamos nosotros (otra pestaña, el celular, un reload): se adopta
+      // (barra + Detener) y el streaming llega igual, porque somos watchers de la sesión.
+      if (!state.busy) { unsweepInterruptedTools(); adoptRun(rid, ADOPTED_NOTE); }
+      return rid;
+    }
+    if (!state.busy) return null;
+    if (!prev && !state.adopted) return null;
+    // Antes esto era sólo para el turno adoptado; con hub vale también para el dueño (un
+    // prompt sin respuesta dejaba la consola muda hasta recargar).
+    if (state.hubWatch === true || state.adopted) endRun('El turno terminó');
+    return null;
+  }
+
   // ¿Hay un run activo en esta sesión, y con qué id? `session/steer` con un
   // expectedRunId imposible: el server valida el run ANTES de tocar al agente, así que
   // no encola nada, y contesta con el run real ("actualRunId") o con "no active run".
   async function activeRunId() {
     if (!rpc.ready || !state.current) return { known: false, runId: null };
+    // (v6.4) Con hub el run activo viene en `session/info` y por evento: no se sondea con
+    // `steer` (ese sondeo dejaba 2505 ERROR "no active run to steer" en el log del server).
+    if (state.hubWatch === true) return runIdFromInfo();
     try {
       const res = await rpc.request('_goose/unstable/session/steer', {
         sessionId: state.current.id,
@@ -1768,6 +2117,9 @@
   }
 
   function startRunWatch() {
+    // (v6.4) Con watch no hay nada que sondear cada 2,5 s: el fin de turno llega como
+    // evento (activeRunId=null) a todas las conexiones enganchadas a la sesión.
+    if (state.hubWatch === true) return;
     if (runWatch) return;
     watchSince = Date.now();
     runWatch = setInterval(watchAdoptedRun, RUN_WATCH_MS);
@@ -2505,9 +2857,9 @@
 
   // Superficie de depuración (LAN, un solo usuario): inspeccionar estado desde la consola
   // y desde los checks automatizados. No expone secretos (el WS ya vive en /config.js).
-  window.__gooseWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; } };
+  window.__gooseWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; } };
 
   wire();
   rpc.connect();
-  report('boot', 'app cargada (v6.3+detach+wd+sc)');
+  report('boot', 'app cargada (v6.4+hub+detach+wd+sc)');
 })();

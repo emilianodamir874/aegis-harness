@@ -3,8 +3,14 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
 $root = 'C:\goose-web'
-$node = 'C:\Users\Emiliano\AppData\Local\hermes\tools\node-26.7.0-win32-x64\node.exe'
-$serveExe = 'C:\goose\target\debug\goose-serve-v2.exe'
+$nodeCandidates = @(
+  'C:\Users\Emiliano\AppData\Local\hermes\tools\node-26.7.0-win32-x64\node.exe',
+  'C:\Users\Emiliano\scoop\apps\fnm\current\node-versions\v22.23.2\installation\node.exe',
+  'C:\Users\Emiliano\AppData\Local\hermes\tools\.reclaim-b5211fe162ad438ca39ea28e075f9794\node.exe'
+)
+$node = ($nodeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
+if (-not $node) { Write-Output 'goose-web: NO hay node.exe disponible'; exit 1 }
+$serveExe = 'C:\goose\target\debug\goose-serve-v7.exe'
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 
 New-Item -ItemType Directory -Force "$root\logs" | Out-Null
@@ -35,3 +41,7 @@ if (-not $webUp) {
 }
 
 Write-Output "goose-web: URL http://$($cfg.publicHost):$($cfg.webPort)"
+
+
+
+
