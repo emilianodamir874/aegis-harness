@@ -304,7 +304,16 @@
   }
 
   // ---------- notificaciones de sesión ----------
+  // (v6.6) Al abrir un chat el replay entero llega ANTES de que responda session/load.
+  // En vez de pintarlo a medida que llega (del principio hacia el final, que es lo que
+  // dejaba al usuario mirando los mensajes viejos), se guarda aca y se pinta en dos
+  // fases en paintReplayTwoPhase(): primero el final, despues el resto arriba.
   function onUpdate(params) {
+    if (state.replayBuf) { state.replayBuf.push(params); return; }
+    applyUpdate(params);
+  }
+
+  function applyUpdate(params) {
     const cur = state.current;
     if (!cur || params.sessionId !== cur.id) return;
     const u = params.update || {};
@@ -633,6 +642,7 @@
 
   // ---------- render: mensajes ----------
   function msgWrap() {
+    if (state.offscreen) return state.offscreen; // fase B: el historial viejo se pinta aparte
     let w = $('#msg-inner');
     if (!w) {
       hideWelcome();
@@ -1456,6 +1466,63 @@
     requestAnimationFrame(step);
   }
 
+  // Cuantos mensajes distintos se pintan de una al abrir un chat (el resto va arriba).
+  const REPLAY_TAIL_MSGS = 24;
+
+  // Identidad estable de un update para contar mensajes distintos (sin Math.random, o el
+  // mismo update cambiaria de identidad entre llamadas y el corte quedaria mal elegido).
+  const uidOf = (u) => u.messageId || u.toolCallId || (u.sessionUpdate + '|' + (u.title || u.kind || ''));
+
+  // (v6.6) Replay en dos fases: se entra mirando el ULTIMO mensaje, no el primero.
+  //   fase A: se aplican los ultimos REPLAY_TAIL_MSGS mensajes y se ancla el fondo.
+  //   fase B: el resto (mas viejo) se pinta en un contenedor aparte y despues se inserta
+  //           ARRIBA del todo, compensando el scroll para que la vista no se mueva.
+  // El corte se elige en un limite de mensaje para no partir ninguno al medio.
+  async function paintReplayTwoPhase() {
+    const buf = state.replayBuf;
+    state.replayBuf = null;
+    if (!buf || !buf.length) return;
+    let seen = new Set(), split = 0;
+    for (let i = buf.length - 1; i >= 0; i--) {
+      const id = uidOf(buf[i].update || {});
+      seen.add(id);
+      if (seen.size > REPLAY_TAIL_MSGS) {
+        let j = i;
+        while (j > 0 && uidOf(buf[j - 1].update || {}) === id) j--;
+        split = j;
+        break;
+      }
+    }
+    try {
+      state.replaying = true;
+      for (let i = split; i < buf.length; i++) applyUpdate(buf[i]);
+      await drainRender();
+      state.replaying = false;
+      flushRender();
+      scrollBottom(true);
+      if (!split) return;
+      state.replaying = true;
+      state.offscreen = document.createElement('div');
+      state.offscreen.className = 'msg-inner';
+      for (let i = 0; i < split; i++) applyUpdate(buf[i]);
+      await drainRender();
+      state.replaying = false;
+      flushRender();
+      const real = $('#msg-inner');
+      if (!real) return;
+      const box = $('#messages');
+      const antes = real.scrollHeight;
+      const ref = real.firstChild;
+      while (state.offscreen.firstChild) real.insertBefore(state.offscreen.firstChild, ref);
+      const delta = real.scrollHeight - antes;
+      if (box) box.scrollTop = box.scrollTop + delta; // el historial viejo crece por arriba
+    } finally {
+      state.offscreen = null;
+      state.replaying = false;
+      flushRender();
+    }
+  }
+
   async function renderSession(entry, opts) {
     const id = entry.sessionId || entry.id;
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
@@ -1464,6 +1531,18 @@
     updateTitle(); markActive(id); closeDrawer();
     localStorage.setItem('gweb.last', id);
     if (!opts || !opts.quiet) setPill('Cargando conversación.');
+    if (!SOFT.on) {
+      state.replayBuf = []; // (v6.6) se pinta en dos fases al terminar el load
+      // Red de seguridad: si la fase doble no llegara a correr (una excepcion en el
+      // medio), el buffer se vuelca crudo en vez de dejar la conversacion congelada.
+      setTimeout(() => {
+        if (!state.replayBuf) return;
+        const sobrante = state.replayBuf;
+        state.replayBuf = null;
+        for (const p of sobrante) { try { applyUpdate(p); } catch (e) {} }
+        flushRender();
+      }, 8000);
+    }
     state.replaying = true;
     try {
       const res = await rpc.request('session/load', { sessionId: id, cwd: state.current.cwd || CFG.cwd, mcpServers: [] });
@@ -1474,7 +1553,7 @@
       systemNote('No se pudo cargar la sesión: ' + e.message);
     }
     state.replaying = false;
-    await drainRender(); // el replay se pinta por tramos: esperar al último antes de cerrar y scrollear
+    if (state.replayBuf) await paintReplayTwoPhase(); else await drainRender(); // el replay se pinta por tramos: esperar al último antes de cerrar y scrollear
     clearStreaming(); // el replay nunca debe dejar un cursor de streaming colgado
     flushRender(); // pinta lo que haya quedado pendiente del replay
     setPill(null);
