@@ -86,6 +86,8 @@ use tracing::{debug, error, info, warn};
 use url::Url;
 use uuid::Uuid;
 
+pub use self::hub::SessionHub;
+pub(crate) use self::hub::{EventKind, SessionBus};
 use self::message_meta::{
     content_chunk_for_message, message_meta_without_steer, populate_output_token_limit_content,
 };
@@ -110,6 +112,7 @@ mod dispatch;
 mod elicitation;
 mod extensions;
 mod fork_session;
+mod hub;
 mod list_sessions;
 mod live_voice;
 mod load_session;
@@ -215,8 +218,15 @@ async fn resume_saved_provider_session(
     }
 }
 
-pub(super) const DEFAULT_PROVIDER_ID: &str = "goose";
-pub(super) const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
+/// Monotonic id handed to each `GooseAcpAgent` (= one ACP connection) so the
+/// session hub can tell connections apart without holding their handles.
+static NEXT_CONNECTION_KEY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn next_connection_key() -> u64 {
+    NEXT_CONNECTION_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+pub(super) const DEFAULT_PROVIDER_ID: &str = "goose";pub(super) const DEFAULT_PROVIDER_LABEL: &str = "Goose (Default)";
 const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 
 /// In-memory state for an active ACP session.
@@ -251,7 +261,6 @@ struct ActiveRunDropGuard {
     registry: Arc<ActiveRunRegistry>,
     session_id: String,
     run_id: String,
-    cancel_token: CancellationToken,
 }
 
 impl Drop for ActiveRunDropGuard {
@@ -314,12 +323,24 @@ pub struct GooseAcpAgentOptions {
     /// delegated agent runs for each session.
     pub active_runs: Arc<ActiveRunRegistry>,
     pub live_voice: Arc<LiveVoiceService>,
+    /// Per-session fan-out hub, shared by every connection of this server.
+    pub hub: Arc<SessionHub>,
+    /// Server-wide session store, reused by every connection so all of them
+    /// see one SQLite pool and one session cache.
+    pub session_manager: Option<Arc<SessionManager>>,
+    /// Server-wide agent LRU, reused by every connection so the same session
+    /// resolves to the same `Arc<Agent>`.
+    pub agent_manager: Option<Arc<AgentManager>>,
 }
 
 pub struct GooseAcpAgent {
     sessions: Arc<Mutex<HashMap<String, GooseAcpSession>>>,
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<LiveVoiceService>,
+    /// Per-session event fan-out shared by every connection of this server.
+    pub(crate) hub: Arc<SessionHub>,
+    /// Identifies this connection inside the hub (one agent per connection).
+    pub(crate) connection_key: u64,
     closed_session_ids: Arc<Mutex<HashSet<String>>>,
     agent_manager: Arc<AgentManager>,
     provider_factory: AcpProviderFactory,
@@ -376,7 +397,7 @@ fn agent_capabilities_meta() -> Option<Meta> {
 }
 
 fn spawn_session_name_update_notifier(
-    cx: ConnectionTo<Client>,
+    bus: SessionBus,
 ) -> tokio::sync::mpsc::UnboundedSender<crate::session::SessionNameUpdate> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<crate::session::SessionNameUpdate>();
     tokio::spawn(async move {
@@ -399,18 +420,11 @@ fn spawn_session_name_update_notifier(
                         .meta(meta),
                 ),
             );
-            if let Err(error) = cx.send_notification(notification) {
-                warn!(
-                    session_id = %update.session_id,
-                    error = %error,
-                    "Failed to send generated session name update"
-                );
-            }
+            bus.emit(&update.session_id, notification);
         }
     });
     tx
 }
-
 fn extract_timeout_from_meta(meta: &Option<Meta>) -> Option<u64> {
     meta.as_ref()
         .and_then(|m| m.get("timeout"))
@@ -759,9 +773,12 @@ fn run_watchdog_poll_interval() -> std::time::Duration {
 }
 
 /// Closes a run that stopped making progress, with an error the client can see.
+///
+/// It publishes through the session bus (not the owning connection): the run
+/// outlives that connection, and every watcher must see the run close.
 fn spawn_run_watchdog(
     registry: Arc<ActiveRunRegistry>,
-    cx: ConnectionTo<Client>,
+    bus: SessionBus,
     session_id: String,
     run_id: String,
     cancel_token: CancellationToken,
@@ -799,11 +816,14 @@ fn spawn_run_watchdog(
                 window
             );
             let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(text)));
-            let _ = cx.send_notification(SessionNotification::new(
-                acp_session.clone(),
-                SessionUpdate::AgentMessageChunk(chunk),
-            ));
-            let _ = GooseAcpAgent::send_active_run_update(&cx, &acp_session, None);
+            bus.emit(
+                session_id.as_str(),
+                SessionNotification::new(
+                    acp_session.clone(),
+                    SessionUpdate::AgentMessageChunk(chunk),
+                ),
+            );
+            bus.emit_active_run(session_id.as_str(), None, EventKind::RunEnd);
             registry.cancel_agent_run(&session_id);
             cancel_token.cancel();
             return;
@@ -922,7 +942,6 @@ impl GooseAcpAgent {
             registry: self.active_runs.clone(),
             session_id: session_id.to_string(),
             run_id: run_id.to_string(),
-            cancel_token: CancellationToken::new(),
         });
     }
 
@@ -1024,7 +1043,14 @@ impl GooseAcpAgent {
     }
 
     pub async fn new(options: GooseAcpAgentOptions) -> Result<Self> {
-        let session_manager = Arc::new(SessionManager::new(options.data_dir));
+        // One stack per server (v6.4): every connection reuses the same session
+        // store and agent LRU, so two connections on the same session share one
+        // `Arc<Agent>`. Callers that build an agent directly (tests, stdio
+        // serve) fall back to connection-local instances.
+        let session_manager = match options.session_manager.clone() {
+            Some(manager) => manager,
+            None => Arc::new(SessionManager::new(options.data_dir.clone())),
+        };
 
         // Eagerly initialize the SQLite pool so it's ready when providers/sessions need it.
         let storage_clone = session_manager.storage().clone();
@@ -1034,14 +1060,19 @@ impl GooseAcpAgent {
 
         let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
-        let agent_config = AgentConfig::new(
-            Arc::clone(&session_manager),
-            Arc::clone(&permission_manager),
-            options.scheduler,
-            options.disable_session_naming,
-            options.goose_platform.clone(),
-        );
-        let agent_manager = Arc::new(AgentManager::new(agent_config, None).await?);
+        let agent_manager = match options.agent_manager.clone() {
+            Some(manager) => manager,
+            None => {
+                let agent_config = AgentConfig::new(
+                    Arc::clone(&session_manager),
+                    Arc::clone(&permission_manager),
+                    options.scheduler.clone(),
+                    options.disable_session_naming,
+                    options.goose_platform.clone(),
+                );
+                Arc::new(AgentManager::new(agent_config, None).await?)
+            }
+        };
         let (thinking_effort_update_tx, thinking_effort_update_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
@@ -1071,6 +1102,8 @@ impl GooseAcpAgent {
             additional_source_roots: options.additional_source_roots,
             session_cwd: options.session_cwd,
             recipe_path_cache: Arc::new(Mutex::new(HashMap::new())),
+            hub: options.hub,
+            connection_key: next_connection_key(),
         })
     }
 
@@ -1136,7 +1169,7 @@ impl GooseAcpAgent {
                     mcp_host_info: self.client_mcp_host_info.get().cloned(),
                     use_login_shell_path: self.use_login_shell_path.get().copied(),
                     session_name_update_tx: (!self.disable_session_naming)
-                        .then(|| spawn_session_name_update_notifier(cx.clone())),
+                        .then(|| spawn_session_name_update_notifier(self.bus(cx))),
                 },
             )
             .await
@@ -1185,7 +1218,7 @@ impl GooseAcpAgent {
             inner: Arc::new(dev_client),
             cx: cx.clone(),
             session_id: session_id.clone(),
-            tool_call_notifier: ToolCallNotifier::new(cx, &session_id),
+            tool_call_notifier: ToolCallNotifier::new(&self.bus(cx), &session_id),
             fs_read: client_fs_capabilities.read_text_file,
             fs_write: client_fs_capabilities.write_text_file,
             terminal: client_terminal,
@@ -1442,7 +1475,7 @@ impl GooseAcpAgent {
         session_id: &SessionId,
         target: &SessionAgentTarget,
         tool_requests: &HashMap<String, ToolRequest>,
-        cx: &ConnectionTo<Client>,
+        bus: &SessionBus,
     ) -> Result<(), agent_client_protocol::Error> {
         let role = &message.role;
 
@@ -1456,10 +1489,10 @@ impl GooseAcpAgent {
                     Role::User => SessionUpdate::UserMessageChunk(chunk),
                     Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
                 };
-                cx.send_notification(SessionNotification::new(session_id.clone(), update))?;
+                bus.emit(session_id.0.as_ref(), SessionNotification::new(session_id.clone(), update));
             }
             MessageContent::ToolRequest(tool_request) => {
-                self.handle_tool_request(tool_request, message, session_id, &target.agent, cx)
+                self.handle_tool_request(tool_request, message, session_id, &target.agent, bus)
                     .await?;
             }
             MessageContent::ToolResponse(tool_response) => {
@@ -1467,18 +1500,21 @@ impl GooseAcpAgent {
                     tool_response,
                     tool_requests.get(&tool_response.id),
                     session_id,
-                    cx,
+                    bus,
                 )
                 .await?;
             }
             MessageContent::Thinking(thinking) => {
-                cx.send_notification(SessionNotification::new(
-                    session_id.clone(),
-                    SessionUpdate::AgentThoughtChunk(content_chunk_for_message(
-                        message,
-                        ContentBlock::Text(TextContent::new(thinking.thinking.clone())),
-                    )),
-                ))?;
+                bus.emit(
+                    session_id.0.as_ref(),
+                    SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::AgentThoughtChunk(content_chunk_for_message(
+                            message,
+                            ContentBlock::Text(TextContent::new(thinking.thinking.clone())),
+                        )),
+                    ),
+                );
             }
             MessageContent::ActionRequired(action_required) => match &action_required.data {
                 ActionRequiredData::ToolConfirmation {
@@ -1488,7 +1524,7 @@ impl GooseAcpAgent {
                     prompt,
                 } => {
                     self.handle_tool_permission_request(
-                        cx,
+                        bus.connection(),
                         session_id,
                         PendingToolPermission {
                             request_id: id.clone(),
@@ -1505,7 +1541,7 @@ impl GooseAcpAgent {
                     requested_schema,
                 } => {
                     self.handle_form_elicitation(
-                        cx,
+                        bus.connection(),
                         session_id,
                         id,
                         elicitation_message,
@@ -1541,11 +1577,11 @@ impl GooseAcpAgent {
                     Role::User => SessionUpdate::UserMessageChunk(chunk),
                     Role::Assistant => SessionUpdate::AgentMessageChunk(chunk),
                 };
-                cx.send_notification(SessionNotification::new(session_id.clone(), update))?;
+                bus.emit(session_id.0.as_ref(), SessionNotification::new(session_id.clone(), update));
             }
             MessageContent::SystemNotification(notification) => {
                 send_status_message_update(
-                    cx,
+                    bus,
                     self.supports_goose_custom_notifications(),
                     session_id.0.as_ref(),
                     notification,
@@ -1556,10 +1592,13 @@ impl GooseAcpAgent {
                     message,
                     ContentBlock::Text(TextContent::new(error.message.clone())),
                 );
-                cx.send_notification(SessionNotification::new(
-                    session_id.clone(),
-                    SessionUpdate::AgentMessageChunk(chunk),
-                ))?;
+                bus.emit(
+                    session_id.0.as_ref(),
+                    SessionNotification::new(
+                        session_id.clone(),
+                        SessionUpdate::AgentMessageChunk(chunk),
+                    ),
+                );
             }
             _ => {}
         }
@@ -1571,13 +1610,13 @@ impl GooseAcpAgent {
         chain: ReadyToolChain,
         agent: &Arc<Agent>,
         session_id: &SessionId,
-        cx: &ConnectionTo<Client>,
+        bus: &SessionBus,
     ) {
         if !self.requests_tool_call_label_enrichment() {
             return;
         }
 
-        let tool_call_notifier = ToolCallNotifier::new(cx, session_id);
+        let tool_call_notifier = ToolCallNotifier::new(bus, session_id);
         spawn_chain_summary_enrichment(
             agent,
             session_id,
@@ -1593,7 +1632,7 @@ impl GooseAcpAgent {
         message: &Message,
         session_id: &SessionId,
         agent: &Arc<Agent>,
-        cx: &ConnectionTo<Client>,
+        bus: &SessionBus,
     ) -> Result<(), agent_client_protocol::Error> {
         let client_requests_label_enrichment = self.requests_tool_call_label_enrichment();
         let initial_tool_call = build_initial_tool_call_with_message_meta(
@@ -1601,7 +1640,7 @@ impl GooseAcpAgent {
             message,
             client_requests_label_enrichment,
         );
-        let tool_call_notifier = ToolCallNotifier::new(cx, session_id);
+        let tool_call_notifier = ToolCallNotifier::new(bus, session_id);
         tool_call_notifier.send_initial(initial_tool_call)?;
 
         if !client_requests_label_enrichment {
@@ -1626,13 +1665,13 @@ impl GooseAcpAgent {
         tool_response: &ToolResponse,
         tool_request: Option<&ToolRequest>,
         session_id: &SessionId,
-        cx: &ConnectionTo<Client>,
+        bus: &SessionBus,
     ) -> Result<(), agent_client_protocol::Error> {
         let fields = tool_call_update_fields_from_response(tool_response, tool_request, false);
 
         let update = ToolCallUpdate::new(ToolCallId::new(tool_response.id.clone()), fields)
             .meta(trusted_update_meta(tool_response));
-        let tool_call_notifier = ToolCallNotifier::new(cx, session_id);
+        let tool_call_notifier = ToolCallNotifier::new(bus, session_id);
         tool_call_notifier.send_update(update)?;
 
         Ok(())
@@ -1786,35 +1825,41 @@ fn credits_exhausted_prompt_error(
 }
 
 fn send_status_message_update(
-    cx: &ConnectionTo<Client>,
+    bus: &SessionBus,
     supports_goose_custom_notifications: bool,
     session_id: &str,
     notification: &SystemNotificationContent,
 ) -> Result<(), agent_client_protocol::Error> {
     if let Some(status) = status_message_from_system_notification(notification) {
         if supports_goose_custom_notifications {
-            cx.send_notification(GooseSessionNotification {
-                session_id: session_id.to_string(),
-                update: GooseSessionUpdate::StatusMessage(StatusMessageUpdate { status }),
-            })?;
+            bus.emit(
+                session_id,
+                GooseSessionNotification {
+                    session_id: session_id.to_string(),
+                    update: GooseSessionUpdate::StatusMessage(StatusMessageUpdate { status }),
+                },
+            );
         }
     }
     Ok(())
 }
 
 fn send_progress_message_update(
-    cx: &ConnectionTo<Client>,
+    bus: &SessionBus,
     supports_goose_custom_notifications: bool,
     session_id: &str,
     message: String,
 ) -> Result<(), agent_client_protocol::Error> {
     if supports_goose_custom_notifications {
-        cx.send_notification(GooseSessionNotification {
-            session_id: session_id.to_string(),
-            update: GooseSessionUpdate::StatusMessage(StatusMessageUpdate {
-                status: StatusMessage::Progress { message },
-            }),
-        })?;
+        bus.emit(
+            session_id,
+            GooseSessionNotification {
+                session_id: session_id.to_string(),
+                update: GooseSessionUpdate::StatusMessage(StatusMessageUpdate {
+                    status: StatusMessage::Progress { message },
+                }),
+            },
+        );
     }
     Ok(())
 }
@@ -2050,35 +2095,32 @@ impl GooseAcpAgent {
         Ok((active_run_id, agent))
     }
 
-    fn active_run_meta(active_run_id: Option<&str>) -> Meta {
-        let mut goose = serde_json::Map::new();
-        goose.insert(
-            "activeRunId".to_string(),
-            active_run_id
-                .map(|run_id| serde_json::Value::String(run_id.to_string()))
-                .unwrap_or(serde_json::Value::Null),
-        );
-
-        let mut meta = serde_json::Map::new();
-        meta.insert("goose".to_string(), serde_json::Value::Object(goose));
-        meta
+    pub(crate) fn bus(&self, cx: &ConnectionTo<Client>) -> SessionBus {
+        SessionBus::new(self.hub.clone(), cx.clone(), self.connection_key)
     }
 
+    /// Announces the run lifecycle to every watcher of the session. The
+    /// `activeRunId` marker also moves the hub's replay window, so a client
+    /// that joins or reconnects mid-run is caught up from the run start.
     fn send_active_run_update(
+        &self,
         cx: &ConnectionTo<Client>,
         session_id: &SessionId,
         active_run_id: Option<&str>,
     ) -> Result<(), agent_client_protocol::Error> {
-        cx.send_notification(SessionNotification::new(
-            session_id.clone(),
-            SessionUpdate::SessionInfoUpdate(
-                SessionInfoUpdate::new().meta(Self::active_run_meta(active_run_id)),
-            ),
-        ))
+        let kind = if active_run_id.is_some() {
+            EventKind::RunStart
+        } else {
+            EventKind::RunEnd
+        };
+        self.bus(cx)
+            .emit_active_run(session_id.0.as_ref(), active_run_id, kind);
+        Ok(())
     }
 
     fn send_queued_steer_update(
-        cx: &ConnectionTo<Client>,
+        &self,
+        bus: &SessionBus,
         session_id: &SessionId,
         message_id: &str,
         run_id: &str,
@@ -2094,15 +2136,18 @@ impl GooseAcpAgent {
         let mut meta = serde_json::Map::new();
         meta.insert("goose".to_string(), serde_json::Value::Object(goose));
 
-        cx.send_notification(SessionNotification::new(
-            session_id.clone(),
-            SessionUpdate::SessionInfoUpdate(SessionInfoUpdate::new().meta(meta)),
-        ))
+        bus.emit(
+            session_id.0.as_ref(),
+            SessionNotification::new(
+                session_id.clone(),
+                SessionUpdate::SessionInfoUpdate(SessionInfoUpdate::new().meta(meta)),
+            ),
+        );
+        Ok(())
     }
-
     async fn send_local_inference_progress_update(
         &self,
-        cx: &ConnectionTo<Client>,
+        bus: &SessionBus,
         acp_session_id: &SessionId,
         session_id: &str,
         agent: &Arc<Agent>,
@@ -2131,7 +2176,7 @@ impl GooseAcpAgent {
         }
 
         send_progress_message_update(
-            cx,
+            bus,
             self.supports_goose_custom_notifications(),
             acp_session_id.0.as_ref(),
             format!("Loading local model {model_name}..."),
@@ -2158,7 +2203,7 @@ impl GooseAcpAgent {
     /// limit is resolved once per turn rather than on every usage event.
     async fn send_session_usage_updates(
         &self,
-        cx: &ConnectionTo<Client>,
+        bus: &SessionBus,
         acp_session_id: &SessionId,
         session_id: &str,
         agent: &Arc<Agent>,
@@ -2184,19 +2229,22 @@ impl GooseAcpAgent {
         };
         let updates = build_usage_updates(&session, &totals, context_limit);
         if self.supports_goose_custom_notifications() {
-            cx.send_notification(updates.custom)?;
+            bus.emit(session_id, updates.custom);
         }
-        cx.send_notification(SessionNotification::new(
-            acp_session_id.clone(),
-            SessionUpdate::UsageUpdate(updates.standard),
-        ))?;
+        bus.emit(
+            session_id,
+            SessionNotification::new(
+                acp_session_id.clone(),
+                SessionUpdate::UsageUpdate(updates.standard),
+            ),
+        );
 
         Ok(session)
     }
 
     async fn forward_agent_stream(
         &self,
-        cx: &ConnectionTo<Client>,
+        bus: &SessionBus,
         acp_session_id: &SessionId,
         session_id: &str,
         agent: &Arc<Agent>,
@@ -2247,7 +2295,7 @@ impl GooseAcpAgent {
                             acp_session_id,
                             &target,
                             &tool_requests,
-                            cx,
+                            bus,
                         )
                         .await?;
 
@@ -2266,7 +2314,7 @@ impl GooseAcpAgent {
                         };
 
                         if let Some(chain) = ready_chain {
-                            self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);
+                            self.spawn_ready_chain_summary(chain, agent, acp_session_id, bus);
                         }
                     }
                 }
@@ -2274,18 +2322,21 @@ impl GooseAcpAgent {
                     if let Some(update) =
                         tool_notifications::tool_notification_update(request_id, notification)
                     {
-                        let tool_call_notifier = ToolCallNotifier::new(cx, acp_session_id);
+                        let tool_call_notifier = ToolCallNotifier::new(bus, acp_session_id);
                         tool_call_notifier.send_update(update)?;
                     }
                 }
                 Ok(crate::agents::AgentEvent::MessageUsage { message_id, usage }) => {
                     if self.supports_goose_custom_notifications() {
-                        cx.send_notification(GooseSessionNotification {
-                            session_id: session_id.to_string(),
-                            update: GooseSessionUpdate::MessageUsage(message_usage_update(
-                                message_id, &usage,
-                            )),
-                        })?;
+                        bus.emit(
+                            session_id,
+                            GooseSessionNotification {
+                                session_id: session_id.to_string(),
+                                update: GooseSessionUpdate::MessageUsage(message_usage_update(
+                                    message_id, &usage,
+                                )),
+                            },
+                        );
                     }
                 }
                 Ok(crate::agents::AgentEvent::Usage(_)) => {
@@ -2294,7 +2345,7 @@ impl GooseAcpAgent {
                     // still reports errors.
                     if let Err(error) = self
                         .send_session_usage_updates(
-                            cx,
+                            bus,
                             acp_session_id,
                             session_id,
                             agent,
@@ -2316,7 +2367,7 @@ impl GooseAcpAgent {
         let was_cancelled = cancel_token.is_cancelled();
         if !was_cancelled {
             if let Some(chain) = chain_tracker.close_current_chain() {
-                self.spawn_ready_chain_summary(chain, agent, acp_session_id, cx);
+                self.spawn_ready_chain_summary(chain, agent, acp_session_id, bus);
             }
         }
 
@@ -2335,10 +2386,32 @@ impl GooseAcpAgent {
     }
 
     async fn on_prompt(
-        &self,
+        self: &Arc<Self>,
         cx: &ConnectionTo<Client>,
         args: PromptRequest,
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
+        // The turn runs in its own task so it survives the loss of the
+        // connection that started it: when the transport drops this future
+        // (reload, closed tab, revoked roaming connection) the response is lost
+        // but the run keeps streaming to every watcher of the session and
+        // persists its result. The registry entry is released by that task,
+        // never by this handler's scope.
+        let agent = Arc::clone(self);
+        let cx = cx.clone();
+        let handle = tokio::spawn(async move { agent.run_prompt_turn(cx, args).await });
+        match handle.await {
+            Ok(result) => result,
+            Err(error) => Err(agent_client_protocol::Error::internal_error()
+                .data(format!("Prompt turn task failed: {error}"))),
+        }
+    }
+
+    async fn run_prompt_turn(
+        self: Arc<Self>,
+        cx: ConnectionTo<Client>,
+        args: PromptRequest,
+    ) -> Result<PromptResponse, agent_client_protocol::Error> {
+        let bus = self.bus(&cx);
         // The ACP session_id IS the thread ID.
         let session_id = args.session_id.0.to_string();
 
@@ -2364,7 +2437,6 @@ impl GooseAcpAgent {
             registry: self.active_runs.clone(),
             session_id: session_id.clone(),
             run_id: run_id.clone(),
-            cancel_token: cancel_token.clone(),
         };
 
         // Stall watchdog: a run that stops making progress (provider hang, a
@@ -2372,7 +2444,7 @@ impl GooseAcpAgent {
         // and tool cards spinning. This closes it with a visible error.
         spawn_run_watchdog(
             self.active_runs.clone(),
-            cx.clone(),
+            bus.clone(),
             session_id.clone(),
             run_id.clone(),
             cancel_token.clone(),
@@ -2380,21 +2452,21 @@ impl GooseAcpAgent {
 
         if cancel_token.is_cancelled() {
             self.clear_active_run(&session_id, &run_id).await;
-            Self::send_active_run_update(cx, &args.session_id, None)?;
+            self.send_active_run_update(&cx, &args.session_id, None)?;
             return Ok(PromptResponse::new(StopReason::Cancelled));
         }
 
-        if let Err(error) = Self::send_active_run_update(cx, &args.session_id, Some(&run_id)) {
+        if let Err(error) = self.send_active_run_update(&cx, &args.session_id, Some(&run_id)) {
             self.clear_active_run(&session_id, &run_id).await;
             return Err(error);
         }
 
         if let Err(error) = self
-            .send_local_inference_progress_update(cx, &args.session_id, &session_id, &agent)
+            .send_local_inference_progress_update(&bus, &args.session_id, &session_id, &agent)
             .await
         {
             self.clear_active_run(&session_id, &run_id).await;
-            let _ = Self::send_active_run_update(cx, &args.session_id, None);
+            let _ = self.send_active_run_update(&cx, &args.session_id, None);
             return Err(error);
         }
 
@@ -2412,14 +2484,14 @@ impl GooseAcpAgent {
             Ok(stream) => stream,
             Err(error) => {
                 self.clear_active_run(&session_id, &run_id).await;
-                let _ = Self::send_active_run_update(cx, &args.session_id, None);
+                let _ = self.send_active_run_update(&cx, &args.session_id, None);
                 return Err(agent_client_protocol::Error::internal_error()
                     .data(format!("Error getting agent reply: {error}")));
             }
         };
         let stream_result = self
             .forward_agent_stream(
-                cx,
+                &bus,
                 &args.session_id,
                 &session_id,
                 &agent,
@@ -2436,19 +2508,22 @@ impl GooseAcpAgent {
             .was_client_cancelled(&session_id, &run_id)
             .unwrap_or(true);
         self.clear_active_run(&session_id, &run_id).await;
-        Self::send_active_run_update(cx, &args.session_id, None)?;
+        self.send_active_run_update(&cx, &args.session_id, None)?;
         let outcome = stream_result?;
         if outcome.was_cancelled && !was_stalled && !client_cancelled {
             let text = "El turno se interrumpio de forma inesperada (no lo pediste). El run se cerro y las herramientas en curso pueden haber quedado sin resultado.";
             let chunk = ContentChunk::new(ContentBlock::Text(TextContent::new(text)));
-            let _ = cx.send_notification(SessionNotification::new(
-                args.session_id.clone(),
-                SessionUpdate::AgentMessageChunk(chunk),
-            ));
+            bus.emit(
+                session_id.as_str(),
+                SessionNotification::new(
+                    args.session_id.clone(),
+                    SessionUpdate::AgentMessageChunk(chunk),
+                ),
+            );
         }
 
         let session = self
-            .send_session_usage_updates(cx, &args.session_id, &session_id, &agent, &mut None)
+            .send_session_usage_updates(&bus, &args.session_id, &session_id, &agent, &mut None)
             .await?;
 
         let stop_reason =
@@ -2489,8 +2564,8 @@ impl GooseAcpAgent {
         agent.steer(&req.session_id, message).await;
 
         if let Some(cx) = self.client_cx.get() {
-            let _ = Self::send_queued_steer_update(
-                cx,
+            let _ = self.send_queued_steer_update(
+                &self.bus(cx),
                 &SessionId::new(req.session_id.clone()),
                 &message_id,
                 &active_run_id,
@@ -2501,6 +2576,60 @@ impl GooseAcpAgent {
             run_id: active_run_id,
             message_id,
         })
+    }
+
+    /// `_goose/unstable/session/watch`: registers this connection as a watcher
+    /// of `sessionId`, so it receives every session event (live and replayed)
+    /// regardless of which connection started the turn.
+    pub(super) async fn on_session_watch(
+        &self,
+        cx: &ConnectionTo<Client>,
+        req: SessionWatchRequest,
+    ) -> Result<SessionWatchResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim().to_string();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        let active_run_id = self
+            .active_runs
+            .agent_run(&session_id)
+            .map(|(run_id, _)| run_id);
+        let (snapshot, spawned) = self
+            .hub
+            .watch(cx, self.connection_key, &session_id, req.since);
+        spawned?;
+        debug!(
+            session_id = %session_id,
+            cursor = snapshot.cursor,
+            watcher_id = snapshot.watcher_id,
+            "session watcher registered"
+        );
+        Ok(SessionWatchResponse {
+            active_run_id,
+            cursor: snapshot.cursor,
+            replay: snapshot.replay,
+        })
+    }
+
+    /// `_goose/unstable/session/unwatch`: drops this connection's registration
+    /// for the session (a dead connection is pruned by the hub automatically).
+    pub(super) async fn on_session_unwatch(
+        &self,
+        req: SessionUnwatchRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim().to_string();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        let removed = self
+            .hub
+            .unwatch_connection(&session_id, self.connection_key);
+        debug!(session_id = %session_id, removed, "session watcher removed");
+        Ok(EmptyResponse {})
     }
 
     async fn on_cancel(
@@ -2733,6 +2862,11 @@ impl GooseAcpAgent {
             .remove_session_if_loaded(session_id)
             .await
             .internal_err_ctx("Failed to remove in-memory agent")?;
+
+        // Drop this connection's watchers; release the replay ring when nobody
+        // is watching and no run is live.
+        self.hub.unwatch_connection(session_id, self.connection_key);
+        self.hub.release_if_idle(session_id, &self.active_runs);
 
         info!(session_id = %session_id, "ACP session closed");
         Ok(CloseSessionResponse::new())
@@ -3759,6 +3893,9 @@ print(\"hello, world\")
             session_cwd: None,
             active_runs,
             live_voice,
+        hub: Arc::new(SessionHub::new()),
+        session_manager: None,
+        agent_manager: None,
         })
         .await
         .unwrap();
@@ -3891,6 +4028,9 @@ print(\"hello, world\")
                 session_cwd: None,
                 active_runs,
                 live_voice,
+            hub: Arc::new(SessionHub::new()),
+            session_manager: None,
+            agent_manager: None,
             })
             .await
             .unwrap(),

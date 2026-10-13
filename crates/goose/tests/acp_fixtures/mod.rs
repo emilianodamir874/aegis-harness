@@ -416,6 +416,9 @@ pub async fn spawn_acp_server_in_process(
         scheduler: Some(Arc::new(FixtureScheduler::new())),
         active_runs,
         live_voice,
+        hub: Arc::new(goose::acp::server::SessionHub::new()),
+        session_manager: None,
+        agent_manager: None,
     })
     .await
     .unwrap();

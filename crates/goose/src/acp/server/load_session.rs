@@ -113,7 +113,7 @@ fn replay_conversation_to_client(
     replay_tail: Option<usize>,
 ) -> Result<usize, agent_client_protocol::Error> {
     let session_id = SessionId::new(session.id.clone());
-    let tool_call_notifier = ToolCallNotifier::new(cx, &session_id);
+    let tool_call_notifier = ToolCallNotifier::connection_only(cx, &session_id);
 
     let messages = session
         .conversation
@@ -266,7 +266,7 @@ impl GooseAcpAgent {
         .await?;
 
         let acp_session_id = SessionId::new(session_id.to_string());
-        if let Err(error) = Self::send_active_run_update(cx, &acp_session_id, Some(&run_id)) {
+        if let Err(error) = self.send_active_run_update(cx, &acp_session_id, Some(&run_id)) {
             self.clear_active_run(session_id, &run_id).await;
             return Err(error);
         }
@@ -283,12 +283,12 @@ impl GooseAcpAgent {
             Ok(Some(stream)) => stream,
             Ok(None) => {
                 self.clear_active_run(session_id, &run_id).await;
-                Self::send_active_run_update(cx, &acp_session_id, None)?;
+                self.send_active_run_update(cx, &acp_session_id, None)?;
                 return Ok(());
             }
             Err(error) => {
                 self.clear_active_run(session_id, &run_id).await;
-                let _ = Self::send_active_run_update(cx, &acp_session_id, None);
+                let _ = self.send_active_run_update(cx, &acp_session_id, None);
                 return Err(agent_client_protocol::Error::internal_error().data(format!(
                     "Failed to resume pending tool confirmation: {error}"
                 )));
@@ -307,11 +307,10 @@ impl GooseAcpAgent {
                 registry: server.active_runs.clone(),
                 session_id: task_session_id.clone(),
                 run_id: task_run_id.clone(),
-                cancel_token: task_cancel_token.clone(),
             };
             let result = server
                 .forward_agent_stream(
-                    &task_cx,
+                    &server.bus(&task_cx),
                     &task_acp_session_id,
                     &task_session_id,
                     &task_agent,
@@ -322,7 +321,7 @@ impl GooseAcpAgent {
             if result.is_ok() {
                 if let Err(error) = server
                     .send_session_usage_updates(
-                        &task_cx,
+                        &server.bus(&task_cx),
                         &task_acp_session_id,
                         &task_session_id,
                         &task_agent,
@@ -340,7 +339,7 @@ impl GooseAcpAgent {
             server
                 .clear_active_run(&task_session_id, &task_run_id)
                 .await;
-            if let Err(error) = Self::send_active_run_update(&task_cx, &task_acp_session_id, None) {
+            if let Err(error) = server.send_active_run_update(&task_cx, &task_acp_session_id, None) {
                 warn!(
                     session_id = task_session_id,
                     ?error,
@@ -358,7 +357,7 @@ impl GooseAcpAgent {
         }) {
             cancel_token.cancel();
             self.clear_active_run(session_id, &run_id).await;
-            let _ = Self::send_active_run_update(cx, &SessionId::new(session_id), None);
+            let _ = self.send_active_run_update(cx, &SessionId::new(session_id), None);
             return Err(error);
         }
 
@@ -371,7 +370,7 @@ impl GooseAcpAgent {
         ) {
             cancel_token.cancel();
             self.clear_active_run(session_id, &run_id).await;
-            let _ = Self::send_active_run_update(cx, &acp_session_id, None);
+            let _ = self.send_active_run_update(cx, &acp_session_id, None);
             return Err(error);
         }
 

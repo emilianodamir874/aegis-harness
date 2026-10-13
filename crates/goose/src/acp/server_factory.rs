@@ -1,17 +1,17 @@
 use crate::acp::server::{
     AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, GooseAcpAgent,
-    GooseAcpAgentOptions, LiveVoiceService,
+    GooseAcpAgentOptions, LiveVoiceService, SessionHub,
 };
-use crate::agents::GoosePlatform;
+use crate::agents::{AgentConfig, GoosePlatform};
 use crate::config::paths::Paths;
+use crate::config::permission::PermissionManager;
+use crate::execution::manager::AgentManager;
 #[cfg(feature = "scheduler")]
 use crate::scheduler_trait::SchedulerTrait;
-#[cfg(feature = "scheduler")]
 use crate::session::SessionManager;
 use crate::source_roots::SourceRoot;
 use anyhow::Result;
 use std::sync::Arc;
-#[cfg(feature = "scheduler")]
 use tokio::sync::OnceCell;
 use tracing::info;
 
@@ -34,6 +34,14 @@ pub struct AcpServer {
     scheduler: OnceCell<Arc<dyn SchedulerTrait>>,
     active_runs: Arc<ActiveRunRegistry>,
     live_voice: Arc<crate::acp::server::LiveVoiceService>,
+    /// Per-session fan-out for every connection this server accepts.
+    hub: Arc<SessionHub>,
+    /// One session store for the whole server: every connection shares the same
+    /// SQLite pool instead of opening its own (v6.4 "un stack por sesión").
+    session_manager: OnceCell<Arc<SessionManager>>,
+    /// One agent LRU for the whole server, so two connections on the same
+    /// session resolve to the same `Arc<Agent>`.
+    agent_manager: OnceCell<Arc<AgentManager>>,
 }
 
 impl AcpServer {
@@ -41,6 +49,8 @@ impl AcpServer {
         let data_dir = Paths::data_dir();
         let active_runs = Arc::new(ActiveRunRegistry::default());
         let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
+        let hub = Arc::new(SessionHub::new());
+        hub.start_reaper(active_runs.clone());
         Self {
             config,
             data_dir,
@@ -48,6 +58,9 @@ impl AcpServer {
             scheduler: OnceCell::new(),
             active_runs,
             live_voice,
+            hub,
+            session_manager: OnceCell::new(),
+            agent_manager: OnceCell::new(),
         }
     }
 
@@ -112,6 +125,40 @@ impl AcpServer {
             })
         });
 
+        // Server-wide stack, created once on the first connection and reused by
+        // every later one (v6.4): same `SessionManager`, same `AgentManager`,
+        // capacity from GOOSE_MAX_ACTIVE_AGENTS (never unlimited).
+        let session_manager = self
+            .session_manager
+            .get_or_init(|| async { Arc::new(SessionManager::new(self.data_dir.clone())) })
+            .await
+            .clone();
+        #[cfg(feature = "scheduler")]
+        let scheduler_for_manager = scheduler.clone();
+        #[cfg(not(feature = "scheduler"))]
+        let scheduler_for_manager: Option<Arc<dyn SchedulerTrait>> = None;
+        let agent_manager = self
+            .agent_manager
+            .get_or_try_init(|| async {
+                let permission_manager =
+                    Arc::new(PermissionManager::new(self.config.config_dir.clone()));
+                let agent_config = AgentConfig::new(
+                    session_manager.clone(),
+                    permission_manager,
+                    scheduler_for_manager,
+                    disable_session_naming,
+                    self.config.goose_platform.clone(),
+                );
+                let max_sessions = crate::config::Config::global()
+                    .get_goose_max_active_agents()
+                    .unwrap_or(100);
+                AgentManager::new(agent_config, Some(max_sessions))
+                    .await
+                    .map(Arc::new)
+            })
+            .await?
+            .clone();
+
         let agent = GooseAcpAgent::new(GooseAcpAgentOptions {
             provider_factory,
             builtin_selection: self.config.builtins.clone(),
@@ -127,6 +174,9 @@ impl AcpServer {
             scheduler: None,
             active_runs: self.active_runs.clone(),
             live_voice: self.live_voice.clone(),
+            hub: self.hub.clone(),
+            session_manager: Some(session_manager),
+            agent_manager: Some(agent_manager),
         })
         .await?;
         info!("Created new ACP agent");
@@ -141,6 +191,7 @@ impl AcpServer {
     ) -> Self {
         let active_runs = Arc::new(ActiveRunRegistry::default());
         let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
+        let hub = Arc::new(SessionHub::new());
         Self {
             config,
             data_dir,
@@ -148,6 +199,9 @@ impl AcpServer {
             scheduler: OnceCell::new(),
             active_runs,
             live_voice,
+            hub,
+            session_manager: OnceCell::new(),
+            agent_manager: OnceCell::new(),
         }
     }
 }

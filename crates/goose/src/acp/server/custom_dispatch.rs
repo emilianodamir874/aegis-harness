@@ -134,6 +134,23 @@ impl GooseAcpAgent {
         self.on_steer_session(req).await
     }
 
+    #[custom_method(SessionWatchRequest)]
+    async fn dispatch_session_watch(
+        self: &Arc<Self>,
+        cx: &ConnectionTo<Client>,
+        req: SessionWatchRequest,
+    ) -> Result<SessionWatchResponse, agent_client_protocol::Error> {
+        self.on_session_watch(cx, req).await
+    }
+
+    #[custom_method(SessionUnwatchRequest)]
+    async fn dispatch_session_unwatch(
+        &self,
+        req: SessionUnwatchRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_session_unwatch(req).await
+    }
+
     #[custom_method(LiveVoiceAvailabilityRequest)]
     async fn dispatch_live_voice_availability(
         &self,

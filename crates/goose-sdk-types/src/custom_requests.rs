@@ -755,6 +755,47 @@ pub struct GetSessionInfoResponse {
     pub session: SessionInfo,
 }
 
+/// Register the calling connection as a live watcher of a session (v6.4).
+///
+/// Every connection watching a session receives the same `session/update` and
+/// `_goose/unstable/session/update` notifications, no matter which connection
+/// started the running turn.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_goose/unstable/session/watch",
+    response = SessionWatchResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionWatchRequest {
+    pub session_id: String,
+    /// Last cursor the client applied. `null` means "from now", extended to the
+    /// start of the current run when one is active.
+    #[serde(default)]
+    pub since: Option<u64>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionWatchResponse {
+    /// Run currently in flight for the session (`null` when idle).
+    pub active_run_id: Option<String>,
+    /// Cursor to send back as `since` on the next watch/reconnect.
+    pub cursor: u64,
+    /// Complete JSON-RPC notifications the watcher missed, oldest first. A
+    /// leading `_goose/unstable/session/replay_gap` notification means the ring
+    /// truncated and the client must `session/load`.
+    #[serde(default)]
+    pub replay: Vec<serde_json::Value>,
+}
+
+/// Stop receiving live updates for a session (v6.4).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_goose/unstable/session/unwatch", response = EmptyResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionUnwatchRequest {
+    pub session_id: String,
+}
+
 /// Truncate a session conversation from the given message timestamp onward.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(

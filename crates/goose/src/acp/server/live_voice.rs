@@ -222,7 +222,6 @@ impl GooseAcpAgent {
             registry: self.active_runs.clone(),
             session_id: session_id.clone(),
             run_id: run_id.clone(),
-            cancel_token: cancel_token.clone(),
         };
 
         Ok(async move {
@@ -243,7 +242,7 @@ impl GooseAcpAgent {
         run_id: String,
     ) -> String {
         let acp_session_id = SessionId::new(session_id.clone());
-        let _ = Self::send_active_run_update(&cx, &acp_session_id, Some(&run_id));
+        let _ = self.send_active_run_update(&cx, &acp_session_id, Some(&run_id));
 
         let session_config = SessionConfig {
             id: session_id.clone(),
@@ -259,7 +258,7 @@ impl GooseAcpAgent {
             Ok(stream) => stream,
             Err(_) => {
                 self.clear_active_run(&session_id, &run_id).await;
-                let _ = Self::send_active_run_update(&cx, &acp_session_id, None);
+                let _ = self.send_active_run_update(&cx, &acp_session_id, None);
                 return "Goose couldn't start the task.".into();
             }
         };
@@ -302,7 +301,7 @@ impl GooseAcpAgent {
                                 &acp_session_id,
                                 &target,
                                 &tool_requests,
-                                &cx,
+                                &self.bus(&cx),
                             )
                             .await;
                     }
@@ -328,7 +327,8 @@ impl GooseAcpAgent {
                     if let Some(update) =
                         tool_notifications::tool_notification_update(request_id, notification)
                     {
-                        let _ = ToolCallNotifier::new(&cx, &acp_session_id).send_update(update);
+                        let _ = ToolCallNotifier::new(&self.bus(&cx), &acp_session_id)
+                            .send_update(update);
                     }
                 }
                 Ok(crate::agents::AgentEvent::MessageUsage { message_id, usage }) => {
@@ -344,14 +344,14 @@ impl GooseAcpAgent {
                 Ok(_) => {}
                 Err(_) => {
                     self.clear_active_run(&session_id, &run_id).await;
-                    let _ = Self::send_active_run_update(&cx, &acp_session_id, None);
+                    let _ = self.send_active_run_update(&cx, &acp_session_id, None);
                     return "The task failed before it could complete.".into();
                 }
             }
         }
 
         self.clear_active_run(&session_id, &run_id).await;
-        let _ = Self::send_active_run_update(&cx, &acp_session_id, None);
+        let _ = self.send_active_run_update(&cx, &acp_session_id, None);
         if cancel_token.is_cancelled() {
             return "The task was cancelled.".into();
         }

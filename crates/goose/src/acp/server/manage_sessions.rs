@@ -160,9 +160,25 @@ impl GooseAcpAgent {
                     .data(format!("Session not found: {}", session_id))
             })?;
 
-        Ok(GetSessionInfoResponse {
-            session: build_session_info(session),
-        })
+        // Live state the client needs to know without polling: the run it
+        // should attach to and how many connections are watching the session.
+        let active_run_id = self
+            .active_runs
+            .agent_run(session_id)
+            .map(|(run_id, _)| serde_json::Value::String(run_id));
+        let watcher_count = self.hub.watcher_count(session_id);
+        let mut info = build_session_info(session);
+        let meta = info.meta.get_or_insert_with(Default::default);
+        meta.insert(
+            "activeRunId".to_string(),
+            active_run_id.unwrap_or(serde_json::Value::Null),
+        );
+        meta.insert(
+            "watcherCount".to_string(),
+            serde_json::Value::Number(watcher_count.into()),
+        );
+
+        Ok(GetSessionInfoResponse { session: info })
     }
 
     pub(super) async fn on_truncate_session_conversation(
