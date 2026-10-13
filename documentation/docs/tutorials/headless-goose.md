@@ -117,7 +117,7 @@ goose run -t "Review the failed tests in tests/integration/, identify why the au
 Set up your environment variables to avoid some of the repetitive runtime decisions.
 
 ```bash
-export GOOSE_CONTEXT_STRATEGY=summarize
+export GOOSE_AUTO_COMPACT_THRESHOLD=0.8
 export GOOSE_MAX_TURNS=50
 export GOOSE_MODE=auto
 export GOOSE_DISABLE_SESSION_NAMING=true
@@ -258,7 +258,7 @@ export GOOSE_MODE=auto  # Automatically approve safe operations
 **Mitigation**: Configure appropriate context strategies and monitor token usage:
 
 ```bash
-export GOOSE_CONTEXT_STRATEGY=summarize  # Usually the best choice for automation
+export GOOSE_AUTO_COMPACT_THRESHOLD=0.8  # auto-compact at 80% of the window
 export GOOSE_MAX_TURNS=100  # Prevent runaway execution
 ```
 
@@ -285,7 +285,7 @@ fi
 
 ```bash
 # Context management
-export GOOSE_CONTEXT_STRATEGY=summarize
+export GOOSE_AUTO_COMPACT_THRESHOLD=0.8
 export GOOSE_MAX_TURNS=50
 
 # Tool behavior

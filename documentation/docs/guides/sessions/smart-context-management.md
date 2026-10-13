@@ -112,21 +112,27 @@ The default behavior depends on the mode you're running in:
 - **Interactive mode**: Prompts user to choose (equivalent to `prompt`)
 - **Headless mode** (`goose run`): Automatically summarizes (equivalent to `summarize`)
 
-You can configure how goose handles context limits by setting the `GOOSE_CONTEXT_STRATEGY` environment variable:
+Current versions manage context limits with **auto-compaction** (there is no
+`GOOSE_CONTEXT_STRATEGY` variable; the strategy picker described below is legacy).
 
 ```bash
-# Set automatic strategy (choose one)
-export GOOSE_CONTEXT_STRATEGY=summarize  # Automatically summarize (recommended)
-export GOOSE_CONTEXT_STRATEGY=truncate   # Automatically remove oldest messages
-export GOOSE_CONTEXT_STRATEGY=clear      # Automatically clear session
+# Compact when a request would exceed 80% of the model window (default)
+export GOOSE_AUTO_COMPACT_THRESHOLD=0.8
 
-# Set to prompt the user
-export GOOSE_CONTEXT_STRATEGY=prompt
+# Or cap it with an absolute number of tokens (the earlier of the two applies)
+export GOOSE_AUTO_COMPACT_TOKEN_LIMIT=200000
+
+# Additionally summarize old tool request/response pairs at compaction time
+export GOOSE_TOOL_PAIR_SUMMARIZATION=true
 ```
+
+The trigger is `min(GOOSE_AUTO_COMPACT_THRESHOLD x context window, GOOSE_AUTO_COMPACT_TOKEN_LIMIT)`.
+Compaction summarizes the oldest part of the conversation, keeps a recent tail, and leaves
+the original messages in the session (hidden from the model, not deleted).
 
 When you hit the context limit, the behavior depends on your configuration:
 
-**With default settings (no `GOOSE_CONTEXT_STRATEGY` set)**, you'll see this prompt to choose a management option:
+**In versions before auto-compaction**, you would see this prompt to choose a management option:
 
 ```sh
 ◇  The model's context length is maxed out. You will need to reduce the # msgs. Do you want to?
@@ -143,10 +149,10 @@ Context maxed out
 goose summarized messages for you.
 ```
 
-**With `GOOSE_CONTEXT_STRATEGY` configured**, goose will automatically apply your chosen strategy:
+**With auto-compaction (current default)**, goose summarizes automatically and reports it inline:
 
 ```sh
-# Example with GOOSE_CONTEXT_STRATEGY=summarize
+# Example: auto-compaction fires
 Context maxed out - automatically summarized messages.
 --------------------------------------------------
 goose automatically summarized messages for you.
