@@ -733,7 +733,8 @@
   const dirty = new Set();
   let rafId = 0;
   let renderTimer = 0;
-  const STREAM_RENDER_MS = 90; // el mensaje que está creciendo se re-renderiza ~11 veces/s
+  const STREAM_RENDER_MS = 90;
+  const STREAM_RENDER_MS_TYPING = 260; // tecleando: menos re-render, mas respuesta del teclado // el mensaje que está creciendo se re-renderiza ~11 veces/s
   // El replay de una sesión enorme marca miles de registros dirty a la vez; pintarlos todos en un
   // frame cuesta ~2,3 s de main thread (medido) y en el teléfono las teclas llegan tarde. Se pinta
   // por tramos: se sigue hasta agotar el presupuesto de tiempo del frame y el resto va al próximo.
@@ -752,7 +753,8 @@
       // mensaje que se está streameando: en un teléfono eso satura el main thread
       // (60 renders/s del texto completo) y el teclado empieza a perder teclas.
       const age = now - (rec.lastAppend || 0);
-      if (rec.live && age < STREAM_RENDER_MS) { wait = Math.max(wait, STREAM_RENDER_MS - age); continue; }
+      const streamMs = (performance.now() - lastTypedAt < 400) ? STREAM_RENDER_MS_TYPING : STREAM_RENDER_MS;
+      if (rec.live && age < streamMs) { wait = Math.max(wait, streamMs - age); continue; }
       if (done >= RENDER_MIN_PER_FRAME && performance.now() - frameT0 >= RENDER_BUDGET_MS) break;
       done++;
       dirty.delete(rec);
@@ -1457,10 +1459,12 @@
     box.addEventListener('wheel', release, { passive: true });
     box.addEventListener('touchstart', release, { passive: true });
     box.addEventListener('pointerdown', release, { passive: true });
+    let ultimaAltura = -1;
     const step = () => {
       if (!state.pinUntil) return;
       if (performance.now() > state.pinUntil) { state.pinUntil = 0; return; }
-      box.scrollTop = box.scrollHeight;
+      // (v6.7) Escribir scrollTop todos los frames obliga a layout: solo si crecio.
+      if (box.scrollHeight !== ultimaAltura) { ultimaAltura = box.scrollHeight; box.scrollTop = ultimaAltura; }
       requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -2825,9 +2829,22 @@
   let composing = false; // el IME (Gboard) está armando la palabra
   let composerRaf = 0;
   let lastComposerValue = null;
-  function autosize() {
+  // (v6.7) Tecleo en el telefono: leer scrollHeight despues de escribir un estilo obliga a
+  // recalcular el layout de TODO el documento (cientos de mensajes) en cada tecla: es el
+  // "tardan en llegar los caracteres". Con field-sizing el alto lo resuelve el CSS; sin
+  // soporte, se mide como maximo cada 120 ms y siempre que cambie la cantidad de lineas.
+  const FIELD_SIZING = (typeof CSS !== 'undefined' && CSS.supports && CSS.supports('field-sizing', 'content'));
+  let lastSizeAt = 0;
+  let lastComposerLines = -1;
+  function autosize(force) {
     const t = $('#input');
     lastComposerValue = t.value; // lo que ya procesamos (usado por scheduleComposer)
+    if (FIELD_SIZING) return;
+    const now = performance.now();
+    const lines = (t.value.match(/\n/g) || []).length;
+    if (!force && lines === lastComposerLines && now - lastSizeAt < 120) return;
+    lastComposerLines = lines;
+    lastSizeAt = now;
     t.style.height = 'auto';
     t.style.height = Math.min(t.scrollHeight, 200) + 'px';
   }
@@ -2839,10 +2856,13 @@
       composerRaf = 0;
       const t = $('#input');
       if (t.value === lastComposerValue) return;
+      const previo = lastComposerValue || '';
       lastComposerValue = t.value;
       const t0 = performance.now();
       autosize();
-      refreshSlashMenu();
+      // (v6.7) El menu de comandos se rehace solo si el texto empieza con "/" (o si dejo
+      // de empezar): asi escribir texto normal no reconstruye la lista en cada tecla.
+      if (t.value.charAt(0) === '/' || previo.charAt(0) === '/') refreshSlashMenu();
       const dt = performance.now() - t0;
       METRICS.composerRuns++; METRICS.composerMs += dt;
       if (dt > METRICS.maxComposerMs) METRICS.maxComposerMs = dt;

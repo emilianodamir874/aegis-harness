@@ -818,3 +818,11 @@ body { background: var(--bg); }
   .welcome h1, .welcome-sub, .wsug .sug, .welcome-goose, .runbar { animation: none !important; }
   .runbar::after, .dot:not(.ok):not(.err) { animation: none !important; }
 }
+
+
+/* --- tecleo en el telefono (v6.7) ------------------------------------------------- */
+/* El alto del composer lo resuelve el motor (sin medir scrollHeight por tecla) y los
+   mensajes fuera de pantalla se saltan del render: un chat largo deja de costar igual
+   que uno corto en cada reflow. */
+#input { field-sizing: content; max-height: 200px; }
+.msg-a, .msg-user, .tool { content-visibility: auto; contain-intrinsic-size: auto 140px; }
