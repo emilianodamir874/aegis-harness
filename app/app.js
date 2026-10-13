@@ -327,7 +327,7 @@
         if (u.content && u.content.type === 'text') streamAppend(u.messageId || 'a', u.content.text, false);
         break;
       case 'agent_thought_chunk':
-        if (u.content && u.content.type === 'text') streamAppend((u.messageId || 'a') + '·t', u.content.text, true);
+        if (u.content && u.content.type === 'text') streamAppend(thoughtKeyFor(u), u.content.text, true);
         break;
       case 'tool_call':
       case 'tool_call_update':
@@ -797,6 +797,22 @@
     setPill(null);
   }
 
+  // (v6.5) Un solo contenedor de razonamiento mientras no se intercale nada mas: el
+  // server puede abrir un mensaje nuevo (id nuevo) a mitad del mismo razonamiento y el
+  // bloque quedaba partido en dos cajas. Se reusa el nodo de razonamiento solo si sigue
+  // siendo el ultimo hijo de la lista; asi el texto nunca queda fuera de orden respecto
+  // de una tool o de la respuesta.
+  function thoughtKeyFor(u) {
+    const wrap = msgWrap();
+    const prev = state.thoughtRec;
+    if (prev && !prev.closed && prev.el.parentElement === wrap && prev.el === wrap.lastElementChild) {
+      return state.thoughtKey;
+    }
+    state.thoughtKey = 'think:' + (u.messageId || 'a') + ':' + Date.now().toString(36);
+    state.thoughtRec = null;
+    return state.thoughtKey;
+  }
+
   function streamAppend(key, text, thought) {
     // (v6.4) Replay del hub: el mismo mensaje parcial puede haberlo traído ya el
     // session/load, así que el texto del replay se acumula aparte y se reconcilia por
@@ -833,6 +849,7 @@
       rec = { el, body, text: '', dirty: false, closed: false, live: false, lastAppend: 0 };
       el.__rec = rec;
       state.msgs.set(key, rec);
+      if (thought) state.thoughtRec = rec;
       if (!thought) curStream = el;
     }
     rec.text += text;
@@ -842,7 +859,7 @@
     if (!thought && rec.el !== curStream) { clearStreaming(); curStream = rec.el; }
     // Durante un replay del historial no hay streaming real: si se marcara acá,
     // el último mensaje reproducido queda con el cursor pegado para siempre.
-    if (!thought && !state.replaying) { rec.el.classList.add('streaming'); rec.el.classList.add('in'); }
+    if (!state.replaying) { rec.el.classList.add('in'); if (!thought) rec.el.classList.add('streaming'); }
     scrollBottom();
   }
 
@@ -893,7 +910,7 @@
     let el = state.tools.get(id);
     if (!el) {
       el = document.createElement('div');
-      el.className = 'tool';
+      el.className = state.replaying ? 'tool' : 'tool in';
       el.innerHTML = '<span class="tool-ic"></span><div class="tool-body"><div class="tool-title"></div></div>';
       msgWrap().appendChild(el);
       state.tools.set(id, el);

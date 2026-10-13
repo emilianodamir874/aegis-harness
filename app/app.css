@@ -756,12 +756,13 @@ body { background: var(--bg); }
 .tool.has-content:hover .tool-ic .tico { opacity: 1; }
 
 /* ---------- animaciones ---------- */
-@keyframes msgIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+@keyframes msgIn { from { opacity: 0; transform: translateY(7px); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
 @keyframes popIn { from { opacity: 0; transform: translateY(-4px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes shimmer { from { background-position: 180% 0; } to { background-position: -180% 0; } }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-.msg-user.in, .msg-a.in { animation: msgIn .3s cubic-bezier(.16, 1, .3, 1) both; }
+.msg-user.in, .msg-a.in { animation: msgIn .32s cubic-bezier(.16, 1, .3, 1) both; }
+.tool.in { animation: popIn .26s cubic-bezier(.16, 1, .3, 1) both; }
 .menu, .slash-menu { animation: popIn .15s cubic-bezier(.16, 1, .3, 1) both; }
 .perm { animation: msgIn .26s cubic-bezier(.16, 1, .3, 1) both; }
 .toast { animation: msgIn .22s cubic-bezier(.16, 1, .3, 1) both; }
@@ -813,7 +814,7 @@ body { background: var(--bg); }
 #jump-bottom:hover { background: var(--bg-card); color: var(--text); }
 #jump-bottom svg { display: block; }
 @media (prefers-reduced-motion: reduce) {
-  .msg-user.in, .msg-a.in, .menu, .slash-menu, .perm, .toast, #usage-pop,
+  .msg-user.in, .msg-a.in, .tool.in, .menu, .slash-menu, .perm, .toast, #usage-pop,
   .welcome h1, .welcome-sub, .wsug .sug, .welcome-goose, .runbar { animation: none !important; }
   .runbar::after, .dot:not(.ok):not(.err) { animation: none !important; }
 }
