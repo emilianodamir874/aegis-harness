@@ -660,7 +660,7 @@
   const scrollBottom = (force) => {
     if (state.replaying) return; // durante el replay medimos una sola vez, al final
     const m = $('#messages');
-    if (force || m.scrollHeight - m.scrollTop - m.clientHeight < 140) m.scrollTop = m.scrollHeight;
+    if (force || state.pinUntil > performance.now() || m.scrollHeight - m.scrollTop - m.clientHeight < 140) m.scrollTop = m.scrollHeight;
   };
 
   function addUser(text, replay, atts, opts) {
@@ -1424,10 +1424,38 @@
     // (adopción sin sondeo) y el replay de lo que pasó mientras no estábamos. Si el server
     // no tiene watch, startHubWatch cae al camino viejo (checkAdoptedRun).
     await startHubWatch();
+    pinBottom(1400);
   }
 
   // Carga una sesión en pantalla (replay del historial + chips). Sin la guarda de
   // "busy": también la usa el refresco periódico de un turno adoptado.
+  // (v6.5) Al abrir un chat hay que aterrizar en el ULTIMO mensaje. Un unico salto al
+  // fondo no alcanza: el layout sigue creciendo despues del ultimo append (imagenes,
+  // codigo y tablas que se miden recien al hacer flush), asi que el salto queda corto y
+  // el usuario aparece mirando mensajes viejos. Se mantiene el fondo durante un ratito
+  // (y solo se suelta si el usuario scrollea hacia arriba por su cuenta).
+  function pinBottom(ms) {
+    const box = $('#messages');
+    if (!box) return;
+    state.pinUntil = performance.now() + (ms || 1200);
+    const release = () => {
+      state.pinUntil = 0;
+      box.removeEventListener('wheel', release);
+      box.removeEventListener('touchstart', release);
+      box.removeEventListener('pointerdown', release);
+    };
+    box.addEventListener('wheel', release, { passive: true });
+    box.addEventListener('touchstart', release, { passive: true });
+    box.addEventListener('pointerdown', release, { passive: true });
+    const step = () => {
+      if (!state.pinUntil) return;
+      if (performance.now() > state.pinUntil) { state.pinUntil = 0; return; }
+      box.scrollTop = box.scrollHeight;
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
   async function renderSession(entry, opts) {
     const id = entry.sessionId || entry.id;
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
@@ -1454,6 +1482,7 @@
     else showWelcome('empty', state.current.title);
     updateMetaHints();
     scrollBottom(true);
+    pinBottom(1400);
   }
   // ---------- barra de turno: trabajando / detener / terminado ----------
   // (el usuario tiene que poder VER que el agente sigue trabajando y CORTARLO,
