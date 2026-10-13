@@ -48,6 +48,12 @@ const HTML_AUTO_CLOSE_TIMEOUT_MS: u64 = 2000;
 const CHATGPT_CODEX_PROVIDER_NAME: &str = "chatgpt_codex";
 pub const CHATGPT_CODEX_DEFAULT_MODEL: &str = "gpt-5.5";
 
+// El catalogo real de modelos lo sirve el backend y cambia con el tiempo (la familia gpt-6
+// aparecio despues de esta version); esta es la del cliente de Codex de la maquina. La lista
+// de abajo solo aporta los niveles de razonamiento: los modelos se piden al backend (ver
+// fetch_supported_models) para que no vuelvan a quedar viejos.
+const CHATGPT_CODEX_CLIENT_VERSION: &str = "26.930.61225";
+
 #[derive(Debug)]
 pub struct ChatGptCodexModelAttrs {
     pub name: &'static str,
@@ -55,6 +61,22 @@ pub struct ChatGptCodexModelAttrs {
 }
 
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
+    ChatGptCodexModelAttrs {
+        name: "gpt-6.1-sol",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6-sol",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6-luna",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6-astra",
+        reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
+    },
     ChatGptCodexModelAttrs {
         name: "gpt-5.6-sol",
         reasoning_levels: &["none", "low", "medium", "high", "xhigh"],
@@ -951,6 +973,69 @@ impl ChatGptCodexProvider {
 
         handle_status(response).await
     }
+
+    /// `GET {CODEX_API_ENDPOINT}/models?client_version=...` con el token de la suscripcion.
+    /// `codex-auto-review` se descarta: es el modelo interno de revision automatica, no de chat.
+    async fn fetch_remote_model_slugs(&self) -> Result<Vec<String>, ProviderError> {
+        let token_data = self
+            .auth_provider
+            .get_valid_token()
+            .await
+            .map_err(|e| ProviderError::Authentication(e.to_string()))?;
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Some(account_id) = &token_data.account_id {
+            headers.insert(
+                reqwest::header::HeaderName::from_static("chatgpt-account-id"),
+                reqwest::header::HeaderValue::from_str(account_id)
+                    .map_err(|e| ProviderError::ExecutionError(e.to_string()))?,
+            );
+        }
+
+        let client = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
+            .read_timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+            .build()
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+
+        let url = format!(
+            "{}/models?client_version={}",
+            CODEX_API_ENDPOINT, CHATGPT_CODEX_CLIENT_VERSION
+        );
+        let request = client
+            .get(url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", token_data.access_token),
+            )
+            .headers(headers);
+
+        let request = (self.request_builder)(request)
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+        let response = goose_providers::http_status::send_bounded(
+            request,
+            std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS),
+        )
+        .await?;
+        let response = handle_status(response).await?;
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
+
+        Ok(body
+            .get("models")
+            .and_then(|models| models.as_array())
+            .map(|models| {
+                models
+                    .iter()
+                    .filter_map(|model| model.get("slug").and_then(|slug| slug.as_str()))
+                    .filter(|slug| *slug != "codex-auto-review")
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
 }
 
 impl goose_providers::base::ProviderDescriptor for ChatGptCodexProvider {
@@ -1060,8 +1145,15 @@ impl Provider for ChatGptCodexProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        Ok(known_model_names().into_iter().map(String::from).collect())
+        // El backend publica el catalogo real (con context windows que no estan en la lista
+        // estatica). Si la consulta falla, se usa la lista hardcodeada: nunca peor que antes.
+        match self.fetch_remote_model_slugs().await {
+            Ok(slugs) if !slugs.is_empty() => Ok(slugs),
+            Ok(_) => Ok(known_model_names().into_iter().map(String::from).collect()),
+            Err(_) => Ok(known_model_names().into_iter().map(String::from).collect()),
+        }
     }
+
 }
 
 #[cfg(test)]
