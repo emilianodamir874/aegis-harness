@@ -10,7 +10,7 @@ $nodeCandidates = @(
 )
 $node = ($nodeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
 if (-not $node) { Write-Output 'goose-web: NO hay node.exe disponible'; exit 1 }
-$serveExe = 'C:\goose\target\debug\goose-serve-v7.exe'
+$serveExe = 'C:\goose\target\debug\goose-serve-v11.exe'
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 
 New-Item -ItemType Directory -Force "$root\logs" | Out-Null
@@ -41,6 +41,10 @@ if (-not $webUp) {
 }
 
 Write-Output "goose-web: URL http://$($cfg.publicHost):$($cfg.webPort)"
+
+
+
+
 
 
 
