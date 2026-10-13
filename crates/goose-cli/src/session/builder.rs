@@ -466,6 +466,7 @@ async fn resolve_session_id(
                 output::render_error(&format!("Could not create session: {}", e));
                 process::exit(1);
             });
+        super::register_ephemeral_session(&session.id);
         session.id
     } else if session_config.resume {
         if let Some(ref session_id) = session_config.session_id {

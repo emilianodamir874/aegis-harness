@@ -3706,3 +3706,24 @@ mod tests {
             .is_empty());
     }
 }
+
+
+// --- Sesiones efimeras (`--no-session`) -------------------------------------
+// Una corrida con --no-session necesita una sesion para que el agente tenga donde
+// escribir, pero no deberia quedar en la base. Se registra el id aca y `main` las
+// borra al terminar el proceso; ademas se purgan las `Hidden` viejas que hayan
+// quedado de corridas anteriores (incluidos cortes abruptos).
+static EPHEMERAL_SESSION_IDS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub fn register_ephemeral_session(id: &str) {
+    if let Ok(mut ids) = EPHEMERAL_SESSION_IDS.lock() {
+        ids.push(id.to_string());
+    }
+}
+
+pub fn take_ephemeral_sessions() -> Vec<String> {
+    EPHEMERAL_SESSION_IDS
+        .lock()
+        .map(|mut ids| std::mem::take(&mut *ids))
+        .unwrap_or_default()
+}

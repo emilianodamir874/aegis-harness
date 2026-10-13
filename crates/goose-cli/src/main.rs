@@ -26,12 +26,38 @@ async fn run() -> Result<()> {
 
     let result = cli().await;
 
+    purge_ephemeral_sessions().await;
+
     #[cfg(feature = "otel")]
     if goose::otel::otlp::is_otlp_initialized() {
         goose::otel::otlp::shutdown_otlp();
     }
 
     result
+}
+
+/// Borra la sesion efimera de esta corrida (`--no-session`) y las `Hidden` viejas
+/// que hayan quedado de corridas anteriores o cortadas a mitad de camino.
+///
+/// Es async a proposito: se llama desde `run()`, que ya corre dentro del runtime de
+/// tokio, asi que crear otro runtime y bloquear ahi paniquea.
+async fn purge_ephemeral_sessions() {
+    let own = goose_cli::session::take_ephemeral_sessions();
+    let sm = goose::session::SessionManager::instance();
+    for id in own {
+        let _ = sm.delete_session(&id).await;
+    }
+    if let Ok(sessions) = sm
+        .list_sessions_by_types(&[goose::session::SessionType::Hidden])
+        .await
+    {
+        let cutoff = chrono::Utc::now() - chrono::Duration::hours(2);
+        for s in sessions {
+            if s.updated_at < cutoff {
+                let _ = sm.delete_session(&s.id).await;
+            }
+        }
+    }
 }
 
 fn main() -> Result<()> {
