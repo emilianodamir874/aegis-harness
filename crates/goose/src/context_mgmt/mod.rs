@@ -2,7 +2,7 @@ mod recent;
 
 pub use goose_context_management::structured;
 
-use crate::conversation::message::MessageMetadata;
+use crate::conversation::message::{MessageMetadata, MessageUsage};
 use crate::conversation::message::{Message, MessageContent};
 use crate::conversation::{merge_consecutive_messages, Conversation};
 use crate::providers::base::Provider;
@@ -423,6 +423,17 @@ pub fn tool_ids_to_summarize(
     cutoff: usize,
     protect_last_n: usize,
 ) -> Vec<String> {
+    tool_ids_to_summarize_limited(conversation, cutoff, protect_last_n, TOOLCALL_SUMMARIZATION_BATCH_SIZE)
+}
+
+/// Same as [`tool_ids_to_summarize`] but with an explicit cap, so a caller can pull
+/// several batches at once and run their summarization calls concurrently.
+pub fn tool_ids_to_summarize_limited(
+    conversation: &Conversation,
+    cutoff: usize,
+    protect_last_n: usize,
+    limit: usize,
+) -> Vec<String> {
     let messages = conversation.messages();
 
     let mut tool_call_ids: Vec<String> = Vec::new();
@@ -441,14 +452,11 @@ pub fn tool_ids_to_summarize(
 
     // Never summarize the last N tool calls (current turn)
     let eligible = tool_call_ids.len().saturating_sub(protect_last_n);
-    if eligible <= cutoff + TOOLCALL_SUMMARIZATION_BATCH_SIZE {
+    if eligible <= cutoff + limit {
         return Vec::new();
     }
 
-    tool_call_ids
-        .into_iter()
-        .take(TOOLCALL_SUMMARIZATION_BATCH_SIZE)
-        .collect()
+    tool_call_ids.into_iter().take(limit).collect()
 }
 
 fn agent_visible_tool_pair(conversation: &Conversation, tool_id: &str) -> Result<Vec<Message>> {
@@ -494,7 +502,19 @@ pub async fn summarize_tool_call(
     tool_id: &str,
 ) -> Result<Message> {
     let matching_messages = agent_visible_tool_pair(conversation, tool_id)?;
+    summarize_tool_pair(provider, model_config, session_id, &matching_messages).await
+}
 
+/// Summarizes one tool request/response pair that the caller already extracted.
+///
+/// The pair is passed in (instead of a conversation plus an id) so a detached task can
+/// summarize pairs it owns, without borrowing the conversation that is still moving.
+pub async fn summarize_tool_pair(
+    provider: &dyn Provider,
+    model_config: &ModelConfig,
+    session_id: &str,
+    matching_messages: &[Message],
+) -> Result<Message> {
     let formatted = matching_messages
         .iter()
         .map(format_message_for_compacting)
@@ -517,7 +537,7 @@ pub async fn summarize_tool_call(
                 if that is what it was.
             "#};
 
-    let (mut response, _) = crate::model_config::complete_one_shot(
+    let (mut response, usage) = crate::model_config::complete_one_shot(
         provider,
         model_config,
         session_id,
@@ -530,8 +550,211 @@ pub async fn summarize_tool_call(
     response.role = Role::User;
     response.created = matching_messages.last().unwrap().created;
     response.metadata = MessageMetadata::agent_only();
+    // The summarization call is billed but leaves no assistant message, which is why the
+    // cost of compaction was invisible. Keep its usage on the summary, marked as such.
+    response.metadata.usage = Some(Box::new(MessageUsage::from_provider_usage(&usage, true)));
 
     Ok(response.with_generated_id())
+}
+
+/// Summarizes several tool call & response groups with a single model call.
+///
+/// groups holds, in order, the messages of each pair to compact: normally one
+/// request message plus one response message, but a message can carry several
+/// parallel tool calls, which is why the unit is the group and not a tool id.
+///
+/// Returns one summary message per group, in the same order. An error - which
+/// includes a reply that does not yield exactly one usable summary per group -
+/// tells the caller to fall back to the per-pair path: batching is faster, never
+/// authoritative.
+pub async fn summarize_tool_call_groups(
+    provider: &dyn Provider,
+    model_config: &ModelConfig,
+    session_id: &str,
+    groups: &[Vec<Message>],
+) -> Result<Vec<Message>> {
+    let count = groups.len();
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut formatted = String::new();
+    for (index, group) in groups.iter().enumerate() {
+        formatted.push_str(&format!("\n### Pair {}\n", index + 1));
+        for message in group {
+            formatted.push_str(&format_message_for_compacting(message));
+            formatted.push('\n');
+        }
+    }
+
+    let system_prompt = format!(
+        indoc! {r#"
+            Your task is to summarize {0} tool call & response pairs to save tokens.
+
+            The message below lists each pair under a heading that reads ### Pair N; reply with
+            {0} lines, one per pair, each line starting with a number followed by a period, then
+            the summary of that pair - nothing else: no preamble, no headings, no blank lines,
+            no commentary.
+
+            Say what each call did. A pair asks for something with parameters and the response is
+            usually structured output, so a line such as - A call to github was made to get the project status - is
+            the shape we want. Keep the details that are expensive to rediscover - file paths,
+            commands, error text, numbers - and drop boilerplate.
+        "#},
+        count
+    );
+
+    let (response, usage) = crate::model_config::complete_one_shot(
+        provider,
+        model_config,
+        session_id,
+        &system_prompt,
+        &[Message::user().with_text(formatted)],
+        &[],
+    )
+    .await?;
+
+    let summaries = parse_numbered_summaries(&response.as_concat_text(), count).ok_or_else(|| {
+        anyhow::anyhow!("Batched summarization reply did not map to {count} tool pairs")
+    })?;
+
+    Ok(summaries
+        .into_iter()
+        .enumerate()
+        .map(|(index, text)| {
+            let mut message = Message::assistant().with_text(text);
+            message.role = Role::User;
+            if let Some(last) = groups[index].last() {
+                message.created = last.created;
+            }
+            message.metadata = MessageMetadata::agent_only();
+            if index == 0 {
+                // One call covered the whole batch: book it once, on the first summary.
+                message.metadata.usage =
+                    Some(Box::new(MessageUsage::from_provider_usage(&usage, true)));
+            }
+            message.with_generated_id()
+        })
+        .collect())
+}
+
+/// Parses a reply that should hold one numbered summary line per pair.
+///
+/// Tolerates the punctuation and markdown models drift into (a period, a close
+/// paren or a colon after the number), and folds continuation lines into the
+/// entry they follow, but insists on exactly expected distinct entries numbered
+/// 1..=expected: anything else means the reply cannot be trusted to line up with
+/// the pairs.
+fn parse_numbered_summaries(reply: &str, expected: usize) -> Option<Vec<String>> {
+    if expected == 0 {
+        return Some(Vec::new());
+    }
+
+    let mut entries: Vec<Option<String>> = vec![None; expected];
+    let mut current: Option<usize> = None;
+    for raw in reply.lines() {
+        let line = raw.trim().trim_start_matches(['*', '-', '#', ' ']).trim();
+        if line.is_empty() {
+            continue;
+        }
+        match numbered_prefix(line) {
+            Some((number, rest)) => {
+                if number == 0 || number > expected || entries[number - 1].is_some() {
+                    return None;
+                }
+                entries[number - 1] = Some(rest.trim().to_string());
+                current = Some(number);
+            }
+            None => match current {
+                Some(number) => {
+                    if let Some(existing) = entries[number - 1].as_mut() {
+                        if !existing.is_empty() {
+                            existing.push(' ');
+                        }
+                        existing.push_str(line);
+                    }
+                }
+                None => return None,
+            },
+        }
+    }
+
+    entries.into_iter().collect()
+}
+
+/// Recognizes a number followed by a period, a close paren or a colon at the
+/// start of a line, returning the number and the rest of the line.
+fn numbered_prefix(line: &str) -> Option<(usize, &str)> {
+    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if digits == 0 {
+        return None;
+    }
+    let (number, rest) = line.split_at(digits);
+    let rest = rest
+        .trim_start()
+        .trim_start_matches(['.', ')', ':', '*', '#', '-', ' ']);
+    Some((number.parse::<usize>().ok()?, rest))
+}
+
+#[cfg(test)]
+mod tool_pair_summary_tests {
+    use super::parse_numbered_summaries;
+
+    #[test]
+    fn parses_one_line_per_pair() {
+        let parsed = parse_numbered_summaries(
+            "1. A call to shell ran cargo check\n2. read_file read web.ts",
+            2,
+        );
+        assert_eq!(
+            parsed,
+            Some(vec![
+                "A call to shell ran cargo check".to_string(),
+                "read_file read web.ts".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn tolerates_punctuation_and_markdown() {
+        let parsed = parse_numbered_summaries("**1.** first\n2) second\n3: third", 3);
+        assert_eq!(
+            parsed,
+            Some(vec![
+                "first".to_string(),
+                "second".to_string(),
+                "third".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn folds_continuation_lines() {
+        let parsed = parse_numbered_summaries("1. first part\ncontinued here\n2. second", 2);
+        assert_eq!(
+            parsed,
+            Some(vec![
+                "first part continued here".to_string(),
+                "second".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn rejects_wrong_or_duplicated_counts() {
+        assert_eq!(parse_numbered_summaries("1. only one", 2), None);
+        assert_eq!(parse_numbered_summaries("1. a\n1. b", 2), None);
+        assert_eq!(parse_numbered_summaries("2. b\n3. c", 2), None);
+        assert_eq!(parse_numbered_summaries("", 1), None);
+        assert_eq!(parse_numbered_summaries("no numbering at all", 1), None);
+    }
+
+    #[test]
+    fn rejects_a_bare_number_that_is_not_a_marker() {
+        // 12 files changed is not pair 12 of 2, so the reply is rejected instead
+        // of being mismatched to the pairs.
+        assert_eq!(parse_numbered_summaries("12 files changed", 2), None);
+    }
 }
 
 pub fn maybe_summarize_tool_pairs(

@@ -83,6 +83,39 @@ pub struct SessionUsageUpdate {
     /// Desglose estimado de que compone el contexto enviado (calibrado al total real `used`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_breakdown: Vec<ContextPart>,
+    /// Effective auto-compaction trigger, in tokens: context_limit scaled by
+    /// auto_compact_threshold(context_limit), i.e. the lower of
+    /// GOOSE_AUTO_COMPACT_THRESHOLD and GOOSE_AUTO_COMPACT_TOKEN_LIMIT / context_limit.
+    /// Clients show this instead of assuming the default 80 percent.
+    #[serde(default)]
+    pub auto_compact_at: u64,
+    /// The same trigger as a fraction of context_limit (0..1).
+    #[serde(default)]
+    pub auto_compact_pct: f64,
+    /// Internal summarization calls (tool-pair compaction): billed, but they produce no
+    /// assistant message, so a per-model breakdown cannot see them.
+    #[serde(default)]
+    pub compaction_calls: u64,
+    #[serde(default)]
+    pub compaction_input_tokens: u64,
+    #[serde(default)]
+    pub compaction_output_tokens: u64,
+    /// Tokens per provider+model actually used in this session, from each assistant
+    /// message's inference metadata. A session can switch models mid-flight, so the
+    /// session-level model is not a valid attribution of its cost.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_usage: Vec<SessionModelUsage>,
+}
+
+/// One row of SessionUsageUpdate::model_usage.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionModelUsage {
+    pub provider: String,
+    pub model: String,
+    pub calls: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
 }
 
 /// One row of `SessionUsageUpdate::context_breakdown`: an estimated slice of

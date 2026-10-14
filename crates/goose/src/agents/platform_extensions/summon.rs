@@ -897,17 +897,21 @@ impl SummonClient {
             .to_extension_data(&mut extension_data)
             .map_err(|e| format!("Failed to save delegate extensions: {e}"))?;
 
-        let child = self
-            .create_subagent_session(
-                &subagent_config.working_dir,
-                &parent.id,
-                "Delegated task".to_string(),
-            )
-            .await?;
+        // El nombre es lo unico que se ve en la lista de sesiones: con Delegated task
+        // no habia forma de saber que habia hecho cada sub-agente.
         let task = recipe
             .prompt
             .clone()
             .unwrap_or_else(|| "Begin.".to_string());
+        let child_name = task
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(|line| line.chars().take(60).collect::<String>())
+            .unwrap_or_else(|| "Delegated task".to_string());
+        let child = self
+            .create_subagent_session(&subagent_config.working_dir, &parent.id, child_name)
+            .await?;
         self.context
             .session_manager
             .update(&child.id)

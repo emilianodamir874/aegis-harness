@@ -508,6 +508,14 @@ record-mcp-tests: build-test-tools
 fmt:
     cargo fmt --all
 
+# (fork) Canonical compile gate for the goose lib (mismas features que test-lib / CI)
+check-lib:
+    cargo check -p goose --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
+
+# (fork) Canonical compile gate for the serve binary (feature set que usa goose-web)
+check-serve:
+    cargo check -p goose-cli --bin goose --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
+
 # (fork) Compile gate for the CLI (installed feature set) INCLUDING tests
 check-tests:
     cargo check --tests -p goose-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall

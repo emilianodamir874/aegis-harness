@@ -126,6 +126,7 @@ mod prompts;
 mod providers;
 mod recipe;
 mod resources;
+mod rewind;
 mod schedule;
 mod slash_commands;
 mod sources;
@@ -867,6 +868,74 @@ pub(super) struct UsageUpdates {
     pub(super) standard: UsageUpdate,
 }
 
+/// Usage of the internal summarization calls (tool-pair compaction). They are billed but
+/// leave no assistant message, so a per-model breakdown cannot see them. The summaries
+/// carry that usage marked with is_compaction; the batched call books itself once, on its
+/// first summary, so summing the marked messages gives the real total.
+fn compaction_usage(session: &Session) -> (u64, u64, u64) {
+    let Some(conversation) = session.conversation.as_ref() else {
+        return (0, 0, 0);
+    };
+    let (mut calls, mut input, mut output) = (0u64, 0u64, 0u64);
+    for message in conversation.messages() {
+        let Some(usage) = message.metadata.usage.as_deref() else {
+            continue;
+        };
+        if !usage.is_compaction {
+            continue;
+        }
+        calls += 1;
+        input += usage.input_tokens.unwrap_or(0).max(0) as u64;
+        output += usage.output_tokens.unwrap_or(0).max(0) as u64;
+    }
+    (calls, input, output)
+}
+
+/// Tokens per provider+model, taken from each assistant message's inference metadata. A
+/// session can switch models mid-flight, so the session-level model is not a valid
+/// attribution of its cost.
+fn model_usage_rows(session: &Session) -> Vec<SessionModelUsage> {
+    let Some(conversation) = session.conversation.as_ref() else {
+        return Vec::new();
+    };
+    let mut order: Vec<(String, String)> = Vec::new();
+    let mut totals: std::collections::HashMap<(String, String), (u64, u64, u64)> =
+        std::collections::HashMap::new();
+    for message in conversation.messages() {
+        if message.role != rmcp::model::Role::Assistant {
+            continue;
+        }
+        let (Some(inference), Some(usage)) = (
+            message.metadata.inference.as_ref(),
+            message.metadata.usage.as_deref(),
+        ) else {
+            continue;
+        };
+        let key = (inference.provider.clone(), inference.requested_model.clone());
+        if !totals.contains_key(&key) {
+            order.push(key.clone());
+        }
+        let entry = totals.entry(key).or_insert((0, 0, 0));
+        entry.0 += 1;
+        entry.1 += usage.input_tokens.unwrap_or(0).max(0) as u64;
+        entry.2 += usage.output_tokens.unwrap_or(0).max(0) as u64;
+    }
+    order
+        .into_iter()
+        .map(|key| {
+            let (calls, input_tokens, output_tokens) =
+                totals.get(&key).copied().unwrap_or((0, 0, 0));
+            SessionModelUsage {
+                provider: key.0,
+                model: key.1,
+                calls,
+                input_tokens,
+                output_tokens,
+            }
+        })
+        .collect()
+}
+
 pub(super) fn build_usage_updates(
     session: &Session,
     totals: &SessionUsageTotals,
@@ -879,6 +948,14 @@ pub(super) fn build_usage_updates(
     let accumulated_output_tokens =
         to_nonnegative_u64(totals.accumulated_usage.output_tokens).unwrap_or(0);
     let breakdown = context_breakdown(session, used);
+    // Single source of truth for when compaction fires: the effective threshold, not the
+    // raw ratio. With GOOSE_AUTO_COMPACT_TOKEN_LIMIT set the server compacts earlier than
+    // 80 percent and only the server knows that.
+    let auto_compact_pct = crate::context_mgmt::auto_compact_threshold(context_limit);
+    let auto_compact_at = (context_limit as f64 * auto_compact_pct).round() as u64;
+    let (compaction_calls, compaction_input_tokens, compaction_output_tokens) =
+        compaction_usage(session);
+    let model_usage = model_usage_rows(session);
     UsageUpdates {
         custom: GooseSessionNotification {
             session_id: session.id.clone(),
@@ -889,6 +966,12 @@ pub(super) fn build_usage_updates(
                 accumulated_output_tokens,
                 accumulated_cost: totals.accumulated_cost,
                 context_breakdown: breakdown,
+                compaction_calls,
+                compaction_input_tokens,
+                compaction_output_tokens,
+                model_usage,
+                auto_compact_at,
+                auto_compact_pct,
             }),
         },
         standard: {
@@ -1203,9 +1286,12 @@ impl GooseAcpAgent {
                 crate::context_limit::get_context_limit(provider.as_ref(), &model_name)
                     .await
                     .internal_err_ctx("Failed to resolve context limit")?;
+            // With include_messages = false the snapshot has no conversation, so
+            // context_breakdown() returns empty and a client that just opened the session
+            // shows the short variant of its context panel until the next turn ends.
             let session = self
                 .session_manager
-                .get_session(session_id, false)
+                .get_session(session_id, true)
                 .await
                 .internal_err_ctx("Failed to refresh session for setup notifications")?;
             let current_provider = agent

@@ -604,6 +604,15 @@ impl Agent {
             .unwrap_or_else(|_| {
                 crate::context_mgmt::compute_tool_call_cutoff(context_limit, compaction_threshold)
             });
+        // Tool-pair compaction is lazy: below this fraction of the compaction trigger old
+        // pairs are left raw (1.0 = only when full compaction is about to fire, 0.0 = the old
+        // always-compact behavior, which paid one model call per tool call of the previous turn).
+        let pair_compact_ratio = Config::global()
+            .get_param::<f64>("GOOSE_TOOL_PAIR_COMPACT_MIN_RATIO")
+            .unwrap_or(0.5)
+            .clamp(0.0, 1.0);
+        let pair_compaction_min_tokens =
+            (context_limit as f64 * compaction_threshold * pair_compact_ratio) as usize;
         let manages_own_context = provider.manages_own_context();
         let tool_pair_compaction_enabled =
             crate::context_mgmt::tool_pair_summarization_enabled() && !manages_own_context;
@@ -626,6 +635,7 @@ impl Agent {
                 model_config.clone(),
                 tool_call_cutoff,
                 tool_pair_compaction_enabled,
+                pair_compaction_min_tokens,
             )),
             Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.config.session_manager.clone())),

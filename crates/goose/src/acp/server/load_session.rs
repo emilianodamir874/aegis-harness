@@ -21,19 +21,78 @@ fn replay_audience_annotations(audience: &[Role]) -> Annotations {
     )
 }
 
-fn messages_for_acp_replay(conversation: &Conversation) -> Vec<Message> {
-    conversation
-        .messages()
+fn replay_max_block_bytes_from_meta(meta: Option<&Meta>) -> Option<usize> {
+    meta.and_then(|m| m.get("replayMaxBlockBytes"))
+        .and_then(|v| v.as_u64())
+        .map(|v| (v as usize).clamp(512, 1_048_576))
+}
+
+/// Caps the blocks that dominate a replay frame. The web client truncates what it shows at
+/// ~6 KB, so shipping the whole payload is wasted traffic: measured on a 5.7k-message session,
+/// the 252 frames over 8 KB were 9.25 MB of a 13.6 MB replay. Opt-in, via the client's
+/// `replayMaxBlockBytes` meta: clients that show full outputs keep their behavior.
+fn cap_replayed_blocks(message: &mut Message, cap: usize) {
+    message.content = message
+        .content
+        .drain(..)
+        .filter_map(|block| match block {
+            MessageContent::Text(mut text) => {
+                text.text = cap_replayed_text(&text.text, cap);
+                Some(MessageContent::Text(text))
+            }
+            MessageContent::Image(image) if image.data.len() > cap => Some(MessageContent::Text(
+                // Ojo: el TextContent del mensaje es el de rmcp, no el de ACP.
+                rmcp::model::TextContent::new(format!(
+                    "[imagen de {} bytes omitida en el replay]",
+                    image.data.len()
+                )),
+            )),
+            other => Some(other),
+        })
+        .collect();
+}
+
+fn cap_replayed_text(text: &str, cap: usize) -> String {
+    if text.len() <= cap {
+        return text.to_string();
+    }
+    let cut = text
+        .char_indices()
+        .take_while(|(index, _)| *index < cap)
+        .last()
+        .map(|(index, character)| index + character.len_utf8())
+        .unwrap_or(0);
+    format!(
+        "{}\n… [recortado: {} bytes omitidos del replay]",
+        &text[..cut],
+        text.len() - cut
+    )
+}
+
+fn messages_for_acp_replay(
+    conversation: &Conversation,
+    start: usize,
+    max_block_bytes: Option<usize>,
+) -> Vec<Message> {
+    let raw = conversation.messages();
+    let start = start.min(raw.len());
+    // The tail is picked (and applied) on the raw conversation: materializing, i.e. deep
+    // cloning, every visible message only to throw most of it away cost ~1.5 s on this size.
+    raw[start..]
         .iter()
         .filter(|message| message.is_user_visible())
         .map(Message::user_visible_content)
         .map(|mut message| {
             populate_output_token_limit_content(&mut message);
+            if let Some(cap) = max_block_bytes {
+                cap_replayed_blocks(&mut message, cap);
+            }
             message
         })
         .filter(|message| !message.content.is_empty())
         .collect()
 }
+
 
 fn send_replay_content_chunk(
     cx: &ConnectionTo<Client>,
@@ -111,23 +170,30 @@ fn replay_conversation_to_client(
     supports_goose_custom_notifications: bool,
     client_requests_tool_call_label_enrichment: bool,
     replay_tail: Option<usize>,
+    max_block_bytes: Option<usize>,
 ) -> Result<usize, agent_client_protocol::Error> {
     let session_id = SessionId::new(session.id.clone());
     let tool_call_notifier = ToolCallNotifier::connection_only(cx, &session_id);
 
+    let start = session
+        .conversation
+        .as_ref()
+        .and_then(|conversation| {
+            replay_tail.map(|tail| replay_start_index(conversation.messages(), tail))
+        })
+        .unwrap_or(0);
     let messages = session
         .conversation
         .as_ref()
-        .map(messages_for_acp_replay)
+        .map(|conversation| messages_for_acp_replay(conversation, start, max_block_bytes))
         .unwrap_or_default();
-    let skipped = replay_tail
-        .map(|tail| replay_start_index(&messages, tail))
-        .unwrap_or(0);
-    let messages = &messages[skipped..];
+    // `messages` ya viene cortado en `start`: volver a cortarlo tiraba
+    // "range start index out of range" (panic detectado con el serve de laboratorio, 2026-10-14).
+    let skipped = start;
 
     let mut replay_tool_requests = HashMap::new();
 
-    for message in messages {
+    for message in &messages {
         for content_item in &message.content {
             match content_item {
                 MessageContent::Text(text) => {
@@ -409,6 +475,7 @@ impl GooseAcpAgent {
             self.supports_goose_custom_notifications(),
             self.requests_tool_call_label_enrichment(),
             replay_tail_from_meta(args.meta.as_ref()),
+            replay_max_block_bytes_from_meta(args.meta.as_ref()),
         )?;
         let (agent, extension_results) = self.prepare_acp_session_agent(cx, &session).await?;
         self.register_acp_session(session_id_str.clone(), agent.clone())

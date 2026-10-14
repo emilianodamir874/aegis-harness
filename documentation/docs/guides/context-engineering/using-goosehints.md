@@ -33,7 +33,7 @@ To make use of the hints file, you need to have the `Developer` extension [enabl
 ## Creating Your Hints File
 
 goose supports two types of hint files:
-- **Global hints file** - These hints will apply to all your sessions with goose, regardless of directory. Global hints are stored in `~/.config/goose/.goosehints`.
+- **Global hints file** - These hints will apply to all your sessions with goose, regardless of directory. Global hints are stored in `~/.agents/AGENTS.md` (canonical; a `.goosehints` file in `~/.config/goose` is still read for compatibility).
 - **Local hints files** -  These hints will only apply when working in a specific directory or directory hierarchy.
 
 You can use both global and local hints at the same time. When both exist, goose will consider both your global preferences and project-specific requirements. If the instructions in your local hints file conflict with your global preferences, goose will prioritize the local hints.
@@ -46,7 +46,7 @@ You can use other agent rule files with goose by using the [`CONTEXT_FILE_NAMES`
     <TabItem value="ui" label="goose Desktop" default>
 
     #### Global hints file
-    1. Create a `.goosehints` file in `~/.config/goose`
+    1. Create an `AGENTS.md` file in `~/.agents` (legacy: `.goosehints` in `~/.config/goose`)
 
     #### Local hints file
 
@@ -64,7 +64,7 @@ You can use other agent rule files with goose by using the [`CONTEXT_FILE_NAMES`
     </TabItem>
     <TabItem value="manual" label="Manual">
     
-    - **Global hints file** - Create a `.goosehints` file in `~/.config/goose`.
+    - **Global hints file** - Create an `AGENTS.md` file in `~/.agents` (legacy: `.goosehints` in `~/.config/goose`).
     - **Local hints file** -  Create a `.goosehints` file at the root of your project and/or in any directory in the hierarchy.
 
     </TabItem>
