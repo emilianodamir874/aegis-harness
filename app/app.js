@@ -1446,11 +1446,13 @@
     w.querySelector('.up-sub').innerHTML = s.used == null ? 'todavia sin datos de uso' :
       '<b>' + niceTok(s.used) + '</b> de ' + niceTok(s.limit) + ' tok' + (trig ? '  ·  compacta a ' + niceTok(trig) + ' (' + Math.round(trigPct) + '%)' + (ct.estimated ? ' (estimado)' : '') : '');
     const mu = s.last || {};
+    const rate = tpsOf(mu);
     const cachePct = mu.cacheReadTokens != null && (mu.inputTokens || 0) + mu.cacheReadTokens > 0
       ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--';
     w.querySelector('.up-rows').innerHTML =
       popRow('ultimo paso', 'entrada ' + niceTok(mu.inputTokens) + '  ·  salida ' + niceTok(mu.outputTokens) +
-        (mu.elapsedMs != null ? '  ·  ' + (mu.elapsedMs / 1000).toFixed(1) + 's' : '')) +
+        (mu.elapsedMs != null ? '  ·  ' + (mu.elapsedMs / 1000).toFixed(1) + 's' : '') +
+        (rate === null ? '' : '  ·  ' + fmtTps(rate))) +
       popRow('cache', cachePct + (mu.timeToFirstTokenMs != null ? '  ·  1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')) +
       popRow('sesion', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok)) +
       popRow('margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok antes de compactar' + (ct.estimated ? ' (estimado)' : '') : '--');
@@ -1597,25 +1599,43 @@
   // Mientras llega el stream se estima con los caracteres (≈4 chars por token) en una
   // ventana movil de 4 s; cuando llega el message_usage del paso se reemplaza por el
   // numero exacto (outputTokens / tiempo de generacion, descontando el primer token).
-  state.speed = state.speed || { ticks: [], el: null, timer: 0, runOut: 0, runGen: 0, exact: null };
-  function speedEl() {
+  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null };
+  const fmtTps = (v) => (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' tok/s';
+  // Ritmo exacto de un paso: salida sobre el tiempo de generacion (sin el primer token, que es
+  // espera del prompt). Lo usan el velocimetro y el popover de contexto, para que digan lo mismo.
+  function tpsOf(u) {
+    const outTok = s0(u && u.outputTokens);
+    const elapsed = s0(u && u.elapsedMs);
+    if (outTok <= 0 || elapsed <= 0) return null;
+    return outTok / (Math.max(250, elapsed - s0(u.timeToFirstTokenMs)) / 1000);
+  }
+  // El estilo vive en app.css (.runbar-tps / .runbar-avg), no inline: asi el numero se ve
+  // como metrica propia y no como parte de la frase del runbar.
+  function speedSpan(id, after) {
+    let el = $('#' + id);
+    if (el) return el;
     const bar = $('#runbar');
     if (!bar) return null;
-    let el = $('#runbar-tps');
-    if (!el) {
-      el = document.createElement('span');
-      el.id = 'runbar-tps';
-      el.className = 'runbar-tps';
-      el.style.cssText = 'margin-left:8px;font-variant-numeric:tabular-nums;opacity:.85';
-      const anchor = $('#runbar-time');
-      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(el, anchor.nextSibling);
-      else bar.appendChild(el);
-    }
+    el = document.createElement('span');
+    el.id = id;
+    el.hidden = true;
+    if (after && after.parentNode) after.parentNode.insertBefore(el, after.nextSibling);
+    else bar.appendChild(el);
+    return el;
+  }
+  function speedEl() {
+    const el = speedSpan('runbar-tps', $('#runbar-time'));
+    if (el) el.className = 'runbar-tps';
+    return el;
+  }
+  function speedAvgEl() {
+    const el = speedSpan('runbar-avg', $('#runbar-tps') || speedEl());
+    if (el) el.className = 'runbar-avg';
     return el;
   }
   function speedLabel() {
     const s = state.speed;
-    if (s.exact !== null) return '⚡ ' + s.exact.toFixed(1) + ' t/s';
+    if (s.exact !== null) return fmtTps(s.exact);
     const now = performance.now();
     const recent = s.ticks.filter((t) => now - t.at <= 4000);
     if (recent.length < 2) return '';
@@ -1625,14 +1645,26 @@
     const chars = last.chars - first.chars;
     if (chars <= 0) return '';
     const tps = chars / 4 / seconds;
-    return '~' + tps.toFixed(1) + ' t/s';
+    return '~' + fmtTps(tps);
   }
   function speedPaint() {
     const el = speedEl();
-    if (!el) return;
     const label = speedLabel();
-    el.textContent = label;
-    el.hidden = !label;
+    if (el) { el.textContent = label; el.hidden = !label; }
+    const avgEl = speedAvgEl();
+    if (!avgEl || state.speed.exact !== null) return;
+    // Mientras corre solo se muestra el paso actual; el promedio llega al cerrar el turno.
+    avgEl.textContent = '';
+    avgEl.hidden = true;
+  }
+  // Resumen del turno (paso final exacto + promedio ponderado por tiempo de generacion).
+  function speedSummary() {
+    const s = state.speed;
+    return {
+      last: s.exact,
+      avg: s.runOut > 0 && s.runGen > 0 ? s.runOut / (s.runGen / 1000) : null,
+      out: s.runOut
+    };
   }
   function speedStart() {
     const s = state.speed;
@@ -1645,7 +1677,8 @@
     const s = state.speed;
     clearInterval(s.timer); s.timer = 0;
     s.ticks = []; s.exact = null;
-    const el = $('#runbar-tps'); if (el) el.textContent = '';
+    const el = $('#runbar-tps'); if (el) { el.textContent = ''; el.hidden = true; }
+    const avg = $('#runbar-avg'); if (avg) { avg.textContent = ''; avg.hidden = true; }
   }
   function speedChunk(text) {
     if (!text) return;
@@ -1656,10 +1689,9 @@
     if (s.ticks.length > 240) s.ticks.splice(0, s.ticks.length - 240);
   }
   function speedExact(u) {
-    if (!u || s0(u.outputTokens) === 0 || s0(u.elapsedMs) === 0) return;
-    const ttft = s0(u.timeToFirstTokenMs);
-    const genMs = Math.max(250, s0(u.elapsedMs) - ttft);
-    const tps = s0(u.outputTokens) / (genMs / 1000);
+    const tps = tpsOf(u);
+    if (tps === null) return;
+    const genMs = Math.max(250, s0(u.elapsedMs) - s0(u.timeToFirstTokenMs));
     const s = state.speed;
     s.exact = tps;
     s.runOut += s0(u.outputTokens);
@@ -1669,16 +1701,15 @@
   function speedFinish() {
     const s = state.speed;
     clearInterval(s.timer); s.timer = 0;
+    const sum = speedSummary();
     const el = speedEl();
-    if (!el) return;
-    const parts = [];
-    if (s.exact !== null) parts.push('⚡ ' + s.exact.toFixed(1) + ' t/s');
-    if (s.runOut > 0 && s.runGen > 0) {
-      const avg = s.runOut / (s.runGen / 1000);
-      parts.push('prom ' + avg.toFixed(1) + ' t/s · ' + s.runOut + ' tok');
+    if (el) { el.textContent = sum.last === null ? '' : fmtTps(sum.last); el.hidden = sum.last === null; }
+    const avgEl = speedAvgEl();
+    if (avgEl) {
+      avgEl.textContent = sum.avg === null ? '' : 'prom ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok';
+      avgEl.hidden = sum.avg === null;
     }
-    el.textContent = parts.join(' · ');
-    el.hidden = parts.length === 0;
+    return sum;
   }
   function s0(value) { return typeof value === 'number' && isFinite(value) ? value : 0; }
   const stopNote = (sr) => {
@@ -1972,7 +2003,12 @@
   function turnEndNote(ms) {
     const el = document.createElement('div');
     el.className = 'turn-end';
-    el.textContent = 'fin del turno · ' + fmtElapsed(ms);
+    // El ritmo se escribe aca: el runbar se esconde a los pocos segundos y el numero se perdia.
+    const sum = speedSummary();
+    const parts = ['fin del turno · ' + fmtElapsed(ms)];
+    if (sum.last !== null) parts.push(fmtTps(sum.last));
+    if (sum.avg !== null) parts.push('prom ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok');
+    el.innerHTML = esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + '</span>').join('');
     msgWrap().appendChild(el);
     scrollBottom(true);
   }
@@ -3367,7 +3403,7 @@
 
   // Superficie de depuración (LAN, un solo usuario): inspeccionar estado desde la consola
   // y desde los checks automatizados. No expone secretos (el WS ya vive en /config.js).
-  window.__gooseWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; } };
+  window.__gooseWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
 
   wire();
   rpc.connect();
