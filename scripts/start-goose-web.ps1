@@ -10,7 +10,10 @@ $nodeCandidates = @(
 )
 $node = ($nodeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
 if (-not $node) { Write-Output 'goose-web: NO hay node.exe disponible'; exit 1 }
-$serveExe = 'C:\goose\target\debug\goose-v28.exe'
+$serveExe = 'C:\goose\target\debug\goose-v29.exe'
+# El shell del agente en Windows: powershell en vez de cmd (sin los problemas de
+# quoting de cmd y con multilinea). Quitar esta linea para volver a cmd.
+if (-not $env:GOOSE_SHELL) { $env:GOOSE_SHELL = 'powershell' }
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 
 New-Item -ItemType Directory -Force "$root\logs" | Out-Null
