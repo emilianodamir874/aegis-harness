@@ -1443,7 +1443,10 @@
       const mid = '  ' + String.fromCharCode(183) + '  ';
       // Precios: si prices.json tiene numeros, se muestra el costo por modelo.
       const price = (m) => {
-        const pr = pricesCache && pricesCache[m.provider + '/' + m.model];
+        const pr = (pricesCache && pricesCache[m.provider + '/' + m.model]) || null;
+        // Sin entrada de precios para ese modelo la fila muestra solo tokens: nunca
+        // puede romper el popover (antes tiraba TypeError y no abria).
+        if (!pr) return '';
         const eff = pr.inputEffective != null ? pr.inputEffective : pr.input;
         if (eff == null) return '';
         const usd = (m.inputTokens / 1e6) * eff;
