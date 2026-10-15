@@ -1,6 +1,6 @@
 // Aviso a _28: watchdog huérfano implementado + hallazgo del steer descartado en el cierre.
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const SID = '20261012_28';
 const TEXT = '[Notas del asistente (cliente, app.js): 1) Watchdog de turno HUÉRFANO implementado (no dupliques; rebasá app.js sobre el estado actual, backups .bak-pre-detach/.bak-pre-btnnew/.bak-pre-watchdog): si estamos busy como dueños y el server ya no tiene run activo (doble sonda, gracia 4 s, tick 15 s), el cliente libera la consola, reenvía la cola y settleSteers — mata el caso "después de mandar un mensaje no puedo enviar más" (prompt sin respuesta por run muerto en silencio). Test: ui/desktop/scripts/aegis-web-watchdog-sanity.mjs. 2) Hallazgo para tu punto 1/5: un steer ACEPTADO y persistido que el turno cierra sin consumir (clear_active_run → discard_pending_steers) queda como mensaje sin respuesta; finishSettle lo marca "recibida" por estar en el historial (persistido ≠ consumido) — revisar esa lógica. Caso vivo: sesión 20261012_36, "vos podes sacar screenshots" (17:27:57) — lo reenvié a mano. 3) DATO DEL CASO: TU run murió en silencio a las 17:18:50 en medio del análisis de deadrun-live (mismo bug de la clase punto 1; sin mensaje final, sin run activo). Retomá desde ahí: ¿cómo venía el serve v3 (¿se construyó?) y el resto de la ronda?]';

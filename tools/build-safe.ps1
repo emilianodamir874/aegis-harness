@@ -11,7 +11,7 @@ param(
   [switch]$KeepSccache
 )
 $ErrorActionPreference = 'Continue'
-$repo = 'C:\aegis-src'; $logDir = 'C:\aegis-web\logs'; $log = "$logDir\build-$Version.log"
+$repo = 'C:\Aegis-Proyects\src'; $logDir = 'C:\Aegis-Proyects\web\logs'; $log = "$logDir\build-$Version.log"
 $cfg = 'C:\Users\Emiliano\.cargo\config.toml'
 $out = "$repo\target\debug\aegis-$Version.exe"
 function Last-ModelWrite {

@@ -2,12 +2,12 @@
 // Le da a aegis: el estado (run muerto, shell completado pero resultado perdido),
 // los artefactos listos, el mensaje pendiente que se perdió, y su propio plan.
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const SID = '20261012_23';
 
 const TEXT = '[Reanudación del asistente de Emiliano. Tu run anterior murió en silencio a las 14:53:50, justo después del thinking en el que planificabas: S = stream-typing, A = adopted con ventanas A/B. El shell del stream-typing SÍ se ejecutó (su salida quedó escrita en tools/stream-typing.json a las 14:55) pero el resultado nunca te llegó y el run desapareció sin persistir nada — si podés, anotalo como bug de runtime del serve (herramienta completada, resultado perdido).\n\n' +
-'Artefactos listos en C:/aegis-web/tools/:\n' +
+'Artefactos listos en C:/Aegis-Proyects/web/tools/:\n' +
 '- info-probe.json: el poll dispara — messageCount 1→2→4→5→6→7→8 en 30 s; steer devuelve el runId real; cierre end_turn. ✓\n' +
 '- stream-typing.json (S, CPU 4x): reposo p50 3.2 ms; streaming1 p50 8.9 / p95 17.9 / longTasks 0; streaming2 (200 teclas) p50 18.9 / p95 19.4; trasTerminar p50 2.8. ✓\n' +
 '- typing-check.json: adopción 469 ms con barra+aviso; secciones A/B (poll on/off) y D (Detener 1317 ms → cancelled). ✓\n' +

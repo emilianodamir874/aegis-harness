@@ -1,6 +1,6 @@
-﻿# Mueve los backups .bak-* que quedaron DENTRO del repo a la carpeta de backups (D3).
+# Mueve los backups .bak-* que quedaron DENTRO del repo a la carpeta de backups (D3).
 # Regla 21: los backups de archivos del repo van fuera de crates/ para no ensuciar git status.
-param([switch]$Apply, [string]$Repo = 'C:\aegis-src', [string]$Dest = 'C:/Users/Emiliano/backups')
+param([switch]$Apply, [string]$Repo = 'C:\Aegis-Proyects\src', [string]$Dest = 'C:/Users/Emiliano/backups')
 $ErrorActionPreference = 'Stop'
 $files = Get-ChildItem $Repo -Recurse -File -Include '*.bak-*','*.bak','*.bak.*' -ErrorAction SilentlyContinue |
          Where-Object { $_.FullName -notlike '*\target\*' -and $_.FullName -notlike '*\.git\*' }

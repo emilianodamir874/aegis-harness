@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 let id = 0; const pend = new Map();
 const ws = new WebSocket(url);

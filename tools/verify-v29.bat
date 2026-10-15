@@ -1,5 +1,5 @@
 @echo off
-cd /d C:\aegis-src
+cd /d C:\Aegis-Proyects\src
 set CARGO_TERM_COLOR=never
 echo === aegis-providers lib tests ===
 cargo test -p aegis-providers --lib > C:\aegis-web\logs\v29-t1-providers.log 2>&1

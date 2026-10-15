@@ -1,7 +1,7 @@
 # Tercera parte: redundancia, herramientas lentas, detalle de compactación.
 import sqlite3, datetime, json, collections
 TZ = datetime.timezone(datetime.timedelta(hours=-3))
-db = 'C:/Users/Emiliano/AppData/Roaming/Aegis/aegis/data/sessions/sessions.db'
+db = 'C:/Aegis-Proyects/state/data/sessions/sessions.db'
 con = sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=10)
 c = con.cursor()
 midnight = datetime.datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()

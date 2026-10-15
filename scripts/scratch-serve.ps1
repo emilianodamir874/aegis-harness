@@ -3,14 +3,14 @@
 # las conexiones de los clientes reales).
 # Uso:  scratch-serve.ps1 [-Version v24] [-Port 3399] [-Stop]
 param([string]$Version = 'v24', [int]$Port = 3399, [switch]$Stop)
-$root = 'C:/aegis-web'
+$root = 'C:/Aegis-Proyects/web'
 $probe = "$env:USERPROFILE\aegis-probe-root"
 if ($Stop) {
   $c = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
   if ($c) { Stop-Process -Id $c.OwningProcess -Force; Write-Output 'scratch detenido' } else { Write-Output 'no estaba corriendo' }
   exit 0
 }
-$exe = "C:\aegis-src/target/debug/goose-$Version.exe"
+$exe = "C:\Aegis-Proyects\src/target/debug/goose-$Version.exe"
 if (-not (Test-Path $exe)) { Write-Output "ERROR: no existe $exe"; exit 1 }
 if (-not (Test-Path "$probe\data\sessions\sessions.db")) {
   Write-Output 'copiando el store a un root aislado (primera vez)'

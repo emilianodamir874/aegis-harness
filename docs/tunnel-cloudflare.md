@@ -74,12 +74,12 @@ ingress), y ahi conviene sumar Cloudflare Access (OTP por mail) en lugar del log
 
 ## Verificacion (2026-10-13 07:2x)
 
-`node scripts/aegis-web-tunnel-check.mjs [url]` (vive en `C:\aegis-src\ui\desktop\scripts\`, como el
+`node scripts/aegis-web-tunnel-check.mjs [url]` (vive en `C:\Aegis-Proyects\src\ui\desktop\scripts\`, como el
 resto de los checks de Playwright). Corre desprendido:
 
 ```powershell
 Start-Process -FilePath "$env:LOCALAPPDATA\hermes\tools\node-26.7.0-win32-x64\node.exe" `
-  -ArgumentList 'scripts/aegis-web-tunnel-check.mjs' -WorkingDirectory 'C:\aegis-src\ui\desktop' `
+  -ArgumentList 'scripts/aegis-web-tunnel-check.mjs' -WorkingDirectory 'C:\Aegis-Proyects\src\ui\desktop' `
   -RedirectStandardOutput 'C:\aegis-web\logs\check-tunnel.out.log' -RedirectStandardError 'C:\aegis-web\logs\check-tunnel.err.log'
 ```
 

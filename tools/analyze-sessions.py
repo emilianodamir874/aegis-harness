@@ -2,7 +2,7 @@
 # Salida: tablas compactas a stdout + JSON completo a session-analysis.json
 import sqlite3, datetime, json, collections
 TZ = datetime.timezone(datetime.timedelta(hours=-3))
-db = 'C:/Users/Emiliano/AppData/Roaming/Aegis/aegis/data/sessions/sessions.db'
+db = 'C:/Aegis-Proyects/state/data/sessions/sessions.db'
 con = sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=10)
 c = con.cursor()
 

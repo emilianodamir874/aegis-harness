@@ -4,8 +4,8 @@
 param([Parameter(Mandatory=$true)][string]$Version, [switch]$Restart, [int]$DelaySecs = 0,
       [int]$IdleSeconds = 20, [int]$IdleTimeoutSecs = 600)
 $ErrorActionPreference = 'Continue'
-$root = 'C:/aegis-web'
-$exe = "C:\aegis-src/target/debug/goose-$Version.exe"
+$root = 'C:/Aegis-Proyects/web'
+$exe = "C:\Aegis-Proyects\src/target/debug/goose-$Version.exe"
 $launcher = "$root/scripts/start-aegis-web.ps1"
 if (-not (Test-Path $exe)) { Write-Output "ERROR: no existe $exe"; exit 1 }
 $m = (Select-String -Path $launcher -Pattern "serveExe = '([^']+)'").Matches

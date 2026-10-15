@@ -9,10 +9,10 @@
 //   5) regresión: cliente viejo (sin watch) sigue funcionando
 import { readFile } from 'node:fs/promises';
 
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const PORT = process.argv[2] || '3392';
 const URL = `ws://127.0.0.1:${PORT}/acp?token=${cfg.secretKey}`;
-const CWD = cfg.cwd || 'C:\aegis-src';
+const CWD = cfg.cwd || 'C:\Aegis-Proyects\src';
 const MARK = 'FANOUT-MARKER-42';
 const out = [];
 const check = (name, ok, detail) => { out.push({ name, ok: !!ok, detail }); console.log(`${ok ? 'PASS' : 'FAIL'} :: ${name} :: ${JSON.stringify(detail)}`); };

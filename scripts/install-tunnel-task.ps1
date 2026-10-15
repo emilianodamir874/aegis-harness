@@ -4,9 +4,9 @@
 #   - trigger: al iniciar sesion + repeticion cada 10 min (red de seguridad si el residente muere)
 #   - ExecutionTimeLimit 0 (sin limite: el watchdog queda residente), MultipleInstances IgnoreNew
 $ErrorActionPreference = 'Stop'
-$log = 'C:\aegis-web\logs\install-task.log'
+$log = 'C:\Aegis-Proyects\web\logs\install-task.log'
 try {
-    $vbs = 'C:\aegis-web\scripts\aegis-web-tunnel.vbs'
+    $vbs = 'C:\Aegis-Proyects\web\scripts\aegis-web-tunnel.vbs'
     if (-not (Test-Path $vbs)) { throw "falta $vbs" }
 
     $act = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '" loop')

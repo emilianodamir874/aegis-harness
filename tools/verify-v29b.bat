@@ -1,5 +1,5 @@
 @echo off
-cd /d C:\aegis-src
+cd /d C:\Aegis-Proyects\src
 set CARGO_TERM_COLOR=never
 cargo test -p aegis --features scheduler --lib providers::open_design::tests > C:\aegis-web\logs\v29-t2b-opendesign.log 2>&1
 echo EXIT=%ERRORLEVEL% >> C:\aegis-web\logs\v29-t2b-opendesign.log

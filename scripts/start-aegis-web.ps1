@@ -2,7 +2,7 @@
 # Idempotent. Hidden-window friendly (used by the Aegis_Web scheduled task).
 $ErrorActionPreference = 'SilentlyContinue'
 
-$root = 'C:\aegis-web'
+$root = 'C:\Aegis-Proyects\web'
 $nodeCandidates = @(
   'C:\Users\Emiliano\AppData\Local\hermes\tools\node-26.7.0-win32-x64\node.exe',
   'C:\Users\Emiliano\scoop\apps\fnm\current\node-versions\v22.23.2\installation\node.exe',
@@ -10,18 +10,19 @@ $nodeCandidates = @(
 )
 $node = ($nodeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
 if (-not $node) { Write-Output 'aegis-web: NO hay node.exe disponible'; exit 1 }
-# Version del serve: sale del PUNTERO (C:\aegis\state\current-version.json), no de este archivo.
+# Version del serve: sale del PUNTERO (C:\Aegis-Proyects\core\state\current-version.json), no de este archivo.
 # Antes estaba clavada aca (aegis-v34.exe): asi se desincronizo del resto del stack el 14/10.
-$ptrFile = 'C:\aegis\state\current-version.json'
+$ptrFile = 'C:\Aegis-Proyects\core\state\current-version.json'
 $serveExe = $null
 if (Test-Path $ptrFile) {
   try { $serveExe = (Get-Content $ptrFile -Raw -Encoding UTF8 | ConvertFrom-Json).exe } catch { $serveExe = $null }
 }
-if (-not $serveExe -or -not (Test-Path $serveExe)) { $serveExe = 'C:\aegis\bin\aegis-current.exe' }
+if (-not $serveExe -or -not (Test-Path $serveExe)) { $serveExe = 'C:\Aegis-Proyects\core\bin\aegis-current.exe' }
 if (-not (Test-Path $serveExe)) { Write-Output 'aegis-web: NO hay binario del serve (ni puntero ni current)'; exit 1 }
 Write-Output ('aegis-web: serveExe=' + $serveExe)
 # El shell del agente en Windows: powershell en vez de cmd (sin los problemas de
 # quoting de cmd y con multilinea). Quitar esta linea para volver a cmd.
+if (-not $env:AEGIS_PATH_ROOT -and (Test-Path 'C:\Aegis-Proyects\state\data')) { $env:AEGIS_PATH_ROOT = 'C:\Aegis-Proyects\state' }  # el dato vive con el proyecto
 if (-not $env:AEGIS_SHELL) { $env:AEGIS_SHELL = 'powershell' }
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 

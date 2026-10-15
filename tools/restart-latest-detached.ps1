@@ -7,7 +7,7 @@
 # Uso: powershell -NoProfile -ExecutionPolicy Bypass -File restart-latest-detached.ps1 [-DelaySecs 40] [-IdleSeconds 25]
 param([int]$DelaySecs = 40, [int]$IdleSeconds = 25, [int]$IdleTimeoutSecs = 600, [string]$Version = '')
 $ErrorActionPreference = 'Continue'
-$root = 'C:/aegis-web'
+$root = 'C:/Aegis-Proyects/web'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $log = "$root/logs/restart-latest-$stamp.log"
 function W($m) { Add-Content -Path $log -Value ((Get-Date).ToString('HH:mm:ss') + ' ' + [string]$m) }
@@ -16,9 +16,9 @@ function W($m) { Add-Content -Path $log -Value ((Get-Date).ToString('HH:mm:ss') 
 # serveExe (ahora lee current-version.json), y parsearla dejaba este restarter muerto con el
 # error "no pude deducir la version del launcher" (log 13:44:51, reproducido).
 if (-not $Version) {
-  try { $Version = (Get-Content 'C:/aegis/state/current-version.json' -Raw -Encoding UTF8 | ConvertFrom-Json).tag } catch { $Version = '' }
+  try { $Version = (Get-Content 'C:/Aegis-Proyects/core/state/current-version.json' -Raw -Encoding UTF8 | ConvertFrom-Json).tag } catch { $Version = '' }
 }
-if (-not $Version) { W 'ERROR: no pude leer el tag del puntero C:/aegis/state/current-version.json'; exit 1 }
+if (-not $Version) { W 'ERROR: no pude leer el tag del puntero C:/Aegis-Proyects/core/state/current-version.json'; exit 1 }
 W "reinicio pedido: aegis-$Version (delay=${DelaySecs}s idle=${IdleSeconds}s) log=$log"
 
 # (2026-10-15) Swap canonico (ops/swap.ps1 -Tag), no scripts/swap-serve.ps1: el viejo apuntaba
@@ -27,7 +27,7 @@ W "reinicio pedido: aegis-$Version (delay=${DelaySecs}s idle=${IdleSeconds}s) lo
 # EOF y este restarter no termina nunca (15/10: quedo vivo 27 minutos despues de terminar su trabajo,
 # sin escribir 'fin'). Redirigir a archivo corta esa herencia.
 $swapOut = "$root/logs/swap-out-$stamp.log"
-& powershell -NoProfile -ExecutionPolicy Bypass -File 'C:/aegis/ops/swap.ps1' `
+& powershell -NoProfile -ExecutionPolicy Bypass -File 'C:/Aegis-Proyects/core/ops/swap.ps1' `
     -Tag $Version -Restart -DelaySecs $DelaySecs -IdleSeconds $IdleSeconds -IdleTimeoutSecs $IdleTimeoutSecs *> $swapOut
 Get-Content $swapOut -ErrorAction SilentlyContinue | ForEach-Object { W $_ }
 

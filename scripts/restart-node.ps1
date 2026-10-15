@@ -2,7 +2,7 @@
 # se toca: el launcher es idempotente y arranca node solo si el puerto no escucha.
 param([int]$DelaySecs = 0)
 $ErrorActionPreference = 'Continue'
-$root = 'C:/aegis-web'
+$root = 'C:/Aegis-Proyects/web'
 $cfg = Get-Content "$root/config.json" -Raw | ConvertFrom-Json
 if ($DelaySecs -gt 0) { Start-Sleep -Seconds $DelaySecs }
 $conn = Get-NetTCPConnection -LocalPort $cfg.webPort -State Listen -ErrorAction SilentlyContinue

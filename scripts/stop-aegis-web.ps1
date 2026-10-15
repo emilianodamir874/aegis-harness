@@ -1,6 +1,6 @@
 # aegis-web: stop backend + web UI (kills whatever listens on the configured ports).
 $ErrorActionPreference = 'SilentlyContinue'
-$root = 'C:\aegis-web'
+$root = 'C:\Aegis-Proyects\web'
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 
 foreach ($port in @($cfg.servePort, $cfg.webPort)) {

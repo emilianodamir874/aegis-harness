@@ -1,10 +1,10 @@
 // Prueba de dictado con VOZ REAL (WAV de TTS en espanol). Reemplaza a dictation-try.mjs,
 // que usaba un tono sintetico (sirve para validar parametros, no calidad).
-// Uso: node tools/voz-test.mjs ["C:\\aegis\\tmp\\voz-es.wav"] [provider]
+// Uso: node tools/voz-test.mjs ["C:\\Aegis-Proyects\\core\\tmp\\voz-es.wav"] [provider]
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 
-const wavPath = process.argv[2] || 'C:\\aegis\\tmp\\voz-es.wav';
+const wavPath = process.argv[2] || 'C:\\Aegis-Proyects\\core\\tmp\\voz-es.wav';
 const soloProv = process.argv[3] || '';
 const ESPERADO = 'Hola, esto es una prueba de dictado por voz para Aegis. Quiero saber si transcribe bien el espanol.';
 const b64 = readFileSync(wavPath).toString('base64');

@@ -2,7 +2,7 @@
 // Uso: node tools/dictation-try.mjs
 import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
-const b64 = readFileSync('C:\\aegis\\tmp\\tone.b64', 'utf8').trim();
+const b64 = readFileSync('C:\\Aegis-Proyects\\core\\tmp\\tone.b64', 'utf8').trim();
 const url = process.argv[2] || 'http://127.0.0.1:3788/';
 const br = await chromium.launch();
 const p = await (await br.newContext({ viewport: { width: 1200, height: 800 } })).newPage();

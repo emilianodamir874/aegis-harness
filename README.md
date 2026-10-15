@@ -251,7 +251,7 @@ Sobre la base v3, todo verificado con los checks de `ui/desktop/scripts`:
 
 ## Backend / auth
 
-`C:\aegis-src/target/debug/goose-serve-v2.exe serve --host 0.0.0.0 --port 3284 --platform desktop
+`C:\Aegis-Proyects\src/target/debug/goose-serve-v2.exe serve --host 0.0.0.0 --port 3284 --platform desktop
 --enable-scheduler --with-builtin developer --allowed-origin http://192.168.100.34:3788
 --allowed-origin http://127.0.0.1:3788 --allowed-origin http://localhost:3788`, con
 `AEGIS_SERVER__SECRET_KEY` (de `config.json`). Los browsers no pueden setear headers en un
@@ -260,7 +260,7 @@ WebSocket: la autenticación va como `?token=` en la URL del WS (el server lo ac
 ## Verificación
 
 ```bash
-cd C:\aegis-src/ui/desktop
+cd C:\Aegis-Proyects\src/ui/desktop
 node scripts/aegis-web-app-check.mjs     # e2e completo: conexión, enviar+streaming, chips,
                                          # permisos, rename, imagen, borrado, replay, móvil
 node scripts/aegis-web-viewports.mjs     # barrido 360→1920 (abre una sesión para medir los chips;
@@ -289,7 +289,7 @@ node scripts/aegis-web-steer-settle.mjs     # steer no consumido -> reencolado +
 node scripts/aegis-web-typing-check.mjs     # adopción + Detener desde la pestaña recargada
 ```
 
-Probes ACP crudos y utilidades en `C:/aegis-web/tools/` (probe2/3/4/5, ls-sessions,
+Probes ACP crudos y utilidades en `C:/Aegis-Proyects/web/tools/` (probe2/3/4/5, ls-sessions,
 cleanup-test-sessions). Los checks se corren DESPRENDIDOS (Start-Process + log):
 el wrapper de background mata node con "stdin is not a tty".
 
@@ -297,8 +297,8 @@ el wrapper de background mata node con "stdin is not a tty".
 
 ```powershell
 # start/stop (no elevado)
-powershell -NoProfile -File C:\aegis-web\scripts\start-aegis-web.ps1
-powershell -NoProfile -File C:\aegis-web\scripts\stop-aegis-web.ps1
+powershell -NoProfile -File C:\Aegis-Proyects\web\scripts\start-aegis-web.ps1
+powershell -NoProfile -File C:\Aegis-Proyects\web\scripts\stop-aegis-web.ps1
 
 # autostart (ya instalado; corre al iniciar sesión)
 schtasks /Run /TN Aegis_Web
@@ -391,7 +391,7 @@ Detalle completo: **docs/tunnel-cloudflare.md**. Resumen:
 - `window.__aegisWeb` ahora también expone `dropSocket()` (solo para los checks: cortar el WS real).
 - **Sondeo de run (v6.1)**: la respuesta del server a un steer con `expectedRunId` imposible SIEMPRE trae `error.message:"Invalid params"`; lo útil va en `error.data` como **string** ("no active run to steer") o **objeto** (`{actualRunId}`). Buscar "no active run" solo en `message` jamás matchea → el fin de turno no se detecta y la barra/cursor quedan eternos. No volver a simplificar ese parseo.
 - **Cursor de streaming (v6.1)**: `streamAppend` NO debe agregar `.streaming` durante el replay (`state.replaying`) y `renderSession` DEBE limpiar con `clearStreaming()` al terminar; si no, cada carga de sesión deja un cursor pegado en el último mensaje.
-- **Scripts de check**: los Playwright tienen que vivir en `ui/desktop/scripts/` (import resuelve desde `ui/desktop/node_modules`; un script suelto en `C:/aegis-web/tools` explota con `ERR_MODULE_NOT_FOUND`).
+- **Scripts de check**: los Playwright tienen que vivir en `ui/desktop/scripts/` (import resuelve desde `ui/desktop/node_modules`; un script suelto en `C:/Aegis-Proyects/web/tools` explota con `ERR_MODULE_NOT_FOUND`).
 - **`session/info` de una conexión que NO es dueña del run viene congelado (v6.2)**: el `messageCount`/`lastMessageAt` no se mueve mientras el run trabaja (medido: 18 polls con la misma clave en 45 s). El dueño sí lo ve crecer. Por eso el resync no puede depender sólo del cambio de clave: hay que refrescar periódicamente. No "arreglar" sacando el respaldo.
 - **Refresco del turno adoptado: NUNCA `clearMessages()` + replay (v6.2)**: reconstruir el DOM de una sesión larga cuesta ~2,3 s de main thread bloqueado (tramos de 206 ms) y en el teléfono las teclas llegan tarde. Usar `softResync()` (bufferiza y pinta sólo lo nuevo). El rebuild completo queda para la carga inicial de la sesión y para depurar (`window.__aegisWeb.resync`).
 - **Teclado (v6.2)**: el costo por tecla del cliente es <1 ms (medido) — no buscar el lag ahí. Antes de "optimizar el composer", medir con `aegis-web-stream-typing.mjs` y `aegis-web-soft-check.mjs` (CPU 4x): lo caro es render/layout de conversaciones grandes, no el composer.

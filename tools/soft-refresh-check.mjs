@@ -7,7 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const acpUrl = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const out = {};
 const stage = (k, v) => console.log('STAGE ' + k + ' ' + JSON.stringify(v));
@@ -129,7 +129,7 @@ try {
   }));
   stage('fase3-interrumpidas', out.fase3);
   out.interruptedGlobal = (await dbg()).watch.interrupted;
-  await page.screenshot({ path: 'C:/aegis-web/tools/shots/soft-refresh-mobile.png' });
+  await page.screenshot({ path: 'C:/Aegis-Proyects/web/tools/shots/soft-refresh-mobile.png' });
 } catch (e) { out.fatal = String((e && e.message) || e).slice(0, 300); }
 try { await page.evaluate(() => document.querySelector('#runbar-stop')?.click()); } catch {}
 await Promise.race([promptP, new Promise((r) => setTimeout(r, 30000))]);

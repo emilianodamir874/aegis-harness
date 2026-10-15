@@ -10,7 +10,7 @@ que se cobran sin dejar mensaje de assistant) y el residual no atribuible.
 """
 import argparse, collections, datetime, io, json, sqlite3, sys
 
-DEFAULT_DB = r'C:/Users/Emiliano/AppData/Roaming/Aegis/aegis/data/sessions/sessions.db'
+DEFAULT_DB = r'C:/Aegis-Proyects/state/data/sessions/sessions.db'
 PRICES = r'C:/goose-web/prices.json'
 
 

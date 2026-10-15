@@ -1,4 +1,4 @@
-$db='C:\Users\Emiliano\AppData\Roaming\Aegis\aegis\data\sessions\sessions.db'
+$db='C:\Aegis-Proyects\state\data\sessions\sessions.db'
 'total      = ' + (& sqlite3 $db "select count(*) from messages where session_id='20261012_55';")
 'toolResp   = ' + (& sqlite3 $db "select count(*) from messages where session_id='20261012_55' and content_json like '%toolResponse%';")
 'rol        = ' + ((& sqlite3 $db "select group_concat(distinct role) from messages where session_id='20261012_55';") -join ',')

@@ -3,11 +3,11 @@
 # Uso: powershell -NoProfile -ExecutionPolicy Bypass -File swap-serve-v3.ps1
 # NO correr mientras haya un run activo que importe: bajar el serve mata los runs en memoria.
 $ErrorActionPreference = 'SilentlyContinue'
-$root = 'C:\aegis-web'
+$root = 'C:\Aegis-Proyects\web'
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 $port = $cfg.servePort
 
-if (-not (Test-Path 'C:\aegis-src\target\debug\goose-serve-v3.exe')) { Write-Output 'ERROR: no existe aegis-serve-v3.exe'; exit 1 }
+if (-not (Test-Path 'C:\Aegis-Proyects\src\target\debug\goose-serve-v3.exe')) { Write-Output 'ERROR: no existe aegis-serve-v3.exe'; exit 1 }
 
 # 1) bajar el serve actual
 $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
