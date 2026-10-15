@@ -7,7 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const out = {};
 let id = 0;
@@ -58,7 +58,7 @@ try {
   out.trasRecarga = await snap();
   await page.waitForTimeout(3000);
   out.aLos3s = await snap();
-  await page.screenshot({ path: 'C:/aegis-web/tools/shots/adopt-mobile.png' });
+  await page.screenshot({ path: 'C:/goose-web/tools/shots/adopt-mobile.png' });
   // Detener desde la pestaña recargada
   const ts = Date.now();
   await page.evaluate(() => document.querySelector('#runbar-stop')?.click());

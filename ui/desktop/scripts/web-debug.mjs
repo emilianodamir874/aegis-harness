@@ -1,4 +1,4 @@
-// aegis-web debug probe: maps main-pane states (home / new chat / opened session)
+// goose-web debug probe: maps main-pane states (home / new chat / opened session)
 // and dumps console + DOM facts. Run: cd ui/desktop && node scripts/web-debug.mjs
 import { chromium } from '@playwright/test';
 

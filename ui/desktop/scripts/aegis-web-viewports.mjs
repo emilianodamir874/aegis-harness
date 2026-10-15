@@ -1,12 +1,12 @@
 // Barrido de viewports: verifica que la UI no desborde horizontalmente,
 // que el composer sea visible y que la navegación condicional funcione en
 // 9 tamaños (teléfonos chicos -> monitores grandes). Guarda capturas clave.
-// Run: cd ui/desktop && node scripts/aegis-web-viewports.mjs [url]
+// Run: cd ui/desktop && node scripts/goose-web-viewports.mjs [url]
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://192.168.100.34:3788/';
-const shots = 'C:/aegis-web/tools/shots';
+const shots = 'C:/goose-web/tools/shots';
 mkdirSync(shots, { recursive: true });
 
 const VIEWPORTS = [

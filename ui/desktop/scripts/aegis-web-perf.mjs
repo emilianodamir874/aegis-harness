@@ -1,7 +1,7 @@
-// Medición de rendimiento del replay de sesiones en aegis-web.
+// Medición de rendimiento del replay de sesiones en goose-web.
 // Abre la sesión más grande del sidebar (o la que coincida con argv[2]) y mide
 // cuánto tarda la UI en terminar de pintar el historial.
-// Run: cd ui/desktop && node scripts/aegis-web-perf.mjs [url] [titulo]
+// Run: cd ui/desktop && node scripts/goose-web-perf.mjs [url] [titulo]
 import { chromium } from '@playwright/test';
 
 const url = process.argv[2] || 'http://192.168.100.34:3788/';

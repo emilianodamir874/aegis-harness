@@ -1,6 +1,6 @@
 // Diagnóstico: export/import por WebSocket (¿límite de tamaño de frame o algo más?)
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
 const acpUrl = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 let id = 0;
 const pend = new Map();

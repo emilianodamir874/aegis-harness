@@ -1,4 +1,4 @@
-// aegis-web modal-choice test: does the main pane survive each announcement-modal
+// goose-web modal-choice test: does the main pane survive each announcement-modal
 // button? Run: cd ui/desktop && node scripts/web-modal-test.mjs [base]
 import { chromium } from '@playwright/test';
 

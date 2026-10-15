@@ -512,7 +512,7 @@ fmt:
 check-lib:
     cargo check -p aegis --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
 
-# (fork) Canonical compile gate for the serve binary (feature set que usa aegis-web)
+# (fork) Canonical compile gate for the serve binary (feature set que usa goose-web)
 check-serve:
     cargo check -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
 

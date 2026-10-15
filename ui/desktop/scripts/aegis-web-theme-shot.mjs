@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
 const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
 const sid = process.argv[2] || '20261012_25';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -11,7 +11,7 @@ await page.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.rpc && w
 await page.waitForTimeout(9000);
 await page.evaluate(() => document.querySelector('.messages').scrollTop = document.querySelector('.messages').scrollHeight);
 await page.waitForTimeout(700);
-await page.screenshot({ path: 'C:/aegis-web/tools/shot-claude.png' });
+await page.screenshot({ path: 'C:/goose-web/tools/shot-claude.png' });
 console.log('ok');
 await browser.close();
 process.exit(0);

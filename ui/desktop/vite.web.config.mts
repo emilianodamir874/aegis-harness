@@ -1,6 +1,6 @@
-// Web build of the aegis Desktop renderer (for aegis-web: browser + aegis serve backend).
+// Web build of the aegis Desktop renderer (for goose-web: browser + aegis serve backend).
 // Differences vs the electron build: only index.html is an input (no electron main),
-// output goes to dist-web/ and is copied to C:/aegis-web/dist by scripts/copy-web-build.sh.
+// output goes to dist-web/ and is copied to C:/goose-web/dist by scripts/copy-web-build.sh.
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
@@ -10,10 +10,10 @@ export default defineConfig({
     react(),
     {
       // Changes the entry chunk content on every build so asset filenames
-      // change and stale browser caches are bypassed (aegis-web deploy).
-      name: 'aegis-web-build-stamp',
+      // change and stale browser caches are bypassed (goose-web deploy).
+      name: 'goose-web-build-stamp',
       renderChunk(code, chunk) {
-        return chunk.isEntry ? code + `\n// aegis-web build ${Date.now()}\n` : null;
+        return chunk.isEntry ? code + `\n// goose-web build ${Date.now()}\n` : null;
       },
     },
   ],

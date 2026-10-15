@@ -1,7 +1,7 @@
 // Sanity del watchdog: turno normal largo desde la UI -> no debe liberar ni molestar.
 import { chromium } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
 
 const b = await chromium.launch({ channel: 'chrome', headless: true });
 const p = await (await b.newContext({ viewport: { width: 1600, height: 900 } })).newPage();

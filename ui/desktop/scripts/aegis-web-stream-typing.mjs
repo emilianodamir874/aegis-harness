@@ -4,7 +4,7 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
 const url = process.argv[2] || 'http://127.0.0.1:3788/';
 const rate = Number(process.argv[3] || 4);
 const out = {};
@@ -104,7 +104,7 @@ try {
   out.streaming1 = await measure(40, 20);
   out.streaming2 = await measure(200, 20); // ~10 s tecleando sin parar mientras el texto crece
   out.streaming3 = await measure(40, 25);
-  await page.screenshot({ path: 'C:/aegis-web/tools/shots/stream-typing-mobile.png' });
+  await page.screenshot({ path: 'C:/goose-web/tools/shots/stream-typing-mobile.png' });
 
   // ---------- control: mismo chat, ya sin streaming ----------
   await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 180000 }).catch(() => {});

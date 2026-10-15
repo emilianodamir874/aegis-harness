@@ -1,4 +1,4 @@
-// aegis-web route scan: visits every hash route and reports whether the main
+// goose-web route scan: visits every hash route and reports whether the main
 // pane renders content. Run: cd ui/desktop && node scripts/web-routes.mjs [base]
 import { chromium } from '@playwright/test';
 

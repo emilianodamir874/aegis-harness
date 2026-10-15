@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
 const acpUrl = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const out = {};
 const stage = (k, v) => console.log('STAGE ' + k + ' ' + JSON.stringify(v));
@@ -93,7 +93,7 @@ try {
   out.userMsgsServidor = hist.length;
   stage('historial', { userMsgs: hist.length, contieneMarca: out.enServidor });
   ws2.close();
-  await page.screenshot({ path: 'C:/aegis-web/tools/shots/steer-settle-mobile.png' });
+  await page.screenshot({ path: 'C:/goose-web/tools/shots/steer-settle-mobile.png' });
 } catch (e) { out.fatal = String((e && e.message) || e).slice(0, 300); }
 try { await page.evaluate(() => document.querySelector('#btn-stop')?.click()); } catch {}
 if (out.sid) await req('session/delete', { sessionId: out.sid }).catch(() => {});
