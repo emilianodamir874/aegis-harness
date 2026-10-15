@@ -1495,6 +1495,16 @@
     window.__usagePopKeys = true;
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && usagePop && !usagePop.hidden) { closeUsagePop(); e.stopPropagation(); } }, true);
   }
+  // Diagnostico: registra donde cae el click en la zona del composer (se saca despues).
+  document.addEventListener('click', (ev) => {
+    try {
+      const t = ev.target;
+      const id = t && t.id ? '#' + t.id : '';
+      const cls = t && t.className && typeof t.className === 'string' ? '.' + t.className.split(' ').join('.') : '';
+      if (ev.clientY > window.innerHeight * 0.6) report('click', (t ? t.tagName + id + cls : '?') + ' y=' + Math.round(ev.clientY));
+    } catch (err) { /* best effort */ }
+  }, true);
+
   function renderUsage() {
     const el = $('#meta-right');
     if (!el) return;
