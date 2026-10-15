@@ -1,16 +1,16 @@
-/* Panel de Skills de goose-web (2026-10-14).
+/* Panel de Skills de aegis-web (2026-10-14).
    Por que existe: la web no tenia ninguna forma de ver o editar skills; solo el app de
    escritorio podia. Usa la API de sources del serve (misma que usa esa UI) a traves del
-   rpc que app.js ya expone en window.__gooseWeb. No toca app.js ni app.css. */
+   rpc que app.js ya expone en window.__aegisWeb. No toca app.js ni app.css. */
 (function () {
   'use strict';
-  var W = window.__gooseWeb;
-  if (!W || !W.rpc) { console.warn('skills: falta window.__gooseWeb.rpc'); return; }
+  var W = window.__aegisWeb;
+  if (!W || !W.rpc) { console.warn('skills: falta window.__aegisWeb.rpc'); return; }
   var rpc = W.rpc;
-  var M_LIST = '_goose/unstable/sources/list';
-  var M_CREATE = '_goose/unstable/sources/create';
-  var M_UPDATE = '_goose/unstable/sources/update';
-  var M_DELETE = '_goose/unstable/sources/delete';
+  var M_LIST = '_aegis/unstable/sources/list';
+  var M_CREATE = '_aegis/unstable/sources/create';
+  var M_UPDATE = '_aegis/unstable/sources/update';
+  var M_DELETE = '_aegis/unstable/sources/delete';
   var TYPE = 'skill';
 
   function esc(s) {
@@ -148,5 +148,5 @@
     ref.insertAdjacentElement('afterend', b);
   }
   button();
-  window.__gooseSkills = { open: open, close: close, load: load };
+  window.__aegisSkills = { open: open, close: close, load: load };
 })();

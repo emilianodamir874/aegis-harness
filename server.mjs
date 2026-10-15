@@ -1,11 +1,11 @@
-// goose-web: sirve la app de chat propia (app/) y genera /config.js por request.
+// aegis-web: sirve la app de chat propia (app/) y genera /config.js por request.
 // El token del backend nunca vive en archivos estáticos: se inyecta al vuelo.
 //
 // v7 (tunel Cloudflare):
 //  - Detecta pedidos que llegan por el tunel (cabeceras cf-*) o por un dominio publico.
 //  - Esos pedidos exigen login propio (cookie firmada) contra auth.json; la LAN sigue abierta.
 //  - /config.js se adapta: en el tunel el WS va a wss://<host>/acp (mismo origen) y este
-//    server lo proxea a goose serve en 127.0.0.1:<servePort> reescribiendo el Origin.
+//    server lo proxea a aegis serve en 127.0.0.1:<servePort> reescribiendo el Origin.
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { readFile, appendFile, mkdir, stat } from 'node:fs/promises';
@@ -39,7 +39,7 @@ try {
 } catch {}
 const COOKIE = 'gw_auth';
 const COOKIE_TTL_MS = 30 * 24 * 3600 * 1000;
-const HMAC_KEY = String(cfg.secretKey || 'goose-web');
+const HMAC_KEY = String(cfg.secretKey || 'aegis-web');
 
 function sign(exp) {
   return crypto.createHmac('sha256', HMAC_KEY).update(`gw|${exp}`).digest('base64url');
@@ -114,7 +114,7 @@ function noteLoginFail(ip) {
 const LOGIN_PAGE = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0d0d0e"><title>Goose \u00b7 acceso</title>
+<meta name="theme-color" content="#0d0d0e"><title>Aegis \u00b7 acceso</title>
 <style>
  :root { color-scheme: dark; }
  body { margin:0; min-height:100dvh; display:grid; place-items:center; background:#0d0d0e; color:#e8e8ea;
@@ -129,7 +129,7 @@ const LOGIN_PAGE = `<!doctype html>
  .hint { color:#6f6f77; font-size:11.5px; margin-top:14px; }
 </style></head>
 <body><form method="post" action="/login" autocomplete="off">
- <h1>Goose web</h1>
+ <h1>Aegis web</h1>
  <p class="sub">Acceso por el tunel de Cloudflare</p>
  <input type="password" name="password" placeholder="Contrasena" autofocus required>
  <button type="submit">Entrar</button>
@@ -339,7 +339,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Precios por modelo: archivo que completa el usuario (no vienen del server de goose).
+    // Precios por modelo: archivo que completa el usuario (no vienen del server de aegis).
     if (url.pathname === '/prices.json') {
       let body = '{}';
       try { body = await readFile(join(DIR, 'prices.json'), 'utf8'); } catch (e) { body = JSON.stringify({ _error: String((e && e.message) || e) }); }
@@ -355,11 +355,11 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === '/config.js') {
       const c = configFor(req);
-      const body = `window.__GOOSE_APP__ = ${JSON.stringify({
+      const body = `window.__AEGIS_APP__ = ${JSON.stringify({
         acpUrl: c.acpUrl,
         cwd: cfg.cwd || 'C:\\Users\\Emiliano',
         host: c.host,
-        version: (cfg.appConfig || {}).GOOSE_VERSION || 'web',
+        version: (cfg.appConfig || {}).AEGIS_VERSION || 'web',
         tunnel: c.tunneled,
       })};`;
       res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-cache', ...SEC });
@@ -457,10 +457,10 @@ server.on('upgrade', (req, socket, head) => {
   proxyAcp(req, socket, head);
 });
 
-const port = Number(process.env.GOOSE_WEB_PORT || cfg.webPort || 3788);
+const port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
 server.listen(port, '0.0.0.0', () => {
-  console.log(`[goose-web] UI:      http://${cfg.publicHost}:${port}   (LAN)`);
-  console.log(`[goose-web] UI:      http://127.0.0.1:${port}          (local)`);
-  console.log(`[goose-web] backend: ws://${cfg.publicHost}:${cfg.servePort}/acp   (directo, LAN)`);
-  console.log(`[goose-web] tunel:   wss://<host>/acp proxeado a 127.0.0.1:${cfg.servePort}  (login: ${auth ? 'auth.json' : 'SIN auth.json -> tunel cerrado'})`);
+  console.log(`[aegis-web] UI:      http://${cfg.publicHost}:${port}   (LAN)`);
+  console.log(`[aegis-web] UI:      http://127.0.0.1:${port}          (local)`);
+  console.log(`[aegis-web] backend: ws://${cfg.publicHost}:${cfg.servePort}/acp   (directo, LAN)`);
+  console.log(`[aegis-web] tunel:   wss://<host>/acp proxeado a 127.0.0.1:${cfg.servePort}  (login: ${auth ? 'auth.json' : 'SIN auth.json -> tunel cerrado'})`);
 });

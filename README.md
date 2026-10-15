@@ -1,9 +1,9 @@
-# goose-web
+﻿# aegis-web
 
-Acceso a goose del fork de Emiliano desde el navegador por LAN (sin instalar nada en los dispositivos).
+Acceso a aegis del fork de Emiliano desde el navegador por LAN (sin instalar nada en los dispositivos).
 
 - **UI (web):** http://192.168.100.34:3788  (local: http://127.0.0.1:3788)
-- **Backend:** `goose serve` (ACP sobre WebSocket) en 0.0.0.0:3284
+- **Backend:** `aegis serve` (ACP sobre WebSocket) en 0.0.0.0:3284
 - Comparte sesiones, proveedores y configuración con el CLI/desktop (misma máquina).
 
 ## Qué es (v3 — cliente de chat propio, tipo Hermes web)
@@ -28,14 +28,14 @@ los tokens de Hermes web (chrome `#0d0d0e`, tarjetas `#161618`, acento `#0053fd`
 - `server.mjs` — static server + `/config.js` + `/client-log` + `/healthz`.
 - `tools/` — probes ACP (`probe2.mjs`, `probe-config.mjs`, `ls-sessions.mjs`),
   `cleanup-test-sessions.mjs`, `sample-context.txt` (archivo de prueba para adjuntos), `shots/` (capturas).
-- `scripts/` — start/stop/setup/launch (tarea programada `Goose_Web`).
+- `scripts/` — start/stop/setup/launch (tarea programada `Aegis_Web`).
 - `logs/` — server/serve + `requests.log` + `client.log` (reportes de dispositivos reales).
 
 ## Code Mode como vía principal (2026-10-12 — backend v2)
 
-- `goose-serve-v2.exe` (build 16:18; `rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode`) reemplaza a v1 en `scripts/start-goose-web.ps1` (backup `.bak-pre-v2`; el binario v1 queda en disco para rollback).
+- `aegis-serve-v2.exe` (build 16:18; `rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode`) reemplaza a v1 en `scripts/start-goose-web.ps1` (backup `.bak-pre-v2`; el binario v1 queda en disco para rollback).
 - **Sesiones NUEVAS del web corren Code Mode** (extensión `code_execution` habilitada en la config): el agente trabaja vía `execute_typescript`/`list_functions`. Las sesiones VIEJAS retomadas NO lo heredan (el set de extensiones queda fijado al crear la sesión) — para cm, chat nuevo (memoria vía chatrecall). Verificado: `tools/smoke-serve-v2.mjs` (nueva → `execute typescript` → resultado OK) + resume de `_22` (sin `execute_typescript`).
-- El CLI principal también: `goose.cmd` → `goose-codemode-v2.exe` (backup `.bak-pre-cm-main`); `goose-cm.cmd` queda de alias.
+- El CLI principal también: `aegis.cmd` → `aegis-codemode-v2.exe` (backup `.bak-pre-cm-main`); `aegis-cm.cmd` queda de alias.
 
 ## Cambiar de chat con un turno en curso (2026-10-12)
 
@@ -111,7 +111,7 @@ Cambios (sólo cliente; el backend no necesita rebuild):
    girando, se marca `err` + "· interrumpido (sin resultado)". Verificado en una sesión real que
    quedó con 2 llamadas `pending` tras un run muerto: 0 girando, 2 marcadas, 0 falsos positivos.
 5. Diferido sigue estando `resyncAdoptedRun` (rebuild completo) para el `session/load` inicial y como
-   herramienta de depuración (`window.__gooseWeb.resync`).
+   herramienta de depuración (`window.__aegisWeb.resync`).
 
 Verificado además en esta ronda (lo que faltaba de v6): Detener desde la pestaña recargada corta el
 run (960–1317 ms, `stopReason: cancelled`); reloj de la barra corriendo tras la recarga; mensaje
@@ -143,12 +143,12 @@ Reproducido en vivo y arreglado en el cliente (sin tocar el backend):
   en modo adoptado: aparece la **barra de turno con Detener** aunque la herramienta
   esté en silencio, y el cronómetro corre. `session/cancel` se rutea al dueño del run,
   así que **Detener corta igual** desde la pestaña recargada.
-  Cómo se pregunta: `_goose/unstable/session/steer` con un `expectedRunId` imposible —
+  Cómo se pregunta: `_aegis/unstable/session/steer` con un `expectedRunId` imposible —
   el server valida el run **antes** de tocar al agente, de modo que no encola nada y
   contesta el run real en `error.data.actualRunId` (o "no active run to steer"). Es la
   única lectura pública de "¿está corriendo?"; `session/info` no lo expone.
 - **Refresco sin recargar a mano.** Mientras el turno está adoptado, cada 2,5 s se
-  consulta `_goose/unstable/session/info` (barato): si `messageCount`/`lastMessageAt`
+  consulta `_aegis/unstable/session/info` (barato): si `messageCount`/`lastMessageAt`
   creció, la conversación se recarga sola (`session/load` con el turno adoptado
   preservado: barra, cronómetro, Detener y las indicaciones en cola siguen ahí). Al
   terminar el run la barra pasa a "El turno terminó (otra conexión)" y el último
@@ -217,7 +217,7 @@ Tres cosas reportadas desde el teléfono (390 px), con medición antes/después 
   colgado dejaba `state.busy = true` para siempre — sin envío y sin Detener hasta recargar.
   Ahora `ws.onclose` rechaza lo pendiente, el turno se cierra con aviso ("Se cortó la conexión:
   el turno se interrumpió") y la cola de mensajes espera a la reconexión. Verificado cortando el
-  socket real en medio de un turno (`__gooseWeb.dropSocket()`): la UI sale de "busy" sola, la barra
+  socket real en medio de un turno (`__aegisWeb.dropSocket()`): la UI sale de "busy" sola, la barra
   avisa del corte, el composer vuelve a aceptar texto y la reconexión no deja nada trabado.
   Y si el server no confirma el corte en 12 s, la barra lo dice y deja reintentar en vez de
   quedarse en "Deteniendo…".
@@ -231,14 +231,14 @@ Sobre la base v3, todo verificado con los checks de `ui/desktop/scripts`:
 - **Adjuntos**: además de imágenes (pegar / botón +), se adjuntan **archivos de texto** como contexto
   (`file input` y **arrastrar y soltar sobre la ventana** con overlay `#dropzone`). Límites: 6 adjuntos,
   256 KB por archivo de texto (se recortan los primeros 80 000 caracteres), 12 MB por imagen.
-- **Menú por sesión (⋮)**: renombrar, **exportar a Markdown / JSON** (`_goose/unstable/session/export`,
-  descarga real vía Blob) y **archivar / desarchivar** (`_goose/unstable/session/archive|unarchive`).
+- **Menú por sesión (⋮)**: renombrar, **exportar a Markdown / JSON** (`_aegis/unstable/session/export`,
+  descarga real vía Blob) y **archivar / desarchivar** (`_aegis/unstable/session/archive|unarchive`).
   Las archivadas van a un grupo "Archivadas" plegable, con tag y acciones propias.
-- **Slash commands**: autocompletado en el composer (`_goose/unstable/slash-commands/list` y/o la
+- **Slash commands**: autocompletado en el composer (`_aegis/unstable/slash-commands/list` y/o la
   notificación `available_commands_update`): ↑↓ para elegir, Tab/Enter inserta, Esc cierra.
 - **Steering**: con el agente trabajando, **Enter manda una indicación al vuelo**
-  (`_goose/unstable/session/steer` con `expectedRunId`, tomado de
-  `session_info_update._meta.goose.activeRunId`). La burbuja se marca "en cola" y pasa a
+  (`_aegis/unstable/session/steer` con `expectedRunId`, tomado de
+  `session_info_update._meta.aegis.activeRunId`). La burbuja se marca "en cola" y pasa a
   "indicación recibida por el agente" cuando el server la levanta. Si no hay run al que apuntar
   (o el steer falla), el mensaje queda en cola local y sale al terminar el turno.
 - **Paginación del sidebar**: `session/list` devuelve 50 por página con `nextCursor`; ahora se
@@ -247,20 +247,20 @@ Sobre la base v3, todo verificado con los checks de `ui/desktop/scripts`:
   autoscroll durante la carga. Sesión de 1166 mensajes: primera pintura 431 ms → 23 ms, total
   2.78 s → 1.35 s (medido con `goose-web-perf.mjs`).
 - Toasts para confirmaciones, `#meta-left` con atajos (oculto en teléfono), hint de steering mientras
-  el agente trabaja, y `window.__gooseWeb` como superficie mínima de depuración (estado + showWelcome).
+  el agente trabaja, y `window.__aegisWeb` como superficie mínima de depuración (estado + showWelcome).
 
 ## Backend / auth
 
-`C:/goose/target/debug/goose-serve-v2.exe serve --host 0.0.0.0 --port 3284 --platform desktop
+`C:\aegis-src/target/debug/goose-serve-v2.exe serve --host 0.0.0.0 --port 3284 --platform desktop
 --enable-scheduler --with-builtin developer --allowed-origin http://192.168.100.34:3788
 --allowed-origin http://127.0.0.1:3788 --allowed-origin http://localhost:3788`, con
-`GOOSE_SERVER__SECRET_KEY` (de `config.json`). Los browsers no pueden setear headers en un
+`AEGIS_SERVER__SECRET_KEY` (de `config.json`). Los browsers no pueden setear headers en un
 WebSocket: la autenticación va como `?token=` en la URL del WS (el server lo acepta).
 
 ## Verificación
 
 ```bash
-cd C:/goose/ui/desktop
+cd C:\aegis-src/ui/desktop
 node scripts/goose-web-app-check.mjs     # e2e completo: conexión, enviar+streaming, chips,
                                          # permisos, rename, imagen, borrado, replay, móvil
 node scripts/goose-web-viewports.mjs     # barrido 360→1920 (abre una sesión para medir los chips;
@@ -275,7 +275,7 @@ node scripts/goose-web-phone-audit.mjs   # móvil 390×844: desplegables del hea
 
 # v6.2 — tecleo y turno adoptado (móvil + CPU 4x vía CDP; el backend debe estar sirviendo la app)
 node scripts/goose-web-stream-typing.mjs    # reposo vs streaming vs recién terminado, con costo real
-                                            # de render/tecla (window.__gooseWeb.metrics)
+                                            # de render/tecla (window.__aegisWeb.metrics)
 node scripts/goose-web-typing-big.mjs       # sesión larga (importa una copia) + turno adoptado:
                                             # ventana A (poll encendido) vs B (apagado)
 node scripts/goose-web-soft-check.mjs       # refresco suave: fase tecleando (debe postergar),
@@ -301,14 +301,38 @@ powershell -NoProfile -File C:\goose-web\scripts\start-goose-web.ps1
 powershell -NoProfile -File C:\goose-web\scripts\stop-goose-web.ps1
 
 # autostart (ya instalado; corre al iniciar sesión)
-schtasks /Run /TN Goose_Web
+schtasks /Run /TN Aegis_Web
 ```
 
-Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Goose_Web` ya instalados el 2026-10-12.
+Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Aegis_Web` ya instalados el 2026-10-12.
+
+## v7 (2026-10-13) - tunel Cloudflare con login propio
+
+Detalle completo: **docs/tunnel-cloudflare.md**. Resumen:
+
+- **`server.mjs` v7** detecta los pedidos que llegan por el tunel (cabeceras `cf-*`, o Host que no
+  es loopback / `publicHost` / IP privada) y a esos les exige **login propio** (`auth.json`, cookie
+  `gw_auth` = expiracion + HMAC de la secret key, 30 dias, freno de 8 intentos por minuto). La LAN
+  sigue abierta como siempre.
+- **Un solo origen publico**: `/config.js` devuelve `wss://<host>/acp?token=...` y `server.mjs`
+  **proxea el WebSocket** `/acp` a `127.0.0.1:3284` reescribiendo `Origin` a
+  `http://127.0.0.1:3788` (el que ya estaba en `--allowed-origin`). El backend no se expone, el
+  token no viaja a un segundo host y el tunel no necesita conocer la URL publica.
+- **Watchdog + tarea**: `scripts/goose-web-tunnel-watchdog.ps1` (+ `.vbs`) mantiene stack y tunel,
+  escribe `tunnel-url.txt` / `tunnel-access.txt`; tarea programada `Aegis_Web_Tunnel` (al iniciar
+  sesion + repeticion cada 10 min, residente cada 60 s, mutex para no duplicarse).
+- **Verificado** end-to-end con `ui/desktop/scripts/goose-web-tunnel-check.mjs` por la URL publica:
+  puerta (302/401 y WS sin sesion rechazado), login, `Conectado`, 50 sesiones, replay real de 38
+  mensajes, 0 errores de JS.
+- La URL del quick tunnel **cambia** si cloudflared se reinicia (no hay cuenta Cloudflare): mirar
+  `tunnel-url.txt`. URL fija = tunnel con nombre + Cloudflare Access (procedimiento en el doc).
+- Backups: `server.mjs.bak-pre-tunnel`, `scripts/start-goose-web.ps1.bak-pre-tunnel`.
 
 ## Security notes
 
-- Solo LAN (bind 0.0.0.0 + firewall acotado a Private/LocalSubnet). NO exponer a internet.
+- LAN (bind 0.0.0.0 + firewall acotado a Private/LocalSubnet) **y tunel Cloudflare** (v7) con login
+  propio. El tunel exige la password de `auth.json`; la LAN sigue sin login, como antes.
+- **Nunca** exponer 3284 directo a internet: el backend no tiene login, solo la secret key en la URL.
 - Auth = secret key de `config.json` (inyectada al vuelo en `/config.js`); rotar editando el config y reiniciando ambos procesos.
 - Sin TLS: http/ws plano en la red local (mismo modelo que el dashboard de Hermes).
 
@@ -320,7 +344,7 @@ Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Goose_Web` ya instalado
 - Streaming: UNA entrada por messageId en `state.msgs`; cuando una herramienta cierra el bloque, el siguiente chunk reemplaza la entrada — no re-indexar la clave (fragmenta el texto en un elemento por chunk).
 - UI inline (renombrar / confirmar borrado): `state.hold` pausa `renderList()` mientras hay un editor abierto, y tras cada refresh hay que re-buscar las entradas por id (los objetos de sesión se reemplazan).
 - Código: `.msg-a pre { white-space: pre }` (sin wrap; scroll horizontal). El wrap por herencia rompe los comandos.
-- Permisos de herramientas PERSISTEN en el server por herramienta: contestar "allow always" en una prueba desactiva los prompts futuros. Reset: `_goose/unstable/tools/permissions/set` con `{toolPermissions:[{toolName, permission:'ask_before'}]}`.
+- Permisos de herramientas PERSISTEN en el server por herramienta: contestar "allow always" en una prueba desactiva los prompts futuros. Reset: `_aegis/unstable/tools/permissions/set` con `{toolPermissions:[{toolName, permission:'ask_before'}]}`.
 - Pruebas: correr los checks DESPRENDIDOS (`Start-Process` + log) — el wrapper de background mata node con "stdin is not a tty". Limpiar sesiones de prueba con `tools/cleanup-test-sessions.mjs`.
 - Menús portal: el navegador hace `scrollIntoView` al clickear un botón fuera de vista, y ese scroll
   cerraba el menú antes de poder tocarlo. `openMenu` deja una ventana de 500 ms (`menuOpenedAt`) en la
@@ -331,7 +355,7 @@ Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Goose_Web` ya instalado
 - Replay: un solo `flushRender` por frame para todos los registros sucios y `scrollBottom` no hace nada
   con `state.replaying = true`. Si volvés a medir `scrollHeight` por chunk (o a scrollear por mensaje)
   el replay de 1000+ mensajes se cae a ~3 s por layout thrashing.
-- Steering: requiere `expectedRunId`; se obtiene de `session_info_update._meta.goose.activeRunId` (null
+- Steering: requiere `expectedRunId`; se obtiene de `session_info_update._meta.aegis.activeRunId` (null
   cuando el run termina). La confirmación de pickup llega como `user_message_chunk` con el **mismo
   messageId** que devolvió `session/steer` — por eso la burbuja local no se duplica.
 - Archivadas: el server **no** filtra archivadas en `session/list`; vienen con `_meta.archivedAt` y el
@@ -351,7 +375,7 @@ Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Goose_Web` ya instalado
   throttle se activa en el replay, la primera pintura de una sesión de 1000+ mensajes se cae.
 - **Estado del turno**: los indicadores no pueden depender solo del `session/prompt` local. Si
   llegan chunks/herramientas con `!state.busy` el run se adopta (`noteRunActivity`), y
-  `session_info_update._meta.goose.activeRunId = null` cierra el turno adoptado. `stopRun()`
+  `session_info_update._meta.aegis.activeRunId = null` cierra el turno adoptado. `stopRun()`
   notifica `session/cancel` y tiene red de seguridad a los 12 s (no dejar "Deteniendo…" eterno).
 - **RPC colgado**: `rpc.onclose` rechaza las promesas pendientes. Sacarlo reintroduce la UI trabada
   (`state.busy` en true para siempre → no envía, no corta, y todo lo que escribís se va a steering).
@@ -364,17 +388,17 @@ Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Goose_Web` ya instalado
   turno se resuelven en `finishSettle()`: eco → recibida; sin eco y sin rastro en el
   historial persistido → **reencolar como prompt**. `state.suppressSettle` evita reencolar
   por una caída de red (ahí el run puede seguir vivo y consumirla después).
-- `window.__gooseWeb` ahora también expone `dropSocket()` (solo para los checks: cortar el WS real).
+- `window.__aegisWeb` ahora también expone `dropSocket()` (solo para los checks: cortar el WS real).
 - **Sondeo de run (v6.1)**: la respuesta del server a un steer con `expectedRunId` imposible SIEMPRE trae `error.message:"Invalid params"`; lo útil va en `error.data` como **string** ("no active run to steer") o **objeto** (`{actualRunId}`). Buscar "no active run" solo en `message` jamás matchea → el fin de turno no se detecta y la barra/cursor quedan eternos. No volver a simplificar ese parseo.
 - **Cursor de streaming (v6.1)**: `streamAppend` NO debe agregar `.streaming` durante el replay (`state.replaying`) y `renderSession` DEBE limpiar con `clearStreaming()` al terminar; si no, cada carga de sesión deja un cursor pegado en el último mensaje.
 - **Scripts de check**: los Playwright tienen que vivir en `ui/desktop/scripts/` (import resuelve desde `ui/desktop/node_modules`; un script suelto en `C:/goose-web/tools` explota con `ERR_MODULE_NOT_FOUND`).
 - **`session/info` de una conexión que NO es dueña del run viene congelado (v6.2)**: el `messageCount`/`lastMessageAt` no se mueve mientras el run trabaja (medido: 18 polls con la misma clave en 45 s). El dueño sí lo ve crecer. Por eso el resync no puede depender sólo del cambio de clave: hay que refrescar periódicamente. No "arreglar" sacando el respaldo.
-- **Refresco del turno adoptado: NUNCA `clearMessages()` + replay (v6.2)**: reconstruir el DOM de una sesión larga cuesta ~2,3 s de main thread bloqueado (tramos de 206 ms) y en el teléfono las teclas llegan tarde. Usar `softResync()` (bufferiza y pinta sólo lo nuevo). El rebuild completo queda para la carga inicial de la sesión y para depurar (`window.__gooseWeb.resync`).
+- **Refresco del turno adoptado: NUNCA `clearMessages()` + replay (v6.2)**: reconstruir el DOM de una sesión larga cuesta ~2,3 s de main thread bloqueado (tramos de 206 ms) y en el teléfono las teclas llegan tarde. Usar `softResync()` (bufferiza y pinta sólo lo nuevo). El rebuild completo queda para la carga inicial de la sesión y para depurar (`window.__aegisWeb.resync`).
 - **Teclado (v6.2)**: el costo por tecla del cliente es <1 ms (medido) — no buscar el lag ahí. Antes de "optimizar el composer", medir con `goose-web-stream-typing.mjs` y `goose-web-soft-check.mjs` (CPU 4x): lo caro es render/layout de conversaciones grandes, no el composer.
 - **`page.evaluate` en Playwright acepta UN solo argumento**: `page.evaluate(fn, a, b)` tira "Too many arguments"; pasar un objeto.
 - **Bug de runtime del serve (2026-10-12, sin arreglar)**: un run murió en silencio justo después de que el tool terminó (`tools/stream-typing.json` se escribió completo y el resultado nunca llegó); en la sesión quedaron 2 `tool_call` con último estado `pending`. Sirve de caso de prueba para `sweepInterruptedTools()` (la UI ahora las marca "interrumpido").
 - **Tablas markdown (v6.3)**: `mdBlocks` recorre las líneas con índice (`for (let _i ...)`) para poder mirar la línea siguiente (el separador) y saltear las filas consumidas. Si volvés a `for (const line of lines)` se rompen las tablas. Las celdas pasan por `inline()`: cualquier formato nuevo hay que agregarlo ahí, no en `tableHtml`.
-- **`window.__gooseWeb.state.sessions` usa `sessionId`**, no `id` (el `id` aparece en `state.current`). Los scripts de check que escriben `localStorage['gweb.last']` desde la lista se equivocan con `s.id` y quedan 3 minutos esperando un replay vacío.
+- **`window.__aegisWeb.state.sessions` usa `sessionId`**, no `id` (el `id` aparece en `state.current`). Los scripts de check que escriben `localStorage['gweb.last']` desde la lista se equivocan con `s.id` y quedan 3 minutos esperando un replay vacío.
 
 
 ## v6.3 (backend: serve v3) - watchdog de runs + spill de imagenes
@@ -382,14 +406,14 @@ Firewall (TCP 3788 + 3284, Private/LocalSubnet) y tarea `Goose_Web` ya instalado
 Detalle completo y procedimiento de swap: **docs/v6.3-serve-v3.md**. Resumen:
 
 - **Watchdog de runs por fin**: cada evento del stream marca progreso; si un run pasa
-  GOOSE_RUN_STALL_TIMEOUT_SECS (default 900 s, 0 desactiva) sin avanzar, el server emite un
+  AEGIS_RUN_STALL_TIMEOUT_SECS (default 900 s, 0 desactiva) sin avanzar, el server emite un
   **error visible al cliente**, pone activeRunId=null y cancela el run. Antes ese caso dejaba la
   UI muda hasta recargar (sesion 20261012_23, 39 min muertos).
 - **Cancelacion no pedida = aviso visible**: si un turno termina cancelado y no lo pidio el cliente
   (conexion caida, cancel interno), ahora se ve el motivo en vez de nada.
-- **Imagenes de tools con tope**: GOOSE_MAX_TOOL_IMAGE_BASE64_SIZE (default 1.500.000 chars b64
+- **Imagenes de tools con tope**: AEGIS_MAX_TOOL_IMAGE_BASE64_SIZE (default 1.500.000 chars b64
   ~ 1,1 MB). Las imagenes grandes se escriben a archivo y queda un puntero, igual que el texto.
   Antes el cap solo miraba texto: la DB tenia 137 mensajes >60k chars / 54,6 MB de imagenes.
-- **Cap de texto verificado**: GOOSE_MAX_TOOL_RESPONSE_SIZE se mide en CHARs (default 200.000;
+- **Cap de texto verificado**: AEGIS_MAX_TOOL_RESPONSE_SIZE se mide en CHARs (default 200.000;
   el usuario tiene 60.000) y si funciona (el texto de assistant topea en 78 KB).
-- **Binario nuevo, no en uso**: goose-serve-v3.exe. v2 sigue siendo el que corre hasta hacer el swap.
+- **Binario nuevo, no en uso**: aegis-serve-v3.exe. v2 sigue siendo el que corre hasta hacer el swap.

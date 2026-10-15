@@ -1,11 +1,11 @@
-// goose-web: browser shim for the Electron preload bridge.
-// Defines window.electron / window.appConfig so the goose Desktop renderer can
-// run as a plain web app against a remote `goose serve` ACP backend.
+// aegis-web: browser shim for the Electron preload bridge.
+// Defines window.electron / window.appConfig so the aegis Desktop renderer can
+// run as a plain web app against a remote `aegis serve` ACP backend.
 // Loaded as a classic script before the app module. No imports on purpose.
 (function () {
   'use strict';
 
-  var CFG = (window.__GOOSE_WEB__ = window.__GOOSE_WEB__ || {});
+  var CFG = (window.__AEGIS_WEB__ = window.__AEGIS_WEB__ || {});
   var APP = CFG.appConfig || {};
 
   // --- client-side reporter: ship errors/console.error to the server ------
@@ -61,10 +61,10 @@
     }
     origConsoleError.apply(console, arguments);
   };
-  report('boot', 'shim v3 loaded; acpUrl=' + (CFG.acpUrl ? 'set' : 'MISSING') + '; locale=' + (APP.GOOSE_LOCALE || 'auto'));
+  report('boot', 'shim v3 loaded; acpUrl=' + (CFG.acpUrl ? 'set' : 'MISSING') + '; locale=' + (APP.AEGIS_LOCALE || 'auto'));
 
   // Compact DOM snapshot: enough to see what the main pane rendered on ANY
-  // client without blowing up the report size (debug aid for goose-web).
+  // client without blowing up the report size (debug aid for aegis-web).
   function domSnap(tag) {
     try {
       var root = document.getElementById('root');
@@ -106,7 +106,7 @@
     domSnap('t14');
   }, 14000);
 
-  var LS_PREFIX = 'goose_web_setting_';
+  var LS_PREFIX = 'aegis_web_setting_';
   function lsGet(key, dflt) {
     try {
       var raw = localStorage.getItem(LS_PREFIX + key);
@@ -130,7 +130,7 @@
     enableWakelock: false,
     enableNotifications: true,
     spellcheckEnabled: true,
-    externalGoosed: { enabled: false, url: '', secret: '' },
+    externalAegisd: { enabled: false, url: '', secret: '' },
     keyboardShortcuts: {
       focusWindow: null,
       quickLauncher: null,
@@ -171,13 +171,13 @@
       try {
         cb({ channel: channel }, ...args);
       } catch (e) {
-        console.error('[goose-web shim] listener error on', channel, e);
+        console.error('[aegis-web shim] listener error on', channel, e);
       }
     });
   }
 
   // --- recent directories (localStorage backed) -----------------------------
-  var RECENTS_KEY = 'goose_web_recent_dirs';
+  var RECENTS_KEY = 'aegis_web_recent_dirs';
   function readRecents() {
     try {
       return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]');
@@ -215,14 +215,14 @@
       }
     },
     logInfo: function (txt) {
-      console.log('[goose]', txt);
+      console.log('[aegis]', txt);
     },
     showNotification: function (data) {
       try {
         if (window.Notification && Notification.permission === 'granted') {
-          new Notification(data.title || 'Goose', { body: data.body || '' });
+          new Notification(data.title || 'Aegis', { body: data.body || '' });
         } else {
-          console.log('[goose notification]', data.title, data.body);
+          console.log('[aegis notification]', data.title, data.body);
         }
       } catch (e) {
         /* ignore */
@@ -267,10 +267,10 @@
     selectRecipeFile: function () {
       return Promise.resolve(null);
     },
-    readGoosehints: function () {
+    readAegishints: function () {
       return Promise.resolve({ file: '', filePath: '', error: null, found: false });
     },
-    writeGoosehints: function () {
+    writeAegishints: function () {
       return Promise.resolve(false);
     },
     writeFile: function () {
@@ -359,7 +359,7 @@
       }
     },
     getVersion: function () {
-      return String(APP.GOOSE_VERSION || 'web');
+      return String(APP.AEGIS_VERSION || 'web');
     },
     checkForUpdates: function () {
       return Promise.resolve({ updateInfo: null, error: null });
@@ -444,18 +444,18 @@
 
   window.appConfig = {
     get: function (key) {
-      if (key === 'GOOSE_LOCALE') {
-        return APP.GOOSE_LOCALE || navigator.language || 'en';
+      if (key === 'AEGIS_LOCALE') {
+        return APP.AEGIS_LOCALE || navigator.language || 'en';
       }
       return APP[key];
     },
     getAll: function () {
       var out = {};
       for (var k in APP) out[k] = APP[k];
-      out.GOOSE_LOCALE = window.appConfig.get('GOOSE_LOCALE');
+      out.AEGIS_LOCALE = window.appConfig.get('AEGIS_LOCALE');
       return out;
     },
   };
 
-  console.log('[goose-web] shim installed. backend:', (CFG.acpUrl || '').replace(/token=.*/, 'token=***'));
+  console.log('[aegis-web] shim installed. backend:', (CFG.acpUrl || '').replace(/token=.*/, 'token=***'));
 })();

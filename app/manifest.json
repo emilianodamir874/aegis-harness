@@ -1,7 +1,7 @@
 {
-  "name": "Goose Chat",
-  "short_name": "Goose",
-  "description": "Chat con Goose desde el navegador (LAN)",
+  "name": "Aegis Chat",
+  "short_name": "Aegis",
+  "description": "Chat con Aegis desde el navegador (LAN)",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0d0d0e",

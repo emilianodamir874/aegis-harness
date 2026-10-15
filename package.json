@@ -1,8 +1,8 @@
 {
-  "name": "goose-web-tools",
+  "name": "aegis-web-tools",
   "version": "1.0.0",
   "private": true,
-  "description": "Herramientas de la web de goose (probes node/playwright contra el cliente web)",
+  "description": "Herramientas de la web de aegis (probes node/playwright contra el cliente web)",
   "scripts": {
     "pop-clamp-check": "node tools/usage-pop-clamp-check.mjs"
   },
