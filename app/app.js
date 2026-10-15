@@ -3642,10 +3642,13 @@
     var a = new Audio('/tts?engine=' + encodeURIComponent(READ.engine) + '&voice=' + encodeURIComponent(READ.voiceName) + '&text=' + encodeURIComponent(t));
     AUD.cur = a;
     var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); };
+    // Sin caida a la voz del dispositivo (a pedido: la del telefono suena mal). Si el server no
+    // responde, esta frase se saltea y avisa, en vez de sonar con la voz vieja.
     var fallar = function () {
       if (AUD.cur === a) { AUD.playing = false; AUD.cur = null; }
       READ.fallos = (READ.fallos || 0) + 1;
-      readSayDevice(t);
+      try { console.warn('lectura: fallo el audio de Piper (intento ' + READ.fallos + ')'); } catch (e) {}
+      if (READ.fallos === 1) systemNote('No pude pedirle el audio al server (¿está encendido?). Sigo mudo: la voz del teléfono quedó desactivada.');
       audNext();
     };
     a.onended = segir;
