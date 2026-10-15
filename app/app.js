@@ -344,7 +344,10 @@
         break;
       }
       case 'agent_message_chunk':
-        if (u.content && u.content.type === 'text') streamAppend(u.messageId || 'a', u.content.text, false, gooseMeta(u).agentVisible === false);
+        if (u.content && u.content.type === 'text') {
+          streamAppend(u.messageId || 'a', u.content.text, false, gooseMeta(u).agentVisible === false);
+          speedChunk(u.content.text);
+        }
         break;
       case 'agent_thought_chunk':
         if (u.content && u.content.type === 'text') streamAppend(thoughtKeyFor(u), u.content.text, true, gooseMeta(u).agentVisible === false);
@@ -1530,9 +1533,98 @@
     resetUsageForSession();
     const s = state.usage || (state.usage = {});
     if (u) s.last = u;
+    speedExact(u);
     renderUsage();
   }
 
+  // ---------- velocimetro de tokens/segundo ----------
+  // Mientras llega el stream se estima con los caracteres (≈4 chars por token) en una
+  // ventana movil de 4 s; cuando llega el message_usage del paso se reemplaza por el
+  // numero exacto (outputTokens / tiempo de generacion, descontando el primer token).
+  state.speed = state.speed || { ticks: [], el: null, timer: 0, runOut: 0, runGen: 0, exact: null };
+  function speedEl() {
+    const bar = $('#runbar');
+    if (!bar) return null;
+    let el = $('#runbar-tps');
+    if (!el) {
+      el = document.createElement('span');
+      el.id = 'runbar-tps';
+      el.className = 'runbar-tps';
+      el.style.cssText = 'margin-left:8px;font-variant-numeric:tabular-nums;opacity:.85';
+      const anchor = $('#runbar-time');
+      if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(el, anchor.nextSibling);
+      else bar.appendChild(el);
+    }
+    return el;
+  }
+  function speedLabel() {
+    const s = state.speed;
+    if (s.exact !== null) return '⚡ ' + s.exact.toFixed(1) + ' t/s';
+    const now = performance.now();
+    const recent = s.ticks.filter((t) => now - t.at <= 4000);
+    if (recent.length < 2) return '';
+    const first = recent[0];
+    const last = recent[recent.length - 1];
+    const seconds = Math.max(0.4, (last.at - first.at) / 1000);
+    const chars = last.chars - first.chars;
+    if (chars <= 0) return '';
+    const tps = chars / 4 / seconds;
+    return '~' + tps.toFixed(1) + ' t/s';
+  }
+  function speedPaint() {
+    const el = speedEl();
+    if (!el) return;
+    const label = speedLabel();
+    el.textContent = label;
+    el.hidden = !label;
+  }
+  function speedStart() {
+    const s = state.speed;
+    s.ticks = []; s.exact = null; s.runOut = 0; s.runGen = 0;
+    clearInterval(s.timer);
+    s.timer = setInterval(speedPaint, 300);
+    speedPaint();
+  }
+  function speedReset() {
+    const s = state.speed;
+    clearInterval(s.timer); s.timer = 0;
+    s.ticks = []; s.exact = null;
+    const el = $('#runbar-tps'); if (el) el.textContent = '';
+  }
+  function speedChunk(text) {
+    if (!text) return;
+    const s = state.speed;
+    s.exact = null;
+    const prev = s.ticks.length ? s.ticks[s.ticks.length - 1].chars : 0;
+    s.ticks.push({ at: performance.now(), chars: prev + text.length });
+    if (s.ticks.length > 240) s.ticks.splice(0, s.ticks.length - 240);
+  }
+  function speedExact(u) {
+    if (!u || s0(u.outputTokens) === 0 || s0(u.elapsedMs) === 0) return;
+    const ttft = s0(u.timeToFirstTokenMs);
+    const genMs = Math.max(250, s0(u.elapsedMs) - ttft);
+    const tps = s0(u.outputTokens) / (genMs / 1000);
+    const s = state.speed;
+    s.exact = tps;
+    s.runOut += s0(u.outputTokens);
+    s.runGen += genMs;
+    speedPaint();
+  }
+  function speedFinish() {
+    const s = state.speed;
+    clearInterval(s.timer); s.timer = 0;
+    const el = speedEl();
+    if (!el) return;
+    const parts = [];
+    if (s.exact !== null) parts.push('⚡ ' + s.exact.toFixed(1) + ' t/s');
+    if (s.runOut > 0 && s.runGen > 0) {
+      const avg = s.runOut / (s.runGen / 1000);
+      parts.push('prom ' + avg.toFixed(1) + ' t/s · ' + s.runOut + ' tok');
+    }
+    el.textContent = parts.join(' · ');
+    el.hidden = parts.length === 0;
+  }
+  function s0(value) { return typeof value === 'number' && isFinite(value) ? value : 0; }
   const stopNote = (sr) => {
     if (!sr || sr === 'end_turn') return;
     const m = {
@@ -1790,6 +1882,7 @@
     $('#runbar-stop').disabled = false;
     if (!runStart) runStart = performance.now();
     paintRunBar();
+    speedStart();
     clearInterval(runTick);
     runTick = setInterval(paintRunBar, 250);
   }
@@ -1799,6 +1892,7 @@
     clearTimeout(runDoneTimer); runDoneTimer = 0;
     clearTimeout(cancelTimer); cancelTimer = 0;
     runStart = 0;
+    speedReset();
     if (bar) { bar.hidden = true; bar.classList.remove('done', 'cancelling'); }
     const stopBtn = $('#runbar-stop'); if (stopBtn) stopBtn.hidden = true;
   }
@@ -1812,6 +1906,7 @@
     bar.classList.add('done');
     $('#runbar-text').textContent = text;
     $('#runbar-time').textContent = fmtElapsed(ms);
+    speedFinish();
     $('#runbar-stop').hidden = true;
     clearTimeout(runDoneTimer);
     runDoneTimer = setTimeout(() => { bar.hidden = true; bar.classList.remove('done'); }, 6000);
