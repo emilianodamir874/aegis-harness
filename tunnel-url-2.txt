@@ -1,7 +1,0 @@
-URL publica: https://caring-storage-united-aggregate.trycloudflare.com
-Origen: http://127.0.0.1:3788  (goose web: UI + WS /acp proxeado al serve 3284) - TUNEL 2 (respaldo)
-Usuario: (cualquiera)  Password: ver tunnel-access-2.txt
-Actualizado: 2026-10-15 14:27:25
-
-Tunel rapido: cambia de URL si cloudflared se reinicia.
-El tunel principal (Goose_Web_Tunnel) sigue vivo y con su propia URL.
