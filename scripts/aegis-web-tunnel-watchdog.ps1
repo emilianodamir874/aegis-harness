@@ -3,11 +3,11 @@
 #   (start-aegis-web.ps1 -> aegis serve + server.mjs).
 # - Escribe la URL publica en tunnel-url.txt y las credenciales en tunnel-access.txt.
 # - Una pasada por defecto; -Loop queda residente cada 60 s (lanzador oculto aegis-web-tunnel.vbs).
-# Log: C:\aegis-web\logs\tunnel-watchdog.log
+# Log: C:\Aegis-Proyects\web\logs\tunnel-watchdog.log
 param([switch]$Loop)
 
 $ErrorActionPreference = 'SilentlyContinue'
-$Root    = 'C:\aegis-web'
+$Root    = 'C:\Aegis-Proyects\web'
 $Log     = Join-Path $Root 'logs\tunnel-watchdog.log'
 $UrlFile = Join-Path $Root 'tunnel-url.txt'
 $AccFile = Join-Path $Root 'tunnel-access.txt'
@@ -62,10 +62,12 @@ function Get-RenderCheck {
     }
 }
 
-# cloudflared del tunel de aegis-web (no confundir con el del dashboard Hermes)
+# cloudflared del tunel de aegis-web (no confundir con el del dashboard Hermes).
+# Se identifica por SU logfile: el tunel 2 tambien apunta a 3788 y si no, este watchdog
+# lo contaria como propio y nunca levantaria el principal (bug visto el 15/10).
 function Get-AegisTunnel {
     Get-CimInstance Win32_Process -Filter "Name='cloudflared.exe'" |
-        Where-Object { $_.CommandLine -like '*127.0.0.1:3788*' }
+        Where-Object { $_.CommandLine -like '*cloudflared-aegis.log*' }
 }
 
 function Save-TunnelUrl {
