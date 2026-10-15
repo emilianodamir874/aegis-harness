@@ -1,0 +1,7 @@
+URL publica: https://owen-constitution-amy-abilities.trycloudflare.com
+Origen: http://127.0.0.1:3788  (goose web: UI + WS /acp proxeado al serve 3284)
+Usuario: (cualquiera)  Password: ver tunnel-access.txt
+Actualizado: 2026-10-13 07:16:34
+
+El tunel rapido de Cloudflare cambia de URL cada vez que cloudflared se reinicia.
+Si esta URL no responde, pedile al agente que revise logs\tunnel-watchdog.log.
