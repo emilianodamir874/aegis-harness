@@ -23,9 +23,13 @@ W "reinicio pedido: aegis-$Version (delay=${DelaySecs}s idle=${IdleSeconds}s) lo
 
 # (2026-10-15) Swap canonico (ops/swap.ps1 -Tag), no scripts/swap-serve.ps1: el viejo apuntaba
 # a goose-<ver>.exe, que build-safe.ps1 nunca produjo (el desfase de versiones ya documentado).
+# OJO con el pipe: el hijo detached (el serve nuevo) HEREDA el handle de stdout, el pipe nunca ve
+# EOF y este restarter no termina nunca (15/10: quedo vivo 27 minutos despues de terminar su trabajo,
+# sin escribir 'fin'). Redirigir a archivo corta esa herencia.
+$swapOut = "$root/logs/swap-out-$stamp.log"
 & powershell -NoProfile -ExecutionPolicy Bypass -File 'C:/aegis/ops/swap.ps1' `
-    -Tag $Version -Restart -DelaySecs $DelaySecs -IdleSeconds $IdleSeconds -IdleTimeoutSecs $IdleTimeoutSecs *>&1 |
-  ForEach-Object { W $_ }
+    -Tag $Version -Restart -DelaySecs $DelaySecs -IdleSeconds $IdleSeconds -IdleTimeoutSecs $IdleTimeoutSecs *> $swapOut
+Get-Content $swapOut -ErrorAction SilentlyContinue | ForEach-Object { W $_ }
 
 $deadline = (Get-Date).AddSeconds(90)
 while (-not (Get-NetTCPConnection -LocalPort 3284 -State Listen -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
