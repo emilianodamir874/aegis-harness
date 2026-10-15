@@ -36,6 +36,12 @@ async fn input_tokens(
 /// Validation failures that shrink when the batch gets smaller. Splitting the
 /// batch beats aborting the whole compaction: the caller only persists a
 /// replacement when every batch succeeds.
+///
+/// Every failure here must also be *recoverable* where possible: the messages are
+/// checked before the format, because a truncated response is fixed by a smaller
+/// batch, while an unformatted-but-complete response is fixed by using its raw
+/// text. Only text that cannot carry the batch (empty, or implausibly short for
+/// its input) aborts the compaction.
 fn is_budget_failure(error: &anyhow::Error) -> bool {
     let text = format!("{error:#}");
     text.contains("output limit") || text.contains("configured budget")
@@ -46,12 +52,10 @@ fn validate(summary: &Summary, input: usize, output_budget: usize) -> Result<()>
     if text.trim().is_empty() {
         bail!("Compaction returned an empty summary");
     }
-    if !summary.structured {
-        bail!("Compaction returned malformed or incomplete structured output; original context preserved");
-    }
-    if input > 2_000 && text.chars().count() < 100 {
-        bail!("Compaction summary is implausibly short for its input; original context preserved");
-    }
+    // Truncation is diagnosed before the output format. A response cut off mid-JSON is
+    // what a large batch usually produces (the model reviews the batch in its thinking
+    // and runs out of output budget before the fence closes), and its recovery is the
+    // batch split - reporting it as "malformed" aborted the whole compaction instead.
     if summary
         .usage
         .finish_reasons
@@ -72,6 +76,13 @@ fn validate(summary: &Summary, input: usize, output_budget: usize) -> Result<()>
     }) {
         bail!("Compaction output filled the configured budget; original context preserved");
     }
+    if input > 2_000 && text.chars().count() < 100 {
+        bail!("Compaction summary is implausibly short for its input; original context preserved");
+    }
+    // A complete response that ignored the JSON contract is not a failure: it is the
+    // raw-text fallback (see apply_structured_summary) and the batch it replaces is
+    // already gone from the returned summary. Refusing it here aborted a /compact that
+    // every other check considered usable. The caller logs it as a warning.
     Ok(())
 }
 
@@ -148,6 +159,15 @@ pub async fn summarize_in_chunks(
                             }
                         } else {
                             accumulated = Some(summary.usage.clone());
+                        }
+                        if !summary.structured {
+                            tracing::warn!(
+                                stage = stage + 1,
+                                start,
+                                end,
+                                chars = summary.message.as_concat_text().chars().count(),
+                                "Compaction batch ignored the structured format; keeping its raw text"
+                            );
                         }
                         final_structured = summary.structured;
                         next.push(summary.message);
@@ -399,7 +419,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn malformed_output_refuses_to_replace_large_history() {
+    async fn garbage_output_refuses_to_replace_large_history() {
         let model = FakeModel {
             calls: AtomicUsize::new(0),
             malformed: true,
@@ -416,9 +436,126 @@ mod tests {
         .await
         .unwrap_err();
         let chain = format!("{error:#}");
+        assert!(chain.contains("implausibly short"), "{chain}");
+    }
+
+    /// A model that answers the compaction prompt with prose (schema-ignoring model,
+    /// or one that never emitted the fence).
+    struct ProseModel {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl CompactionModel for ProseModel {
+        async fn complete(
+            &self,
+            _system: &str,
+            _: &[Message],
+        ) -> Result<(Message, ProviderUsage), ProviderError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            let output = "The session fixed the context popover clamp in app.js and committed it; \
+                          the open work is the compact path, verified with node --check plus a \
+                          check of the served file."
+                .to_string();
+            Ok((
+                Message::assistant().with_text(output),
+                ProviderUsage::new("fake".into(), Usage::new(Some(100), Some(60), Some(160))),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_prose_summary_is_kept_instead_of_aborting() {
+        let model = ProseModel {
+            calls: AtomicUsize::new(0),
+        };
+        let messages = vec![Message::user().with_text("x".repeat(9_000))];
+        let result = summarize_in_chunks(
+            &model,
+            &FakeEstimator,
+            &Templates::default(),
+            &messages,
+            8_000,
+            8192,
+        )
+        .await
+        .expect("a complete non-JSON summary must not abort the compaction");
+        assert!(!result.structured);
+        assert!(result.message.as_concat_text().contains("popover clamp"));
+    }
+
+    /// A model whose multi-message batches are cut off at the output limit, exactly
+    /// where a big batch stops mid-JSON.
+    struct TruncatingModel {
+        calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl CompactionModel for TruncatingModel {
+        async fn complete(
+            &self,
+            system: &str,
+            _: &[Message],
+        ) -> Result<(Message, ProviderUsage), ProviderError> {
+            self.calls.fetch_add(1, Ordering::Relaxed);
+            let sentinels = ('A'..='L')
+                .filter(|letter| system.contains(&format!("sentinel-{letter}")))
+                .count();
+            if sentinels > 1 {
+                let output = r#"```json
+{"user_intent": ["revisar el batch", "la tarea pendiente es"#
+                    .to_string();
+                return Ok((
+                    Message::assistant().with_text(output),
+                    ProviderUsage::new("fake".into(), Usage::new(Some(100), Some(8192), Some(8292)))
+                        .with_finish_reasons(vec!["length".to_string()]),
+                ));
+            }
+            let output = serde_json::json!({
+                "user_intent": ["un mensaje"],
+                "pending_tasks": ["seguir"]
+            })
+            .to_string();
+            Ok((
+                Message::assistant().with_text(output),
+                ProviderUsage::new("fake".into(), Usage::new(Some(50), Some(20), Some(70))),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn truncated_batch_is_split_instead_of_aborting() {
+        let model = TruncatingModel {
+            calls: AtomicUsize::new(0),
+        };
+        let messages = ('A'..='D')
+            .map(|letter| {
+                Message::user().with_text(format!("sentinel-{letter} {}", "x".repeat(400)))
+            })
+            .collect::<Vec<_>>();
+        let minimum = input_tokens(
+            &FakeEstimator,
+            &Templates::default(),
+            &[format_message_for_compacting(&messages[0])],
+        )
+        .await
+        .unwrap();
+
+        let result = summarize_in_chunks(
+            &model,
+            &FakeEstimator,
+            &Templates::default(),
+            &messages,
+            minimum + 110,
+            8192,
+        )
+        .await
+        .expect("a truncated batch must be split instead of aborting the compaction");
+
         assert!(
-            chain.contains("malformed") || chain.contains("exceeds"),
-            "{chain}"
+            model.calls.load(Ordering::Relaxed) > 1,
+            "the truncated batch must have been split"
         );
+        assert!(result.message.as_concat_text().contains("un mensaje"));
     }
 }
