@@ -39,7 +39,7 @@ export type WindowProps = {
   width?: number;
 };
 
-export type GooseApp = McpAppResource &
+export type AegisApp = McpAppResource &
   WindowProps & {
     mcpServers?: string[];
     prd?: string | null;

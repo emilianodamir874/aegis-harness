@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Experimental, community-contributed RISC-V setup. This configuration is not
-# officially supported by the goose project.
+# officially supported by the aegis project.
 # This script vendors dependencies and applies necessary patches for V8 152.2.0.
 
 set -euo pipefail
@@ -34,7 +34,7 @@ verify_sha256() {
     fi
 }
 
-echo "=== Setting up goose for RISC-V build ==="
+echo "=== Setting up aegis for RISC-V build ==="
 echo "Repository: $REPO_ROOT"
 echo ""
 
@@ -145,7 +145,7 @@ echo "8. Updating root Cargo.toml..."
 cd "$REPO_ROOT"
 
 # Drop the vendor/v8 shim from the workspace and exclude it plus rusty_v8.
-# The shim pulls in `v8-goose`, which declares `links = "rusty_v8"`; once the
+# The shim pulls in `v8-aegis`, which declares `links = "rusty_v8"`; once the
 # patch below resolves denoland's `v8` 152 (also `links = "rusty_v8"`), a
 # workspace containing both fails with "more than one crate with
 # links=rusty_v8". Use awk for portability (GNU/BSD sed multi-line differs).
@@ -191,10 +191,10 @@ fi
 
 echo "   ✓ Done"
 
-# 9. Update crates/goose/Cargo.toml
-echo "9. Updating crates/goose/Cargo.toml..."
-sed -i 's/icu_calendar = { version = "=2\.1\.1"/icu_calendar = { version = ">=2.1"/' "$REPO_ROOT/crates/goose/Cargo.toml"
-sed -i 's/icu_locale = { version = "=2\.1\.1"/icu_locale = { version = ">=2.1"/' "$REPO_ROOT/crates/goose/Cargo.toml"
+# 9. Update crates/aegis/Cargo.toml
+echo "9. Updating crates/aegis/Cargo.toml..."
+sed -i 's/icu_calendar = { version = "=2\.1\.1"/icu_calendar = { version = ">=2.1"/' "$REPO_ROOT/crates/aegis/Cargo.toml"
+sed -i 's/icu_locale = { version = "=2\.1\.1"/icu_locale = { version = ">=2.1"/' "$REPO_ROOT/crates/aegis/Cargo.toml"
 echo "   ✓ Done"
 
 # Note: update.rs already handles RISC-V (asset name + self-update bail) in
@@ -228,7 +228,7 @@ echo ""
 echo "=== Setup complete! ==="
 echo ""
 echo "To build for RISC-V:"
-echo "  cargo build --release --target riscv64gc-unknown-linux-gnu -p goose-cli --bin goose"
+echo "  cargo build --release --target riscv64gc-unknown-linux-gnu -p aegis-cli --bin aegis"
 echo ""
 echo "Output binary:"
-echo "  target/riscv64gc-unknown-linux-gnu/release/goose"
+echo "  target/riscv64gc-unknown-linux-gnu/release/aegis"

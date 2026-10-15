@@ -48,7 +48,7 @@ const i18n = defineMessages({
   },
   enterPathPlaceholder: {
     id: 'dirSwitcher.enterPathPlaceholder',
-    defaultMessage: 'Enter an absolute path (e.g. /home/goose/workspace)',
+    defaultMessage: 'Enter an absolute path (e.g. /home/aegis/workspace)',
   },
   enterPathInvalid: {
     id: 'dirSwitcher.enterPathInvalid',

@@ -2,7 +2,7 @@ import { ModeSection } from '../mode/ModeSection';
 import { DictationSettings } from '../dictation/DictationSettings';
 import { SecurityToggle } from '../security/SecurityToggle';
 import { ResponseStylesSection } from '../response_styles/ResponseStylesSection';
-import { GoosehintsSection } from './GoosehintsSection';
+import { AegishintsSection } from './AegishintsSection';
 import { LiveVoiceSettings } from './LiveVoiceSettings';
 import { SpellcheckToggle } from './SpellcheckToggle';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
@@ -16,7 +16,7 @@ const i18n = defineMessages({
   modeDescription: {
     id: 'chatSettings.modeDescription',
     defaultMessage:
-      'Choose the default mode Goose uses for new sessions. Existing sessions keep their current mode.',
+      'Choose the default mode Aegis uses for new sessions. Existing sessions keep their current mode.',
   },
   responseStylesTitle: {
     id: 'chatSettings.responseStylesTitle',
@@ -24,7 +24,7 @@ const i18n = defineMessages({
   },
   responseStylesDescription: {
     id: 'chatSettings.responseStylesDescription',
-    defaultMessage: 'Choose how Goose should format and style its responses',
+    defaultMessage: 'Choose how Aegis should format and style its responses',
   },
 });
 
@@ -45,7 +45,7 @@ export default function ChatSettingsSection() {
 
       <Card className="pb-2 rounded-lg">
         <CardContent className="px-2">
-          <GoosehintsSection />
+          <AegishintsSection />
         </CardContent>
       </Card>
 

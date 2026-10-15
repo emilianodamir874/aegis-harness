@@ -62,8 +62,8 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
     const loadThreshold = async () => {
       try {
         const [threshold, limit] = await Promise.all([
-          read('GOOSE_AUTO_COMPACT_THRESHOLD', false),
-          read('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', false),
+          read('AEGIS_AUTO_COMPACT_THRESHOLD', false),
+          read('AEGIS_AUTO_COMPACT_TOKEN_LIMIT', false),
         ]);
         if (threshold !== undefined && threshold !== null && typeof threshold === 'number') {
           setLoadedThreshold(threshold);
@@ -97,11 +97,11 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
     setIsSaving(true);
     try {
       if (editingTokenLimit) {
-        await upsert('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', validValue, false);
+        await upsert('AEGIS_AUTO_COMPACT_TOKEN_LIMIT', validValue, false);
         setTokenLimit(validValue);
       } else {
         const newThreshold = validValue / 100;
-        await upsert('GOOSE_AUTO_COMPACT_THRESHOLD', newThreshold, false);
+        await upsert('AEGIS_AUTO_COMPACT_THRESHOLD', newThreshold, false);
         setLoadedThreshold(newThreshold);
         alert.onThresholdChange?.(newThreshold);
       }

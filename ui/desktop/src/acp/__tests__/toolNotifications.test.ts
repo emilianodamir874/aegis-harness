@@ -38,7 +38,7 @@ describe('toolNotificationEvent', () => {
       type: 'Notification',
       request_id: 'tool-1',
       message: {
-        method: 'goose/live_output',
+        method: 'aegis/live_output',
         params: {
           sequence: 2,
           chunks: [

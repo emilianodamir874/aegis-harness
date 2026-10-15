@@ -23,18 +23,18 @@ test-buzz:
 # Default release command
 release-binary:
     @echo "Building release version..."
-    cargo build --release -p goose-cli --bin goose
+    cargo build --release -p aegis-cli --bin aegis
     @just copy-binary
 
 # Build Windows executable on a Windows host
 [unix]
 release-windows:
-    @echo "just release-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-windows.yml for CI builds."
+    @echo "just release-windows requires a Windows host because Aegis Windows releases build the MSVC target. Use .github/workflows/bundle-windows.yml for CI builds."
     @exit 1
 
 [windows]
 release-windows:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p goose-cli --bin goose; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/goose.exe"'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p aegis-cli --bin aegis; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/aegis.exe"'
 
 # Build for Intel Mac
 release-intel:
@@ -43,25 +43,25 @@ release-intel:
     @just copy-binary-intel
 
 copy-binary BUILD_MODE="release":
-    @rm -f ./ui/desktop/src/bin/goosed
-    @if [ -f ./target/{{BUILD_MODE}}/goose ]; then \
-        echo "Copying goose CLI binary from target/{{BUILD_MODE}}..."; \
-        rm -f ./ui/desktop/src/bin/goose; \
-        cp -p ./target/{{BUILD_MODE}}/goose ./ui/desktop/src/bin/; \
+    @rm -f ./ui/desktop/src/bin/aegisd
+    @if [ -f ./target/{{BUILD_MODE}}/aegis ]; then \
+        echo "Copying aegis CLI binary from target/{{BUILD_MODE}}..."; \
+        rm -f ./ui/desktop/src/bin/aegis; \
+        cp -p ./target/{{BUILD_MODE}}/aegis ./ui/desktop/src/bin/; \
     else \
-        echo "goose CLI binary not found in target/{{BUILD_MODE}}"; \
+        echo "aegis CLI binary not found in target/{{BUILD_MODE}}"; \
         exit 1; \
     fi
 
 # Copy binary command for Intel build
 copy-binary-intel:
-    @rm -f ./ui/desktop/src/bin/goosed
-    @if [ -f ./target/x86_64-apple-darwin/release/goose ]; then \
-        echo "Copying Intel goose CLI binary to ui/desktop/src/bin..."; \
-        rm -f ./ui/desktop/src/bin/goose; \
-        cp -p ./target/x86_64-apple-darwin/release/goose ./ui/desktop/src/bin/; \
+    @rm -f ./ui/desktop/src/bin/aegisd
+    @if [ -f ./target/x86_64-apple-darwin/release/aegis ]; then \
+        echo "Copying Intel aegis CLI binary to ui/desktop/src/bin..."; \
+        rm -f ./ui/desktop/src/bin/aegis; \
+        cp -p ./target/x86_64-apple-darwin/release/aegis ./ui/desktop/src/bin/; \
     else \
-        echo "Intel goose CLI binary not found."; \
+        echo "Intel aegis CLI binary not found."; \
         exit 1; \
     fi
 
@@ -73,11 +73,11 @@ copy-binary-windows:
 
 [windows]
 copy-binary-windows:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (Test-Path ./target/x86_64-pc-windows-msvc/release/goose.exe) { \
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'if (Test-Path ./target/x86_64-pc-windows-msvc/release/aegis.exe) { \
         Write-Host "Copying Windows binary to ui/desktop/src/bin..."; \
         New-Item -ItemType Directory -Force "./ui/desktop/src/bin" | Out-Null; \
-        Remove-Item -Path "./ui/desktop/src/bin/goosed.exe" -Force -ErrorAction SilentlyContinue; \
-        Copy-Item -Path "./target/x86_64-pc-windows-msvc/release/goose.exe" -Destination "./ui/desktop/src/bin/" -Force; \
+        Remove-Item -Path "./ui/desktop/src/bin/aegisd.exe" -Force -ErrorAction SilentlyContinue; \
+        Copy-Item -Path "./target/x86_64-pc-windows-msvc/release/aegis.exe" -Destination "./ui/desktop/src/bin/" -Force; \
     } else { \
         Write-Host "Windows binary not found." -ForegroundColor Red; \
         exit 1; \
@@ -93,20 +93,20 @@ run-ui-playwright:
     #!/usr/bin/env sh
     just release-binary
     echo "Running UI with Playwright debugging..."
-    RUN_DIR="$HOME/goose-runs/$(date +%Y%m%d-%H%M%S)"
+    RUN_DIR="$HOME/aegis-runs/$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$RUN_DIR"
     echo "Using isolated directory: $RUN_DIR"
-    cd ui/desktop && ENABLE_PLAYWRIGHT=true GOOSE_PATH_ROOT="$RUN_DIR" pnpm run start-gui
+    cd ui/desktop && ENABLE_PLAYWRIGHT=true AEGIS_PATH_ROOT="$RUN_DIR" pnpm run start-gui
 
 run-ui-only:
     @echo "Running UI..."
     cd ui/desktop && pnpm install && pnpm run start-gui
 
 debug-ui:
-    @echo "🚀 Starting goose frontend in external ACP backend mode"
+    @echo "🚀 Starting aegis frontend in external ACP backend mode"
     cd ui/desktop && \
-    export GOOSE_EXTERNAL_BACKEND=true && \
-    export GOOSE_SERVER__SECRET_KEY="${GOOSE_SERVER__SECRET_KEY:-test}" && \
+    export AEGIS_EXTERNAL_BACKEND=true && \
+    export AEGIS_SERVER__SECRET_KEY="${AEGIS_SERVER__SECRET_KEY:-test}" && \
     pnpm install && \
     pnpm run start-gui
 
@@ -118,7 +118,7 @@ debug-ui:
 # 4. If not auto-detected, click "Configure" and add: localhost:9229
 
 debug-ui-main-process:
-	@echo "🔍 Starting goose UI with main process debugging enabled"
+	@echo "🔍 Starting aegis UI with main process debugging enabled"
 	@just release-binary
 	cd ui/desktop && \
 	pnpm install && \
@@ -131,8 +131,8 @@ package-ui:
     @echo "Packaging desktop app..."
     cd ui/desktop && pnpm install && pnpm run package
     @echo "Signing with entitlements..."
-    codesign --force --deep --sign - --entitlements ui/desktop/entitlements.plist ui/desktop/out/Goose-darwin-arm64/Goose.app
-    @echo "Done! Launch with: open ui/desktop/out/Goose-darwin-arm64/Goose.app"
+    codesign --force --deep --sign - --entitlements ui/desktop/entitlements.plist ui/desktop/out/Aegis-darwin-arm64/Aegis.app
+    @echo "Done! Launch with: open ui/desktop/out/Aegis-darwin-arm64/Aegis.app"
 
 # Run UI with latest (Windows version)
 run-ui-windows:
@@ -149,14 +149,14 @@ run-docs:
 # Run server
 run-server:
     @echo "Running external ACP backend..."
-    GOOSE_SERVER__SECRET_KEY="${GOOSE_SERVER__SECRET_KEY:-test}" cargo run -p goose-cli --bin goose -- serve --platform desktop --enable-scheduler --host 127.0.0.1 --port 3000
+    AEGIS_SERVER__SECRET_KEY="${AEGIS_SERVER__SECRET_KEY:-test}" cargo run -p aegis-cli --bin aegis -- serve --platform desktop --enable-scheduler --host 127.0.0.1 --port 3000
 
 # Check if checked-in ACP artifacts are up-to-date and the docs can be rendered
 check-acp-artifacts: generate-acp-types generate-acp-docs
     #!/usr/bin/env bash
     set -e
     echo "🔍 Checking generated ACP artifacts are up-to-date..."
-    if ! git diff --exit-code crates/goose/acp-schema.json crates/goose/acp-meta.json ui/goose-acp-client/src/generated/; then
+    if ! git diff --exit-code crates/aegis/acp-schema.json crates/aegis/acp-meta.json ui/aegis-acp-client/src/generated/; then
       echo ""
       echo "❌ ACP generated files are out of date!"
       echo ""
@@ -167,7 +167,7 @@ check-acp-artifacts: generate-acp-types generate-acp-docs
 
 # Build the lean ACP binary
 build-lean:
-    cargo build -p goose --bin goose-acp \
+    cargo build -p aegis --bin aegis-acp \
       --profile lean \
       --no-default-features \
       --features native-tls,online-model-meta
@@ -178,7 +178,7 @@ build-lean:
 # A single cross-platform number would either be unreachable on Linux or
 # useless as a regression signal on macOS.
 
-# Enforce the lean binary's size budget (override with GOOSE_LEAN_MAX_BYTES)
+# Enforce the lean binary's size budget (override with AEGIS_LEAN_MAX_BYTES)
 check-lean-size: build-lean
     #!/usr/bin/env bash
     set -euo pipefail
@@ -186,28 +186,28 @@ check-lean-size: build-lean
       Darwin) default_max_bytes=17825792 ;;
       *) default_max_bytes=23068672 ;;
     esac
-    max_bytes="${GOOSE_LEAN_MAX_BYTES:-$default_max_bytes}"
+    max_bytes="${AEGIS_LEAN_MAX_BYTES:-$default_max_bytes}"
 
-    binary="target/lean/goose-acp"
+    binary="target/lean/aegis-acp"
     bytes=$(wc -c < "$binary" | tr -d '[:space:]')
     mib=$(awk -v bytes="$bytes" 'BEGIN { printf "%.2f", bytes / 1024 / 1024 }')
     printf '%s: %s bytes (%s MiB)\n' "$binary" "$bytes" "$mib"
 
     if (( bytes > max_bytes )); then
-      printf 'lean binary exceeds budget of %s bytes; set GOOSE_LEAN_MAX_BYTES to override\n' "$max_bytes" >&2
+      printf 'lean binary exceeds budget of %s bytes; set AEGIS_LEAN_MAX_BYTES to override\n' "$max_bytes" >&2
       exit 1
     fi
 
 # Generate ACP JSON schema from Rust types
 generate-acp-schema:
     @echo "Generating ACP schema..."
-    cd crates/goose && cargo run --features code-mode,local-inference,aws-providers,telemetry,otel,rustls-tls,system-keyring --bin generate-acp-schema
-    @echo "ACP schema generated: crates/goose/acp-schema.json, crates/goose/acp-meta.json"
+    cd crates/aegis && cargo run --features code-mode,local-inference,aws-providers,telemetry,otel,rustls-tls,system-keyring --bin generate-acp-schema
+    @echo "ACP schema generated: crates/aegis/acp-schema.json, crates/aegis/acp-meta.json"
 
 # Generate ACP TypeScript types from JSON schema (requires generate-acp-schema first)
 generate-acp-types: generate-acp-schema
     @echo "Generating ACP TypeScript types..."
-    cd ui/goose-acp-client && npx tsx generate-schema.ts
+    cd ui/aegis-acp-client && npx tsx generate-schema.ts
     @echo "ACP TypeScript types generated for the ACP client package."
 
 # Generate ACP documentation from the existing JSON schema and metadata
@@ -219,13 +219,13 @@ generate-acp-docs:
 # Build ACP client TypeScript package (schema + types + compile)
 build-acp-client: generate-acp-types
     @echo "Compiling ACP TypeScript..."
-    cd ui/goose-acp-client && pnpm run build:ts
+    cd ui/aegis-acp-client && pnpm run build:ts
     @echo "ACP client package built."
 
 # Generate manpages for the CLI
 generate-manpages:
     @echo "Generating manpages..."
-    cargo run -p goose-cli --bin generate_manpages
+    cargo run -p aegis-cli --bin generate_manpages
     @echo "Manpages generated at target/man/"
 
 # make GUI with latest binary
@@ -240,7 +240,7 @@ make-ui:
 # make GUI with latest Windows binary on a Windows host
 [unix]
 make-ui-windows:
-    @echo "just make-ui-windows requires a Windows host because Goose Windows releases build the MSVC target. Use .github/workflows/bundle-windows.yml for CI builds."
+    @echo "just make-ui-windows requires a Windows host because Aegis Windows releases build the MSVC target. Use .github/workflows/bundle-windows.yml for CI builds."
     @exit 1
 
 [windows]
@@ -351,12 +351,12 @@ prepare-release version:
         Cargo.toml \
         Cargo.lock \
         ui/desktop/package.json \
-        ui/goose-acp-client/package.json \
-        ui/goose-acp/package.json \
-        ui/goose-binary/*/package.json \
+        ui/aegis-acp-client/package.json \
+        ui/aegis-acp/package.json \
+        ui/aegis-binary/*/package.json \
         ui/pnpm-lock.yaml \
-        crates/goose-provider-types/src/canonical/data/canonical_models.json \
-        crates/goose-provider-types/src/canonical/data/provider_metadata.json
+        crates/aegis-provider-types/src/canonical/data/canonical_models.json \
+        crates/aegis-provider-types/src/canonical/data/provider_metadata.json
     @git commit --message "chore(release): release version {{ version }}"
 
 # extract version from Cargo.toml
@@ -421,7 +421,7 @@ win-app-deps:
 win-copy-win profile:
   copy target{{s}}{{profile}}{{s}}*.exe ui{{s}}desktop{{s}}src{{s}}bin
   copy target{{s}}{{profile}}{{s}}*.dll ui{{s}}desktop{{s}}src{{s}}bin
-  if exist ui{{s}}desktop{{s}}src{{s}}bin{{s}}goosed.exe del /f /q ui{{s}}desktop{{s}}src{{s}}bin{{s}}goosed.exe
+  if exist ui{{s}}desktop{{s}}src{{s}}bin{{s}}aegisd.exe del /f /q ui{{s}}desktop{{s}}src{{s}}bin{{s}}aegisd.exe
 
 ### "Other" copy {release|debug} files to ui/desktop/src/bin
 ### s = os dependent file separator
@@ -466,7 +466,7 @@ win-total-rls *allparam:
 
 # Build the binaries the MCP conformance driver needs.
 mcp-conformance-build:
-  cargo build -p goose-cli --bin goose --bin mcp_conformance_driver
+  cargo build -p aegis-cli --bin aegis --bin mcp_conformance_driver
 
 # suite: all, core, extensions, backcompat, auth, metadata, draft, sep-835
 # build: "false" reuses the existing target/debug binaries instead of rebuilding
@@ -474,8 +474,8 @@ mcp-conformance-build:
 # Example: just mcp-conformance 2025-11-25 auth
 # Example: just mcp-conformance 2025-11-25 auth 0.2.0-alpha.10
 # Example: just mcp-conformance 2025-11-25 auth 0.2.0-alpha.10 false
-# Example: just mcp-conformance 2025-11-25 all 0.2.0-alpha.10 true crates/goose-cli/tests/mcp-conformance/expected-failures-2025-11-25-0.2.0-alpha.10.yaml
-[doc("Run an MCP client conformance suite against Goose.")]
+# Example: just mcp-conformance 2025-11-25 all 0.2.0-alpha.10 true crates/aegis-cli/tests/mcp-conformance/expected-failures-2025-11-25-0.2.0-alpha.10.yaml
+[doc("Run an MCP client conformance suite against Aegis.")]
 mcp-conformance version="2025-11-25" suite="all" conformance_version="0.2.0-alpha.10" build="true" baseline="":
   #!/usr/bin/env bash
   set -euo pipefail
@@ -489,15 +489,15 @@ mcp-conformance version="2025-11-25" suite="all" conformance_version="0.2.0-alph
   if [ -n "{{baseline}}" ]; then
     baseline_args=(--expected-failures "{{baseline}}")
   fi
-  export GOOSE_BIN="$PWD/target/debug/goose"
-  GOOSE_DISABLE_KEYRING=1 npx -y @modelcontextprotocol/conformance@{{conformance_version}} client --command "$PWD/target/debug/mcp_conformance_driver" --spec-version "{{version}}" --suite "{{suite}}" ${baseline_args[@]+"${baseline_args[@]}"}
+  export AEGIS_BIN="$PWD/target/debug/aegis"
+  AEGIS_DISABLE_KEYRING=1 npx -y @modelcontextprotocol/conformance@{{conformance_version}} client --command "$PWD/target/debug/mcp_conformance_driver" --spec-version "{{version}}" --suite "{{suite}}" ${baseline_args[@]+"${baseline_args[@]}"}
 
 build-test-tools:
-  cargo build -p goose-test
+  cargo build -p aegis-test
 
 record-mcp-tests: build-test-tools
-  GOOSE_RECORD_MCP=1 cargo test --package goose --test mcp_integration_test
-  git add crates/goose/tests/mcp_replays/
+  AEGIS_RECORD_MCP=1 cargo test --package aegis --test mcp_integration_test
+  git add crates/aegis/tests/mcp_replays/
 
 # =============================================================================
 # Fork-local recipes (Windows host, Emiliano): canonical build/test loop.
@@ -508,39 +508,39 @@ record-mcp-tests: build-test-tools
 fmt:
     cargo fmt --all
 
-# (fork) Canonical compile gate for the goose lib (mismas features que test-lib / CI)
+# (fork) Canonical compile gate for the aegis lib (mismas features que test-lib / CI)
 check-lib:
-    cargo check -p goose --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
+    cargo check -p aegis --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
 
-# (fork) Canonical compile gate for the serve binary (feature set que usa goose-web)
+# (fork) Canonical compile gate for the serve binary (feature set que usa aegis-web)
 check-serve:
-    cargo check -p goose-cli --bin goose --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
+    cargo check -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
 
 # (fork) Compile gate for the CLI (installed feature set) INCLUDING tests
 check-tests:
-    cargo check --tests -p goose-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall
+    cargo check --tests -p aegis-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall
 
 # (fork) Build the reduced-feature CLI variant (debug)
 build-cli:
-    cargo build -p goose-cli --bin goose --no-default-features --features rustls-tls,scheduler,bundled-mcp
+    cargo build -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp
 
-# (fork) Ship a new-named debug binary: just ship goose-terminal-vN
+# (fork) Ship a new-named debug binary: just ship aegis-terminal-vN
 ship name:
-    cargo rustc -p goose-cli --bin goose --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall -- -o target/debug/{{name}}.exe
+    cargo rustc -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall -- -o target/debug/{{name}}.exe
 
-# (fork) Run the goose lib suite with CI's feature set
+# (fork) Run the aegis lib suite with CI's feature set
 test-lib:
-    cargo test -p goose --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
+    cargo test -p aegis --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
 
 # (fork) Run the PTY integration suite (interactive_ui)
 test-ui:
-    cargo test -j 1 -p goose-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp --test interactive_ui -- --test-threads=1
+    cargo test -j 1 -p aegis-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp --test interactive_ui -- --test-threads=1
 
 # (fork) Provider tests (antigravity + open_design)
 test-providers:
-    cargo test -p goose --features scheduler --lib providers::antigravity::tests
-    cargo test -p goose --features scheduler --lib providers::open_design::tests
+    cargo test -p aegis --features scheduler --lib providers::antigravity::tests
+    cargo test -p aegis --features scheduler --lib providers::open_design::tests
 
 # (fork) Regenerate prompt_manager snapshots (they embed ~/.agents/skills)
 snap:
-    $env:INSTA_UPDATE="always"; cargo test -j 1 -p goose --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http --lib agents::prompt_manager::tests
+    $env:INSTA_UPDATE="always"; cargo test -j 1 -p aegis --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http --lib agents::prompt_manager::tests

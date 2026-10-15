@@ -27,7 +27,7 @@
     "defaultMessage": "Delete \"{name}\"? This cannot be undone."
   },
   "appsView.description": {
-    "defaultMessage": "來自您 MCP 伺服器的應用程式，以及由 goose 自行建立的應用程式。您可以透過聊天介面要求它建立新的應用程式，它們便會出現在這裡。"
+    "defaultMessage": "來自您 MCP 伺服器的應用程式，以及由 aegis 自行建立的應用程式。您可以透過聊天介面要求它建立新的應用程式，它們便會出現在這裡。"
   },
   "appsView.errorLoading": {
     "defaultMessage": "載入應用程式時發生錯誤：{error}"
@@ -45,7 +45,7 @@
     "defaultMessage": "正在載入應用程式…"
   },
   "appsView.noAppsDescription": {
-    "defaultMessage": "開啟聊天並向 goose 索取您想要的應用程式。它可以為您建立一個，並顯示在這裡。或者，如果有人分享了應用程式，您可以使用上方的按鈕匯入。"
+    "defaultMessage": "開啟聊天並向 aegis 索取您想要的應用程式。它可以為您建立一個，並顯示在這裡。或者，如果有人分享了應用程式，您可以使用上方的按鈕匯入。"
   },
   "appsView.noAppsTitle": {
     "defaultMessage": "沒有可用的應用程式"
@@ -84,7 +84,7 @@
     "defaultMessage": "憑證已刪除"
   },
   "authSettings.description": {
-    "defaultMessage": "管理 goose 在本機儲存的供應商憑證。"
+    "defaultMessage": "管理 aegis 在本機儲存的供應商憑證。"
   },
   "authSettings.empty": {
     "defaultMessage": "找不到本機儲存的供應商憑證。"
@@ -171,10 +171,10 @@
     "defaultMessage": "啟動"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "按一下這裡讓 Goose 重新回到焦點。"
+    "defaultMessage": "按一下這裡讓 Aegis 重新回到焦點。"
   },
   "chat.notification.taskComplete.title": {
-    "defaultMessage": "Goose 已完成工作。"
+    "defaultMessage": "Aegis 已完成工作。"
   },
   "chatInput.contextWindow": {
     "defaultMessage": "上下文視窗"
@@ -225,13 +225,13 @@
     "defaultMessage": "正在等待影像儲存…"
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "選擇 Goose 用於新工作階段的預設模式。現有的工作階段會維持目前的模式。"
+    "defaultMessage": "選擇 Aegis 用於新工作階段的預設模式。現有的工作階段會維持目前的模式。"
   },
   "chatSettings.modeTitle": {
     "defaultMessage": "預設模式"
   },
   "chatSettings.responseStylesDescription": {
-    "defaultMessage": "選擇 Goose 設定回應格式與樣式的方式"
+    "defaultMessage": "選擇 Aegis 設定回應格式與樣式的方式"
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "回應樣式"
@@ -252,10 +252,10 @@
     "defaultMessage": "設定編輯器"
   },
   "configSettings.description": {
-    "defaultMessage": "編輯您的 goose 設定"
+    "defaultMessage": "編輯您的 aegis 設定"
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "編輯您的 goose 設定（{provider} 的目前設定）"
+    "defaultMessage": "編輯您的 aegis 設定（{provider} 的目前設定）"
   },
   "configSettings.done": {
     "defaultMessage": "完成"
@@ -327,7 +327,7 @@
     "defaultMessage": "最大回合數"
   },
   "conversationLimitsDropdown.maxTurnsDescription": {
-    "defaultMessage": "Goose 要求使用者輸入前的最大代理回合數"
+    "defaultMessage": "Aegis 要求使用者輸入前的最大代理回合數"
   },
   "costTracker.costUnavailable": {
     "defaultMessage": "{model} 無可用的費用資料（輸入 {inputTokens} 個詞元，輸出 {outputTokens} 個詞元）"
@@ -783,7 +783,7 @@
     "defaultMessage": "編輯 {name} 設定"
   },
   "defaultCardButtons.getStarted": {
-    "defaultMessage": "開始使用 goose！"
+    "defaultMessage": "開始使用 aegis！"
   },
   "defaultProviderSetupForm.apiHostLabel": {
     "defaultMessage": "API 主機"
@@ -924,7 +924,7 @@
     "defaultMessage": "Enter path"
   },
   "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+    "defaultMessage": "Enter an absolute path (e.g. /home/aegis/workspace)"
   },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
@@ -963,7 +963,7 @@
     "defaultMessage": "資訊要求已取消。"
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Goose 需要您提供一些資訊。"
+    "defaultMessage": "Aegis 需要您提供一些資訊。"
   },
   "elicitationRequest.expired": {
     "defaultMessage": "此要求已過期。擴充功能需要重新詢問。"
@@ -1008,7 +1008,7 @@
     "defaultMessage": "發生錯誤。"
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Goose v{version} 發生錯誤。"
+    "defaultMessage": "Aegis v{version} 發生錯誤。"
   },
   "errorBoundary.heading": {
     "defaultMessage": "Honk！"
@@ -1191,7 +1191,7 @@
     "defaultMessage": "在此啟用的擴充功能會作為新聊天的預設值。您也可以在聊天期間切換使用中的擴充功能。"
   },
   "extensionsView.description": {
-    "defaultMessage": "這些擴充功能使用模型內容協定 (MCP)。它們可透過三個主要元件擴充 Goose 的能力：提示、資源與工具。{searchShortcut} 即可搜尋。"
+    "defaultMessage": "這些擴充功能使用模型內容協定 (MCP)。它們可透過三個主要元件擴充 Aegis 的能力：提示、資源與工具。{searchShortcut} 即可搜尋。"
   },
   "extensionsView.heading": {
     "defaultMessage": "擴充功能"
@@ -1209,19 +1209,19 @@
     "defaultMessage": "AA:BB:CC:… 或 sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "goose 預設會為您啟動伺服器，使用此選項以連線至外部 goose 伺服器"
+    "defaultMessage": "aegis 預設會為您啟動伺服器，使用此選項以連線至外部 aegis 伺服器"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "變更需要重新啟動 Goose 才會生效。新的聊天視窗將連線至外部伺服器。"
+    "defaultMessage": "變更需要重新啟動 Aegis 才會生效。新的聊天視窗將連線至外部伺服器。"
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "密鑰"
   },
   "externalBackendSection.secretKeyHelp": {
-    "defaultMessage": "在 Goose 伺服器上設定的密鑰 (GOOSE_SERVER__SECRET_KEY)"
+    "defaultMessage": "在 Aegis 伺服器上設定的密鑰 (AEGIS_SERVER__SECRET_KEY)"
   },
   "externalBackendSection.secretKeyPlaceholder": {
     "defaultMessage": "輸入伺服器的密鑰"
@@ -1230,10 +1230,10 @@
     "defaultMessage": "伺服器 URL"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "Enter the HTTP(S) base URL. Aegis checks /status and connects to /acp under this base."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Goose 伺服器"
+    "defaultMessage": "Aegis 伺服器"
   },
   "externalBackendSection.urlBaseError": {
     "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
@@ -1248,7 +1248,7 @@
     "defaultMessage": "使用外部伺服器"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "連線至在其他位置執行的 goose 伺服器（需要重新啟動應用程式）"
+    "defaultMessage": "連線至在其他位置執行的 aegis 伺服器（需要重新啟動應用程式）"
   },
   "externalBackendSection.workingDir": {
     "defaultMessage": "遠端工作目錄（選用）"
@@ -1257,70 +1257,70 @@
     "defaultMessage": "外部後端上的絕對路徑。留空時將傳送本機工作目錄。"
   },
   "externalBackendSection.workingDirPlaceholder": {
-    "defaultMessage": "/home/goose/workspace"
+    "defaultMessage": "/home/aegis/workspace"
   },
-  "goosehintsModal.close": {
+  "aegishintsModal.close": {
     "defaultMessage": "關閉"
   },
-  "goosehintsModal.developer": {
+  "aegishintsModal.developer": {
     "defaultMessage": "開發者"
   },
-  "goosehintsModal.dialogDescription": {
-    "defaultMessage": "提供有關您專案的額外內容，以改善與 Goose 的溝通"
+  "aegishintsModal.dialogDescription": {
+    "defaultMessage": "提供有關您專案的額外內容，以改善與 Aegis 的溝通"
   },
-  "goosehintsModal.dialogTitle": {
-    "defaultMessage": "設定專案提示 (.goosehints)"
+  "aegishintsModal.dialogTitle": {
+    "defaultMessage": "設定專案提示 (.aegishints)"
   },
-  "goosehintsModal.errorReading": {
-    "defaultMessage": "讀取 .goosehints 檔案時發生錯誤：{error}"
+  "aegishintsModal.errorReading": {
+    "defaultMessage": "讀取 .aegishints 檔案時發生錯誤：{error}"
   },
-  "goosehintsModal.failedToAccess": {
-    "defaultMessage": "無法存取 .goosehints 檔案"
+  "aegishintsModal.failedToAccess": {
+    "defaultMessage": "無法存取 .aegishints 檔案"
   },
-  "goosehintsModal.failedToSave": {
-    "defaultMessage": "無法儲存 .goosehints 檔案"
+  "aegishintsModal.failedToSave": {
+    "defaultMessage": "無法儲存 .aegishints 檔案"
   },
-  "goosehintsModal.fileCreating": {
-    "defaultMessage": "正在於此處建立新的 .goosehints 檔案：{filePath}"
+  "aegishintsModal.fileCreating": {
+    "defaultMessage": "正在於此處建立新的 .aegishints 檔案：{filePath}"
   },
-  "goosehintsModal.fileFound": {
-    "defaultMessage": "在此處找到 .goosehints 檔案：{filePath}"
+  "aegishintsModal.fileFound": {
+    "defaultMessage": "在此處找到 .aegishints 檔案：{filePath}"
   },
-  "goosehintsModal.helpText1": {
-    "defaultMessage": ".goosehints 是一個文字檔，用於提供有關您專案的額外內容，並改善與 Goose 的溝通。"
+  "aegishintsModal.helpText1": {
+    "defaultMessage": ".aegishints 是一個文字檔，用於提供有關您專案的額外內容，並改善與 Aegis 的溝通。"
   },
-  "goosehintsModal.helpText2": {
-    "defaultMessage": "請確認擴充功能頁面中已啟用 {bold} 擴充功能。使用 .goosehints 需要此擴充功能。您需要重新啟動工作階段，.goosehints 的更新才會生效。"
+  "aegishintsModal.helpText2": {
+    "defaultMessage": "請確認擴充功能頁面中已啟用 {bold} 擴充功能。使用 .aegishints 需要此擴充功能。您需要重新啟動工作階段，.aegishints 的更新才會生效。"
   },
-  "goosehintsModal.helpText3": {
+  "aegishintsModal.helpText3": {
     "defaultMessage": "如需更多資訊，請參閱 {link}。"
   },
-  "goosehintsModal.helpTextLink": {
-    "defaultMessage": "使用 .goosehints"
+  "aegishintsModal.helpTextLink": {
+    "defaultMessage": "使用 .aegishints"
   },
-  "goosehintsModal.placeholder": {
+  "aegishintsModal.placeholder": {
     "defaultMessage": "在此輸入專案提示…"
   },
-  "goosehintsModal.save": {
+  "aegishintsModal.save": {
     "defaultMessage": "儲存"
   },
-  "goosehintsModal.savedSuccessfully": {
+  "aegishintsModal.savedSuccessfully": {
     "defaultMessage": "已成功儲存"
   },
-  "goosehintsModal.saving": {
+  "aegishintsModal.saving": {
     "defaultMessage": "正在儲存…"
   },
-  "goosehintsSection.configure": {
+  "aegishintsSection.configure": {
     "defaultMessage": "設定"
   },
-  "goosehintsSection.description": {
-    "defaultMessage": "設定您專案的 .goosehints 檔案，為 Goose 提供額外內容"
+  "aegishintsSection.description": {
+    "defaultMessage": "設定您專案的 .aegishints 檔案，為 Aegis 提供額外內容"
   },
-  "goosehintsSection.title": {
-    "defaultMessage": "專案提示 (.goosehints)"
+  "aegishintsSection.title": {
+    "defaultMessage": "專案提示 (.aegishints)"
   },
-  "groupedExtensionLoadingToast.askGoose": {
-    "defaultMessage": "詢問 goose"
+  "groupedExtensionLoadingToast.askAegis": {
+    "defaultMessage": "詢問 aegis"
   },
   "groupedExtensionLoadingToast.collapseDetails": {
     "defaultMessage": "收合詳細資料"
@@ -1440,7 +1440,7 @@
     "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
-    "defaultMessage": "goose 圖片"
+    "defaultMessage": "aegis 圖片"
   },
   "imagePreview.clickToCollapse": {
     "defaultMessage": "按一下以收合"
@@ -1455,10 +1455,10 @@
     "defaultMessage": "取消"
   },
   "importRecipeForm.deeplinkHint": {
-    "defaultMessage": "貼上以「goose://recipe?config=」開頭的食譜深層連結"
+    "defaultMessage": "貼上以「aegis://recipe?config=」開頭的食譜深層連結"
   },
   "importRecipeForm.deeplinkPlaceholder": {
-    "defaultMessage": "在此貼上您的 goose://recipe?config=… 深層連結"
+    "defaultMessage": "在此貼上您的 aegis://recipe?config=… 深層連結"
   },
   "importRecipeForm.example": {
     "defaultMessage": "範例"
@@ -1488,7 +1488,7 @@
     "defaultMessage": "食譜檔案"
   },
   "importRecipeForm.reviewWarning": {
-    "defaultMessage": "在將食譜檔案加入您的 goose 介面之前，請務必檢閱其內容。"
+    "defaultMessage": "在將食譜檔案加入您的 aegis 介面之前，請務必檢閱其內容。"
   },
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "您的 YAML 或 JSON 檔案應遵循此結構。必填欄位為：title、description，以及 instructions 或 prompt 其中之一。"
@@ -1599,13 +1599,13 @@
     "defaultMessage": "應用程式快速鍵"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "這些快速鍵在 Goose 為使用中的應用程式時生效"
+    "defaultMessage": "這些快速鍵在 Aegis 為使用中的應用程式時生效"
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "全域快速鍵"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "這些快速鍵在整個系統都可使用，即使 Goose 並非焦點視窗"
+    "defaultMessage": "這些快速鍵在整個系統都可使用，即使 Aegis 並非焦點視窗"
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "搜尋快速鍵"
@@ -1647,10 +1647,10 @@
     "defaultMessage": "尋找上一個"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "從任何位置將 Goose 視窗帶到前景"
+    "defaultMessage": "從任何位置將 Aegis 視窗帶到前景"
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "聚焦 Goose 視窗"
+    "defaultMessage": "聚焦 Aegis 視窗"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "載入中…"
@@ -1662,7 +1662,7 @@
     "defaultMessage": "新對話"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "開啟新的 Goose 視窗"
+    "defaultMessage": "開啟新的 Aegis 視窗"
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "新對話視窗"
@@ -1701,7 +1701,7 @@
     "defaultMessage": "重設為預設值"
   },
   "keyboardShortcuts.restartDescription": {
-    "defaultMessage": "變更應用程式快速鍵（例如「新對話」、「設定」等）需要重新啟動 Goose 才會生效。全域快速鍵（聚焦視窗、快速啟動器）則會立即生效。"
+    "defaultMessage": "變更應用程式快速鍵（例如「新對話」、「設定」等）需要重新啟動 Aegis 才會生效。全域快速鍵（聚焦視窗、快速啟動器）則會立即生效。"
   },
   "keyboardShortcuts.restartRequired": {
     "defaultMessage": "需要重新啟動"
@@ -1731,7 +1731,7 @@
     "defaultMessage": "切換導覽"
   },
   "launcher.placeholder": {
-    "defaultMessage": "向 goose 詢問任何問題…"
+    "defaultMessage": "向 aegis 詢問任何問題…"
   },
   "liveVoice.connecting": {
     "defaultMessage": "Connecting Live voice"
@@ -1758,31 +1758,31 @@
     "defaultMessage": "Unmute microphone"
   },
   "liveVoiceSettings.description": {
-    "defaultMessage": "與 Goose 進行即時語音對話"
+    "defaultMessage": "與 Aegis 進行即時語音對話"
   },
   "liveVoiceSettings.title": {
     "defaultMessage": "即時語音"
   },
-  "loadingGoose.compacting": {
-    "defaultMessage": "goose 正在壓縮對話…"
+  "loadingAegis.compacting": {
+    "defaultMessage": "aegis 正在壓縮對話…"
   },
-  "loadingGoose.idle": {
-    "defaultMessage": "goose 正在處理…"
+  "loadingAegis.idle": {
+    "defaultMessage": "aegis 正在處理…"
   },
-  "loadingGoose.loadingConversation": {
+  "loadingAegis.loadingConversation": {
     "defaultMessage": "正在載入對話…"
   },
-  "loadingGoose.restartingAgent": {
+  "loadingAegis.restartingAgent": {
     "defaultMessage": "正在重新啟動工作階段…"
   },
-  "loadingGoose.streaming": {
-    "defaultMessage": "goose 正在處理…"
+  "loadingAegis.streaming": {
+    "defaultMessage": "aegis 正在處理…"
   },
-  "loadingGoose.thinking": {
-    "defaultMessage": "goose 正在思考…"
+  "loadingAegis.thinking": {
+    "defaultMessage": "aegis 正在思考…"
   },
-  "loadingGoose.waiting": {
-    "defaultMessage": "goose 正在等待…"
+  "loadingAegis.waiting": {
+    "defaultMessage": "aegis 正在等待…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "要刪除此模型嗎？您之後可以重新下載。"
@@ -2424,7 +2424,7 @@
     "defaultMessage": "伺服器可能正在啟動或暫時無法使用。"
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "無法連線到 Goose 伺服器"
+    "defaultMessage": "無法連線到 Aegis 伺服器"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "重試"
@@ -2433,10 +2433,10 @@
     "defaultMessage": "您的本機 AI 代理。連線 AI 模型供應商即可開始使用。"
   },
   "onboardingGuard.welcomeTitle": {
-    "defaultMessage": "歡迎使用 goose"
+    "defaultMessage": "歡迎使用 aegis"
   },
   "onboardingSuccess.allSet": {
-    "defaultMessage": "一切就緒，您可以開始使用 goose 了。"
+    "defaultMessage": "一切就緒，您可以開始使用 aegis 了。"
   },
   "onboardingSuccess.connectedTo": {
     "defaultMessage": "已連線到 {providerName}"
@@ -2451,7 +2451,7 @@
     "defaultMessage": "本機模型已就緒"
   },
   "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "匿名使用資料有助於改善 goose。我們絕不會收集您的對話、程式碼或個人資料。"
+    "defaultMessage": "匿名使用資料有助於改善 aegis。我們絕不會收集您的對話、程式碼或個人資料。"
   },
   "onboardingSuccess.privacyTitle": {
     "defaultMessage": "隱私權"
@@ -2619,10 +2619,10 @@
     "defaultMessage": "工作階段指標（持續時間、互動次數、詞元用量）"
   },
   "privacyInfoModal.collectVersion": {
-    "defaultMessage": "goose 版本與安裝方式"
+    "defaultMessage": "aegis 版本與安裝方式"
   },
   "privacyInfoModal.description": {
-    "defaultMessage": "匿名使用資料有助於我們瞭解 goose 的使用情況並找出可改善的方面。"
+    "defaultMessage": "匿名使用資料有助於我們瞭解 aegis 的使用情況並找出可改善的方面。"
   },
   "privacyInfoModal.neverCollect": {
     "defaultMessage": "我們絕不會收集您的對話、程式碼、工具引數、錯誤訊息或任何個人資料。您隨時可以在「設定」中變更此設定。"
@@ -2691,7 +2691,7 @@
     "defaultMessage": "無法儲存提示"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "自訂在不同情境中定義 goose 行為的提示。這些提示使用 Jinja2 範本語法。修改範本變數時請務必小心，因為不正確的變更可能會破壞功能。請與社群分享任何改善內容。"
+    "defaultMessage": "自訂在不同情境中定義 aegis 行為的提示。這些提示使用 Jinja2 範本語法。修改範本變數時請務必小心，因為不正確的變更可能會破壞功能。請與社群分享任何改善內容。"
   },
   "promptsSettings.promptEditingTitle": {
     "defaultMessage": "提示編輯"
@@ -2787,7 +2787,7 @@
     "defaultMessage": "正在登入..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "新增此提供者的 API 金鑰以整合至 goose"
+    "defaultMessage": "新增此提供者的 API 金鑰以整合至 aegis"
   },
   "providerConfigurationModal.browserWindowHint": {
     "defaultMessage": "將開啟瀏覽器視窗供您完成登入。"
@@ -2823,7 +2823,7 @@
     "defaultMessage": "錯誤"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "此提供者是在 goose 之外設定的。請依照下列步驟操作："
+    "defaultMessage": "此提供者是在 aegis 之外設定的。請依照下列步驟操作："
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "返回"
@@ -2907,7 +2907,7 @@
     "defaultMessage": "正在載入提供者..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "選取一個 AI 模型提供者以開始使用 goose。您需要使用各提供者產生的 API 金鑰，這些金鑰將會加密並儲存在本機。您隨時可以在設定中變更提供者。"
+    "defaultMessage": "選取一個 AI 模型提供者以開始使用 aegis。您需要使用各提供者產生的 API 金鑰，這些金鑰將會加密並儲存在本機。您隨時可以在設定中變更提供者。"
   },
   "providerSettings.otherProviders": {
     "defaultMessage": "其他提供者"
@@ -3480,7 +3480,7 @@
     "defaultMessage": "深層連結"
   },
   "scheduleModal.deepLinkPlaceholder": {
-    "defaultMessage": "在此貼上 goose://recipe 連結…"
+    "defaultMessage": "在此貼上 aegis://recipe 連結…"
   },
   "scheduleModal.editSchedule": {
     "defaultMessage": "編輯排程"
@@ -3495,7 +3495,7 @@
     "defaultMessage": "無法讀取所選檔案。"
   },
   "scheduleModal.invalidDeepLink": {
-    "defaultMessage": "無效的深層連結。請使用 goose://recipe 連結。"
+    "defaultMessage": "無效的深層連結。請使用 aegis://recipe 連結。"
   },
   "scheduleModal.invalidFileType": {
     "defaultMessage": "無效的檔案類型：請選擇 YAML 檔案（.yaml 或 .yml）"
@@ -3837,7 +3837,7 @@
     "defaultMessage": "聊天記錄"
   },
   "sessions.chatHistoryDesc": {
-    "defaultMessage": "檢視並搜尋您與 Goose 過去的對話。{shortcut} 即可搜尋。"
+    "defaultMessage": "檢視並搜尋您與 Aegis 過去的對話。{shortcut} 即可搜尋。"
   },
   "sessions.close": {
     "defaultMessage": "關閉"
@@ -3930,7 +3930,7 @@
     "defaultMessage": "已成功更新工作階段描述"
   },
   "settings.appearance.description": {
-    "defaultMessage": "設定 goose 在您系統上的顯示方式"
+    "defaultMessage": "設定 aegis 在您系統上的顯示方式"
   },
   "settings.appearance.title": {
     "defaultMessage": "外觀"
@@ -3945,13 +3945,13 @@
     "defaultMessage": "費用追蹤"
   },
   "settings.dockIcon.description": {
-    "defaultMessage": "在 Dock 中顯示 goose"
+    "defaultMessage": "在 Dock 中顯示 aegis"
   },
   "settings.dockIcon.title": {
     "defaultMessage": "Dock 圖示"
   },
   "settings.help.description": {
-    "defaultMessage": "回報問題或申請新功能，協助我們改善 goose"
+    "defaultMessage": "回報問題或申請新功能，協助我們改善 aegis"
   },
   "settings.help.reportBug": {
     "defaultMessage": "回報錯誤"
@@ -3963,7 +3963,7 @@
     "defaultMessage": "說明與意見回饋"
   },
   "settings.language.description": {
-    "defaultMessage": "選擇 goose 的顯示語言"
+    "defaultMessage": "選擇 aegis 的顯示語言"
   },
   "settings.language.english": {
     "defaultMessage": "English"
@@ -4020,7 +4020,7 @@
     "defaultMessage": "中文（繁體）"
   },
   "settings.menuBarIcon.description": {
-    "defaultMessage": "在選單列中顯示 goose"
+    "defaultMessage": "在選單列中顯示 aegis"
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "選單列圖示"
@@ -4041,7 +4041,7 @@
     "defaultMessage": "點選「通知」"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "在應用程式清單中找到並選取 goose"
+    "defaultMessage": "在應用程式清單中找到並選取 aegis"
   },
   "settings.notifications.modal.macStep4": {
     "defaultMessage": "啟用通知並依需求調整設定"
@@ -4059,7 +4059,7 @@
     "defaultMessage": "前往「系統」>「通知」"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "在應用程式清單中找到並選取 goose"
+    "defaultMessage": "在應用程式清單中找到並選取 aegis"
   },
   "settings.notifications.modal.winStep4": {
     "defaultMessage": "開啟通知並依需求調整設定"
@@ -4068,7 +4068,7 @@
     "defaultMessage": "開啟設定"
   },
   "settings.notifications.task.description": {
-    "defaultMessage": "當視窗在背景執行時，Goose 完成工作後發出通知"
+    "defaultMessage": "當視窗在背景執行時，Aegis 完成工作後發出通知"
   },
   "settings.notifications.task.title": {
     "defaultMessage": "工作完成通知"
@@ -4077,19 +4077,19 @@
     "defaultMessage": "通知"
   },
   "settings.preventSleep.description": {
-    "defaultMessage": "在 goose 執行工作時讓電腦保持喚醒狀態（螢幕仍可鎖定）"
+    "defaultMessage": "在 aegis 執行工作時讓電腦保持喚醒狀態（螢幕仍可鎖定）"
   },
   "settings.preventSleep.title": {
     "defaultMessage": "防止睡眠"
   },
   "settings.theme.description": {
-    "defaultMessage": "自訂 goose 的外觀與風格"
+    "defaultMessage": "自訂 aegis 的外觀與風格"
   },
   "settings.theme.title": {
     "defaultMessage": "佈景主題"
   },
   "settings.updates.description": {
-    "defaultMessage": "檢查並安裝更新，讓 goose 保持最佳運作狀態"
+    "defaultMessage": "檢查並安裝更新，讓 aegis 保持最佳運作狀態"
   },
   "settings.updates.title": {
     "defaultMessage": "更新"
@@ -4155,7 +4155,7 @@
     "defaultMessage": "找不到符合的技能"
   },
   "skillsView.noSkillsDescription": {
-    "defaultMessage": "技能會從 ~/.config/agents/skills/、.goose/skills/ 或其他支援目錄中的 SKILL.md 檔案載入。"
+    "defaultMessage": "技能會從 ~/.config/agents/skills/、.aegis/skills/ 或其他支援目錄中的 SKILL.md 檔案載入。"
   },
   "skillsView.noSkillsInstalled": {
     "defaultMessage": "未安裝任何技能"
@@ -4164,7 +4164,7 @@
     "defaultMessage": "搜尋技能..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "檢視可擴充 Goose 功能的已安裝技能。{shortcut} 即可搜尋。"
+    "defaultMessage": "檢視可擴充 Aegis 功能的已安裝技能。{shortcut} 即可搜尋。"
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "技能"
@@ -4407,10 +4407,10 @@
     "defaultMessage": "使用其他提供者"
   },
   "telemetryConsentPrompt.description": {
-    "defaultMessage": "您願意分享匿名使用資料以協助改善 goose 嗎？我們絕不會收集您的對話、程式碼或個人資料。"
+    "defaultMessage": "您願意分享匿名使用資料以協助改善 aegis 嗎？我們絕不會收集您的對話、程式碼或個人資料。"
   },
   "telemetryConsentPrompt.heading": {
-    "defaultMessage": "協助改善 goose"
+    "defaultMessage": "協助改善 aegis"
   },
   "telemetryConsentPrompt.learnMore": {
     "defaultMessage": "瞭解詳情"
@@ -4437,7 +4437,7 @@
     "defaultMessage": "隱私"
   },
   "telemetrySettings.toggleDescription": {
-    "defaultMessage": "分享匿名使用統計資料以協助改善 goose。"
+    "defaultMessage": "分享匿名使用統計資料以協助改善 aegis。"
   },
   "telemetrySettings.toggleLabel": {
     "defaultMessage": "匿名使用資料"
@@ -4517,14 +4517,14 @@
   "toolConfirmation.allowToolCallWithName": {
     "defaultMessage": "允許 {toolName}？"
   },
-  "toolConfirmation.gooseWouldLikeToCallWithName": {
-    "defaultMessage": "Goose 想要呼叫 {toolName}。要允許嗎？"
+  "toolConfirmation.aegisWouldLikeToCallWithName": {
+    "defaultMessage": "Aegis 想要呼叫 {toolName}。要允許嗎？"
   },
   "updateSection.autoDownload": {
-    "defaultMessage": "Goose 會在背景下載更新，並於您下次結束或重新啟動時安裝。"
+    "defaultMessage": "Aegis 會在背景下載更新，並於您下次結束或重新啟動時安裝。"
   },
   "updateSection.autoDownloadDisabledByEnv": {
-    "defaultMessage": "已透過 GOOSE_DISABLE_AUTO_DOWNLOAD 環境變數停用自動下載。"
+    "defaultMessage": "已透過 AEGIS_DISABLE_AUTO_DOWNLOAD 環境變數停用自動下載。"
   },
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "已停用自動下載。請點選「立即下載」以手動下載。"
@@ -4542,7 +4542,7 @@
     "defaultMessage": "停用自動下載更新"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "啟用後，Goose 會通知您有新版本，但不會自動下載。"
+    "defaultMessage": "啟用後，Aegis 會通知您有新版本，但不會自動下載。"
   },
   "updateSection.downloadNow": {
     "defaultMessage": "立即下載"

@@ -2,22 +2,22 @@
 sidebar_position: 9
 title: ACP Providers
 sidebar_label: ACP Providers
-description: Use ACP agents like Claude Code and Codex as goose providers with extension support
+description: Use ACP agents like Claude Code and Codex as aegis providers with extension support
 ---
 
 # ACP Providers
 
-goose supports [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) agents as providers. ACP is a standard protocol for communicating with coding agents, and there's a growing [registry](https://github.com/agentclientprotocol/registry) of agents that implement it.
+aegis supports [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) agents as providers. ACP is a standard protocol for communicating with coding agents, and there's a growing [registry](https://github.com/agentclientprotocol/registry) of agents that implement it.
 
-ACP providers pass goose [extensions](/docs/getting-started/using-extensions) through to the agent as MCP servers, so the agent can call your extensions directly.
+ACP providers pass aegis [extensions](/docs/getting-started/using-extensions) through to the agent as MCP servers, so the agent can call your extensions directly.
 
 :::tip Use Your Existing Subscriptions
-ACP providers let you use goose with your existing Claude Code or ChatGPT Plus/Pro subscriptions — no per-token API costs. They are the recommended replacement for the deprecated [CLI providers](/docs/guides/cli-providers).
+ACP providers let you use aegis with your existing Claude Code or ChatGPT Plus/Pro subscriptions — no per-token API costs. They are the recommended replacement for the deprecated [CLI providers](/docs/guides/cli-providers).
 :::
 
 :::warning Limitations
-- **No session fork or resume**: You can start new sessions, but `goose session resume` and `goose session fork` are not supported yet.
-- **ACP session ID differs from goose session ID**: Telemetry fields may not correlate across the two.
+- **No session fork or resume**: You can start new sessions, but `aegis session resume` and `aegis session fork` are not supported yet.
+- **ACP session ID differs from aegis session ID**: Telemetry fields may not correlate across the two.
 :::
 
 ## Available ACP Providers
@@ -43,7 +43,7 @@ Wraps [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp
 
 ### Codex ACP
 
-Use goose with ChatGPT Plus/Pro or OpenAI API credits via the [codex-acp](https://github.com/agentclientprotocol/codex-acp) adapter.
+Use aegis with ChatGPT Plus/Pro or OpenAI API credits via the [codex-acp](https://github.com/agentclientprotocol/codex-acp) adapter.
 
 **Requirements:**
 - Node.js and npm
@@ -79,14 +79,14 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
 
    Run `amp` and follow the authentication prompts.
 
-4. **Configure goose**
+4. **Configure aegis**
 
    Set the provider environment variable:
    ```bash
-   export GOOSE_PROVIDER=amp-acp
+   export AEGIS_PROVIDER=amp-acp
    ```
 
-   Or configure through the goose CLI using `goose configure`.
+   Or configure through the aegis CLI using `aegis configure`.
 
 ### Claude ACP
 
@@ -100,17 +100,17 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
 
    Ensure your Claude CLI is authenticated and working
 
-3. **Configure goose**
+3. **Configure aegis**
 
    Set the provider environment variable:
    ```bash
-   export GOOSE_PROVIDER=claude-acp
+   export AEGIS_PROVIDER=claude-acp
    ```
 
-   Or configure through the goose CLI using `goose configure`:
+   Or configure through the aegis CLI using `aegis configure`:
 
    ```bash
-   ┌   goose-configure
+   ┌   aegis-configure
    │
    ◇  What would you like to configure?
    │  Configure Providers
@@ -152,18 +152,18 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
 
    Run `codex` and follow the authentication prompts. A compatible existing Codex login can be reused.
 
-4. **Configure goose**
+4. **Configure aegis**
 
    Set the provider and use `current` to let Codex choose its default model:
    ```bash
-   export GOOSE_PROVIDER=codex-acp
-   export GOOSE_MODEL=current
+   export AEGIS_PROVIDER=codex-acp
+   export AEGIS_MODEL=current
    ```
 
-   Or configure through the goose CLI using `goose configure`:
+   Or configure through the aegis CLI using `aegis configure`:
 
    ```bash
-   ┌   goose-configure
+   ┌   aegis-configure
    │
    ◇  What would you like to configure?
    │  Configure Providers
@@ -177,7 +177,7 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
    │  current
    ```
 
-Replacing the npm package does not change `~/.codex` or require recreating your goose configuration. goose does not replace the package automatically.
+Replacing the npm package does not change `~/.codex` or require recreating your aegis configuration. aegis does not replace the package automatically.
 
 ### Pi ACP
 
@@ -189,21 +189,21 @@ Replacing the npm package does not change `~/.codex` or require recreating your 
 
    Run `pi` and follow the authentication prompts.
 
-3. **Configure goose**
+3. **Configure aegis**
 
    Set the provider environment variable:
    ```bash
-   export GOOSE_PROVIDER=pi-acp
+   export AEGIS_PROVIDER=pi-acp
    ```
 
-   Or configure through the goose CLI using `goose configure`.
+   Or configure through the aegis CLI using `aegis configure`.
 
 ## Usage Examples
 
 ### Basic Usage
 
 ```bash
-goose session
+aegis session
 ```
 
 ### Using with Extensions
@@ -211,13 +211,13 @@ goose session
 Extensions configured via `--with-extension` or `--with-streamable-http-extension` are passed through to the ACP agent:
 
 ```bash
-GOOSE_PROVIDER=claude-acp goose run \
+AEGIS_PROVIDER=claude-acp aegis run \
   --with-extension 'npx -y @modelcontextprotocol/server-everything' \
   -t 'Use the echo tool to say hello'
 ```
 
 ```bash
-GOOSE_PROVIDER=codex-acp goose run \
+AEGIS_PROVIDER=codex-acp aegis run \
   --with-streamable-http-extension 'https://mcp.kiwi.com' \
   -t 'Search for flights from BKI to SYD tomorrow'
 ```
@@ -228,24 +228,24 @@ GOOSE_PROVIDER=codex-acp goose run \
 
 | Environment Variable | Description       | Default   |
 |----------------------|-------------------|-----------|
-| `GOOSE_PROVIDER`     | Set to `amp-acp`  | None      |
-| `GOOSE_MODEL`        | Model to use      | `current` |
-| `GOOSE_MODE`         | Permission mode   | `auto`    |
+| `AEGIS_PROVIDER`     | Set to `amp-acp`  | None      |
+| `AEGIS_MODEL`        | Model to use      | `current` |
+| `AEGIS_MODE`         | Permission mode   | `auto`    |
 
 ### Claude ACP Configuration
 
 | Environment Variable | Description         | Default   |
 |----------------------|---------------------|-----------|
-| `GOOSE_PROVIDER`     | Set to `claude-acp` | None      |
-| `GOOSE_MODEL`        | Model to use        | `default` |
-| `GOOSE_MODE`         | Permission mode     | `auto`    |
+| `AEGIS_PROVIDER`     | Set to `claude-acp` | None      |
+| `AEGIS_MODEL`        | Model to use        | `default` |
+| `AEGIS_MODE`         | Permission mode     | `auto`    |
 
 **Known Models:**
 - `default` (opus)
 - `sonnet`
 - `haiku`
 
-**Permission Modes (`GOOSE_MODE`):**
+**Permission Modes (`AEGIS_MODE`):**
 
 | Mode            | Session Mode        | Behavior                                              |
 |-----------------|---------------------|-------------------------------------------------------|
@@ -260,15 +260,15 @@ See [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp) 
 
 | Environment Variable | Description        | Default   |
 |----------------------|--------------------|-----------|
-| `GOOSE_PROVIDER`     | Set to `codex-acp` | None      |
-| `GOOSE_MODEL`        | Model to use       | `current` |
-| `GOOSE_MODE`         | Permission mode    | `auto`    |
+| `AEGIS_PROVIDER`     | Set to `codex-acp` | None      |
+| `AEGIS_MODEL`        | Model to use       | `current` |
+| `AEGIS_MODE`         | Permission mode    | `auto`    |
 
 Codex ACP reports its available models dynamically. Keep `current` to use Codex's default, or select a discovered model explicitly.
 
-**Permission Modes (`GOOSE_MODE`):**
+**Permission Modes (`AEGIS_MODE`):**
 
-| goose mode      | Codex ACP mode      |
+| aegis mode      | Codex ACP mode      |
 |-----------------|---------------------|
 | `auto`          | `agent-full-access` |
 | `smart-approve` | `agent`             |
@@ -281,9 +281,9 @@ See [codex-acp](https://github.com/agentclientprotocol/codex-acp) for session mo
 
 | Environment Variable | Description      | Default   |
 |----------------------|------------------|-----------|
-| `GOOSE_PROVIDER`     | Set to `pi-acp`  | None      |
-| `GOOSE_MODEL`        | Model to use     | `current` |
-| `GOOSE_MODE`         | Permission mode  | `auto`    |
+| `AEGIS_PROVIDER`     | Set to `pi-acp`  | None      |
+| `AEGIS_MODEL`        | Model to use     | `current` |
+| `AEGIS_MODE`         | Permission mode  | `auto`    |
 
 ## Error Handling
 
@@ -294,4 +294,4 @@ ACP providers depend on external binaries, so ensure:
 - Subscription limits are not exceeded
 - Node.js and npm are installed (for npm-distributed adapters)
 
-If goose can't find the binary, session startup will fail with an error. Run `which <binary>` to verify installation.
+If aegis can't find the binary, session startup will fail with an error. Run `which <binary>` to verify installation.

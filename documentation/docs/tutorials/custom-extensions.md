@@ -1,22 +1,22 @@
 ---
 title: Building Custom Extensions
-description: Create your own custom MCP Server to use as a goose extension
+description: Create your own custom MCP Server to use as a aegis extension
 ---
 
 import { PanelLeft } from 'lucide-react';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Building Custom Extensions with goose
+# Building Custom Extensions with aegis
 
-goose allows you to extend its functionality by creating your own custom extensions, which are built as MCP servers. These extensions are compatible with goose because it adheres to the [Model Context Protocol (MCP)][mcp-docs]. MCP is an open protocol that standardizes how applications provide context to LLMs. It enables a consistent way to connect LLMs to various data sources and tools, making it ideal for extending functionality in a structured and interoperable way. 
+aegis allows you to extend its functionality by creating your own custom extensions, which are built as MCP servers. These extensions are compatible with aegis because it adheres to the [Model Context Protocol (MCP)][mcp-docs]. MCP is an open protocol that standardizes how applications provide context to LLMs. It enables a consistent way to connect LLMs to various data sources and tools, making it ideal for extending functionality in a structured and interoperable way. 
 
-In this guide, we build an MCP server using the [Python SDK for MCP][mcp-python]. We’ll demonstrate how to create an MCP server that reads Wikipedia articles and converts them to Markdown, integrate it as an extension in goose. You can follow a similar process to develop your own custom extensions for goose.
+In this guide, we build an MCP server using the [Python SDK for MCP][mcp-python]. We’ll demonstrate how to create an MCP server that reads Wikipedia articles and converts them to Markdown, integrate it as an extension in aegis. You can follow a similar process to develop your own custom extensions for aegis.
 
 You can check out other example servers in the [MCP servers repository][mcp-servers]. MCP SDKs are also available for other common languages, such as [TypeScript][mcp-typescript] and [Kotlin][mcp-kotlin].
 
 :::info
-goose supports Tools, Resources, and Prompts from the [Model Context Protocol](https://modelcontextprotocol.io/). See [`mcp_client.rs`](https://github.com/aaif-goose/goose/blob/main/crates/goose/src/agents/mcp_client.rs) for the supported protocol version and client capabilities.
+aegis supports Tools, Resources, and Prompts from the [Model Context Protocol](https://modelcontextprotocol.io/). See [`mcp_client.rs`](https://github.com/aaif-goose/goose/blob/main/crates/aegis/src/agents/mcp_client.rs) for the supported protocol version and client capabilities.
 :::
 
 ---
@@ -280,9 +280,9 @@ uv sync
 
 ---
 
-## Step 5: Integrate with goose
+## Step 5: Integrate with aegis
 
-To add your MCP server as an extension in goose:
+To add your MCP server as an extension in aegis:
 
 1. Build the extension binary:
 
@@ -290,7 +290,7 @@ To add your MCP server as an extension in goose:
    uv pip install .
    ```
 
-2. Open goose Desktop and click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar
+2. Open aegis Desktop and click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar
 3. Click `Extensions` in the sidebar
 4. Set the `Type` to `STDIO`
 5. Provide a name and description for your extension
@@ -307,7 +307,7 @@ To add your MCP server as an extension in goose:
    ```
 
 :::tip Rebuild binary after changes
-To see any changes you make to your MCP server code after integrating with goose, re-run `uv pip install .` and then restart goose Desktop.
+To see any changes you make to your MCP server code after integrating with aegis, re-run `uv pip install .` and then restart aegis Desktop.
 :::
 
 For the purposes of this guide, we'll run the local version. Alternatively, you can publish your package to PyPI. Once published, the server can be run directly using `uvx`. For example:
@@ -318,19 +318,19 @@ uvx mcp-wiki
 
 ---
 
-## Step 6: Use Your Extension in goose
+## Step 6: Use Your Extension in aegis
 
-Once integrated, you can start using your extension in goose. Open the goose chat interface and call your tool as needed.
+Once integrated, you can start using your extension in aegis. Open the aegis chat interface and call your tool as needed.
 
-You can verify that goose has picked up the tools from your custom extension by asking it "what tools do you have?"
+You can verify that aegis has picked up the tools from your custom extension by asking it "what tools do you have?"
 
-![goose Chat - Ask about tools](../assets/guides/custom-extension-tools.png)
+![aegis Chat - Ask about tools](../assets/guides/custom-extension-tools.png)
 
 Then, you can try asking questions that require using the extension you added.
 
-![goose Chat - Use custom extension](../assets/guides/custom-extension-chat.png)
+![aegis Chat - Use custom extension](../assets/guides/custom-extension-chat.png)
 
-🎉 **Congratulations!** You’ve successfully built and integrated a custom MCP server with goose.
+🎉 **Congratulations!** You’ve successfully built and integrated a custom MCP server with aegis.
 
 ---
 
@@ -341,7 +341,7 @@ Then, you can try asking questions that require using the extension you added.
 **Key Benefits:**
 
 - Return interactive UI components from your MCP server tools
-- Components render securely in isolated sandboxes within goose Desktop
+- Components render securely in isolated sandboxes within aegis Desktop
 - Real-time user interactions trigger callbacks to your server
 
 **Use Cases:** Interactive forms, data visualizations, booking interfaces, configuration wizards

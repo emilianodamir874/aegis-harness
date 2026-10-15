@@ -1,4 +1,4 @@
-# goose ACP TUI — Deprecated
+# aegis ACP TUI — Deprecated
 
 > [!WARNING]
 > **This project is deprecated and no longer maintained.**
@@ -10,8 +10,8 @@
 
 ## What to use instead
 
-- **CLI** — use the `goose` command line interface (`crates/goose-cli`).
-- **Desktop app** — use the goose desktop application (`ui/desktop`).
+- **CLI** — use the `aegis` command line interface (`crates/aegis-cli`).
+- **Desktop app** — use the aegis desktop application (`ui/desktop`).
 - Any ACP based TUI from https://agentclientprotocol.com/get-started/clients#cli-and-tui
 
 All of these options are actively maintained and receive ongoing feature work.

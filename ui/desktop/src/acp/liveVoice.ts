@@ -7,22 +7,22 @@ import { getAcpClient } from './acpConnection';
 export async function acpGetLiveVoiceAvailability(
   sessionId?: string
 ): Promise<LiveVoiceAvailabilityResponse_unstable> {
-  const { goose } = await getAcpClient();
-  return goose.sessionLiveVoiceAvailability_unstable(sessionId ? { sessionId } : {});
+  const { aegis } = await getAcpClient();
+  return aegis.sessionLiveVoiceAvailability_unstable(sessionId ? { sessionId } : {});
 }
 
 export async function acpStartLiveVoice(
   sessionId: string,
   offerSdp: string
 ): Promise<LiveVoiceStartResponse_unstable> {
-  const { goose } = await getAcpClient();
-  return goose.sessionLiveVoiceStart_unstable({
+  const { aegis } = await getAcpClient();
+  return aegis.sessionLiveVoiceStart_unstable({
     sessionId,
     offerSdp,
   });
 }
 
 export async function acpStopLiveVoice(sessionId: string, interactionId: string): Promise<void> {
-  const { goose } = await getAcpClient();
-  await goose.sessionLiveVoiceStop_unstable({ sessionId, interactionId });
+  const { aegis } = await getAcpClient();
+  await aegis.sessionLiveVoiceStop_unstable({ sessionId, interactionId });
 }

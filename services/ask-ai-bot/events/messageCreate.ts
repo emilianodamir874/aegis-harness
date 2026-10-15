@@ -83,7 +83,7 @@ export default {
     ) {
       try {
         const thread = await message.startThread({
-          name: (message.content.trim() || "goose question").slice(0, 100),
+          name: (message.content.trim() || "aegis question").slice(0, 100),
           autoArchiveDuration: 60,
         });
         await inThreadOrder(thread.id, () => respond(thread, message));

@@ -2,7 +2,7 @@
 sidebar_position: 1
 title: SDK
 sidebar_label: Overview
-description: Build with goose providers in Rust, Python, and Kotlin.
+description: Build with aegis providers in Rust, Python, and Kotlin.
 ---
 
 # SDK
@@ -11,7 +11,7 @@ The SDK exposes its provider layer as an in-process library so you can
 call models, stream completions, and compact conversations from your own
 application.
 
-One Rust crate, `goose-sdk`, is the source of every language binding. Python and
+One Rust crate, `aegis-sdk`, is the source of every language binding. Python and
 Kotlin are generated from it with [UniFFI](https://github.com/mozilla/uniffi-rs),
 so all three languages share the same types, behavior, and version number.
 
@@ -40,7 +40,7 @@ exact version and check the API reference version selector when upgrading.
 ### Rust
 
 ```bash
-cargo add goose-sdk --features uniffi
+cargo add aegis-sdk --features uniffi
 ```
 
 The `uniffi` feature enables the in-process provider API documented here.
@@ -48,14 +48,14 @@ The `uniffi` feature enables the in-process provider API documented here.
 ### Python
 
 ```bash
-pip install goose-sdk
+pip install aegis-sdk
 ```
 
-The package installs as `goose-sdk` and imports as `goose`. Wheels bundle the
+The package installs as `aegis-sdk` and imports as `aegis`. Wheels bundle the
 native library, so there is nothing else to build. Requires Python 3.9+.
 
 ```python
-import goose
+import aegis
 ```
 
 ### Kotlin / JVM
@@ -68,7 +68,7 @@ dependencies {
 ```
 
 The artifact version matches the Rust crate version. Classes live in the
-`io.github.aaif_goose` package. The jar bundles native libraries for
+`io.github.aaif_aegis` package. The jar bundles native libraries for
 macOS (arm64, x86-64), Linux (arm64, x86-64), and Windows (x86-64).
 
 On JDK 24+, add `--enable-native-access=ALL-UNNAMED` because the GDK loads its
@@ -85,7 +85,7 @@ response.
 
 ```python
 import asyncio
-from goose import (
+from aegis import (
     MessageContent,
     MessageRole,
     ProviderMessage,
@@ -118,14 +118,14 @@ asyncio.run(main())
 ### Kotlin
 
 ```kotlin
-import io.github.aaif_goose.MessageContent
-import io.github.aaif_goose.MessageRole
-import io.github.aaif_goose.ProviderMessage
-import io.github.aaif_goose.ProviderModelConfig
-import io.github.aaif_goose.StreamChunk
-import io.github.aaif_goose.streamFlow
-import io.github.aaif_goose.providers.openai.defaultModel
-import io.github.aaif_goose.providers.openai.provider as openAiProvider
+import io.github.aaif_aegis.MessageContent
+import io.github.aaif_aegis.MessageRole
+import io.github.aaif_aegis.ProviderMessage
+import io.github.aaif_aegis.ProviderModelConfig
+import io.github.aaif_aegis.StreamChunk
+import io.github.aaif_aegis.streamFlow
+import io.github.aaif_aegis.providers.openai.defaultModel
+import io.github.aaif_aegis.providers.openai.provider as openAiProvider
 import kotlinx.coroutines.runBlocking
 
 fun main() = runBlocking {
@@ -148,7 +148,7 @@ fun main() = runBlocking {
 ### Rust
 
 ```rust
-use goose_sdk::bindings::{
+use aegis_sdk::bindings::{
     openai_default_model, openai_provider, MessageContent, MessageRole, ProviderMessage,
     ProviderModelConfig, StreamChunk,
 };
@@ -194,7 +194,7 @@ The Kotlin package adds a few conveniences on top of the generated bindings:
 | `providers.databricks.provider(host, token)` | `databricksProvider(host, token)` |
 
 `tools` defaults to an empty list in the Kotlin helpers, and suspending
-functions map to Kotlin coroutines. Errors surface as `GooseException`
+functions map to Kotlin coroutines. Errors surface as `AegisException`
 subclasses.
 
 ## Declarative providers
@@ -203,7 +203,7 @@ Any provider that speaks an OpenAI- or Anthropic-compatible API can be defined
 in JSON and loaded without new Rust code:
 
 ```python
-provider = goose.declarative_provider_from_json(open("deepseek.json").read())
+provider = aegis.declarative_provider_from_json(open("deepseek.json").read())
 ```
 
 Environment variable placeholders such as `${DEEPSEEK_API_KEY}` in the JSON are
@@ -220,8 +220,8 @@ resolved when the provider is constructed.
 | `ToolChunk` | A tool call request with JSON arguments and the provider's tool-call `index` |
 | `ThinkingChunk` / `RedactedThinkingChunk` | Reasoning output |
 | `EndChunk` | Stream finished, carries final token `Usage` |
-| `ErrorChunk` | Mid-stream failure, carries a `GooseStreamError` |
+| `ErrorChunk` | Mid-stream failure, carries a `AegisStreamError` |
 
-Errors raised before the stream starts are thrown as `GooseError`
-(`GooseException` in Kotlin). Errors that occur mid-stream arrive as an
+Errors raised before the stream starts are thrown as `AegisError`
+(`AegisException` in Kotlin). Errors that occur mid-stream arrive as an
 `ErrorChunk` instead.

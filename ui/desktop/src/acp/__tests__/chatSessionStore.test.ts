@@ -55,7 +55,7 @@ function permissionRequest(sessionId: string, toolCallId = 'tool-1'): AcpPermiss
         },
       ],
       _meta: {
-        goose: {
+        aegis: {
           toolCall: {
             toolName: 'edit_file',
           },
@@ -139,7 +139,7 @@ function userSteerChunkNotification(
         text,
       },
       _meta: {
-        goose: {
+        aegis: {
           messageId,
           steer: true,
         },
@@ -154,7 +154,7 @@ function activeRunNotification(sessionId: string, activeRunId: string | null): S
     update: {
       sessionUpdate: 'session_info_update',
       _meta: {
-        goose: {
+        aegis: {
           activeRunId,
         },
       },
@@ -168,7 +168,7 @@ function queuedSteerNotification(sessionId: string, messageId: string): SessionN
     update: {
       sessionUpdate: 'session_info_update',
       _meta: {
-        goose: {
+        aegis: {
           queuedSteer: { messageId, runId: 'run-1' },
         },
       },

@@ -1,0 +1,338 @@
+use crate::acp::server::{
+    AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, AegisAcpAgent,
+    AegisAcpAgentOptions, LiveVoiceService, SessionHub,
+};
+use crate::agents::{AgentConfig, AegisPlatform};
+use crate::config::paths::Paths;
+use crate::config::permission::PermissionManager;
+use crate::execution::manager::AgentManager;
+#[cfg(feature = "scheduler")]
+use crate::scheduler_trait::SchedulerTrait;
+use crate::session::SessionManager;
+use crate::source_roots::SourceRoot;
+use anyhow::Result;
+use std::sync::Arc;
+use tokio::sync::OnceCell;
+use tracing::info;
+
+pub struct AcpServerFactoryConfig {
+    pub builtins: AcpBuiltinSelection,
+    pub config_dir: std::path::PathBuf,
+    pub aegis_platform: AegisPlatform,
+    pub additional_source_roots: Vec<SourceRoot>,
+    /// When set, new sessions use this host-controlled working directory
+    /// instead of the `cwd` the connecting client sends. Used by roaming, where
+    /// the connector's absolute path is meaningless on the host machine.
+    pub session_cwd: Option<std::path::PathBuf>,
+    pub enable_scheduler: bool,
+}
+
+pub struct AcpServer {
+    config: AcpServerFactoryConfig,
+    data_dir: std::path::PathBuf,
+    #[cfg(feature = "scheduler")]
+    scheduler: OnceCell<Arc<dyn SchedulerTrait>>,
+    active_runs: Arc<ActiveRunRegistry>,
+    live_voice: Arc<crate::acp::server::LiveVoiceService>,
+    /// Per-session fan-out for every connection this server accepts.
+    hub: Arc<SessionHub>,
+    /// One session store for the whole server: every connection shares the same
+    /// SQLite pool instead of opening its own (v6.4 "un stack por sesión").
+    session_manager: OnceCell<Arc<SessionManager>>,
+    /// One agent LRU for the whole server, so two connections on the same
+    /// session resolve to the same `Arc<Agent>`.
+    agent_manager: OnceCell<Arc<AgentManager>>,
+}
+
+impl AcpServer {
+    pub fn new(config: AcpServerFactoryConfig) -> Self {
+        let data_dir = Paths::data_dir();
+        let active_runs = Arc::new(ActiveRunRegistry::default());
+        let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
+        let hub = Arc::new(SessionHub::new());
+        hub.start_reaper(active_runs.clone());
+        Self {
+            config,
+            data_dir,
+            #[cfg(feature = "scheduler")]
+            scheduler: OnceCell::new(),
+            active_runs,
+            live_voice,
+            hub,
+            session_manager: OnceCell::new(),
+            agent_manager: OnceCell::new(),
+        }
+    }
+
+    #[cfg(feature = "scheduler")]
+    /// Start the scheduler now instead of on first client connect, so a
+    /// headless `aegis serve` runs scheduled jobs; on failure `create_agent`
+    /// retries. No-op when the scheduler is disabled.
+    pub async fn start_scheduler(&self) -> Result<()> {
+        self.scheduler().await.map(|_| ())
+    }
+
+    #[cfg(feature = "scheduler")]
+    async fn scheduler(&self) -> Result<Option<Arc<dyn SchedulerTrait>>> {
+        if !self.config.enable_scheduler {
+            return Ok(None);
+        }
+
+        let data_dir = self.data_dir.clone();
+        self.scheduler
+            .get_or_try_init(|| async move {
+                let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
+                let schedule_file_path = data_dir.join("schedule.json");
+                let scheduler =
+                    crate::scheduler::Scheduler::new(schedule_file_path, session_manager)
+                        .await
+                        .map(|scheduler| scheduler as Arc<dyn SchedulerTrait>)?;
+                Ok(scheduler)
+            })
+            .await
+            .cloned()
+            .map(Some)
+    }
+
+    pub async fn create_agent(&self) -> Result<Arc<AegisAcpAgent>> {
+        self.create_agent_with_session_cwd(self.config.session_cwd.clone())
+            .await
+    }
+
+    /// Create an agent whose sessions use `session_cwd` instead of this
+    /// server's configured default. Used by the roaming bridge on `aegis
+    /// serve --roam`: the serve-wide server keeps `session_cwd: None` for
+    /// local ACP clients whose paths are real on this machine, while each
+    /// roaming connection gets a host-controlled working directory (the
+    /// connector's absolute path is meaningless here). The agent still shares
+    /// this server's active-run registry.
+    pub async fn create_agent_with_session_cwd(
+        &self,
+        session_cwd: Option<std::path::PathBuf>,
+    ) -> Result<Arc<AegisAcpAgent>> {
+        let config = crate::config::Config::global();
+        let disable_session_naming = config.get_aegis_disable_session_naming().unwrap_or(false);
+        #[cfg(feature = "scheduler")]
+        let scheduler = self.scheduler().await?;
+        #[cfg(feature = "scheduler")]
+        if let Some(scheduler) = &scheduler {
+            scheduler.list_scheduled_jobs().await;
+        }
+
+        let provider_factory: AcpProviderFactory = Arc::new(|provider_name| {
+            Box::pin(async move {
+                crate::providers::create_with_default_model(&provider_name, Vec::new()).await
+            })
+        });
+
+        // Server-wide stack, created once on the first connection and reused by
+        // every later one (v6.4): same `SessionManager`, same `AgentManager`,
+        // capacity from AEGIS_MAX_ACTIVE_AGENTS (never unlimited).
+        let session_manager = self
+            .session_manager
+            .get_or_init(|| async { Arc::new(SessionManager::new(self.data_dir.clone())) })
+            .await
+            .clone();
+        #[cfg(feature = "scheduler")]
+        let scheduler_for_manager = scheduler.clone();
+        #[cfg(not(feature = "scheduler"))]
+        let scheduler_for_manager: Option<Arc<dyn SchedulerTrait>> = None;
+        let agent_manager = self
+            .agent_manager
+            .get_or_try_init(|| async {
+                let permission_manager =
+                    Arc::new(PermissionManager::new(self.config.config_dir.clone()));
+                let agent_config = AgentConfig::new(
+                    session_manager.clone(),
+                    permission_manager,
+                    scheduler_for_manager,
+                    disable_session_naming,
+                    self.config.aegis_platform.clone(),
+                );
+                let max_sessions = crate::config::Config::global()
+                    .get_aegis_max_active_agents()
+                    .unwrap_or(100);
+                AgentManager::new(agent_config, Some(max_sessions))
+                    .await
+                    .map(Arc::new)
+            })
+            .await?
+            .clone();
+
+        let agent = AegisAcpAgent::new(AegisAcpAgentOptions {
+            provider_factory,
+            builtin_selection: self.config.builtins.clone(),
+            data_dir: self.data_dir.clone(),
+            config_dir: self.config.config_dir.clone(),
+            disable_session_naming,
+            aegis_platform: self.config.aegis_platform.clone(),
+            additional_source_roots: self.config.additional_source_roots.clone(),
+            session_cwd,
+            #[cfg(feature = "scheduler")]
+            scheduler,
+            #[cfg(not(feature = "scheduler"))]
+            scheduler: None,
+            active_runs: self.active_runs.clone(),
+            live_voice: self.live_voice.clone(),
+            hub: self.hub.clone(),
+            session_manager: Some(session_manager),
+            agent_manager: Some(agent_manager),
+        })
+        .await?;
+        info!("Created new ACP agent");
+
+        Ok(Arc::new(agent))
+    }
+
+    #[cfg(all(test, feature = "scheduler"))]
+    pub(crate) fn new_for_test(
+        config: AcpServerFactoryConfig,
+        data_dir: std::path::PathBuf,
+    ) -> Self {
+        let active_runs = Arc::new(ActiveRunRegistry::default());
+        let live_voice = Arc::new(LiveVoiceService::from_config(active_runs.clone()));
+        let hub = Arc::new(SessionHub::new());
+        Self {
+            config,
+            data_dir,
+            #[cfg(feature = "scheduler")]
+            scheduler: OnceCell::new(),
+            active_runs,
+            live_voice,
+            hub,
+            session_manager: OnceCell::new(),
+            agent_manager: OnceCell::new(),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "scheduler"))]
+mod tests {
+    use super::*;
+
+    fn server(data_dir: std::path::PathBuf, enable_scheduler: bool) -> AcpServer {
+        AcpServer::new_for_test(
+            AcpServerFactoryConfig {
+                builtins: AcpBuiltinSelection::default(),
+                config_dir: data_dir.clone(),
+                aegis_platform: AegisPlatform::AegisCli,
+                additional_source_roots: Vec::new(),
+                session_cwd: None,
+                enable_scheduler,
+            },
+            data_dir,
+        )
+    }
+
+    #[tokio::test]
+    async fn disabled_server_does_not_construct_scheduler() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), false);
+
+        assert!(server.scheduler().await.unwrap().is_none());
+        assert!(!root.path().join("schedule.json").exists());
+    }
+
+    #[tokio::test]
+    async fn automatic_server_constructs_scheduler() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), true);
+
+        assert!(server.scheduler().await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn agents_from_one_server_share_the_active_run_registry() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), false);
+
+        let a = server.create_agent().await.unwrap();
+        let b = server.create_agent().await.unwrap();
+
+        assert!(
+            Arc::ptr_eq(a.active_run_registry(), b.active_run_registry()),
+            "each connection's agent must share one per-session run registry"
+        );
+    }
+
+    #[tokio::test]
+    async fn steer_routes_to_the_agent_that_owns_the_run() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), false);
+
+        let running = server.create_agent().await.unwrap();
+        let steering = server.create_agent().await.unwrap();
+
+        let owner = Arc::new(crate::agents::Agent::new());
+        running
+            .test_start_active_run("session-1", "run-1".to_string(), owner.clone())
+            .await
+            .unwrap();
+
+        let (run_id, resolved) = steering
+            .test_require_active_run("session-1", "run-1")
+            .await
+            .unwrap();
+
+        assert_eq!(run_id, "run-1");
+        assert!(
+            Arc::ptr_eq(&resolved, &owner),
+            "a steer arriving on a second roaming connection must resolve the \
+             agent running the prompt, not the caller's connection-local agent"
+        );
+    }
+
+    #[tokio::test]
+    async fn dropping_a_prompt_future_releases_the_shared_run() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), false);
+
+        let running = server.create_agent().await.unwrap();
+        let owner = Arc::new(crate::agents::Agent::new());
+        running
+            .test_start_active_run("session-1", "run-1".to_string(), owner)
+            .await
+            .unwrap();
+
+        running.test_drop_active_run_guard("session-1", "run-1");
+        tokio::task::yield_now().await;
+
+        let second = server.create_agent().await.unwrap();
+        assert!(
+            second
+                .test_require_active_run("session-1", "run-1")
+                .await
+                .is_err(),
+            "a dropped prompt future must release its run so later \
+             connections are not permanently locked out of the session"
+        );
+    }
+
+    #[tokio::test]
+    async fn start_scheduler_initializes_before_any_client_connects() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), true);
+
+        assert!(!server.scheduler.initialized());
+        server.start_scheduler().await.unwrap();
+        assert!(server.scheduler.initialized());
+    }
+
+    #[tokio::test]
+    async fn start_scheduler_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), true);
+
+        server.start_scheduler().await.unwrap();
+        server.start_scheduler().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn start_scheduler_does_not_construct_one_when_disabled() {
+        let root = tempfile::tempdir().unwrap();
+        let server = server(root.path().to_path_buf(), false);
+
+        server.start_scheduler().await.unwrap();
+        assert!(!server.scheduler.initialized());
+    }
+}

@@ -1,8 +1,8 @@
 packages:
-  - 'goose-acp-client'
-  - 'goose-acp'
+  - 'aegis-acp-client'
+  - 'aegis-acp'
   - 'desktop'
-  - 'goose-binary/*'
+  - 'aegis-binary/*'
 
 registry: https://registry.npmjs.org/
 preferOffline: true

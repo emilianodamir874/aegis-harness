@@ -29,16 +29,16 @@ import 'dotenv/config';
 import { connectRemoteBackend } from './remoteBackends';
 import { installBackendCertificateVerifiers } from './backendCertificateVerifier';
 import { configureProxy } from './proxy';
-import { startGooseServe } from './gooseServe';
+import { startAegisServe } from './aegisServe';
 import { getLoginShellPath } from './loginShellPath';
-import { GooseServeLeaseRegistry, type GooseServeLease } from './gooseServeLeaseRegistry';
+import { AegisServeLeaseRegistry, type AegisServeLease } from './aegisServeLeaseRegistry';
 import { normalizeAcpHttpBaseUrl } from './acp/url';
-import { expandTilde, sanitizeGoosePathRoot } from './utils/pathUtils';
+import { expandTilde, sanitizeAegisPathRoot } from './utils/pathUtils';
 import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { formatAppName, errorMessage, formatErrorForLogging } from './utils/conversionUtils';
-import { isRetiredGooseChatApp } from './utils/retiredApps';
+import { isRetiredAegisChatApp } from './utils/retiredApps';
 import type { Settings, SettingKey } from './utils/settings';
 import { defaultSettings, getKeyboardShortcuts } from './utils/settings';
 import * as crypto from 'crypto';
@@ -55,7 +55,7 @@ import {
 import { UPDATES_ENABLED } from './updates';
 import './utils/gitBranchIpc';
 import './utils/recipeHash';
-import type { GooseApp } from './types/apps';
+import type { AegisApp } from './types/apps';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 import { WEB_PROTOCOLS } from './utils/urlSecurity';
 import { openExternalUrl } from './utils/openExternalUrl';
@@ -94,7 +94,7 @@ const MENU_TRANSLATIONS_ZH_CN: Record<string, string> = {
   Cut: '剪切',
   Copy: '复制',
   Paste: '粘贴',
-  // Goose-added items
+  // Aegis-added items
   'New Window': '新建窗口',
   Settings: '设置',
   'Find…': '查找…',
@@ -106,11 +106,11 @@ const MENU_TRANSLATIONS_ZH_CN: Record<string, string> = {
   'New Chat Window': '新建聊天窗口',
   'Open Directory...': '打开目录…',
   'Recent Directories': '最近的目录',
-  'Focus Goose Window': '聚焦 Goose 窗口',
+  'Focus Aegis Window': '聚焦 Aegis 窗口',
   'Quick Launcher': '快速启动器',
   'Always on Top': '窗口置顶',
   'Toggle Navigation': '切换导航',
-  'About Goose': '关于 Goose',
+  'About Aegis': '关于 Aegis',
   // Electron's default role-based labels we want to translate as well.
   // (The menu role itself still provides the correct behaviour; only the
   // display string is overridden.)
@@ -136,14 +136,14 @@ const MENU_TRANSLATIONS_ZH_CN: Record<string, string> = {
   'Bring All to Front': '全部置于最前',
   'Emoji & Symbols': '表情符号',
   'Start Dictation…': '开始听写…',
-  'Hide Goose': '隐藏 Goose',
+  'Hide Aegis': '隐藏 Aegis',
   'Hide Others': '隐藏其他',
   'Show All': '全部显示',
   Services: '服务',
 };
 
 function detectMenuLocale(): string {
-  return getConfiguredGooseLocale() ?? 'en';
+  return getConfiguredAegisLocale() ?? 'en';
 }
 
 function menuT(label: string): string {
@@ -218,9 +218,9 @@ function getSettings(): Settings {
     return {
       ...defaultSettings,
       ...stored,
-      externalGoosed: {
-        ...defaultSettings.externalGoosed,
-        ...(stored.externalGoosed ?? {}),
+      externalAegisd: {
+        ...defaultSettings.externalAegisd,
+        ...(stored.externalAegisd ?? {}),
       },
       keyboardShortcuts: {
         ...defaultSettings.keyboardShortcuts,
@@ -237,14 +237,14 @@ function updateSettings(modifier: (settings: Settings) => void): void {
   fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
 
-function getConfiguredGooseLocale(): string | undefined {
+function getConfiguredAegisLocale(): string | undefined {
   const language = getSettings().language;
   if (isValidLanguageSetting(language) && language !== 'system') {
     return language;
   }
 
-  if (process.env.GOOSE_LOCALE) {
-    return process.env.GOOSE_LOCALE;
+  if (process.env.AEGIS_LOCALE) {
+    return process.env.AEGIS_LOCALE;
   }
 
   try {
@@ -387,13 +387,13 @@ app.on('certificate-error', (event, _webContents, url, _error, certificate, call
 });
 
 app.whenReady().then(() => {
-  appConfig.GOOSE_LOCALE = getConfiguredGooseLocale();
+  appConfig.AEGIS_LOCALE = getConfiguredAegisLocale();
 });
 
 // Main-process net.fetch and renderer WebSockets: pin to the exact cert once known.
 app.whenReady().then(() => {
   installBackendCertificateVerifiers(
-    [session.defaultSession, session.fromPartition('persist:goose')],
+    [session.defaultSession, session.fromPartition('persist:aegis')],
     {
       has: isTrustedHost,
       verify: verifyBackendCertificate,
@@ -411,13 +411,13 @@ if (process.env.ENABLE_PLAYWRIGHT) {
 // In production, register normally
 if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
   // Development mode - force registration
-  console.log('[Main] Development mode: Forcing protocol registration for goose://');
-  app.setAsDefaultProtocolClient('goose');
+  console.log('[Main] Development mode: Forcing protocol registration for aegis://');
+  app.setAsDefaultProtocolClient('aegis');
 
   if (process.platform === 'darwin') {
     try {
       // Reset the default handler to ensure dev version takes precedence
-      spawn('open', ['-a', process.execPath, '--args', '--reset-protocol-handler', 'goose'], {
+      spawn('open', ['-a', process.execPath, '--args', '--reset-protocol-handler', 'aegis'], {
         detached: true,
         stdio: 'ignore',
       });
@@ -427,7 +427,7 @@ if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
   }
 } else {
   // Production mode - normal registration
-  app.setAsDefaultProtocolClient('goose');
+  app.setAsDefaultProtocolClient('aegis');
 }
 
 // Apply single instance lock on Windows and Linux where it's needed for deep links
@@ -441,7 +441,7 @@ if (process.platform !== 'darwin') {
     app.quit();
   } else {
     app.on('second-instance', (_event, commandLine) => {
-      const protocolUrl = commandLine.find((arg) => arg.startsWith('goose://'));
+      const protocolUrl = commandLine.find((arg) => arg.startsWith('aegis://'));
       if (protocolUrl) {
         const parsedUrl = new URL(protocolUrl);
         // If it's a bot/recipe URL, handle it directly by creating a new window
@@ -510,7 +510,7 @@ if (process.platform !== 'darwin') {
   }
 
   // Handle protocol URLs on Windows and Linux startup
-  const protocolUrl = process.argv.find((arg) => arg.startsWith('goose://'));
+  const protocolUrl = process.argv.find((arg) => arg.startsWith('aegis://'));
   if (protocolUrl) {
     app.whenReady().then(async () => {
       let parsedUrl: URL;
@@ -567,7 +567,7 @@ function getResumeSessionId(parsedUrl: URL): string | null {
 async function createResumeChatWindow(parsedUrl: URL, dir?: string): Promise<boolean> {
   const resumeSessionId = getResumeSessionId(parsedUrl);
   if (!resumeSessionId) {
-    log.warn('[Main] Ignoring goose://resume URL without a session id');
+    log.warn('[Main] Ignoring aegis://resume URL without a session id');
     return false;
   }
 
@@ -719,7 +719,7 @@ app.on('open-url', async (_event, url) => {
 app.on('will-finish-launching', () => {
   if (process.platform === 'darwin') {
     app.setAboutPanelOptions({
-      applicationName: 'Goose',
+      applicationName: 'Aegis',
       applicationVersion: app.getVersion(),
     });
   }
@@ -774,7 +774,7 @@ async function handleFileOpen(filePath: string) {
 
     // Show user-friendly error notification
     new Notification({
-      title: 'Goose',
+      title: 'Aegis',
       body: `Could not open directory: ${path.basename(filePath)}`,
     }).show();
   }
@@ -825,13 +825,13 @@ interface BundledConfig {
 
 const getBundledConfig = (): BundledConfig => {
   //{env-macro-start}//
-  //needed when goose is bundled for a specific provider
+  //needed when aegis is bundled for a specific provider
   //{env-macro-end}//
   return {
-    defaultProvider: process.env.GOOSE_DEFAULT_PROVIDER,
-    defaultModel: process.env.GOOSE_DEFAULT_MODEL,
-    predefinedModels: process.env.GOOSE_PREDEFINED_MODELS,
-    version: process.env.GOOSE_VERSION,
+    defaultProvider: process.env.AEGIS_DEFAULT_PROVIDER,
+    defaultModel: process.env.AEGIS_DEFAULT_MODEL,
+    predefinedModels: process.env.AEGIS_PREDEFINED_MODELS,
+    version: process.env.AEGIS_VERSION,
   };
 };
 
@@ -848,16 +848,16 @@ interface ExternalBackend {
 }
 
 const getExternalBackendUrlFromEnv = (): string | null => {
-  if (!process.env.GOOSE_EXTERNAL_BACKEND) {
+  if (!process.env.AEGIS_EXTERNAL_BACKEND) {
     return null;
   }
 
-  const configuredUrl = process.env.GOOSE_EXTERNAL_BACKEND_URL?.trim();
+  const configuredUrl = process.env.AEGIS_EXTERNAL_BACKEND_URL?.trim();
   if (configuredUrl) {
     return configuredUrl;
   }
 
-  return `http://127.0.0.1:${process.env.GOOSE_PORT || '3000'}`;
+  return `http://127.0.0.1:${process.env.AEGIS_PORT || '3000'}`;
 };
 
 const getExternalBackendFromEnv = (): ExternalBackend | null => {
@@ -866,10 +866,10 @@ const getExternalBackendFromEnv = (): ExternalBackend | null => {
     return null;
   }
 
-  const secret = process.env.GOOSE_SERVER__SECRET_KEY;
+  const secret = process.env.AEGIS_SERVER__SECRET_KEY;
   if (!secret) {
     throw new Error(
-      'GOOSE_SERVER__SECRET_KEY must be set when using GOOSE_EXTERNAL_BACKEND. ' +
+      'AEGIS_SERVER__SECRET_KEY must be set when using AEGIS_EXTERNAL_BACKEND. ' +
         'Set it to the same value on both the server and the desktop client.'
     );
   }
@@ -882,8 +882,8 @@ const getExternalBackendFromEnv = (): ExternalBackend | null => {
 };
 
 const getServerSecret = (settings: Settings): string => {
-  if (settings.externalGoosed?.enabled && settings.externalGoosed.secret) {
-    return settings.externalGoosed.secret;
+  if (settings.externalAegisd?.enabled && settings.externalAegisd.secret) {
+    return settings.externalAegisd.secret;
   }
   return GENERATED_SECRET;
 };
@@ -893,17 +893,17 @@ const getActiveExternalBackend = (settings: Settings): ExternalBackend | null =>
   if (envBackend) {
     return {
       ...envBackend,
-      workingDir: settings.externalGoosed?.workingDir,
+      workingDir: settings.externalAegisd?.workingDir,
     };
   }
 
-  if (settings.externalGoosed?.enabled && settings.externalGoosed.url) {
+  if (settings.externalAegisd?.enabled && settings.externalAegisd.url) {
     return {
       source: 'settings',
-      url: settings.externalGoosed.url,
+      url: settings.externalAegisd.url,
       secret: getServerSecret(settings),
-      certFingerprint: settings.externalGoosed.certFingerprint,
-      workingDir: settings.externalGoosed.workingDir,
+      certFingerprint: settings.externalAegisd.certFingerprint,
+      workingDir: settings.externalAegisd.workingDir,
     };
   }
 
@@ -913,32 +913,32 @@ const getActiveExternalBackend = (settings: Settings): ExternalBackend | null =>
 const getExternalBackendForCsp = (settings: Settings) => {
   const envUrl = getExternalBackendUrlFromEnv();
   if (!envUrl) {
-    return settings.externalGoosed;
+    return settings.externalAegisd;
   }
 
   return {
-    ...settings.externalGoosed,
+    ...settings.externalAegisd,
     enabled: true,
     url: envUrl,
   };
 };
 
 let appConfig = {
-  GOOSE_DEFAULT_PROVIDER: defaultProvider,
-  GOOSE_DEFAULT_MODEL: defaultModel,
-  GOOSE_PREDEFINED_MODELS: predefinedModels,
-  GOOSE_PATH_ROOT: sanitizeGoosePathRoot(process.env),
-  GOOSE_WORKING_DIR: '',
+  AEGIS_DEFAULT_PROVIDER: defaultProvider,
+  AEGIS_DEFAULT_MODEL: defaultModel,
+  AEGIS_PREDEFINED_MODELS: predefinedModels,
+  AEGIS_PATH_ROOT: sanitizeAegisPathRoot(process.env),
+  AEGIS_WORKING_DIR: '',
   // Whether the window is bound to an external backend (fixed at window
-  // creation via gooseServeLeases) and which URL it is bound to.
-  GOOSE_EXTERNAL_BACKEND: false,
-  GOOSE_EXTERNAL_BACKEND_URL: '',
-  GOOSE_EXTERNAL_BACKEND_SOURCE: '',
+  // creation via aegisServeLeases) and which URL it is bound to.
+  AEGIS_EXTERNAL_BACKEND: false,
+  AEGIS_EXTERNAL_BACKEND_URL: '',
+  AEGIS_EXTERNAL_BACKEND_SOURCE: '',
   // Start with the env-var override; the OS region locale is filled in after app.ready
   // (see updateLocaleFromSystem below) since getSystemLocale() cannot be called earlier.
-  GOOSE_LOCALE: process.env.GOOSE_LOCALE || undefined,
-  // If GOOSE_ALLOWLIST_WARNING env var is not set, defaults to false (strict blocking mode)
-  GOOSE_ALLOWLIST_WARNING: process.env.GOOSE_ALLOWLIST_WARNING === 'true',
+  AEGIS_LOCALE: process.env.AEGIS_LOCALE || undefined,
+  // If AEGIS_ALLOWLIST_WARNING env var is not set, defaults to false (strict blocking mode)
+  AEGIS_ALLOWLIST_WARNING: process.env.AEGIS_ALLOWLIST_WARNING === 'true',
 };
 
 const windowMap = new Map<number, BrowserWindow>();
@@ -969,7 +969,7 @@ function getRegularWindows(): BrowserWindow[] {
   return [...windowMap.values()].filter((w) => !w.isDestroyed());
 }
 
-const gooseServeLeases = new GooseServeLeaseRegistry(log);
+const aegisServeLeases = new AegisServeLeaseRegistry(log);
 
 const windowPowerSaveBlockers = new Map<number, number>(); // windowId -> blockerId
 // Track pending initial messages per window
@@ -1043,8 +1043,8 @@ const createChat = async (
 
       if (response === 0) {
         updateSettings((s) => {
-          if (s.externalGoosed) {
-            s.externalGoosed.enabled = false;
+          if (s.externalAegisd) {
+            s.externalAegisd.enabled = false;
           }
         });
         return createChat(app, options);
@@ -1057,7 +1057,7 @@ const createChat = async (
 
   const serverSecret = externalBackend ? externalBackend.secret : GENERATED_SECRET;
   let workingDir = resolveWorkingDir(externalBackend?.workingDir, dir, os.homedir());
-  let gooseServeLease: GooseServeLease | null = null;
+  let aegisServeLease: AegisServeLease | null = null;
 
   if (externalBackend) {
     let externalCertificateTrust: BackendCertificateTrustRegistration | null = null;
@@ -1095,8 +1095,8 @@ const createChat = async (
 
         if (canDisableExternalBackend && response === 0) {
           updateSettings((s) => {
-            if (s.externalGoosed) {
-              s.externalGoosed.enabled = false;
+            if (s.externalAegisd) {
+              s.externalAegisd.enabled = false;
             }
           });
           return createChat(app, options);
@@ -1114,7 +1114,7 @@ const createChat = async (
       const originLease = leaseBackendOrigin(resolvedAcpUrl);
       const leaseCertificateTrust = externalCertificateTrust;
       externalCertificateTrust = null;
-      gooseServeLease = gooseServeLeases.createExternal(resolvedAcpUrl, serverSecret, async () => {
+      aegisServeLease = aegisServeLeases.createExternal(resolvedAcpUrl, serverSecret, async () => {
         originLease.release();
         leaseCertificateTrust?.release();
       });
@@ -1136,8 +1136,8 @@ const createChat = async (
 
       if (canDisableExternalBackend && response === 0) {
         updateSettings((s) => {
-          if (s.externalGoosed) {
-            s.externalGoosed.enabled = false;
+          if (s.externalAegisd) {
+            s.externalAegisd.enabled = false;
           }
         });
         return createChat(app, options);
@@ -1151,14 +1151,14 @@ const createChat = async (
 
     const loginShellPath = await getLoginShellPath(log);
 
-    let gooseServeResult: Awaited<ReturnType<typeof startGooseServe>>;
+    let aegisServeResult: Awaited<ReturnType<typeof startAegisServe>>;
     try {
-      gooseServeResult = await startGooseServe({
+      aegisServeResult = await startAegisServe({
         serverSecret,
         dir: workingDir,
         tls: true,
         env: {
-          GOOSE_PATH_ROOT: appConfig.GOOSE_PATH_ROOT as string | undefined,
+          AEGIS_PATH_ROOT: appConfig.AEGIS_PATH_ROOT as string | undefined,
         },
         loginShellPath,
         isPackaged: app.isPackaged,
@@ -1167,31 +1167,31 @@ const createChat = async (
         diagnosticsDir: STARTUP_LOGS_DIR,
         readinessFetch: net.fetch as unknown as typeof globalThis.fetch,
       });
-      if (!gooseServeResult.certFingerprint) {
-        await gooseServeResult.cleanup();
+      if (!aegisServeResult.certFingerprint) {
+        await aegisServeResult.cleanup();
         throw new Error(
-          'goose serve started with TLS but did not return a certificate fingerprint'
+          'aegis serve started with TLS but did not return a certificate fingerprint'
         );
       }
 
-      const localCertFingerprint = normalizeFingerprint(gooseServeResult.certFingerprint);
+      const localCertFingerprint = normalizeFingerprint(aegisServeResult.certFingerprint);
       if (
         localCertificateTrust.trust.fingerprint &&
         localCertificateTrust.trust.fingerprint !== localCertFingerprint
       ) {
-        await gooseServeResult.cleanup();
-        throw new Error('goose serve TLS certificate fingerprint did not match readiness probe');
+        await aegisServeResult.cleanup();
+        throw new Error('aegis serve TLS certificate fingerprint did not match readiness probe');
       }
       localCertificateTrust.trust.fingerprint = localCertFingerprint;
     } catch (error) {
       localCertificateTrust.release();
-      log.error('goose serve failed to start', error);
+      log.error('aegis serve failed to start', error);
       dialog.showMessageBoxSync({
         type: 'error',
-        title: 'Goose Failed to Start',
+        title: 'Aegis Failed to Start',
         message: 'The backend server failed to start.',
         detail: [
-          'Backend: goose serve',
+          'Backend: aegis serve',
           'Readiness check: HTTPS GET /status',
           `Startup error:\n${errorMessage(error)}`,
         ].join('\n\n'),
@@ -1201,26 +1201,26 @@ const createChat = async (
       return;
     }
 
-    workingDir = gooseServeResult.workingDir;
-    const cleanupGooseServe = gooseServeResult.cleanup;
-    gooseServeResult.cleanup = async () => {
+    workingDir = aegisServeResult.workingDir;
+    const cleanupAegisServe = aegisServeResult.cleanup;
+    aegisServeResult.cleanup = async () => {
       try {
-        await cleanupGooseServe();
+        await cleanupAegisServe();
       } finally {
         localCertificateTrust.release();
       }
     };
-    gooseServeLease = gooseServeLeases.create(gooseServeResult, serverSecret);
+    aegisServeLease = aegisServeLeases.create(aegisServeResult, serverSecret);
   }
 
-  const cleanupUnregisteredGooseServeLease = async () => {
-    if (!gooseServeLease) {
+  const cleanupUnregisteredAegisServeLease = async () => {
+    if (!aegisServeLease) {
       return;
     }
 
-    const lease = gooseServeLease;
-    gooseServeLease = null;
-    await gooseServeLeases.cleanupLease(lease);
+    const lease = aegisServeLease;
+    aegisServeLease = null;
+    await aegisServeLeases.cleanupLease(lease);
   };
 
   let mainWindowState: ReturnType<typeof windowStateKeeper>;
@@ -1258,13 +1258,13 @@ const createChat = async (
         additionalArguments: [
           JSON.stringify({
             ...appConfig,
-            GOOSE_LOCALE: getConfiguredGooseLocale(),
-            GOOSE_WORKING_DIR: workingDir,
-            GOOSE_EXTERNAL_BACKEND: externalBackend !== null,
-            GOOSE_EXTERNAL_BACKEND_URL: externalBackend?.url ?? '',
-            GOOSE_EXTERNAL_BACKEND_SOURCE: externalBackend?.source ?? '',
+            AEGIS_LOCALE: getConfiguredAegisLocale(),
+            AEGIS_WORKING_DIR: workingDir,
+            AEGIS_EXTERNAL_BACKEND: externalBackend !== null,
+            AEGIS_EXTERNAL_BACKEND_URL: externalBackend?.url ?? '',
+            AEGIS_EXTERNAL_BACKEND_SOURCE: externalBackend?.source ?? '',
             REQUEST_DIR: dir,
-            GOOSE_VERSION: version,
+            AEGIS_VERSION: version,
             recipeDeeplink: recipeDeeplink,
             recipeId: recipeId,
             recipeParameters: recipeParameters,
@@ -1275,21 +1275,21 @@ const createChat = async (
               process.env.SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE,
           }),
         ],
-        partition: 'persist:goose',
+        partition: 'persist:aegis',
       },
     });
   } catch (error) {
-    await cleanupUnregisteredGooseServeLease();
+    await cleanupUnregisteredAegisServeLease();
     throw error;
   }
 
-  if (gooseServeLease) {
-    const lease = gooseServeLease;
+  if (aegisServeLease) {
+    const lease = aegisServeLease;
     mainWindow.once('closed', () => {
-      void gooseServeLeases.releaseWindow(mainWindow.id);
+      void aegisServeLeases.releaseWindow(mainWindow.id);
     });
-    gooseServeLeases.attachWindow(mainWindow.id, lease);
-    gooseServeLease = null;
+    aegisServeLeases.attachWindow(mainWindow.id, lease);
+    aegisServeLease = null;
   }
 
   if (!app.isPackaged) {
@@ -1368,7 +1368,7 @@ const createChat = async (
 
   // Handle new window creation for links (fallback for any links not handled by onClick)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void openExternalUrl(url, mainWindow, getConfiguredGooseLocale()).catch((error) => {
+    void openExternalUrl(url, mainWindow, getConfiguredAegisLocale()).catch((error) => {
       log.error('Failed to open external URL:', error);
     });
     return { action: 'deny' };
@@ -1379,7 +1379,7 @@ const createChat = async (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mainWindow.webContents.on('new-window' as any, function (event: any, url: string) {
     event.preventDefault();
-    void openExternalUrl(url, mainWindow, getConfiguredGooseLocale()).catch((error) => {
+    void openExternalUrl(url, mainWindow, getConfiguredAegisLocale()).catch((error) => {
       log.error('Failed to open external URL:', error);
     });
   });
@@ -1418,7 +1418,7 @@ const createChat = async (
     }
   }
 
-  // Goose's react app uses HashRouter, so the path + search params follow a #/
+  // Aegis's react app uses HashRouter, so the path + search params follow a #/
   url.hash = `${appPath}?${searchParams.toString()}`;
   let formattedUrl = formatUrl(url);
   log.info('Opening URL: ', formattedUrl);
@@ -1533,10 +1533,10 @@ const createLauncher = () => {
       additionalArguments: [
         JSON.stringify({
           ...appConfig,
-          GOOSE_LOCALE: getConfiguredGooseLocale(),
+          AEGIS_LOCALE: getConfiguredAegisLocale(),
         }),
       ],
-      partition: 'persist:goose',
+      partition: 'persist:aegis',
     },
     skipTaskbar: true,
     alwaysOnTop: true,
@@ -1690,7 +1690,7 @@ const openDirectoryDialog = async (): Promise<OpenDialogReturnValue> => {
   if (currentWindow) {
     try {
       const currentWorkingDir = await currentWindow.webContents.executeJavaScript(
-        `window.appConfig ? window.appConfig.get('GOOSE_WORKING_DIR') : null`
+        `window.appConfig ? window.appConfig.get('AEGIS_WORKING_DIR') : null`
       );
 
       if (currentWorkingDir && typeof currentWorkingDir === 'string') {
@@ -1883,7 +1883,7 @@ ipcMain.on('react-ready', (event) => {
 
 ipcMain.handle('open-external', async (event, url: string) => {
   const senderWindow = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-  return openExternalUrl(url, senderWindow, getConfiguredGooseLocale());
+  return openExternalUrl(url, senderWindow, getConfiguredAegisLocale());
 });
 
 ipcMain.handle('directory-chooser', async () => {
@@ -1919,7 +1919,7 @@ const validSettingKeys: Set<string> = new Set([
   'enableWakelock',
   'enableNotifications',
   'spellcheckEnabled',
-  'externalGoosed',
+  'externalAegisd',
   'globalShortcut',
   'keyboardShortcuts',
   'theme',
@@ -1950,7 +1950,7 @@ ipcMain.handle('set-setting', (_event, key: SettingKey, value: unknown) => {
   fsSync.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 
   if (key === 'language') {
-    appConfig.GOOSE_LOCALE = getConfiguredGooseLocale();
+    appConfig.AEGIS_LOCALE = getConfiguredAegisLocale();
   }
 
   // Re-register shortcuts if keyboard shortcuts changed
@@ -1968,7 +1968,7 @@ ipcMain.handle('get-secret-key', (event) => {
   if (!windowId) {
     return null;
   }
-  return gooseServeLeases.getSecretKey(windowId) ?? null;
+  return aegisServeLeases.getSecretKey(windowId) ?? null;
 });
 
 ipcMain.handle('get-acp-url', async (event) => {
@@ -1976,7 +1976,7 @@ ipcMain.handle('get-acp-url', async (event) => {
   if (!windowId) {
     return null;
   }
-  return gooseServeLeases.getAcpUrl(windowId) ?? null;
+  return aegisServeLeases.getAcpUrl(windowId) ?? null;
 });
 
 // Handle menu bar icon visibility
@@ -2190,10 +2190,10 @@ ipcMain.handle('select-file-or-directory', async (_event, defaultPath?: string) 
 
 ipcMain.handle('select-recipe-file', async (event) => {
   const senderWindow = requireRegularRendererWindow(event);
-  const pathRoot = appConfig.GOOSE_PATH_ROOT as string | undefined;
+  const pathRoot = appConfig.AEGIS_PATH_ROOT as string | undefined;
   const recipeDirectory = pathRoot
     ? path.join(pathRoot, 'config', 'recipes')
-    : path.join(os.homedir(), '.config', 'goose', 'recipes');
+    : path.join(os.homedir(), '.config', 'aegis', 'recipes');
   let defaultPath = os.homedir();
   try {
     if ((await fs.stat(recipeDirectory)).isDirectory()) {
@@ -2215,14 +2215,14 @@ ipcMain.handle('select-recipe-file', async (event) => {
   return readSelectedRecipe(result.filePaths[0]);
 });
 
-ipcMain.handle('read-goosehints', async (event) => {
+ipcMain.handle('read-aegishints', async (event) => {
   const senderWindow = requireRegularRendererWindow(event);
-  return desktopFileAccess.readGoosehints(senderWindow.id);
+  return desktopFileAccess.readAegishints(senderWindow.id);
 });
 
-ipcMain.handle('write-goosehints', async (event, content) => {
+ipcMain.handle('write-aegishints', async (event, content) => {
   const senderWindow = requireRegularRendererWindow(event);
-  return desktopFileAccess.writeGoosehints(senderWindow.id, content);
+  return desktopFileAccess.writeAegishints(senderWindow.id, content);
 });
 
 // Native picker tailored for session imports: shows hidden files (so users can
@@ -2415,7 +2415,7 @@ async function appMain() {
     }
   });
 
-  const rendererSession = session.fromPartition('persist:goose');
+  const rendererSession = session.fromPartition('persist:aegis');
   await configureProxy(session.defaultSession, rendererSession);
 
   // Ensure Windows shims are available before any MCP processes are spawned
@@ -2516,7 +2516,7 @@ async function appMain() {
 
   const shortcuts = getKeyboardShortcuts(settings);
 
-  const appMenu = menu?.items.find((item) => item.label === 'Goose');
+  const appMenu = menu?.items.find((item) => item.label === 'Aegis');
   if (appMenu?.submenu) {
     appMenu.submenu.insert(1, new MenuItem({ type: 'separator' }));
     if (shortcuts.settings) {
@@ -2644,7 +2644,7 @@ async function appMain() {
     if (shortcuts.focusWindow) {
       fileMenu.submenu.append(
         new MenuItem({
-          label: menuT('Focus Goose Window'),
+          label: menuT('Focus Aegis Window'),
           accelerator: shortcuts.focusWindow,
           click() {
             focusWindow();
@@ -2751,15 +2751,15 @@ async function appMain() {
         helpMenu.submenu.append(new MenuItem({ type: 'separator' }));
       }
 
-      // Create the About Goose menu item with a submenu
-      const aboutGooseMenuItem = new MenuItem({
-        label: menuT('About Goose'),
+      // Create the About Aegis menu item with a submenu
+      const aboutAegisMenuItem = new MenuItem({
+        label: menuT('About Aegis'),
         submenu: Menu.buildFromTemplate([]), // Start with an empty submenu for About
       });
 
-      // Add the Version menu item (display only) to the About Goose submenu
-      if (aboutGooseMenuItem.submenu) {
-        aboutGooseMenuItem.submenu.append(
+      // Add the Version menu item (display only) to the About Aegis submenu
+      if (aboutAegisMenuItem.submenu) {
+        aboutAegisMenuItem.submenu.append(
           new MenuItem({
             label: `Version ${version || app.getVersion()}`,
             enabled: false,
@@ -2767,7 +2767,7 @@ async function appMain() {
         );
       }
 
-      helpMenu.submenu.append(aboutGooseMenuItem);
+      helpMenu.submenu.append(aboutAegisMenuItem);
     }
   }
 
@@ -2960,7 +2960,7 @@ async function appMain() {
   });
 
   ipcMain.on('get-app-locale', (event) => {
-    event.returnValue = getConfiguredGooseLocale();
+    event.returnValue = getConfiguredAegisLocale();
   });
 
   ipcMain.handle('open-directory-in-explorer', async (_event, path: string) => {
@@ -2972,9 +2972,9 @@ async function appMain() {
     }
   });
 
-  ipcMain.handle('launch-app', async (event, gooseApp: GooseApp) => {
+  ipcMain.handle('launch-app', async (event, aegisApp: AegisApp) => {
     try {
-      if (isRetiredGooseChatApp(gooseApp)) {
+      if (isRetiredAegisChatApp(aegisApp)) {
         throw new Error('This built-in Chat app is no longer supported.');
       }
 
@@ -2984,13 +2984,13 @@ async function appMain() {
       }
 
       const launchingWindowId = launchingWindow.id;
-      const launchingGooseServeLease = gooseServeLeases.get(launchingWindowId);
-      if (!launchingGooseServeLease) {
+      const launchingAegisServeLease = aegisServeLeases.get(launchingWindowId);
+      if (!launchingAegisServeLease) {
         throw new Error('No backend lease found for launching window');
       }
 
       const launchingWorkingDir = await launchingWindow.webContents
-        .executeJavaScript(`window.appConfig ? window.appConfig.get('GOOSE_WORKING_DIR') : null`)
+        .executeJavaScript(`window.appConfig ? window.appConfig.get('AEGIS_WORKING_DIR') : null`)
         .catch((error) => {
           console.warn('Failed to get working directory from launching window:', error);
           return undefined;
@@ -3001,10 +3001,10 @@ async function appMain() {
         app.getPath('home')
       );
       const appWindow = new BrowserWindow({
-        title: formatAppName(gooseApp.name),
-        width: gooseApp.width ?? 800,
-        height: gooseApp.height ?? 600,
-        resizable: gooseApp.resizable ?? true,
+        title: formatAppName(aegisApp.name),
+        width: aegisApp.width ?? 800,
+        height: aegisApp.height ?? 600,
+        resizable: aegisApp.resizable ?? true,
         useContentSize: true,
         webPreferences: {
           preload: path.join(__dirname, 'preload.js'),
@@ -3014,32 +3014,32 @@ async function appMain() {
           additionalArguments: [
             JSON.stringify({
               ...appConfig,
-              GOOSE_LOCALE: getConfiguredGooseLocale(),
-              GOOSE_WORKING_DIR: workingDir,
-              GOOSE_VERSION: version,
+              AEGIS_LOCALE: getConfiguredAegisLocale(),
+              AEGIS_WORKING_DIR: workingDir,
+              AEGIS_VERSION: version,
             }),
           ],
-          partition: 'persist:goose',
+          partition: 'persist:aegis',
         },
       });
 
-      gooseServeLeases.attachWindow(appWindow.id, launchingGooseServeLease);
+      aegisServeLeases.attachWindow(appWindow.id, launchingAegisServeLease);
 
-      appWindows.set(gooseApp.name, appWindow);
+      appWindows.set(aegisApp.name, appWindow);
 
       appWindow.on('closed', () => {
-        void gooseServeLeases.releaseWindow(appWindow.id);
-        appWindows.delete(gooseApp.name);
+        void aegisServeLeases.releaseWindow(appWindow.id);
+        appWindows.delete(aegisApp.name);
       });
 
-      const extensionName = gooseApp.mcpServers?.[0] ?? '';
+      const extensionName = aegisApp.mcpServers?.[0] ?? '';
 
       const url = getAppUrl();
 
       const searchParams = new URLSearchParams();
-      searchParams.set('resourceUri', gooseApp.uri);
+      searchParams.set('resourceUri', aegisApp.uri);
       searchParams.set('extensionName', extensionName);
-      searchParams.set('appName', gooseApp.name);
+      searchParams.set('appName', aegisApp.name);
       searchParams.set('workingDir', workingDir);
 
       url.hash = `/standalone-app?${searchParams.toString()}`;
@@ -3051,11 +3051,11 @@ async function appMain() {
     }
   });
 
-  ipcMain.handle('refresh-app', async (_event, gooseApp: GooseApp) => {
+  ipcMain.handle('refresh-app', async (_event, aegisApp: AegisApp) => {
     try {
-      const appWindow = appWindows.get(gooseApp.name);
+      const appWindow = appWindows.get(aegisApp.name);
       if (!appWindow || appWindow.isDestroyed()) {
-        console.log(`App window for '${gooseApp.name}' not found or destroyed, skipping refresh`);
+        console.log(`App window for '${aegisApp.name}' not found or destroyed, skipping refresh`);
         return;
       }
 
@@ -3094,17 +3094,17 @@ app.whenReady().then(async () => {
   try {
     await appMain();
   } catch (error) {
-    dialog.showErrorBox('Goose Error', `Failed to create main window: ${error}`);
+    dialog.showErrorBox('Aegis Error', `Failed to create main window: ${error}`);
     app.quit();
   }
 });
 
 async function getAllowList(): Promise<string[]> {
-  if (!process.env.GOOSE_ALLOWLIST) {
+  if (!process.env.AEGIS_ALLOWLIST) {
     return [];
   }
 
-  const response = await fetch(process.env.GOOSE_ALLOWLIST);
+  const response = await fetch(process.env.AEGIS_ALLOWLIST);
 
   if (!response.ok) {
     throw new Error(
@@ -3130,10 +3130,10 @@ async function getAllowList(): Promise<string[]> {
 }
 
 app.on('will-quit', async () => {
-  const gooseServeLeaseCount = gooseServeLeases.activeLeaseCount();
-  if (gooseServeLeaseCount > 0) {
-    log.info(`App quitting, cleaning up ${gooseServeLeaseCount} backend lease(s)`);
-    await gooseServeLeases.cleanupAll();
+  const aegisServeLeaseCount = aegisServeLeases.activeLeaseCount();
+  if (aegisServeLeaseCount > 0) {
+    log.info(`App quitting, cleaning up ${aegisServeLeaseCount} backend lease(s)`);
+    await aegisServeLeases.cleanupAll();
   }
 
   for (const [windowId, blockerId] of windowPowerSaveBlockers.entries()) {

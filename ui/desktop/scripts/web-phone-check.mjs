@@ -1,4 +1,4 @@
-// goose-web phone check: renders at phone viewport, verifies main pane +
+// aegis-web phone check: renders at phone viewport, verifies main pane +
 // composer, then tests the navigation-collapse toggle on small screens.
 // Run: cd ui/desktop && node scripts/web-phone-check.mjs [url]
 import { chromium } from '@playwright/test';

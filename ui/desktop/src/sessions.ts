@@ -1,11 +1,11 @@
 import type { Session } from './types/session';
 import type { ExtensionConfig } from './types/extensions';
-import type { GooseExtension } from '@aaif/goose-acp-client';
+import type { AegisExtension } from '@aaif/goose-acp-client';
 import type { setViewType } from './hooks/useNavigation';
 import type { FixedExtensionEntry } from './components/ConfigContext';
 import { AppEvents } from './constants/events';
 import { acpChatSessionController } from './acp/chatSessionController';
-import { getConfiguredGooseExtensions, gooseExtensionName } from './acp/extensions';
+import { getConfiguredAegisExtensions, aegisExtensionName } from './acp/extensions';
 import { beginConfiguredRecipeParameterScope } from './acp/recipeParamRequests';
 import { getAcpFeatureCapabilities } from './acp/capabilities';
 import { RecipeDeclinedError, RecipeParameterScopesUnsupportedError } from './acp/errors';
@@ -56,9 +56,9 @@ function selectedExtensionConfigs(options?: CreateSessionOptions): ExtensionConf
   return undefined;
 }
 
-async function resolveGooseExtensions(
+async function resolveAegisExtensions(
   selected: ExtensionConfig[] | undefined
-): Promise<GooseExtension[] | undefined> {
+): Promise<AegisExtension[] | undefined> {
   if (selected === undefined) {
     return undefined;
   }
@@ -66,8 +66,8 @@ async function resolveGooseExtensions(
     return [];
   }
   const selectedNames = new Set(selected.map((config) => config.name));
-  return (await getConfiguredGooseExtensions())
-    .filter((entry) => selectedNames.has(gooseExtensionName(entry.extension)))
+  return (await getConfiguredAegisExtensions())
+    .filter((entry) => selectedNames.has(aegisExtensionName(entry.extension)))
     .map((entry) => entry.extension);
 }
 
@@ -120,8 +120,8 @@ async function createAcpSession(
         throw new RecipeParameterScopesUnsupportedError();
       }
     }
-    const gooseExtensions = await resolveGooseExtensions(selectedExtensionConfigs(options));
-    return await acpChatSessionController.createSession(workingDir, gooseExtensions, {
+    const aegisExtensions = await resolveAegisExtensions(selectedExtensionConfigs(options));
+    return await acpChatSessionController.createSession(workingDir, aegisExtensions, {
       recipeId: options?.recipeId,
       recipeDeeplink: options?.recipeDeeplink,
       recipeParameterScopeId: configuredParameterScope?.id,

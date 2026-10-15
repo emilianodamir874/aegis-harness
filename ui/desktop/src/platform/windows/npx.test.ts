@@ -54,7 +54,7 @@ describe.skipIf(process.platform !== 'win32')('Windows npx wrapper', () => {
   function runWrapper(options: {
     pathDirs: string[];
     args: string[];
-    goosePortableDir?: string;
+    aegisPortableDir?: string;
     exitCode?: number;
   }) {
     const args = options.args.map((arg) => (/[\s^&|<>]/.test(arg) ? `"${arg}"` : arg));
@@ -72,7 +72,7 @@ describe.skipIf(process.platform !== 'win32')('Windows npx wrapper', () => {
           PATHEXT: process.env.PATHEXT,
           TEMP: rootDir,
           TMP: rootDir,
-          GOOSE_NODE_DIR: options.goosePortableDir ?? emptyNodeDir,
+          AEGIS_NODE_DIR: options.aegisPortableDir ?? emptyNodeDir,
           FAKE_NPX_REPORT: path.join(rootDir, 'report.js'),
           FAKE_NPX_EXIT: String(options.exitCode ?? 0),
           // PowerShell is not on PATH, so the download step fails at once instead of using the network.
@@ -86,7 +86,7 @@ describe.skipIf(process.platform !== 'win32')('Windows npx wrapper', () => {
   }
 
   beforeAll(() => {
-    rootDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'goose npx wrapper ')));
+    rootDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'aegis npx wrapper ')));
     fs.writeFileSync(path.join(rootDir, 'report.js'), reportSource);
 
     systemNodeDir = makeDir('system node');
@@ -153,11 +153,11 @@ describe.skipIf(process.platform !== 'win32')('Windows npx wrapper', () => {
     expect((JSON.parse(result.stdout) as ChildReport).nodeDir).toBe(systemNodeDir);
   });
 
-  it('keeps the Goose portable Node.js first when it is installed', () => {
+  it('keeps the Aegis portable Node.js first when it is installed', () => {
     const result = runWrapper({
       pathDirs: [systemNodeDir],
       args: ['-y', 'pkg'],
-      goosePortableDir: portableNodeDir,
+      aegisPortableDir: portableNodeDir,
       exitCode: 5,
     });
 

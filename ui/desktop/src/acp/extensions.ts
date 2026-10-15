@@ -1,5 +1,5 @@
 import type { ExtensionConfig, ExtensionEntry } from '../types/extensions';
-import type { GooseExtension, GooseExtensionEntry } from '@aaif/goose-acp-client';
+import type { AegisExtension, AegisExtensionEntry } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
 
 export type ConfiguredExtensionEntry = ExtensionEntry & { configKey?: string };
@@ -9,7 +9,7 @@ export interface ConfiguredExtensionsResponse {
   warnings: string[];
 }
 
-export function gooseExtensionName(extension: GooseExtension): string {
+export function aegisExtensionName(extension: AegisExtension): string {
   return extension.type === 'mcp' ? extension.server.name : extension.name;
 }
 
@@ -21,7 +21,7 @@ function availableToolsOrUndefined(availableTools?: string[] | null): string[] |
   return availableTools?.length ? availableTools : undefined;
 }
 
-export function gooseExtensionToExtensionConfig(extension: GooseExtension): ExtensionConfig | null {
+export function aegisExtensionToExtensionConfig(extension: AegisExtension): ExtensionConfig | null {
   switch (extension.type) {
     case 'builtin':
     case 'platform':
@@ -67,34 +67,34 @@ export function gooseExtensionToExtensionConfig(extension: GooseExtension): Exte
   }
 }
 
-function gooseExtensionEntryToExtensionEntry(
-  entry: GooseExtensionEntry
+function aegisExtensionEntryToExtensionEntry(
+  entry: AegisExtensionEntry
 ): ConfiguredExtensionEntry | null {
-  const config = gooseExtensionToExtensionConfig(entry.extension);
+  const config = aegisExtensionToExtensionConfig(entry.extension);
   if (!config) {
     return null;
   }
   return { ...config, enabled: entry.enabled, configKey: entry.configKey ?? undefined };
 }
 
-export async function getConfiguredGooseExtensions(): Promise<GooseExtensionEntry[]> {
+export async function getConfiguredAegisExtensions(): Promise<AegisExtensionEntry[]> {
   const client = await getAcpClient();
-  const response = await client.goose.configExtensionsList_unstable({});
+  const response = await client.aegis.configExtensionsList_unstable({});
   return response.extensions;
 }
 
 export async function getConfiguredExtensions(): Promise<ConfiguredExtensionsResponse> {
   const client = await getAcpClient();
-  const response = await client.goose.configExtensionsList_unstable({});
+  const response = await client.aegis.configExtensionsList_unstable({});
   return {
     extensions: response.extensions
-      .map(gooseExtensionEntryToExtensionEntry)
+      .map(aegisExtensionEntryToExtensionEntry)
       .filter((entry): entry is ConfiguredExtensionEntry => entry !== null),
     warnings: response.warnings ?? [],
   };
 }
 
-export function extensionConfigToGooseExtension(config: ExtensionConfig): GooseExtension | null {
+export function extensionConfigToAegisExtension(config: ExtensionConfig): AegisExtension | null {
   switch (config.type) {
     case 'builtin':
       return {
@@ -148,17 +148,17 @@ export function extensionConfigToGooseExtension(config: ExtensionConfig): GooseE
 }
 
 export async function addConfigExtension(config: ExtensionConfig, enabled: boolean): Promise<void> {
-  const extension = extensionConfigToGooseExtension(config);
+  const extension = extensionConfigToAegisExtension(config);
   if (!extension) {
     throw new Error(`Unsupported extension type for ACP: ${config.type}`);
   }
   const client = await getAcpClient();
-  await client.goose.configExtensionsAdd_unstable({ extension, enabled });
+  await client.aegis.configExtensionsAdd_unstable({ extension, enabled });
 }
 
 export async function removeConfigExtension(configKey: string): Promise<void> {
   const client = await getAcpClient();
-  await client.goose.configExtensionsRemove_unstable({ configKey });
+  await client.aegis.configExtensionsRemove_unstable({ configKey });
 }
 
 export async function setConfigExtensionEnabled(
@@ -166,5 +166,5 @@ export async function setConfigExtensionEnabled(
   enabled: boolean
 ): Promise<void> {
   const client = await getAcpClient();
-  await client.goose.configExtensionsSetEnabled_unstable({ configKey, enabled });
+  await client.aegis.configExtensionsSetEnabled_unstable({ configKey, enabled });
 }

@@ -9,20 +9,20 @@
 
 import type { McpUiDisplayMode } from '@modelcontextprotocol/ext-apps/app-bridge';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GooseDisplayMode, OnDisplayModeChange } from './types';
+import type { AegisDisplayMode, OnDisplayModeChange } from './types';
 
 const DEFAULT_IFRAME_HEIGHT = 200;
 
 const AVAILABLE_DISPLAY_MODES: McpUiDisplayMode[] = ['inline', 'fullscreen', 'pip'];
 
 interface UseDisplayModeOptions {
-  displayMode: GooseDisplayMode;
+  displayMode: AegisDisplayMode;
   onDisplayModeChange?: OnDisplayModeChange;
   containerRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export interface DisplayModeState {
-  activeDisplayMode: GooseDisplayMode;
+  activeDisplayMode: AegisDisplayMode;
   effectiveDisplayModes: McpUiDisplayMode[];
   isStandalone: boolean;
   isFullscreen: boolean;
@@ -33,7 +33,7 @@ export interface DisplayModeState {
   appSupportsPip: boolean;
   appTitle: string | null;
 
-  changeDisplayMode: (mode: GooseDisplayMode) => void;
+  changeDisplayMode: (mode: AegisDisplayMode) => void;
 
   /** Remembered inline height for placeholders when detached. */
   inlineHeight: number;
@@ -49,7 +49,7 @@ export function useDisplayMode({
   onDisplayModeChange,
   containerRef,
 }: UseDisplayModeOptions): DisplayModeState {
-  const [activeDisplayMode, setActiveDisplayMode] = useState<GooseDisplayMode>(displayMode);
+  const [activeDisplayMode, setActiveDisplayMode] = useState<AegisDisplayMode>(displayMode);
 
   useEffect(() => {
     setActiveDisplayMode(displayMode);
@@ -84,7 +84,7 @@ export function useDisplayMode({
   // ── Mode transitions ──────────────────────────────────────────────────
 
   const changeDisplayMode = useCallback(
-    (mode: GooseDisplayMode) => {
+    (mode: AegisDisplayMode) => {
       const el = containerRef.current;
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 

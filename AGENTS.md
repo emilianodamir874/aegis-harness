@@ -1,10 +1,10 @@
 # AGENTS Instructions
 
-goose is an AI agent framework in Rust with CLI and Electron desktop interfaces.
+aegis is an AI agent framework in Rust with CLI and Electron desktop interfaces.
 
 ## Contribution Workflow
 
-The issue is the source of truth for work intended for an upstream pull request. Track issue status on the [Goose Issues board](https://github.com/orgs/aaif-goose/projects/1).
+The issue is the source of truth for work intended for an upstream pull request. Track issue status on the [Aegis Issues board](https://github.com/orgs/aaif-goose/projects/1).
 
 - Before implementing an issue for a pull request, confirm that it is on the board with Status **Ready**.
 - Do not implement issues in **Inbox**, **Needs info**, or **Accepted / design**. Help resolve the issue discussion instead.
@@ -18,11 +18,11 @@ Maintainer-directed work, urgent security fixes, release automation, and local o
 
 ## MCP Server Directory
 
-goose is retiring its project-specific MCP server directory in favor of the [official MCP Registry](https://github.com/modelcontextprotocol/registry) and its `server.json` format.
+aegis is retiring its project-specific MCP server directory in favor of the [official MCP Registry](https://github.com/modelcontextprotocol/registry) and its `server.json` format.
 
 - Do not add new third-party servers to `documentation/static/servers.json`; these contributions are no longer accepted.
 - Direct server authors to publish to the official MCP Registry instead.
-- Treat the existing goose directory as legacy data while registry-backed discovery and installation are implemented.
+- Treat the existing aegis directory as legacy data while registry-backed discovery and installation are implemented.
 - Changes that maintain, migrate, or remove existing directory entries are allowed when they support the migration and are within an approved issue's scope.
 
 See [Discussion #10830](https://github.com/aaif-goose/goose/discussions/10830) for the decision and migration direction.
@@ -53,10 +53,10 @@ just release-binary           # release binary
 
 ### Test
 ```bash
-export GOOSE_DISABLE_KEYRING=1  # avoid system keyring prompts
+export AEGIS_DISABLE_KEYRING=1  # avoid system keyring prompts
 cargo test                   # all tests
-cargo test -p goose          # specific crate
-cargo test --package goose --test mcp_integration_test
+cargo test -p aegis          # specific crate
+cargo test --package aegis --test mcp_integration_test
 just record-mcp-tests        # record MCP
 ```
 
@@ -80,7 +80,7 @@ ui/desktop/   # Electron app
 ui/text/      # deprecated ACP TUI (see ui/text/README.md)
 ```
 
-Some workspace crates, including those that make up the GDK, are published to crates.io and expose public APIs. The authoritative list of GDK crates is the `release = true`, `version_group = "gdk"` package set in `release-plz.toml`, which drives the GDK release; run `python3 crates/goose-sdk/scripts/gdk-release.py crates` to print it. Other crates, such as `goose` and `goose-cli`, do not provide stable public APIs; their `pub` items are internal implementation details and may change without notice.
+Some workspace crates, including those that make up the GDK, are published to crates.io and expose public APIs. The authoritative list of GDK crates is the `release = true`, `version_group = "gdk"` package set in `release-plz.toml`, which drives the GDK release; run `python3 crates/aegis-sdk/scripts/gdk-release.py crates` to print it. Other crates, such as `aegis` and `aegis-cli`, do not provide stable public APIs; their `pub` items are internal implementation details and may change without notice.
 
 ## Development Loop
 ```bash
@@ -92,17 +92,17 @@ Some workspace crates, including those that make up the GDK, are published to cr
 ### Run these only if the user has asked you to build/test your changes:
 ```
 # 1. cargo build
-# 2. GOOSE_DISABLE_KEYRING=1 cargo test -p <crate>
+# 2. AEGIS_DISABLE_KEYRING=1 cargo test -p <crate>
 # 3. cargo clippy --all-targets -- -D warnings
 ```
 
 ## Rules
 
-- Test: Prefer tests/ folder, e.g. crates/goose/tests/
-- Test: When adding features, update goose-self-test.yaml, rebuild, then run `goose run --recipe goose-self-test.yaml` to validate
+- Test: Prefer tests/ folder, e.g. crates/aegis/tests/
+- Test: When adding features, update aegis-self-test.yaml, rebuild, then run `aegis run --recipe aegis-self-test.yaml` to validate
 - Error: Use anyhow::Result
 - Provider: Implement Provider trait see providers/base.rs
-- MCP: Extensions in crates/goose-mcp/
+- MCP: Extensions in crates/aegis-mcp/
 - UI Desktop: Use ACP SDK types or local `src/types/*` types. Do not import generated OpenAPI types/client code from `ui/desktop/src/api`
 
 ## Code Quality
@@ -127,6 +127,6 @@ Some workspace crates, including those that make up the GDK, are published to cr
 - Never: Overwrite a live binary in place (e.g. `cp`/`fs.copyFileSync` onto an existing executable) - unlink or atomic-rename the destination first, otherwise macOS SIGKILLs running processes with "Code Signature Invalid"
 
 ## Entry Points
-- CLI: crates/goose-cli/src/main.rs
+- CLI: crates/aegis-cli/src/main.rs
 - UI: ui/desktop/src/main.ts
-- Agent: crates/goose/src/agents/agent.rs
+- Agent: crates/aegis/src/agents/agent.rs

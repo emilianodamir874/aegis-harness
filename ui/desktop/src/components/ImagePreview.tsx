@@ -8,7 +8,7 @@ const i18n = defineMessages({
   },
   altText: {
     id: 'imagePreview.altText',
-    defaultMessage: 'goose image',
+    defaultMessage: 'aegis image',
   },
   clickToCollapse: {
     id: 'imagePreview.clickToCollapse',

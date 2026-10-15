@@ -1,16 +1,16 @@
 ---
 unlisted: true
 ---
-# Writing Blog Posts for goose
+# Writing Blog Posts for aegis
 
-This guide explains how to write and structure blog posts for the goose documentation site.
+This guide explains how to write and structure blog posts for the aegis documentation site.
 
 ## Getting Started
 
-1. Clone the goose repository:
+1. Clone the aegis repository:
 ```bash
 git clone https://github.com/aaif-goose/goose.git
-cd goose
+cd aegis
 ```
 
 2. Install dependencies:

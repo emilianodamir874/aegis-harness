@@ -2,7 +2,7 @@ import { render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../../../i18n/test-utils';
 import McpAppRenderer from '../McpAppRenderer';
-import type { GooseDisplayMode } from '../types';
+import type { AegisDisplayMode } from '../types';
 
 vi.mock('@mcp-ui/client', () => ({
   AppBridge: class {
@@ -53,7 +53,7 @@ describe('McpAppRenderer display modes', () => {
     delete electron.getSecretKey;
   });
 
-  function renderApp(displayMode: GooseDisplayMode) {
+  function renderApp(displayMode: AegisDisplayMode) {
     return (
       <McpAppRenderer
         resourceUri="ui://bench/app"

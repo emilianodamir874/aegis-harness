@@ -27,7 +27,7 @@
     "defaultMessage": "Delete \"{name}\"? This cannot be undone."
   },
   "appsView.description": {
-    "defaultMessage": "Aplikasi dari server MCP Anda dan Aplikasi yang dibuat oleh goose sendiri. Anda dapat memintanya membuat aplikasi baru melalui antarmuka obrolan dan aplikasi tersebut akan muncul di sini."
+    "defaultMessage": "Aplikasi dari server MCP Anda dan Aplikasi yang dibuat oleh aegis sendiri. Anda dapat memintanya membuat aplikasi baru melalui antarmuka obrolan dan aplikasi tersebut akan muncul di sini."
   },
   "appsView.errorLoading": {
     "defaultMessage": "Kesalahan saat memuat aplikasi: {error}"
@@ -45,7 +45,7 @@
     "defaultMessage": "Memuat aplikasi..."
   },
   "appsView.noAppsDescription": {
-    "defaultMessage": "Buka obrolan dan mintalah goose membuat aplikasi yang Anda inginkan. goose dapat membuatkannya untuk Anda dan aplikasi tersebut akan muncul di sini. Atau jika seseorang membagikan sebuah aplikasi, Anda dapat mengimpornya menggunakan tombol di atas."
+    "defaultMessage": "Buka obrolan dan mintalah aegis membuat aplikasi yang Anda inginkan. aegis dapat membuatkannya untuk Anda dan aplikasi tersebut akan muncul di sini. Atau jika seseorang membagikan sebuah aplikasi, Anda dapat mengimpornya menggunakan tombol di atas."
   },
   "appsView.noAppsTitle": {
     "defaultMessage": "Tidak ada aplikasi yang tersedia"
@@ -84,7 +84,7 @@
     "defaultMessage": "Kredensial dihapus"
   },
   "authSettings.description": {
-    "defaultMessage": "Kelola kredensial penyedia yang disimpan secara lokal oleh goose."
+    "defaultMessage": "Kelola kredensial penyedia yang disimpan secara lokal oleh aegis."
   },
   "authSettings.empty": {
     "defaultMessage": "Tidak ditemukan kredensial penyedia yang tersimpan secara lokal."
@@ -171,10 +171,10 @@
     "defaultMessage": "Jalankan"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "Klik di sini untuk membawa Goose kembali ke fokus."
+    "defaultMessage": "Klik di sini untuk membawa Aegis kembali ke fokus."
   },
   "chat.notification.taskComplete.title": {
-    "defaultMessage": "Goose telah menyelesaikan tugas."
+    "defaultMessage": "Aegis telah menyelesaikan tugas."
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Jendela konteks"
@@ -225,13 +225,13 @@
     "defaultMessage": "Menunggu gambar disimpan..."
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "Pilih mode default yang digunakan Goose untuk sesi baru. Sesi yang sudah ada tetap menggunakan mode saat ini."
+    "defaultMessage": "Pilih mode default yang digunakan Aegis untuk sesi baru. Sesi yang sudah ada tetap menggunakan mode saat ini."
   },
   "chatSettings.modeTitle": {
     "defaultMessage": "Mode Default"
   },
   "chatSettings.responseStylesDescription": {
-    "defaultMessage": "Pilih bagaimana Goose memformat dan menata respons-nya"
+    "defaultMessage": "Pilih bagaimana Aegis memformat dan menata respons-nya"
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Gaya Respons"
@@ -252,10 +252,10 @@
     "defaultMessage": "Editor Konfigurasi"
   },
   "configSettings.description": {
-    "defaultMessage": "Edit pengaturan konfigurasi goose Anda"
+    "defaultMessage": "Edit pengaturan konfigurasi aegis Anda"
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "Edit pengaturan konfigurasi goose Anda (pengaturan saat ini untuk {provider})"
+    "defaultMessage": "Edit pengaturan konfigurasi aegis Anda (pengaturan saat ini untuk {provider})"
   },
   "configSettings.done": {
     "defaultMessage": "Selesai"
@@ -327,7 +327,7 @@
     "defaultMessage": "Giliran Maksimum"
   },
   "conversationLimitsDropdown.maxTurnsDescription": {
-    "defaultMessage": "Giliran agen maksimum sebelum Goose meminta masukan pengguna"
+    "defaultMessage": "Giliran agen maksimum sebelum Aegis meminta masukan pengguna"
   },
   "costTracker.costUnavailable": {
     "defaultMessage": "Data biaya tidak tersedia untuk {model} ({inputTokens} token masukan, {outputTokens} token keluaran)"
@@ -783,7 +783,7 @@
     "defaultMessage": "Edit pengaturan {name}"
   },
   "defaultCardButtons.getStarted": {
-    "defaultMessage": "Mulai dengan goose!"
+    "defaultMessage": "Mulai dengan aegis!"
   },
   "defaultProviderSetupForm.apiHostLabel": {
     "defaultMessage": "Host API"
@@ -924,7 +924,7 @@
     "defaultMessage": "Enter path"
   },
   "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+    "defaultMessage": "Enter an absolute path (e.g. /home/aegis/workspace)"
   },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
@@ -963,7 +963,7 @@
     "defaultMessage": "Permintaan informasi dibatalkan."
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Goose memerlukan beberapa informasi dari Anda."
+    "defaultMessage": "Aegis memerlukan beberapa informasi dari Anda."
   },
   "elicitationRequest.expired": {
     "defaultMessage": "Permintaan ini telah kedaluwarsa. Ekstensi perlu menanyakan lagi."
@@ -1008,7 +1008,7 @@
     "defaultMessage": "Terjadi kesalahan."
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Terjadi kesalahan di Goose v{version}."
+    "defaultMessage": "Terjadi kesalahan di Aegis v{version}."
   },
   "errorBoundary.heading": {
     "defaultMessage": "Honk!"
@@ -1191,7 +1191,7 @@
     "defaultMessage": "Ekstensi yang diaktifkan di sini digunakan sebagai bawaan untuk obrolan baru. Anda juga dapat mengaktifkan ekstensi aktif selama obrolan."
   },
   "extensionsView.description": {
-    "defaultMessage": "Ekstensi ini menggunakan Model Context Protocol (MCP). Mereka dapat memperluas kemampuan Goose menggunakan tiga komponen utama: Prompt, Sumber Daya, dan Alat. {searchShortcut} untuk mencari."
+    "defaultMessage": "Ekstensi ini menggunakan Model Context Protocol (MCP). Mereka dapat memperluas kemampuan Aegis menggunakan tiga komponen utama: Prompt, Sumber Daya, dan Alat. {searchShortcut} untuk mencari."
   },
   "extensionsView.heading": {
     "defaultMessage": "Ekstensi"
@@ -1209,19 +1209,19 @@
     "defaultMessage": "AA:BB:CC:... atau sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "Secara bawaan goose menjalankan server untuk Anda, gunakan ini untuk terhubung ke server goose eksternal"
+    "defaultMessage": "Secara bawaan aegis menjalankan server untuk Anda, gunakan ini untuk terhubung ke server aegis eksternal"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "Perubahan memerlukan mulai ulang Goose agar berlaku. Jendela obrolan baru akan terhubung ke server eksternal."
+    "defaultMessage": "Perubahan memerlukan mulai ulang Aegis agar berlaku. Jendela obrolan baru akan terhubung ke server eksternal."
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Kunci Rahasia"
   },
   "externalBackendSection.secretKeyHelp": {
-    "defaultMessage": "Kunci rahasia yang dikonfigurasi pada server Goose (GOOSE_SERVER__SECRET_KEY)"
+    "defaultMessage": "Kunci rahasia yang dikonfigurasi pada server Aegis (AEGIS_SERVER__SECRET_KEY)"
   },
   "externalBackendSection.secretKeyPlaceholder": {
     "defaultMessage": "Masukkan kunci rahasia server"
@@ -1230,10 +1230,10 @@
     "defaultMessage": "URL Server"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "Enter the HTTP(S) base URL. Aegis checks /status and connects to /acp under this base."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Server Goose"
+    "defaultMessage": "Server Aegis"
   },
   "externalBackendSection.urlBaseError": {
     "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
@@ -1248,7 +1248,7 @@
     "defaultMessage": "Gunakan server eksternal"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "Terhubung ke server goose yang berjalan di tempat lain (memerlukan mulai ulang aplikasi)"
+    "defaultMessage": "Terhubung ke server aegis yang berjalan di tempat lain (memerlukan mulai ulang aplikasi)"
   },
   "externalBackendSection.workingDir": {
     "defaultMessage": "Direktori kerja jarak jauh (opsional)"
@@ -1257,70 +1257,70 @@
     "defaultMessage": "Jalur absolut pada backend eksternal. Biarkan kosong untuk mengirim direktori kerja lokal."
   },
   "externalBackendSection.workingDirPlaceholder": {
-    "defaultMessage": "/home/goose/workspace"
+    "defaultMessage": "/home/aegis/workspace"
   },
-  "goosehintsModal.close": {
+  "aegishintsModal.close": {
     "defaultMessage": "Tutup"
   },
-  "goosehintsModal.developer": {
+  "aegishintsModal.developer": {
     "defaultMessage": "Pengembang"
   },
-  "goosehintsModal.dialogDescription": {
-    "defaultMessage": "Berikan konteks tambahan tentang proyek Anda untuk meningkatkan komunikasi dengan Goose"
+  "aegishintsModal.dialogDescription": {
+    "defaultMessage": "Berikan konteks tambahan tentang proyek Anda untuk meningkatkan komunikasi dengan Aegis"
   },
-  "goosehintsModal.dialogTitle": {
-    "defaultMessage": "Konfigurasikan Petunjuk Proyek (.goosehints)"
+  "aegishintsModal.dialogTitle": {
+    "defaultMessage": "Konfigurasikan Petunjuk Proyek (.aegishints)"
   },
-  "goosehintsModal.errorReading": {
-    "defaultMessage": "Kesalahan membaca file .goosehints: {error}"
+  "aegishintsModal.errorReading": {
+    "defaultMessage": "Kesalahan membaca file .aegishints: {error}"
   },
-  "goosehintsModal.failedToAccess": {
-    "defaultMessage": "Gagal mengakses file .goosehints"
+  "aegishintsModal.failedToAccess": {
+    "defaultMessage": "Gagal mengakses file .aegishints"
   },
-  "goosehintsModal.failedToSave": {
-    "defaultMessage": "Gagal menyimpan file .goosehints"
+  "aegishintsModal.failedToSave": {
+    "defaultMessage": "Gagal menyimpan file .aegishints"
   },
-  "goosehintsModal.fileCreating": {
-    "defaultMessage": "Membuat file .goosehints baru di: {filePath}"
+  "aegishintsModal.fileCreating": {
+    "defaultMessage": "Membuat file .aegishints baru di: {filePath}"
   },
-  "goosehintsModal.fileFound": {
-    "defaultMessage": "File .goosehints ditemukan di: {filePath}"
+  "aegishintsModal.fileFound": {
+    "defaultMessage": "File .aegishints ditemukan di: {filePath}"
   },
-  "goosehintsModal.helpText1": {
-    "defaultMessage": ".goosehints adalah file teks yang digunakan untuk memberikan konteks tambahan tentang proyek Anda dan meningkatkan komunikasi dengan Goose."
+  "aegishintsModal.helpText1": {
+    "defaultMessage": ".aegishints adalah file teks yang digunakan untuk memberikan konteks tambahan tentang proyek Anda dan meningkatkan komunikasi dengan Aegis."
   },
-  "goosehintsModal.helpText2": {
-    "defaultMessage": "Pastikan ekstensi {bold} diaktifkan di halaman ekstensi. Ekstensi ini diperlukan untuk menggunakan .goosehints. Anda perlu memulai ulang sesi agar pembaruan .goosehints berlaku."
+  "aegishintsModal.helpText2": {
+    "defaultMessage": "Pastikan ekstensi {bold} diaktifkan di halaman ekstensi. Ekstensi ini diperlukan untuk menggunakan .aegishints. Anda perlu memulai ulang sesi agar pembaruan .aegishints berlaku."
   },
-  "goosehintsModal.helpText3": {
+  "aegishintsModal.helpText3": {
     "defaultMessage": "Lihat {link} untuk informasi lebih lanjut."
   },
-  "goosehintsModal.helpTextLink": {
-    "defaultMessage": "menggunakan .goosehints"
+  "aegishintsModal.helpTextLink": {
+    "defaultMessage": "menggunakan .aegishints"
   },
-  "goosehintsModal.placeholder": {
+  "aegishintsModal.placeholder": {
     "defaultMessage": "Masukkan petunjuk proyek di sini..."
   },
-  "goosehintsModal.save": {
+  "aegishintsModal.save": {
     "defaultMessage": "Simpan"
   },
-  "goosehintsModal.savedSuccessfully": {
+  "aegishintsModal.savedSuccessfully": {
     "defaultMessage": "Berhasil disimpan"
   },
-  "goosehintsModal.saving": {
+  "aegishintsModal.saving": {
     "defaultMessage": "Menyimpan..."
   },
-  "goosehintsSection.configure": {
+  "aegishintsSection.configure": {
     "defaultMessage": "Konfigurasikan"
   },
-  "goosehintsSection.description": {
-    "defaultMessage": "Konfigurasikan file .goosehints proyek Anda untuk memberikan konteks tambahan ke Goose"
+  "aegishintsSection.description": {
+    "defaultMessage": "Konfigurasikan file .aegishints proyek Anda untuk memberikan konteks tambahan ke Aegis"
   },
-  "goosehintsSection.title": {
-    "defaultMessage": "Petunjuk Proyek (.goosehints)"
+  "aegishintsSection.title": {
+    "defaultMessage": "Petunjuk Proyek (.aegishints)"
   },
-  "groupedExtensionLoadingToast.askGoose": {
-    "defaultMessage": "Tanya goose"
+  "groupedExtensionLoadingToast.askAegis": {
+    "defaultMessage": "Tanya aegis"
   },
   "groupedExtensionLoadingToast.collapseDetails": {
     "defaultMessage": "Ciutkan detail"
@@ -1440,7 +1440,7 @@
     "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
-    "defaultMessage": "gambar goose"
+    "defaultMessage": "gambar aegis"
   },
   "imagePreview.clickToCollapse": {
     "defaultMessage": "Klik untuk menciutkan"
@@ -1455,10 +1455,10 @@
     "defaultMessage": "Batal"
   },
   "importRecipeForm.deeplinkHint": {
-    "defaultMessage": "Tempelkan deeplink resep yang dimulai dengan \"goose://recipe?config=\""
+    "defaultMessage": "Tempelkan deeplink resep yang dimulai dengan \"aegis://recipe?config=\""
   },
   "importRecipeForm.deeplinkPlaceholder": {
-    "defaultMessage": "Tempelkan deeplink goose://recipe?config=... Anda di sini"
+    "defaultMessage": "Tempelkan deeplink aegis://recipe?config=... Anda di sini"
   },
   "importRecipeForm.example": {
     "defaultMessage": "contoh"
@@ -1488,7 +1488,7 @@
     "defaultMessage": "File Resep"
   },
   "importRecipeForm.reviewWarning": {
-    "defaultMessage": "Pastikan Anda meninjau konten file resep sebelum menambahkannya ke antarmuka goose Anda."
+    "defaultMessage": "Pastikan Anda meninjau konten file resep sebelum menambahkannya ke antarmuka aegis Anda."
   },
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "File YAML atau JSON Anda harus mengikuti struktur ini. Bidang yang diperlukan adalah: title, description, dan salah satu dari instructions atau prompt."
@@ -1599,13 +1599,13 @@
     "defaultMessage": "Pintasan Aplikasi"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "Pintasan ini berfungsi saat Goose menjadi aplikasi aktif"
+    "defaultMessage": "Pintasan ini berfungsi saat Aegis menjadi aplikasi aktif"
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "Pintasan Global"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "Pintasan ini berfungsi di seluruh sistem, bahkan saat Goose tidak difokuskan"
+    "defaultMessage": "Pintasan ini berfungsi di seluruh sistem, bahkan saat Aegis tidak difokuskan"
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "Pintasan Pencarian"
@@ -1647,10 +1647,10 @@
     "defaultMessage": "Cari Sebelumnya"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "Bawa jendela Goose ke depan dari mana saja"
+    "defaultMessage": "Bawa jendela Aegis ke depan dari mana saja"
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "Fokuskan Jendela Goose"
+    "defaultMessage": "Fokuskan Jendela Aegis"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "Memuat..."
@@ -1662,7 +1662,7 @@
     "defaultMessage": "Obrolan Baru"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "Buka jendela Goose baru"
+    "defaultMessage": "Buka jendela Aegis baru"
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "Jendela Obrolan Baru"
@@ -1701,7 +1701,7 @@
     "defaultMessage": "Atur Ulang ke Default"
   },
   "keyboardShortcuts.restartDescription": {
-    "defaultMessage": "Perubahan pada pintasan aplikasi (seperti Obrolan Baru, Pengaturan, dll.) memerlukan memulai ulang Goose agar berlaku. Pintasan global (Fokuskan Jendela, Peluncur Cepat) berfungsi segera."
+    "defaultMessage": "Perubahan pada pintasan aplikasi (seperti Obrolan Baru, Pengaturan, dll.) memerlukan memulai ulang Aegis agar berlaku. Pintasan global (Fokuskan Jendela, Peluncur Cepat) berfungsi segera."
   },
   "keyboardShortcuts.restartRequired": {
     "defaultMessage": "Perlu Memulai Ulang"
@@ -1731,7 +1731,7 @@
     "defaultMessage": "Alihkan Navigasi"
   },
   "launcher.placeholder": {
-    "defaultMessage": "Tanyakan apa saja kepada goose..."
+    "defaultMessage": "Tanyakan apa saja kepada aegis..."
   },
   "liveVoice.connecting": {
     "defaultMessage": "Connecting Live voice"
@@ -1758,31 +1758,31 @@
     "defaultMessage": "Unmute microphone"
   },
   "liveVoiceSettings.description": {
-    "defaultMessage": "Lakukan percakapan suara real-time dengan Goose"
+    "defaultMessage": "Lakukan percakapan suara real-time dengan Aegis"
   },
   "liveVoiceSettings.title": {
     "defaultMessage": "Suara langsung"
   },
-  "loadingGoose.compacting": {
-    "defaultMessage": "goose sedang meringkas percakapan..."
+  "loadingAegis.compacting": {
+    "defaultMessage": "aegis sedang meringkas percakapan..."
   },
-  "loadingGoose.idle": {
-    "defaultMessage": "goose sedang mengerjakannya…"
+  "loadingAegis.idle": {
+    "defaultMessage": "aegis sedang mengerjakannya…"
   },
-  "loadingGoose.loadingConversation": {
+  "loadingAegis.loadingConversation": {
     "defaultMessage": "memuat percakapan..."
   },
-  "loadingGoose.restartingAgent": {
+  "loadingAegis.restartingAgent": {
     "defaultMessage": "memulai ulang sesi..."
   },
-  "loadingGoose.streaming": {
-    "defaultMessage": "goose sedang mengerjakannya…"
+  "loadingAegis.streaming": {
+    "defaultMessage": "aegis sedang mengerjakannya…"
   },
-  "loadingGoose.thinking": {
-    "defaultMessage": "goose sedang berpikir…"
+  "loadingAegis.thinking": {
+    "defaultMessage": "aegis sedang berpikir…"
   },
-  "loadingGoose.waiting": {
-    "defaultMessage": "goose sedang menunggu…"
+  "loadingAegis.waiting": {
+    "defaultMessage": "aegis sedang menunggu…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "Hapus model ini? Anda dapat mengunduhnya kembali nanti."
@@ -2424,7 +2424,7 @@
     "defaultMessage": "Server mungkin sedang dimulai atau tidak tersedia untuk sementara."
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "Tidak dapat terhubung ke server Goose"
+    "defaultMessage": "Tidak dapat terhubung ke server Aegis"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "Coba Lagi"
@@ -2433,10 +2433,10 @@
     "defaultMessage": "Agen AI lokal Anda. Hubungkan penyedia model AI untuk memulai."
   },
   "onboardingGuard.welcomeTitle": {
-    "defaultMessage": "Selamat datang di goose"
+    "defaultMessage": "Selamat datang di aegis"
   },
   "onboardingSuccess.allSet": {
-    "defaultMessage": "Anda siap untuk mulai menggunakan goose."
+    "defaultMessage": "Anda siap untuk mulai menggunakan aegis."
   },
   "onboardingSuccess.connectedTo": {
     "defaultMessage": "Terhubung ke {providerName}"
@@ -2451,7 +2451,7 @@
     "defaultMessage": "Model lokal siap"
   },
   "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "Data penggunaan anonim membantu meningkatkan goose. Kami tidak pernah mengumpulkan percakapan, kode, atau data pribadi Anda."
+    "defaultMessage": "Data penggunaan anonim membantu meningkatkan aegis. Kami tidak pernah mengumpulkan percakapan, kode, atau data pribadi Anda."
   },
   "onboardingSuccess.privacyTitle": {
     "defaultMessage": "Privasi"
@@ -2619,10 +2619,10 @@
     "defaultMessage": "Metrik sesi (durasi, jumlah interaksi, penggunaan token)"
   },
   "privacyInfoModal.collectVersion": {
-    "defaultMessage": "Versi goose dan metode instalasi"
+    "defaultMessage": "Versi aegis dan metode instalasi"
   },
   "privacyInfoModal.description": {
-    "defaultMessage": "Data penggunaan anonim membantu kami memahami cara goose digunakan dan mengidentifikasi area yang dapat ditingkatkan."
+    "defaultMessage": "Data penggunaan anonim membantu kami memahami cara aegis digunakan dan mengidentifikasi area yang dapat ditingkatkan."
   },
   "privacyInfoModal.neverCollect": {
     "defaultMessage": "Kami tidak pernah mengumpulkan percakapan, kode, argumen alat, pesan kesalahan, atau data pribadi Anda. Anda dapat mengubah pengaturan ini kapan saja di Pengaturan."
@@ -2691,7 +2691,7 @@
     "defaultMessage": "Gagal menyimpan prompt"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "Sesuaikan prompt yang menentukan perilaku goose dalam berbagai konteks. Prompt ini menggunakan sintaks templat Jinja2. Berhati-hatilah saat memodifikasi variabel templat, karena perubahan yang salah dapat merusak fungsionalitas. Mohon bagikan setiap peningkatan dengan komunitas."
+    "defaultMessage": "Sesuaikan prompt yang menentukan perilaku aegis dalam berbagai konteks. Prompt ini menggunakan sintaks templat Jinja2. Berhati-hatilah saat memodifikasi variabel templat, karena perubahan yang salah dapat merusak fungsionalitas. Mohon bagikan setiap peningkatan dengan komunitas."
   },
   "promptsSettings.promptEditingTitle": {
     "defaultMessage": "Pengeditan Prompt"
@@ -2787,7 +2787,7 @@
     "defaultMessage": "Sedang masuk..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "Tambahkan kunci API Anda untuk penyedia ini agar terintegrasi ke dalam goose"
+    "defaultMessage": "Tambahkan kunci API Anda untuk penyedia ini agar terintegrasi ke dalam aegis"
   },
   "providerConfigurationModal.browserWindowHint": {
     "defaultMessage": "Jendela browser akan terbuka agar Anda dapat menyelesaikan proses masuk."
@@ -2823,7 +2823,7 @@
     "defaultMessage": "Kesalahan"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "Penyedia ini dikonfigurasi di luar goose. Ikuti langkah-langkah berikut:"
+    "defaultMessage": "Penyedia ini dikonfigurasi di luar aegis. Ikuti langkah-langkah berikut:"
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Kembali"
@@ -2907,7 +2907,7 @@
     "defaultMessage": "Memuat penyedia..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "Pilih penyedia model AI untuk memulai dengan goose. Anda perlu menggunakan kunci API yang dihasilkan oleh setiap penyedia yang akan dienkripsi dan disimpan secara lokal. Anda dapat mengubah penyedia kapan saja di pengaturan."
+    "defaultMessage": "Pilih penyedia model AI untuk memulai dengan aegis. Anda perlu menggunakan kunci API yang dihasilkan oleh setiap penyedia yang akan dienkripsi dan disimpan secara lokal. Anda dapat mengubah penyedia kapan saja di pengaturan."
   },
   "providerSettings.otherProviders": {
     "defaultMessage": "Penyedia lain"
@@ -3480,7 +3480,7 @@
     "defaultMessage": "Tautan dalam"
   },
   "scheduleModal.deepLinkPlaceholder": {
-    "defaultMessage": "Tempel tautan goose://recipe di sini..."
+    "defaultMessage": "Tempel tautan aegis://recipe di sini..."
   },
   "scheduleModal.editSchedule": {
     "defaultMessage": "Edit Jadwal"
@@ -3495,7 +3495,7 @@
     "defaultMessage": "Gagal membaca berkas yang dipilih."
   },
   "scheduleModal.invalidDeepLink": {
-    "defaultMessage": "Tautan dalam tidak valid. Harap gunakan tautan goose://recipe."
+    "defaultMessage": "Tautan dalam tidak valid. Harap gunakan tautan aegis://recipe."
   },
   "scheduleModal.invalidFileType": {
     "defaultMessage": "Jenis berkas tidak valid: Harap pilih berkas YAML (.yaml atau .yml)"
@@ -3837,7 +3837,7 @@
     "defaultMessage": "Riwayat obrolan"
   },
   "sessions.chatHistoryDesc": {
-    "defaultMessage": "Lihat dan cari percakapan Anda sebelumnya dengan Goose. {shortcut} untuk mencari."
+    "defaultMessage": "Lihat dan cari percakapan Anda sebelumnya dengan Aegis. {shortcut} untuk mencari."
   },
   "sessions.close": {
     "defaultMessage": "Tutup"
@@ -3930,7 +3930,7 @@
     "defaultMessage": "Deskripsi sesi berhasil diperbarui"
   },
   "settings.appearance.description": {
-    "defaultMessage": "Konfigurasikan tampilan goose di sistem Anda"
+    "defaultMessage": "Konfigurasikan tampilan aegis di sistem Anda"
   },
   "settings.appearance.title": {
     "defaultMessage": "Tampilan"
@@ -3945,13 +3945,13 @@
     "defaultMessage": "Pelacakan Biaya"
   },
   "settings.dockIcon.description": {
-    "defaultMessage": "Tampilkan goose di dock"
+    "defaultMessage": "Tampilkan aegis di dock"
   },
   "settings.dockIcon.title": {
     "defaultMessage": "Ikon dock"
   },
   "settings.help.description": {
-    "defaultMessage": "Bantu kami meningkatkan goose dengan melaporkan masalah atau meminta fitur baru"
+    "defaultMessage": "Bantu kami meningkatkan aegis dengan melaporkan masalah atau meminta fitur baru"
   },
   "settings.help.reportBug": {
     "defaultMessage": "Laporkan Bug"
@@ -3963,7 +3963,7 @@
     "defaultMessage": "Bantuan & masukan"
   },
   "settings.language.description": {
-    "defaultMessage": "Pilih bahasa tampilan untuk goose"
+    "defaultMessage": "Pilih bahasa tampilan untuk aegis"
   },
   "settings.language.english": {
     "defaultMessage": "English"
@@ -4020,7 +4020,7 @@
     "defaultMessage": "Bahasa Tionghoa (Tradisional)"
   },
   "settings.menuBarIcon.description": {
-    "defaultMessage": "Tampilkan goose di bilah menu"
+    "defaultMessage": "Tampilkan aegis di bilah menu"
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "Ikon bilah menu"
@@ -4041,7 +4041,7 @@
     "defaultMessage": "Klik Notifications"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "Temukan dan pilih goose di daftar aplikasi"
+    "defaultMessage": "Temukan dan pilih aegis di daftar aplikasi"
   },
   "settings.notifications.modal.macStep4": {
     "defaultMessage": "Aktifkan notifikasi dan sesuaikan pengaturan sesuai keinginan"
@@ -4059,7 +4059,7 @@
     "defaultMessage": "Buka System > Notifications"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "Temukan dan pilih goose di daftar aplikasi"
+    "defaultMessage": "Temukan dan pilih aegis di daftar aplikasi"
   },
   "settings.notifications.modal.winStep4": {
     "defaultMessage": "Aktifkan notifikasi dan sesuaikan pengaturan sesuai keinginan"
@@ -4068,7 +4068,7 @@
     "defaultMessage": "Buka Pengaturan"
   },
   "settings.notifications.task.description": {
-    "defaultMessage": "Beri tahu saat Goose menyelesaikan tugas selagi jendela berada di latar belakang"
+    "defaultMessage": "Beri tahu saat Aegis menyelesaikan tugas selagi jendela berada di latar belakang"
   },
   "settings.notifications.task.title": {
     "defaultMessage": "Notifikasi penyelesaian tugas"
@@ -4077,19 +4077,19 @@
     "defaultMessage": "Notifikasi"
   },
   "settings.preventSleep.description": {
-    "defaultMessage": "Jaga komputer Anda tetap menyala saat goose menjalankan tugas (layar tetap dapat terkunci)"
+    "defaultMessage": "Jaga komputer Anda tetap menyala saat aegis menjalankan tugas (layar tetap dapat terkunci)"
   },
   "settings.preventSleep.title": {
     "defaultMessage": "Cegah Tidur"
   },
   "settings.theme.description": {
-    "defaultMessage": "Sesuaikan tampilan dan nuansa goose"
+    "defaultMessage": "Sesuaikan tampilan dan nuansa aegis"
   },
   "settings.theme.title": {
     "defaultMessage": "Tema"
   },
   "settings.updates.description": {
-    "defaultMessage": "Periksa dan instal pembaruan agar goose berjalan optimal"
+    "defaultMessage": "Periksa dan instal pembaruan agar aegis berjalan optimal"
   },
   "settings.updates.title": {
     "defaultMessage": "Pembaruan"
@@ -4155,7 +4155,7 @@
     "defaultMessage": "Tidak ada keterampilan yang cocok ditemukan"
   },
   "skillsView.noSkillsDescription": {
-    "defaultMessage": "Keterampilan dimuat dari file SKILL.md di ~/.config/agents/skills/, .goose/skills/, atau direktori lain yang didukung."
+    "defaultMessage": "Keterampilan dimuat dari file SKILL.md di ~/.config/agents/skills/, .aegis/skills/, atau direktori lain yang didukung."
   },
   "skillsView.noSkillsInstalled": {
     "defaultMessage": "Tidak ada keterampilan yang terpasang"
@@ -4164,7 +4164,7 @@
     "defaultMessage": "Cari keterampilan..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "Lihat keterampilan terpasang yang memperluas kemampuan Goose. {shortcut} untuk mencari."
+    "defaultMessage": "Lihat keterampilan terpasang yang memperluas kemampuan Aegis. {shortcut} untuk mencari."
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "Keterampilan"
@@ -4407,10 +4407,10 @@
     "defaultMessage": "Gunakan penyedia lain"
   },
   "telemetryConsentPrompt.description": {
-    "defaultMessage": "Apakah Anda ingin membagikan data penggunaan anonim untuk membantu meningkatkan goose? Kami tidak pernah mengumpulkan percakapan, kode, atau data pribadi Anda."
+    "defaultMessage": "Apakah Anda ingin membagikan data penggunaan anonim untuk membantu meningkatkan aegis? Kami tidak pernah mengumpulkan percakapan, kode, atau data pribadi Anda."
   },
   "telemetryConsentPrompt.heading": {
-    "defaultMessage": "Bantu tingkatkan goose"
+    "defaultMessage": "Bantu tingkatkan aegis"
   },
   "telemetryConsentPrompt.learnMore": {
     "defaultMessage": "Pelajari lebih lanjut"
@@ -4437,7 +4437,7 @@
     "defaultMessage": "Privasi"
   },
   "telemetrySettings.toggleDescription": {
-    "defaultMessage": "Bantu tingkatkan goose dengan membagikan statistik penggunaan anonim."
+    "defaultMessage": "Bantu tingkatkan aegis dengan membagikan statistik penggunaan anonim."
   },
   "telemetrySettings.toggleLabel": {
     "defaultMessage": "Data penggunaan anonim"
@@ -4517,14 +4517,14 @@
   "toolConfirmation.allowToolCallWithName": {
     "defaultMessage": "Izinkan {toolName}?"
   },
-  "toolConfirmation.gooseWouldLikeToCallWithName": {
-    "defaultMessage": "Goose ingin memanggil {toolName}. Izinkan?"
+  "toolConfirmation.aegisWouldLikeToCallWithName": {
+    "defaultMessage": "Aegis ingin memanggil {toolName}. Izinkan?"
   },
   "updateSection.autoDownload": {
-    "defaultMessage": "Goose akan mengunduh pembaruan di latar belakang dan menginstalnya saat Anda keluar atau memulai ulang berikutnya."
+    "defaultMessage": "Aegis akan mengunduh pembaruan di latar belakang dan menginstalnya saat Anda keluar atau memulai ulang berikutnya."
   },
   "updateSection.autoDownloadDisabledByEnv": {
-    "defaultMessage": "Pengunduhan otomatis dinonaktifkan melalui variabel lingkungan GOOSE_DISABLE_AUTO_DOWNLOAD."
+    "defaultMessage": "Pengunduhan otomatis dinonaktifkan melalui variabel lingkungan AEGIS_DISABLE_AUTO_DOWNLOAD."
   },
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "Pengunduhan otomatis dinonaktifkan. Klik \"Download Now\" untuk mengunduh secara manual."
@@ -4542,7 +4542,7 @@
     "defaultMessage": "Nonaktifkan pengunduhan pembaruan otomatis"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "Saat diaktifkan, Goose akan memberi tahu Anda tentang versi baru tetapi tidak akan mengunduhnya secara otomatis."
+    "defaultMessage": "Saat diaktifkan, Aegis akan memberi tahu Anda tentang versi baru tetapi tidak akan mengunduhnya secara otomatis."
   },
   "updateSection.downloadNow": {
     "defaultMessage": "Unduh Sekarang"

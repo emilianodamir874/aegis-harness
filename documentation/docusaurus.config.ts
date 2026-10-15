@@ -15,7 +15,7 @@ type SidebarItem = {
 };
 
 const config: Config = {
-  title: "goose | Your open source AI agent",
+  title: "aegis | Your open source AI agent",
   tagline: "your local AI agent, automating engineering tasks seamlessly",
   favicon: "img/favicon.ico",
 
@@ -28,7 +28,7 @@ const config: Config = {
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
   organizationName: "aaif-goose", // Usually your GitHub org/user name.
-  projectName: "goose", // Usually your repo name.
+  projectName: "aegis", // Usually your repo name.
 
   onBrokenLinks: "throw",
 
@@ -146,8 +146,8 @@ const config: Config = {
       {
         redirects: [
           {
-            from: "/docs/getting-started/using-goose-free",
-            to: "/docs/getting-started/providers#using-goose-for-free",
+            from: "/docs/getting-started/using-aegis-free",
+            to: "/docs/getting-started/providers#using-aegis-for-free",
           },
           {
             from: "/v1/docs/getting-started/providers",
@@ -182,7 +182,7 @@ const config: Config = {
             to: "/docs/mcp/computer-controller-mcp",
           },
           {
-            from: "/docs/guides/managing-goose-sessions",
+            from: "/docs/guides/managing-aegis-sessions",
             to: "/docs/guides/sessions/session-management",
           },
           {
@@ -190,7 +190,7 @@ const config: Config = {
             to: "/docs/guides/sessions/smart-context-management",
           },
           {
-            from: "/docs/guides/share-goose-sessions",
+            from: "/docs/guides/share-aegis-sessions",
             to: "/docs/guides/recipes/session-recipes",
           },
           {
@@ -218,8 +218,8 @@ const config: Config = {
             to: "/docs/guides/managing-tools/adjust-tool-output",
           },
           {
-            from: "/docs/guides/goose-in-docker",
-            to: "/docs/tutorials/goose-in-docker",
+            from: "/docs/guides/aegis-in-docker",
+            to: "/docs/tutorials/aegis-in-docker",
           },
           {
             from: "/docs/guides/multi-model/creating-plans",
@@ -254,12 +254,12 @@ const config: Config = {
             to: "/docs/guides/context-engineering/prompt-templates",
           },
           {
-            from: "/docs/guides/goose-permissions",
-            to: "/docs/guides/managing-tools/goose-permissions",
+            from: "/docs/guides/aegis-permissions",
+            to: "/docs/guides/managing-tools/aegis-permissions",
           },
           {
-            from: "/docs/guides/using-goosehints",
-            to: "/docs/guides/context-engineering/using-goosehints",
+            from: "/docs/guides/using-aegishints",
+            to: "/docs/guides/context-engineering/using-aegishints",
           },
           {
             from: "/docs/guides/managing-tools/hooks",
@@ -438,7 +438,7 @@ const config: Config = {
     navbar: {
       title: "",
       logo: {
-        alt: "goose Logo", // TODO: replace logo assets with AAIF branding
+        alt: "aegis Logo", // TODO: replace logo assets with AAIF branding
         src: "img/logo_light.png",
         srcDark: "img/logo_dark.png",
       },
@@ -497,7 +497,7 @@ const config: Config = {
           title: "Quick Links",
           items: [
             {
-              label: "Install goose",
+              label: "Install aegis",
               to: "docs/getting-started/installation",
             },
             {
@@ -519,15 +519,15 @@ const config: Config = {
             },
             {
               label: "YouTube",
-              href: "https://www.youtube.com/@goose-oss",
+              href: "https://www.youtube.com/@aegis-oss",
             },
             {
               label: "LinkedIn",
-              href: "https://www.linkedin.com/company/goose-oss",
+              href: "https://www.linkedin.com/company/aegis-oss",
             },
             {
               label: "Twitter / X",
-              href: "https://x.com/goose_oss",
+              href: "https://x.com/aegis_oss",
             },
             {
               label: "BlueSky",
@@ -560,9 +560,9 @@ const config: Config = {
       darkTheme: prismThemes.nightOwl,
     },
     announcementBar: {
-      id: 'goose-aaif-announcement', // Increment on new announcements to reuse the bar
+      id: 'aegis-aaif-announcement', // Increment on new announcements to reuse the bar
       content:
-        '✨ goose has moved to the Agentic AI Foundation (AAIF): <a href="/blog/2026/04/07/goose-moves-to-aaif">Learn more</a>! ✨',
+        '✨ aegis has moved to the Agentic AI Foundation (AAIF): <a href="/blog/2026/04/07/aegis-moves-to-aaif">Learn more</a>! ✨',
       backgroundColor: '#20232a',
       textColor: '#fff',
       isCloseable: true,

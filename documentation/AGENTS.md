@@ -2,10 +2,10 @@
 
 ## Brand Guidelines
 
-**IMPORTANT**: The product name "goose" should ALWAYS be written in lowercase "g" in all documentation, blog posts, and any content within this documentation directory.
+**IMPORTANT**: The product name "aegis" should ALWAYS be written in lowercase "g" in all documentation, blog posts, and any content within this documentation directory.
 
-- ✅ Correct: "goose", "using goose", "goose provides"
-- ❌ Incorrect: "Goose", "using Goose", "Goose provides"
+- ✅ Correct: "aegis", "using aegis", "aegis provides"
+- ❌ Incorrect: "Aegis", "using Aegis", "Aegis provides"
 
 This is a brand guideline that must be strictly followed.
 
@@ -18,11 +18,11 @@ This rule applies to:
 - Configuration files with user-facing text
 - Any other documentation content
 
-When editing or creating content in this documentation directory, always ensure "goose" uses a lowercase "g".
+When editing or creating content in this documentation directory, always ensure "aegis" uses a lowercase "g".
 
 ## MCP Extension Directory
 
-goose is retiring its project-specific MCP server directory in favor of the [official MCP Registry](https://github.com/modelcontextprotocol/registry) and its `server.json` format.
+aegis is retiring its project-specific MCP server directory in favor of the [official MCP Registry](https://github.com/modelcontextprotocol/registry) and its `server.json` format.
 
 - Do not document new third-party servers by adding them to `static/servers.json`; new directory submissions are no longer accepted.
 - Direct MCP server authors to publish to the official MCP Registry.

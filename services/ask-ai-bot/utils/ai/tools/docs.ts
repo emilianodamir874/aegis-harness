@@ -17,7 +17,7 @@ export interface DocSection {
 }
 
 const stopWords = new Set(
-  "a an and are can do does for goose how i in is it me my of on the to what with you".split(
+  "a an and are can do does for aegis how i in is it me my of on the to what with you".split(
     " ",
   ),
 );

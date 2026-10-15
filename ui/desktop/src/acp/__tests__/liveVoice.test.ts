@@ -15,7 +15,7 @@ describe('ACP Live voice', () => {
       message: 'Start Live voice',
     });
     vi.mocked(getAcpClient).mockResolvedValue({
-      goose: {
+      aegis: {
         sessionLiveVoiceAvailability_unstable: sessionLiveVoiceAvailability,
       },
     } as unknown as Awaited<ReturnType<typeof getAcpClient>>);
@@ -35,7 +35,7 @@ describe('ACP Live voice', () => {
       message: 'Live voice is disabled',
     });
     vi.mocked(getAcpClient).mockResolvedValue({
-      goose: {
+      aegis: {
         sessionLiveVoiceAvailability_unstable: sessionLiveVoiceAvailability,
       },
     } as unknown as Awaited<ReturnType<typeof getAcpClient>>);
@@ -54,7 +54,7 @@ describe('ACP Live voice', () => {
     });
     const stop = vi.fn().mockResolvedValue({});
     vi.mocked(getAcpClient).mockResolvedValue({
-      goose: {
+      aegis: {
         sessionLiveVoiceStart_unstable: start,
         sessionLiveVoiceStop_unstable: stop,
       },

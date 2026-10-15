@@ -8,7 +8,7 @@ authors:
 ![](mcp-sampling.png)
 
 :::note
-This post describes a historical MCP feature. [Sampling was deprecated](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in the 2026-07-28 MCP specification, and goose no longer supports it. MCP servers that need model inference should integrate directly with an LLM provider API.
+This post describes a historical MCP feature. [Sampling was deprecated](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in the 2026-07-28 MCP specification, and aegis no longer supports it. MCP servers that need model inference should integrate directly with an LLM provider API.
 :::
 
 If you've been following MCP, you've probably heard about tools which are functions that let AI assistants do things like read files, query databases, or call APIs. But there's another MCP feature that's less talked about and arguably more interesting: **[Sampling](https://modelcontextprotocol.io/docs/learn/client-concepts#sampling)**.
@@ -34,7 +34,7 @@ Ask the AI that's already connected to do the thinking for you. No extra API key
 
 ## How Sampling Works
 
-When an MCP client like goose connects to an MCP server, it establishes a two-way channel. The server can expose tools for the AI to call, but it can also *request* that the AI generate text on its behalf.
+When an MCP client like aegis connects to an MCP server, it establishes a two-way channel. The server can expose tools for the AI to call, but it can also *request* that the AI generate text on its behalf.
 
 Here's what that looks like in code (using Python with FastMCP):
 

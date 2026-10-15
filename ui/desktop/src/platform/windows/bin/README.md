@@ -8,9 +8,9 @@ This directory contains Windows-specific scripts that are only included during W
 
 `npx.cmd` uses the first Node.js that fits, in this order:
 
-1. Portable Node.js that Goose already downloaded to `%LOCALAPPDATA%\Goose\node`.
+1. Portable Node.js that Aegis already downloaded to `%LOCALAPPDATA%\Aegis\node`.
 2. The first `node.exe` on `PATH` that is version 22 or newer and has a working `npx.cmd` next to it (`npx.cmd --version` must succeed).
-3. Otherwise, it downloads portable Node.js to `%LOCALAPPDATA%\Goose\node`.
+3. Otherwise, it downloads portable Node.js to `%LOCALAPPDATA%\Aegis\node`.
 
 ### Windows Binaries
 

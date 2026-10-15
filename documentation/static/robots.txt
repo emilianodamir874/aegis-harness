@@ -1,4 +1,4 @@
-# goose Documentation
+# aegis Documentation
 # https://goose-docs.ai/
 
 User-agent: *

@@ -3,7 +3,7 @@
     {
       "version": "0.1.0-alpha.11",
       "docVersion": "0.1",
-      "source": "crates/goose-sdk/src/bindings.rs",
+      "source": "crates/aegis-sdk/src/bindings.rs",
       "functions": [
         {
           "name": "anthropic_default_model",
@@ -37,7 +37,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -66,7 +66,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -101,7 +101,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -116,7 +116,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -147,7 +147,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -162,7 +162,7 @@
             }
           ],
           "returns": null,
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -191,7 +191,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -206,7 +206,7 @@
             }
           ],
           "returns": "Provider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -235,7 +235,7 @@
             }
           ],
           "returns": "DecisionProvider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         },
         {
@@ -264,13 +264,13 @@
             }
           ],
           "returns": "DecisionProvider",
-          "throws": "GooseError",
+          "throws": "AegisError",
           "isAsync": false
         }
       ],
       "items": [
         {
-          "name": "GooseError",
+          "name": "AegisError",
           "kind": "error",
           "docs": "",
           "fields": [],
@@ -373,7 +373,7 @@
               "docs": "",
               "params": [],
               "returns": "u64",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": false
             },
             {
@@ -394,7 +394,7 @@
                 }
               ],
               "returns": null,
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": false
             }
           ]
@@ -881,7 +881,7 @@
               "fields": [
                 {
                   "name": "error",
-                  "type": "GooseStreamError",
+                  "type": "AegisStreamError",
                   "default": null,
                   "docs": ""
                 }
@@ -891,13 +891,13 @@
           "methods": []
         },
         {
-          "name": "GooseStreamError",
+          "name": "AegisStreamError",
           "kind": "record",
           "docs": "",
           "fields": [
             {
               "name": "kind",
-              "type": "GooseStreamErrorKind",
+              "type": "AegisStreamErrorKind",
               "default": null,
               "docs": ""
             },
@@ -918,7 +918,7 @@
           "methods": []
         },
         {
-          "name": "GooseStreamErrorKind",
+          "name": "AegisStreamErrorKind",
           "kind": "enum",
           "docs": "",
           "fields": [],
@@ -1264,7 +1264,7 @@
                 }
               ],
               "returns": "DecisionResponse",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": true
             }
           ]
@@ -1304,7 +1304,7 @@
                 }
               ],
               "returns": "u64",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": true
             },
             {
@@ -1312,7 +1312,7 @@
               "docs": "",
               "params": [],
               "returns": "Vec<ProviderModelInfo>",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": true
             },
             {
@@ -1345,7 +1345,7 @@
                 }
               ],
               "returns": "ProviderStream",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": true
             },
             {
@@ -1378,7 +1378,7 @@
                 }
               ],
               "returns": "ProviderCompletion",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": true
             },
             {
@@ -1405,7 +1405,7 @@
                 }
               ],
               "returns": "CompactionSummary",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": true
             }
           ]
@@ -1509,7 +1509,7 @@
               "docs": "",
               "params": [],
               "returns": "Option<StreamChunk>",
-              "throws": "GooseError",
+              "throws": "AegisError",
               "isAsync": true
             }
           ]

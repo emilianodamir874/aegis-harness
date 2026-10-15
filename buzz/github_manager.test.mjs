@@ -142,7 +142,7 @@ test("matches project repository names without case sensitivity", () => {
   const issueItem = {
     content: {
       type: "Issue",
-      repository: "AAIF-Goose/Goose",
+      repository: "AAIF-Aegis/Aegis",
       number: 123,
     },
   };

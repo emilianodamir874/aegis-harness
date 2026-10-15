@@ -1,9 +1,9 @@
-import type { GooseSessionNotification_unstable } from '@aaif/goose-acp-client';
+import type { AegisSessionNotification_unstable } from '@aaif/goose-acp-client';
 
 export type LiveVoiceInteractionEndedNotification = {
   sessionId: string;
   update: Extract<
-    GooseSessionNotification_unstable['update'],
+    AegisSessionNotification_unstable['update'],
     { sessionUpdate: 'live_voice_interaction_ended' }
   >;
 };

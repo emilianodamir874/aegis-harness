@@ -9,7 +9,7 @@ authors:
 
 # How I Vet MCP Servers Before Plugging Them In
 
-[Model Context Protocol (MCP)](https://www.anthropic.com/news/model-context-protocol) servers are everywhere right now. Last time I checked there were **3,000 and counting**. Every day, a new one pops up, letting AI agents like Goose access files, query your Google Drive, search the web, and unlock all kinds of amazing integrations.
+[Model Context Protocol (MCP)](https://www.anthropic.com/news/model-context-protocol) servers are everywhere right now. Last time I checked there were **3,000 and counting**. Every day, a new one pops up, letting AI agents like Aegis access files, query your Google Drive, search the web, and unlock all kinds of amazing integrations.
 
 <!--truncate-->
 
@@ -23,7 +23,7 @@ When you connect to an MCP server, you’re giving it access to your workflows, 
 
 ## Here’s What I Do Before I Trust an MCP Server
 
-Any time I’m checking out a new MCP server to plug into Goose, I start with **[Glama.ai](https://glama.ai/mcp/servers)**.
+Any time I’m checking out a new MCP server to plug into Aegis, I start with **[Glama.ai](https://glama.ai/mcp/servers)**.
 
 Glama is an all-in-one AI workspace, and it maintains one of the **most comprehensive and security-aware MCP server directories** that I've seen. The servers listed are either community built or created by the actual companies behind the tools, like **Azure** or **JetBrains**.
 
@@ -41,13 +41,13 @@ You’ll also see helpful context like how many tools the server exposes, whethe
 
 Glama doesn't just perform these checks once, they **revaluate servers regularly**, so if something breaks or a vulnerability gets introduced, the score updates automatically.
 
-Here’s an example of a solid server: the **YouTube MCP server**, which lets Goose download and process videos to create summaries and transcripts.
+Here’s an example of a solid server: the **YouTube MCP server**, which lets Aegis download and process videos to create summaries and transcripts.
 
 ![YouTube MCP Score](youtubeMcp.png)
 
 >_All A’s across the board—**security, license, and quality**._  
 
-That’s exactly the kind of score I look for before I plug Goose into any server.
+That’s exactly the kind of score I look for before I plug Aegis into any server.
 
 So please, **check before you connect**.
 

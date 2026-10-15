@@ -21,7 +21,7 @@ importers:
     dependencies:
       '@aaif/goose-acp-client':
         specifier: workspace:*
-        version: link:../goose-acp-client
+        version: link:../aegis-acp-client
       '@agentclientprotocol/sdk':
         specifier: 1.5.0
         version: 1.5.0(zod@4.4.3)
@@ -345,7 +345,7 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@26.2.0)(@vitest/coverage-v8@4.1.10)(@vitest/ui@4.1.10)(jsdom@28.1.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.12)(yaml@2.8.2))
 
-  goose-acp:
+  aegis-acp:
     devDependencies:
       '@types/node':
         specifier: ^26.2.0
@@ -359,21 +359,21 @@ importers:
     optionalDependencies:
       '@aaif/goose-binary-darwin-arm64':
         specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-arm64
+        version: link:../aegis-binary/aegis-binary-darwin-arm64
       '@aaif/goose-binary-darwin-x64':
         specifier: workspace:*
-        version: link:../goose-binary/goose-binary-darwin-x64
+        version: link:../aegis-binary/aegis-binary-darwin-x64
       '@aaif/goose-binary-linux-arm64':
         specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-arm64
+        version: link:../aegis-binary/aegis-binary-linux-arm64
       '@aaif/goose-binary-linux-x64':
         specifier: workspace:*
-        version: link:../goose-binary/goose-binary-linux-x64
+        version: link:../aegis-binary/aegis-binary-linux-x64
       '@aaif/goose-binary-win32-x64':
         specifier: workspace:*
-        version: link:../goose-binary/goose-binary-win32-x64
+        version: link:../aegis-binary/aegis-binary-win32-x64
 
-  goose-acp-client:
+  aegis-acp-client:
     dependencies:
       '@modelcontextprotocol/ext-apps':
         specifier: ^1.7.5
@@ -404,15 +404,15 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  goose-binary/goose-binary-darwin-arm64: {}
+  aegis-binary/aegis-binary-darwin-arm64: {}
 
-  goose-binary/goose-binary-darwin-x64: {}
+  aegis-binary/aegis-binary-darwin-x64: {}
 
-  goose-binary/goose-binary-linux-arm64: {}
+  aegis-binary/aegis-binary-linux-arm64: {}
 
-  goose-binary/goose-binary-linux-x64: {}
+  aegis-binary/aegis-binary-linux-x64: {}
 
-  goose-binary/goose-binary-win32-x64: {}
+  aegis-binary/aegis-binary-win32-x64: {}
 
 packages:
 

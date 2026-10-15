@@ -284,7 +284,7 @@ async function writeSwapScript(options: {
   const logPath = `${stagingDir}-install.log`;
   // The previous install is moved aside rather than deleted so a failed copy can be rolled back.
   // It stays beside the target so the move is a same-filesystem rename instead of a full copy.
-  const backupPath = `${targetPath}.goose-previous`;
+  const backupPath = `${targetPath}.aegis-previous`;
 
   if (process.platform === 'win32') {
     const scriptPath = path.join(stagingDir, 'swap-and-relaunch.ps1');
@@ -456,8 +456,8 @@ export async function prepareUpdateInstall(options: {
 
 export class GitHubUpdater {
   private readonly owner = process.env.GITHUB_OWNER || 'aaif-goose';
-  private readonly repo = process.env.GITHUB_REPO || 'goose';
-  private readonly bundleName = process.env.GOOSE_BUNDLE_NAME || 'Goose';
+  private readonly repo = process.env.GITHUB_REPO || 'aegis';
+  private readonly bundleName = process.env.AEGIS_BUNDLE_NAME || 'Aegis';
   private readonly apiUrl = `https://api.github.com/repos/${this.owner}/${this.repo}/releases/latest`;
 
   async checkForUpdates(): Promise<UpdateCheckResult> {
@@ -478,7 +478,7 @@ export class GitHubUpdater {
       const response = await fetch(this.apiUrl, {
         headers: {
           Accept: 'application/vnd.github.v3+json',
-          'User-Agent': `Goose-Desktop/${app.getVersion()}`,
+          'User-Agent': `Aegis-Desktop/${app.getVersion()}`,
         },
         signal: controller.signal,
       });
@@ -575,7 +575,7 @@ export class GitHubUpdater {
       log.info(`GitHubUpdater: Looking for asset named: ${assetName}`);
       log.info(`GitHubUpdater: Available assets: ${release.assets.map((a) => a.name).join(', ')}`);
 
-      const asset = release.assets.find((a) => a.name.toLowerCase() === assetName.toLowerCase()); // keeping comparison to lowercase because Goose vs goose
+      const asset = release.assets.find((a) => a.name.toLowerCase() === assetName.toLowerCase()); // keeping comparison to lowercase because Aegis vs aegis
       if (asset) {
         downloadUrl = asset.browser_download_url;
         log.info(`GitHubUpdater: Found matching asset: ${asset.name} (${asset.size} bytes)`);
@@ -709,7 +709,7 @@ export class GitHubUpdater {
       log.info(`GitHubUpdater: Buffer created - ${buffer.length} bytes`);
 
       const stagingDir = await fs.mkdtemp(
-        path.join(await fs.realpath(os.tmpdir()), 'goose-update-')
+        path.join(await fs.realpath(os.tmpdir()), 'aegis-update-')
       );
       const fileName = `${this.bundleName}-${latestVersion}.zip`;
       const downloadPath = path.join(stagingDir, fileName);

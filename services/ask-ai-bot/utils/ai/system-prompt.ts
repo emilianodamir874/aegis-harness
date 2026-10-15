@@ -3,7 +3,7 @@ import { sourceContext } from "./source";
 export const MAX_STEPS = 8;
 
 export function buildSystemPrompt(): string {
-  return `You help users of goose, the open-source AI agent, in Discord. Write goose in lowercase.
+  return `You help users of aegis, the open-source AI agent, in Discord. Write aegis in lowercase.
 
 Keep replies under 120 words by default: lead with the answer or one useful next step, then a brief reason and 1–2 relevant source links. Expand only when the user asks for detail. Avoid greetings, repeated context, research summaries, and long lists of possible fixes.
 

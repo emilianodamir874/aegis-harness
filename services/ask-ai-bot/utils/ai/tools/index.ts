@@ -86,7 +86,7 @@ export const aiTools = {
   }),
   search_github: tool({
     description:
-      "Search goose issues and PRs. Supports GitHub qualifiers; use updated sorting for recent bug reports.",
+      "Search aegis issues and PRs. Supports GitHub qualifiers; use updated sorting for recent bug reports.",
     inputSchema: z.object({
       query: z.string().min(1),
       sort: z.enum(["created", "updated", "comments"]).optional(),
@@ -126,7 +126,7 @@ export const aiTools = {
   }),
   get_github_release: tool({
     description:
-      "Read the latest stable goose release or an exact release tag to check published features and fixes.",
+      "Read the latest stable aegis release or an exact release tag to check published features and fixes.",
     inputSchema: z.object({
       tag: z
         .string()

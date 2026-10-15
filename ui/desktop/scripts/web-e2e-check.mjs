@@ -1,6 +1,6 @@
-// goose-web smoke check: loads the built web UI in headless system Chrome and
-// reports boot state + console output. Requires: goose-web servers running
-// (node C:/goose-web/server.mjs and goose-serve-v1.exe serve), and a web build
+// aegis-web smoke check: loads the built web UI in headless system Chrome and
+// reports boot state + console output. Requires: aegis-web servers running
+// (node C:/aegis-web/server.mjs and aegis-serve-v1.exe serve), and a web build
 // (pnpm exec vite build --config vite.web.config.mts).
 //
 // Run:  cd ui/desktop && node scripts/web-e2e-check.mjs [url]
@@ -26,7 +26,7 @@ try {
     return {
       title: document.title,
       hasShim: !!window.electron,
-      hasCfg: !!(window.__GOOSE_WEB__ || {}).acpUrl,
+      hasCfg: !!(window.__AEGIS_WEB__ || {}).acpUrl,
       rootLen: root ? root.innerHTML.length : 0,
       text: (document.body.innerText || '').slice(0, 1500),
     };

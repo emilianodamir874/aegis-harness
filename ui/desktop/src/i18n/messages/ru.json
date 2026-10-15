@@ -27,7 +27,7 @@
     "defaultMessage": "Delete \"{name}\"? This cannot be undone."
   },
   "appsView.description": {
-    "defaultMessage": "Приложения с ваших MCP-серверов и приложения, созданные самим goose. Вы можете попросить его создать новые приложения через чат, и они появятся здесь."
+    "defaultMessage": "Приложения с ваших MCP-серверов и приложения, созданные самим aegis. Вы можете попросить его создать новые приложения через чат, и они появятся здесь."
   },
   "appsView.errorLoading": {
     "defaultMessage": "Ошибка загрузки приложений: {error}"
@@ -45,7 +45,7 @@
     "defaultMessage": "Загрузка приложений..."
   },
   "appsView.noAppsDescription": {
-    "defaultMessage": "Откройте чат и попросите goose создать нужное приложение. Он может собрать его для вас, после чего оно появится здесь. Если кто-то поделился приложением, импортируйте его кнопкой выше."
+    "defaultMessage": "Откройте чат и попросите aegis создать нужное приложение. Он может собрать его для вас, после чего оно появится здесь. Если кто-то поделился приложением, импортируйте его кнопкой выше."
   },
   "appsView.noAppsTitle": {
     "defaultMessage": "Нет доступных приложений"
@@ -84,7 +84,7 @@
     "defaultMessage": "Учетные данные удалены"
   },
   "authSettings.description": {
-    "defaultMessage": "Управляйте учетными данными провайдеров, сохраненными локально в goose."
+    "defaultMessage": "Управляйте учетными данными провайдеров, сохраненными локально в aegis."
   },
   "authSettings.empty": {
     "defaultMessage": "Локально сохраненные учетные данные провайдеров не найдены."
@@ -171,10 +171,10 @@
     "defaultMessage": "Запустить"
   },
   "chat.notification.taskComplete.body": {
-    "defaultMessage": "Нажмите здесь, чтобы сфокусироваться на Goose."
+    "defaultMessage": "Нажмите здесь, чтобы сфокусироваться на Aegis."
   },
   "chat.notification.taskComplete.title": {
-    "defaultMessage": "Goose завершил задачу."
+    "defaultMessage": "Aegis завершил задачу."
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Контекстное окно"
@@ -225,13 +225,13 @@
     "defaultMessage": "Ожидание сохранения изображений..."
   },
   "chatSettings.modeDescription": {
-    "defaultMessage": "Настройте как Goose взаимодействует с инструментами и расширениями"
+    "defaultMessage": "Настройте как Aegis взаимодействует с инструментами и расширениями"
   },
   "chatSettings.modeTitle": {
     "defaultMessage": "Режим"
   },
   "chatSettings.responseStylesDescription": {
-    "defaultMessage": "Выберите как Goose должен форматировать и оформлять ответы"
+    "defaultMessage": "Выберите как Aegis должен форматировать и оформлять ответы"
   },
   "chatSettings.responseStylesTitle": {
     "defaultMessage": "Стили ответов"
@@ -252,10 +252,10 @@
     "defaultMessage": "Редактор конфигурации"
   },
   "configSettings.description": {
-    "defaultMessage": "Измените настройки конфигурации goose"
+    "defaultMessage": "Измените настройки конфигурации aegis"
   },
   "configSettings.descriptionWithProvider": {
-    "defaultMessage": "Измените настройки конфигурации goose (текущие настройки для {provider})"
+    "defaultMessage": "Измените настройки конфигурации aegis (текущие настройки для {provider})"
   },
   "configSettings.done": {
     "defaultMessage": "Готово"
@@ -783,7 +783,7 @@
     "defaultMessage": "Изменить параметры {name}"
   },
   "defaultCardButtons.getStarted": {
-    "defaultMessage": "Начните работу с goose!"
+    "defaultMessage": "Начните работу с aegis!"
   },
   "defaultProviderSetupForm.apiHostLabel": {
     "defaultMessage": "Хост API"
@@ -924,7 +924,7 @@
     "defaultMessage": "Enter path"
   },
   "dirSwitcher.enterPathPlaceholder": {
-    "defaultMessage": "Enter an absolute path (e.g. /home/goose/workspace)"
+    "defaultMessage": "Enter an absolute path (e.g. /home/aegis/workspace)"
   },
   "dirSwitcher.enterPathInvalid": {
     "defaultMessage": "Working directory must be an absolute path"
@@ -963,7 +963,7 @@
     "defaultMessage": "Запрос на информацию был отменен."
   },
   "elicitationRequest.defaultMessage": {
-    "defaultMessage": "Goose нужна от вас дополнительная информация."
+    "defaultMessage": "Aegis нужна от вас дополнительная информация."
   },
   "elicitationRequest.expired": {
     "defaultMessage": "Срок действия запроса истек. Расширению нужно будет запросить его снова."
@@ -1008,7 +1008,7 @@
     "defaultMessage": "Произошла ошибка."
   },
   "errorBoundary.errorWithVersion": {
-    "defaultMessage": "Произошла ошибка в Goose v{version}."
+    "defaultMessage": "Произошла ошибка в Aegis v{version}."
   },
   "errorBoundary.heading": {
     "defaultMessage": "Га-га!"
@@ -1191,7 +1191,7 @@
     "defaultMessage": "Расширения, включенные здесь, используются по умолчанию для новых чатов. Активные расширения также можно переключать во время чата."
   },
   "extensionsView.description": {
-    "defaultMessage": "Эти расширения используют Model Context Protocol (MCP). Они расширяют возможности Goose с помощью трех основных компонентов: промптов, ресурсов и инструментов. {searchShortcut} для поиска."
+    "defaultMessage": "Эти расширения используют Model Context Protocol (MCP). Они расширяют возможности Aegis с помощью трех основных компонентов: промптов, ресурсов и инструментов. {searchShortcut} для поиска."
   },
   "extensionsView.heading": {
     "defaultMessage": "Расширения"
@@ -1209,19 +1209,19 @@
     "defaultMessage": "AA:BB:CC:... or sha256/base64"
   },
   "externalBackendSection.description": {
-    "defaultMessage": "По умолчанию goose запускает сервер за вас; используйте это для подключения к внешнему серверу goose"
+    "defaultMessage": "По умолчанию aegis запускает сервер за вас; используйте это для подключения к внешнему серверу aegis"
   },
   "externalBackendSection.fingerprintRequiresHttps": {
     "defaultMessage": "Certificate fingerprint requires an https URL"
   },
   "externalBackendSection.restartNote": {
-    "defaultMessage": "Чтобы изменения вступили в силу, требуется перезапуск Goose. Новые окна чата будут подключаться к внешнему серверу."
+    "defaultMessage": "Чтобы изменения вступили в силу, требуется перезапуск Aegis. Новые окна чата будут подключаться к внешнему серверу."
   },
   "externalBackendSection.secretKey": {
     "defaultMessage": "Секретный ключ"
   },
   "externalBackendSection.secretKeyHelp": {
-    "defaultMessage": "Секретный ключ, настроенный на сервере Goose (GOOSE_SERVER__SECRET_KEY)"
+    "defaultMessage": "Секретный ключ, настроенный на сервере Aegis (AEGIS_SERVER__SECRET_KEY)"
   },
   "externalBackendSection.secretKeyPlaceholder": {
     "defaultMessage": "Введите секретный ключ сервера"
@@ -1230,10 +1230,10 @@
     "defaultMessage": "URL сервера"
   },
   "externalBackendSection.serverUrlHelp": {
-    "defaultMessage": "Enter the HTTP(S) base URL. Goose checks /status and connects to /acp under this base."
+    "defaultMessage": "Enter the HTTP(S) base URL. Aegis checks /status and connects to /acp under this base."
   },
   "externalBackendSection.title": {
-    "defaultMessage": "Сервер Goose"
+    "defaultMessage": "Сервер Aegis"
   },
   "externalBackendSection.urlBaseError": {
     "defaultMessage": "URL must be the backend base URL before /acp, without query parameters or fragments"
@@ -1248,7 +1248,7 @@
     "defaultMessage": "Использовать внешний сервер"
   },
   "externalBackendSection.useExternalServerDescription": {
-    "defaultMessage": "Подключиться к серверу goose, запущенному в другом месте (требуется перезапуск приложения)"
+    "defaultMessage": "Подключиться к серверу aegis, запущенному в другом месте (требуется перезапуск приложения)"
   },
   "externalBackendSection.workingDir": {
     "defaultMessage": "Удалённый рабочий каталог (необязательно)"
@@ -1257,70 +1257,70 @@
     "defaultMessage": "Абсолютный путь на внешнем бэкенде. Оставьте пустым, чтобы передать локальный рабочий каталог."
   },
   "externalBackendSection.workingDirPlaceholder": {
-    "defaultMessage": "/home/goose/workspace"
+    "defaultMessage": "/home/aegis/workspace"
   },
-  "goosehintsModal.close": {
+  "aegishintsModal.close": {
     "defaultMessage": "Закрыть"
   },
-  "goosehintsModal.developer": {
+  "aegishintsModal.developer": {
     "defaultMessage": "Разработчик"
   },
-  "goosehintsModal.dialogDescription": {
-    "defaultMessage": "Предоставьте дополнительный контекст о проекте, чтобы улучшить взаимодействие с Goose"
+  "aegishintsModal.dialogDescription": {
+    "defaultMessage": "Предоставьте дополнительный контекст о проекте, чтобы улучшить взаимодействие с Aegis"
   },
-  "goosehintsModal.dialogTitle": {
-    "defaultMessage": "Настроить подсказки проекта (.goosehints)"
+  "aegishintsModal.dialogTitle": {
+    "defaultMessage": "Настроить подсказки проекта (.aegishints)"
   },
-  "goosehintsModal.errorReading": {
-    "defaultMessage": "Ошибка чтения файла .goosehints: {error}"
+  "aegishintsModal.errorReading": {
+    "defaultMessage": "Ошибка чтения файла .aegishints: {error}"
   },
-  "goosehintsModal.failedToAccess": {
-    "defaultMessage": "Не удалось получить доступ к файлу .goosehints"
+  "aegishintsModal.failedToAccess": {
+    "defaultMessage": "Не удалось получить доступ к файлу .aegishints"
   },
-  "goosehintsModal.failedToSave": {
-    "defaultMessage": "Не удалось сохранить файл .goosehints"
+  "aegishintsModal.failedToSave": {
+    "defaultMessage": "Не удалось сохранить файл .aegishints"
   },
-  "goosehintsModal.fileCreating": {
-    "defaultMessage": "Создание нового файла .goosehints по пути: {filePath}"
+  "aegishintsModal.fileCreating": {
+    "defaultMessage": "Создание нового файла .aegishints по пути: {filePath}"
   },
-  "goosehintsModal.fileFound": {
-    "defaultMessage": "Файл .goosehints найден по пути: {filePath}"
+  "aegishintsModal.fileFound": {
+    "defaultMessage": "Файл .aegishints найден по пути: {filePath}"
   },
-  "goosehintsModal.helpText1": {
-    "defaultMessage": ".goosehints — это текстовый файл для дополнительного контекста о проекте и улучшения взаимодействия с Goose."
+  "aegishintsModal.helpText1": {
+    "defaultMessage": ".aegishints — это текстовый файл для дополнительного контекста о проекте и улучшения взаимодействия с Aegis."
   },
-  "goosehintsModal.helpText2": {
-    "defaultMessage": "Убедитесь, что расширение {bold} включено на странице расширений. Оно необходимо для использования .goosehints. Чтобы обновления .goosehints вступили в силу, перезапустите сеанс."
+  "aegishintsModal.helpText2": {
+    "defaultMessage": "Убедитесь, что расширение {bold} включено на странице расширений. Оно необходимо для использования .aegishints. Чтобы обновления .aegishints вступили в силу, перезапустите сеанс."
   },
-  "goosehintsModal.helpText3": {
+  "aegishintsModal.helpText3": {
     "defaultMessage": "Подробнее см. {link}."
   },
-  "goosehintsModal.helpTextLink": {
-    "defaultMessage": "использование .goosehints"
+  "aegishintsModal.helpTextLink": {
+    "defaultMessage": "использование .aegishints"
   },
-  "goosehintsModal.placeholder": {
+  "aegishintsModal.placeholder": {
     "defaultMessage": "Введите подсказки проекта здесь..."
   },
-  "goosehintsModal.save": {
+  "aegishintsModal.save": {
     "defaultMessage": "Сохранить"
   },
-  "goosehintsModal.savedSuccessfully": {
+  "aegishintsModal.savedSuccessfully": {
     "defaultMessage": "Успешно сохранено"
   },
-  "goosehintsModal.saving": {
+  "aegishintsModal.saving": {
     "defaultMessage": "Сохранение..."
   },
-  "goosehintsSection.configure": {
+  "aegishintsSection.configure": {
     "defaultMessage": "Настроить"
   },
-  "goosehintsSection.description": {
-    "defaultMessage": "Настройте файл .goosehints вашего проекта, чтобы предоставить Goose дополнительный контекст"
+  "aegishintsSection.description": {
+    "defaultMessage": "Настройте файл .aegishints вашего проекта, чтобы предоставить Aegis дополнительный контекст"
   },
-  "goosehintsSection.title": {
-    "defaultMessage": "Подсказки проекта (.goosehints)"
+  "aegishintsSection.title": {
+    "defaultMessage": "Подсказки проекта (.aegishints)"
   },
-  "groupedExtensionLoadingToast.askGoose": {
-    "defaultMessage": "Спросить goose"
+  "groupedExtensionLoadingToast.askAegis": {
+    "defaultMessage": "Спросить aegis"
   },
   "groupedExtensionLoadingToast.collapseDetails": {
     "defaultMessage": "Свернуть детали"
@@ -1440,7 +1440,7 @@
     "defaultMessage": "Hugging Face"
   },
   "imagePreview.altText": {
-    "defaultMessage": "изображение goose"
+    "defaultMessage": "изображение aegis"
   },
   "imagePreview.clickToCollapse": {
     "defaultMessage": "Нажмите, чтобы свернуть"
@@ -1455,10 +1455,10 @@
     "defaultMessage": "Отмена"
   },
   "importRecipeForm.deeplinkHint": {
-    "defaultMessage": "Вставьте диплинк рецепта, начинающийся с «goose://recipe?config=»"
+    "defaultMessage": "Вставьте диплинк рецепта, начинающийся с «aegis://recipe?config=»"
   },
   "importRecipeForm.deeplinkPlaceholder": {
-    "defaultMessage": "Вставьте сюда ваш диплинк goose://recipe?config=..."
+    "defaultMessage": "Вставьте сюда ваш диплинк aegis://recipe?config=..."
   },
   "importRecipeForm.example": {
     "defaultMessage": "пример"
@@ -1488,7 +1488,7 @@
     "defaultMessage": "Файл рецепта"
   },
   "importRecipeForm.reviewWarning": {
-    "defaultMessage": "Проверяйте содержимое файлов рецептов перед добавлением в интерфейс goose."
+    "defaultMessage": "Проверяйте содержимое файлов рецептов перед добавлением в интерфейс aegis."
   },
   "importRecipeForm.schemaDescription": {
     "defaultMessage": "Ваш YAML- или JSON-файл должен соответствовать этой структуре. Обязательные поля: title, description и instructions или prompt."
@@ -1599,13 +1599,13 @@
     "defaultMessage": "Горячие клавиши приложения"
   },
   "keyboardShortcuts.categoryApplicationDescription": {
-    "defaultMessage": "Эти сочетания работают, когда Goose является активным приложением"
+    "defaultMessage": "Эти сочетания работают, когда Aegis является активным приложением"
   },
   "keyboardShortcuts.categoryGlobal": {
     "defaultMessage": "Глобальные горячие клавиши"
   },
   "keyboardShortcuts.categoryGlobalDescription": {
-    "defaultMessage": "Эти сочетания работают во всей системе, даже когда Goose не в фокусе"
+    "defaultMessage": "Эти сочетания работают во всей системе, даже когда Aegis не в фокусе"
   },
   "keyboardShortcuts.categorySearch": {
     "defaultMessage": "Горячие клавиши поиска"
@@ -1647,10 +1647,10 @@
     "defaultMessage": "Найти предыдущее"
   },
   "keyboardShortcuts.focusWindowDescription": {
-    "defaultMessage": "Вывести окно Goose на передний план из любого места"
+    "defaultMessage": "Вывести окно Aegis на передний план из любого места"
   },
   "keyboardShortcuts.focusWindowLabel": {
-    "defaultMessage": "Сфокусировать окно Goose"
+    "defaultMessage": "Сфокусировать окно Aegis"
   },
   "keyboardShortcuts.loading": {
     "defaultMessage": "Загрузка..."
@@ -1662,7 +1662,7 @@
     "defaultMessage": "Новый чат"
   },
   "keyboardShortcuts.newChatWindowDescription": {
-    "defaultMessage": "Открыть новое окно Goose"
+    "defaultMessage": "Открыть новое окно Aegis"
   },
   "keyboardShortcuts.newChatWindowLabel": {
     "defaultMessage": "Новое окно чата"
@@ -1701,7 +1701,7 @@
     "defaultMessage": "Сбросить к значениям по умолчанию"
   },
   "keyboardShortcuts.restartDescription": {
-    "defaultMessage": "Чтобы изменения сочетаний приложения (например, Новый чат, Настройки и т. д.) вступили в силу, требуется перезапуск Goose. Глобальные сочетания (Фокус окна, Быстрый запуск) работают сразу."
+    "defaultMessage": "Чтобы изменения сочетаний приложения (например, Новый чат, Настройки и т. д.) вступили в силу, требуется перезапуск Aegis. Глобальные сочетания (Фокус окна, Быстрый запуск) работают сразу."
   },
   "keyboardShortcuts.restartRequired": {
     "defaultMessage": "Требуется перезапуск"
@@ -1731,7 +1731,7 @@
     "defaultMessage": "Переключить навигацию"
   },
   "launcher.placeholder": {
-    "defaultMessage": "Спросите goose о чем угодно..."
+    "defaultMessage": "Спросите aegis о чем угодно..."
   },
   "liveVoice.connecting": {
     "defaultMessage": "Connecting Live voice"
@@ -1758,31 +1758,31 @@
     "defaultMessage": "Unmute microphone"
   },
   "liveVoiceSettings.description": {
-    "defaultMessage": "Общайтесь с Goose голосом в реальном времени"
+    "defaultMessage": "Общайтесь с Aegis голосом в реальном времени"
   },
   "liveVoiceSettings.title": {
     "defaultMessage": "Голосовой режим"
   },
-  "loadingGoose.compacting": {
-    "defaultMessage": "goose сжимает разговор..."
+  "loadingAegis.compacting": {
+    "defaultMessage": "aegis сжимает разговор..."
   },
-  "loadingGoose.idle": {
-    "defaultMessage": "goose работает над этим…"
+  "loadingAegis.idle": {
+    "defaultMessage": "aegis работает над этим…"
   },
-  "loadingGoose.loadingConversation": {
+  "loadingAegis.loadingConversation": {
     "defaultMessage": "загрузка разговора..."
   },
-  "loadingGoose.restartingAgent": {
+  "loadingAegis.restartingAgent": {
     "defaultMessage": "перезапуск сеанса..."
   },
-  "loadingGoose.streaming": {
-    "defaultMessage": "goose работает над этим…"
+  "loadingAegis.streaming": {
+    "defaultMessage": "aegis работает над этим…"
   },
-  "loadingGoose.thinking": {
-    "defaultMessage": "goose думает…"
+  "loadingAegis.thinking": {
+    "defaultMessage": "aegis думает…"
   },
-  "loadingGoose.waiting": {
-    "defaultMessage": "goose ждет…"
+  "loadingAegis.waiting": {
+    "defaultMessage": "aegis ждет…"
   },
   "localInferenceSettings.deleteConfirm": {
     "defaultMessage": "Удалить эту модель? Позже ее можно скачать снова."
@@ -2424,7 +2424,7 @@
     "defaultMessage": "Сервер может запускаться или быть временно недоступен."
   },
   "onboardingGuard.checkProviderErrorTitle": {
-    "defaultMessage": "Не удалось подключиться к серверу Goose"
+    "defaultMessage": "Не удалось подключиться к серверу Aegis"
   },
   "onboardingGuard.retry": {
     "defaultMessage": "Повторить"
@@ -2433,10 +2433,10 @@
     "defaultMessage": "Ваш локальный ИИ-агент. Подключите провайдера ИИ-модели, чтобы начать."
   },
   "onboardingGuard.welcomeTitle": {
-    "defaultMessage": "Добро пожаловать в goose"
+    "defaultMessage": "Добро пожаловать в aegis"
   },
   "onboardingSuccess.allSet": {
-    "defaultMessage": "Все готово для начала работы с goose."
+    "defaultMessage": "Все готово для начала работы с aegis."
   },
   "onboardingSuccess.connectedTo": {
     "defaultMessage": "Подключено к {providerName}"
@@ -2451,7 +2451,7 @@
     "defaultMessage": "Локальная модель готова"
   },
   "onboardingSuccess.privacyDescription": {
-    "defaultMessage": "Анонимные данные об использовании помогают улучшать goose. Мы никогда не собираем ваши разговоры, код или персональные данные."
+    "defaultMessage": "Анонимные данные об использовании помогают улучшать aegis. Мы никогда не собираем ваши разговоры, код или персональные данные."
   },
   "onboardingSuccess.privacyTitle": {
     "defaultMessage": "Конфиденциальность"
@@ -2619,10 +2619,10 @@
     "defaultMessage": "Метрики сеанса (длительность, число взаимодействий, использование токенов)"
   },
   "privacyInfoModal.collectVersion": {
-    "defaultMessage": "Версия goose и способ установки"
+    "defaultMessage": "Версия aegis и способ установки"
   },
   "privacyInfoModal.description": {
-    "defaultMessage": "Анонимные данные об использовании помогают понять как используется goose и найти области для улучшения."
+    "defaultMessage": "Анонимные данные об использовании помогают понять как используется aegis и найти области для улучшения."
   },
   "privacyInfoModal.neverCollect": {
     "defaultMessage": "Мы никогда не собираем ваши разговоры, код, аргументы инструментов, сообщения об ошибках или персональные данные. Эту настройку можно изменить в любое время в настройках."
@@ -2691,7 +2691,7 @@
     "defaultMessage": "Не удалось сохранить промпт"
   },
   "promptsSettings.promptEditingDescription": {
-    "defaultMessage": "Настраивайте промпты, определяющие поведение goose в разных контекстах. Эти промпты используют синтаксис шаблонов Jinja2. Будьте осторожны при изменении переменных шаблона: неверные изменения могут нарушить работу. Делитесь улучшениями с сообществом."
+    "defaultMessage": "Настраивайте промпты, определяющие поведение aegis в разных контекстах. Эти промпты используют синтаксис шаблонов Jinja2. Будьте осторожны при изменении переменных шаблона: неверные изменения могут нарушить работу. Делитесь улучшениями с сообществом."
   },
   "promptsSettings.promptEditingTitle": {
     "defaultMessage": "Редактирование промптов"
@@ -2787,7 +2787,7 @@
     "defaultMessage": "Вход..."
   },
   "providerConfigurationModal.addApiKeyDescription": {
-    "defaultMessage": "Добавьте API-ключи для этого провайдера, чтобы интегрировать его в goose"
+    "defaultMessage": "Добавьте API-ключи для этого провайдера, чтобы интегрировать его в aegis"
   },
   "providerConfigurationModal.browserWindowHint": {
     "defaultMessage": "Откроется окно браузера для завершения входа."
@@ -2823,7 +2823,7 @@
     "defaultMessage": "Ошибка"
   },
   "providerConfigurationModal.externalSetupIntro": {
-    "defaultMessage": "Этот провайдер настраивается вне goose. Выполните следующие шаги:"
+    "defaultMessage": "Этот провайдер настраивается вне aegis. Выполните следующие шаги:"
   },
   "providerConfigurationModal.goBack": {
     "defaultMessage": "Назад"
@@ -2907,7 +2907,7 @@
     "defaultMessage": "Загрузка провайдеров..."
   },
   "providerSettings.onboardingDescription": {
-    "defaultMessage": "Выберите провайдера ИИ-модели, чтобы начать работу с goose. Понадобятся API-ключи, созданные каждым провайдером; они будут зашифрованы и сохранены локально. Провайдера можно изменить в настройках в любое время."
+    "defaultMessage": "Выберите провайдера ИИ-модели, чтобы начать работу с aegis. Понадобятся API-ключи, созданные каждым провайдером; они будут зашифрованы и сохранены локально. Провайдера можно изменить в настройках в любое время."
   },
   "providerSettings.otherProviders": {
     "defaultMessage": "Другие провайдеры"
@@ -3480,7 +3480,7 @@
     "defaultMessage": "Диплинк"
   },
   "scheduleModal.deepLinkPlaceholder": {
-    "defaultMessage": "Вставьте ссылку goose://recipe сюда..."
+    "defaultMessage": "Вставьте ссылку aegis://recipe сюда..."
   },
   "scheduleModal.editSchedule": {
     "defaultMessage": "Изменить расписание"
@@ -3495,7 +3495,7 @@
     "defaultMessage": "Не удалось прочитать выбранный файл."
   },
   "scheduleModal.invalidDeepLink": {
-    "defaultMessage": "Неверный диплинк. Используйте ссылку goose://recipe."
+    "defaultMessage": "Неверный диплинк. Используйте ссылку aegis://recipe."
   },
   "scheduleModal.invalidFileType": {
     "defaultMessage": "Неверный тип файла: выберите YAML-файл (.yaml или .yml)"
@@ -3837,7 +3837,7 @@
     "defaultMessage": "История чатов"
   },
   "sessions.chatHistoryDesc": {
-    "defaultMessage": "Просматривайте и ищите прошлые разговоры с Goose. {shortcut} для поиска."
+    "defaultMessage": "Просматривайте и ищите прошлые разговоры с Aegis. {shortcut} для поиска."
   },
   "sessions.close": {
     "defaultMessage": "Закрыть"
@@ -3930,7 +3930,7 @@
     "defaultMessage": "Описание сеанса успешно обновлено"
   },
   "settings.appearance.description": {
-    "defaultMessage": "Настройте, как goose отображается в вашей системе"
+    "defaultMessage": "Настройте, как aegis отображается в вашей системе"
   },
   "settings.appearance.title": {
     "defaultMessage": "Внешний вид"
@@ -3945,13 +3945,13 @@
     "defaultMessage": "Отслеживание стоимости"
   },
   "settings.dockIcon.description": {
-    "defaultMessage": "Показывать goose в Dock"
+    "defaultMessage": "Показывать aegis в Dock"
   },
   "settings.dockIcon.title": {
     "defaultMessage": "Значок Dock"
   },
   "settings.help.description": {
-    "defaultMessage": "Помогите улучшить goose: сообщайте о проблемах или запрашивайте новые функции"
+    "defaultMessage": "Помогите улучшить aegis: сообщайте о проблемах или запрашивайте новые функции"
   },
   "settings.help.reportBug": {
     "defaultMessage": "Сообщить об ошибке"
@@ -3963,7 +3963,7 @@
     "defaultMessage": "Помощь и отзывы"
   },
   "settings.language.description": {
-    "defaultMessage": "Выберите язык интерфейса goose"
+    "defaultMessage": "Выберите язык интерфейса aegis"
   },
   "settings.language.english": {
     "defaultMessage": "Английский"
@@ -4020,7 +4020,7 @@
     "defaultMessage": "Китайский (традиционный)"
   },
   "settings.menuBarIcon.description": {
-    "defaultMessage": "Показывать goose в строке меню"
+    "defaultMessage": "Показывать aegis в строке меню"
   },
   "settings.menuBarIcon.title": {
     "defaultMessage": "Значок строки меню"
@@ -4041,7 +4041,7 @@
     "defaultMessage": "Нажмите «Уведомления»"
   },
   "settings.notifications.modal.macStep3": {
-    "defaultMessage": "Найдите и выберите goose в списке приложений"
+    "defaultMessage": "Найдите и выберите aegis в списке приложений"
   },
   "settings.notifications.modal.macStep4": {
     "defaultMessage": "Включите уведомления и настройте параметры по желанию"
@@ -4059,7 +4059,7 @@
     "defaultMessage": "Перейдите в Система > Уведомления"
   },
   "settings.notifications.modal.winStep3": {
-    "defaultMessage": "Найдите и выберите goose в списке приложений"
+    "defaultMessage": "Найдите и выберите aegis в списке приложений"
   },
   "settings.notifications.modal.winStep4": {
     "defaultMessage": "Включите уведомления и настройте параметры по желанию"
@@ -4068,7 +4068,7 @@
     "defaultMessage": "Откройте «Параметры»"
   },
   "settings.notifications.task.description": {
-    "defaultMessage": "Уведомлять, когда Goose завершает задачу, пока окно в фоне"
+    "defaultMessage": "Уведомлять, когда Aegis завершает задачу, пока окно в фоне"
   },
   "settings.notifications.task.title": {
     "defaultMessage": "Уведомления о завершении задач"
@@ -4077,19 +4077,19 @@
     "defaultMessage": "Уведомления"
   },
   "settings.preventSleep.description": {
-    "defaultMessage": "Не давать компьютеру засыпать, пока goose выполняет задачу (экран все равно может блокироваться)"
+    "defaultMessage": "Не давать компьютеру засыпать, пока aegis выполняет задачу (экран все равно может блокироваться)"
   },
   "settings.preventSleep.title": {
     "defaultMessage": "Запретить сон"
   },
   "settings.theme.description": {
-    "defaultMessage": "Настройте внешний вид и ощущения goose"
+    "defaultMessage": "Настройте внешний вид и ощущения aegis"
   },
   "settings.theme.title": {
     "defaultMessage": "Тема"
   },
   "settings.updates.description": {
-    "defaultMessage": "Проверяйте и устанавливайте обновления, чтобы goose работал оптимально"
+    "defaultMessage": "Проверяйте и устанавливайте обновления, чтобы aegis работал оптимально"
   },
   "settings.updates.title": {
     "defaultMessage": "Обновления"
@@ -4155,7 +4155,7 @@
     "defaultMessage": "Подходящие навыки не найдены"
   },
   "skillsView.noSkillsDescription": {
-    "defaultMessage": "Навыки загружаются из файлов SKILL.md в ~/.config/agents/skills/, .goose/skills/ или других поддерживаемых каталогах."
+    "defaultMessage": "Навыки загружаются из файлов SKILL.md в ~/.config/agents/skills/, .aegis/skills/ или других поддерживаемых каталогах."
   },
   "skillsView.noSkillsInstalled": {
     "defaultMessage": "Навыки не установлены"
@@ -4164,7 +4164,7 @@
     "defaultMessage": "Поиск навыков..."
   },
   "skillsView.skillsDescription": {
-    "defaultMessage": "Просматривайте установленные навыки, расширяющие возможности Goose. {shortcut} для поиска."
+    "defaultMessage": "Просматривайте установленные навыки, расширяющие возможности Aegis. {shortcut} для поиска."
   },
   "skillsView.skillsTitle": {
     "defaultMessage": "Навыки"
@@ -4407,10 +4407,10 @@
     "defaultMessage": "Использовать другого провайдера"
   },
   "telemetryConsentPrompt.description": {
-    "defaultMessage": "Хотите поделиться анонимными данными об использовании, чтобы помочь улучшить goose? Мы никогда не собираем ваши разговоры, код или персональные данные."
+    "defaultMessage": "Хотите поделиться анонимными данными об использовании, чтобы помочь улучшить aegis? Мы никогда не собираем ваши разговоры, код или персональные данные."
   },
   "telemetryConsentPrompt.heading": {
-    "defaultMessage": "Помогите улучшить goose"
+    "defaultMessage": "Помогите улучшить aegis"
   },
   "telemetryConsentPrompt.learnMore": {
     "defaultMessage": "Подробнее"
@@ -4437,7 +4437,7 @@
     "defaultMessage": "Конфиденциальность"
   },
   "telemetrySettings.toggleDescription": {
-    "defaultMessage": "Помогите улучшить goose, делясь анонимной статистикой использования."
+    "defaultMessage": "Помогите улучшить aegis, делясь анонимной статистикой использования."
   },
   "telemetrySettings.toggleLabel": {
     "defaultMessage": "Анонимные данные об использовании"
@@ -4517,14 +4517,14 @@
   "toolConfirmation.allowToolCallWithName": {
     "defaultMessage": "Разрешить {toolName}?"
   },
-  "toolConfirmation.gooseWouldLikeToCallWithName": {
-    "defaultMessage": "Goose хочет вызвать {toolName}. Разрешить?"
+  "toolConfirmation.aegisWouldLikeToCallWithName": {
+    "defaultMessage": "Aegis хочет вызвать {toolName}. Разрешить?"
   },
   "updateSection.autoDownload": {
     "defaultMessage": "Обновление будет автоматически скачано в фоновом режиме."
   },
   "updateSection.autoDownloadDisabledByEnv": {
-    "defaultMessage": "Автоматическая загрузка отключена через переменную окружения GOOSE_DISABLE_AUTO_DOWNLOAD."
+    "defaultMessage": "Автоматическая загрузка отключена через переменную окружения AEGIS_DISABLE_AUTO_DOWNLOAD."
   },
   "updateSection.autoDownloadDisabledNote": {
     "defaultMessage": "Автоматическая загрузка отключена. Нажмите «Скачать сейчас», чтобы загрузить вручную."
@@ -4542,7 +4542,7 @@
     "defaultMessage": "Отключить автоматическую загрузку обновлений"
   },
   "updateSection.disableAutoDownloadDesc": {
-    "defaultMessage": "Когда включено, Goose будет уведомлять о новых версиях, но не будет загружать их автоматически."
+    "defaultMessage": "Когда включено, Aegis будет уведомлять о новых версиях, но не будет загружать их автоматически."
   },
   "updateSection.downloadNow": {
     "defaultMessage": "Скачать сейчас"

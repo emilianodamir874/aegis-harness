@@ -10,7 +10,7 @@ authors:
 > _**Authors:** Alex Rosenzweig, Arihant Virulkar, Andrea Leoszko, Wes Ring, Mike Shema, F G, Alex Klyubin, Michael Rand, Zhen Lian, Angie Jones, Douwe Osinga, Mic Neale, Bradley Axen, Gelareh Taban_
 
 
-At Block, we’ve been working hard to augment the capabilities of AI tooling by building "MCP Servers" which are designed to help make our Artificial Intelligence (AI) Agent codename goose more capable of interacting with the systems and tools we care about.
+At Block, we’ve been working hard to augment the capabilities of AI tooling by building "MCP Servers" which are designed to help make our Artificial Intelligence (AI) Agent codename aegis more capable of interacting with the systems and tools we care about.
 
 Block’s Information Security (InfoSec) team has been heavily involved in this work and we wanted to capture our learnings in the space to help others. We expect there to be growing adoption and use cases for this including applying the technology in the security domain.
 

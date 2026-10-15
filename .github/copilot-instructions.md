@@ -40,11 +40,11 @@
 ## Project-Specific Context
 
 - This is a Rust project using cargo workspaces
-- Core crates: `goose` (agent logic and ACP server), `goose-cli` (CLI), `goose-mcp` (MCP servers)
+- Core crates: `aegis` (agent logic and ACP server), `aegis-cli` (CLI), `aegis-mcp` (MCP servers)
 - Error handling: Use `anyhow::Result`, not `unwrap()` in production code
 - Async runtime: tokio
 - MCP protocol implementations require extra scrutiny
-- Naming convention: In `documentation/docs` and `documentation/blog`, always refer to the project as "goose" (lowercase), never "Goose" (even at the start of sentences)
+- Naming convention: In `documentation/docs` and `documentation/blog`, always refer to the project as "aegis" (lowercase), never "Aegis" (even at the start of sentences)
 
 ## CI Pipeline Context
 

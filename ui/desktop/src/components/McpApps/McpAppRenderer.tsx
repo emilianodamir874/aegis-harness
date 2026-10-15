@@ -12,7 +12,7 @@
  *
  * Display modes:
  * - "inline" | "fullscreen" | "pip" — standard MCP display modes
- * - "standalone" — Goose-specific mode for dedicated Electron windows
+ * - "standalone" — Aegis-specific mode for dedicated Electron windows
  */
 
 import {
@@ -45,7 +45,7 @@ import FlyingBird from '../FlyingBird';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
 import { getContainerDimensions } from './containerDimensions';
 import {
-  GooseDisplayMode,
+  AegisDisplayMode,
   SandboxPermissions,
   McpAppToolCancelled,
   McpAppToolInput,
@@ -150,7 +150,7 @@ interface McpAppRendererProps {
   toolResult?: CallToolResult;
   toolCancelled?: McpAppToolCancelled;
   append?: (text: string) => void;
-  displayMode?: GooseDisplayMode;
+  displayMode?: AegisDisplayMode;
   cachedHtml?: string;
   onDisplayModeChange?: OnDisplayModeChange;
 }
@@ -170,7 +170,7 @@ type FallbackRequestHandler = {
   ) => Promise<Record<string, unknown>>;
 };
 
-interface GooseAppFrameProps {
+interface AegisAppFrameProps {
   html: string;
   sandbox: SandboxConfig;
   hostContext: McpUiHostContext;
@@ -213,7 +213,7 @@ function iframeHeightFor(guestHeight: number, hostContext: McpUiHostContext): nu
   return Math.max(guestHeight, dimensions.maxHeight ?? 0);
 }
 
-function GooseAppFrame({
+function AegisAppFrame({
   html,
   sandbox,
   hostContext,
@@ -230,7 +230,7 @@ function GooseAppFrame({
   onSizeChanged,
   onInitialized,
   onError,
-}: GooseAppFrameProps) {
+}: AegisAppFrameProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const guestHeightRef = useRef<number | null>(null);
@@ -976,7 +976,7 @@ export default function McpAppRenderer({
     if (!sandboxConfig) return null;
 
     return (
-      <GooseAppFrame
+      <AegisAppFrame
         sandbox={sandboxConfig}
         html={html ?? ''}
         hostContext={hostContext}

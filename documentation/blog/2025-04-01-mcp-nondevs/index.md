@@ -35,12 +35,12 @@ So what can you connect your AI agent to? MCP Servers! MCP servers give your age
 
 This quick list should give you an idea of all the ways you can now use AI agents with your workflow. You can also explore community favorites in [handy MCP directories](https://dev.to/techgirl1908/my-favorite-mcp-directories-573n), and learn [how to check MCP servers are safe](/blog/2025/03/26/mcp-security) before installing.
 
-You can also check out these [Goose tutorials](/docs/category/mcp-servers), showing you exactly how you can use some of these popular MCP servers with Goose, or use [Goose's Tutorial extension](/docs/mcp/tutorial-mcp) to get extra help walking you through using or building extensions.
+You can also check out these [Aegis tutorials](/docs/category/mcp-servers), showing you exactly how you can use some of these popular MCP servers with Aegis, or use [Aegis's Tutorial extension](/docs/mcp/tutorial-mcp) to get extra help walking you through using or building extensions.
 
 ## Example MCP Prompts
 Now that you've caught a glimpse of some of the MCP servers that out there, how do you make sure you're using MCPs with AI agents the best you can? This is where prompts come in.
 
-Prompts are ultimately the text you input when interacting with an AI assistant, and prompts can range from super simple questions to detailed instructions! Here are some example prompts you can ask an AI agent like Goose right now that use some of the MCP servers mentioned above:
+Prompts are ultimately the text you input when interacting with an AI assistant, and prompts can range from super simple questions to detailed instructions! Here are some example prompts you can ask an AI agent like Aegis right now that use some of the MCP servers mentioned above:
 
 ### Google Maps
 ```
@@ -65,15 +65,15 @@ Asana: Create a new task in my Asana workspace called 'Review Q4 metrics' and se
 ```
 ### GitHub
 ```
-GitHub: Create a new branch called hello-world in my angiejones/goose-demo repository. Update the README.md file to say "this was written by goose" and commit it. Open a pull request with your changes.
+GitHub: Create a new branch called hello-world in my angiejones/aegis-demo repository. Update the README.md file to say "this was written by aegis" and commit it. Open a pull request with your changes.
 ```
 
 ## The Possibilities Are Endless
-While some are developed by official providers, a vast majority of MCP servers you see are actually developed by community members! Plus, because MCP is an open standard, anyone can build an MCP server for any resource. You could even use Goose to help you build one!
+While some are developed by official providers, a vast majority of MCP servers you see are actually developed by community members! Plus, because MCP is an open standard, anyone can build an MCP server for any resource. You could even use Aegis to help you build one!
 
-Hopefully now, instead of spending hours manually gathering data and creating your next marketing report, or manually sorting through your todo-backlog on a Monday, you will use MCP with Goose and have it done for you in minutes.
+Hopefully now, instead of spending hours manually gathering data and creating your next marketing report, or manually sorting through your todo-backlog on a Monday, you will use MCP with Aegis and have it done for you in minutes.
 
-*To learn more about using MCP servers and goose, check out the [goose documentation](https://goose-docs.ai/docs/category/getting-started), or join the [Block Open Source Discord](https://discord.gg/n8R5VaWDAn) to connect with other open source community members.*
+*To learn more about using MCP servers and aegis, check out the [aegis documentation](https://goose-docs.ai/docs/category/getting-started), or join the [Block Open Source Discord](https://discord.gg/n8R5VaWDAn) to connect with other open source community members.*
 
 <head>
   <meta property="og:title" content="MCP Explained for Non-Developers" />

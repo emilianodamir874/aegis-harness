@@ -46,7 +46,7 @@ if (options.help) {
 const relayUrl = process.env.BUZZ_RELAY_URL || "https://buzz.gdk.so";
 const configHome = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
 const buzzHome =
-  process.env.GOOSE_BUZZ_HOME || join(configHome, "goose", "buzz");
+  process.env.AEGIS_BUZZ_HOME || join(configHome, "aegis", "buzz");
 const identityDirectory = join(buzzHome, "github-manager");
 const privateKeyPath = join(identityDirectory, "private-key.nsec");
 const publicKeyPath = join(identityDirectory, "public-key.hex");
@@ -317,7 +317,7 @@ console.log(
 function parseArguments(arguments_) {
   const parsed = {
     repository: "aaif-goose/goose",
-    project: "Goose Issues",
+    project: "Aegis Issues",
     projectOwner: "aaif-goose",
     projectNumber: 1,
     projectLimit: 1000,
@@ -907,7 +907,7 @@ function printHelp() {
 
 Options:
   --repo <owner/repo>   GitHub repository (default: aaif-goose/goose)
-  --project <title>     GitHub project title (default: Goose Issues)
+  --project <title>     GitHub project title (default: Aegis Issues)
   --project-owner <id>  GitHub project owner (default: aaif-goose)
   --project-number <n>  GitHub project number (default: 1)
   --project-limit <n>   Maximum project items (default: 1000)

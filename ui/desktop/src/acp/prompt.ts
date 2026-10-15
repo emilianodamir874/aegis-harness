@@ -28,7 +28,7 @@ export async function acpSteerSession(
   expectedRunId: string
 ): Promise<SteerSessionResponse_unstable> {
   const client = await getAcpClient();
-  return client.goose.sessionSteer_unstable({
+  return client.aegis.sessionSteer_unstable({
     sessionId,
     expectedRunId,
     prompt: messageToAcpPromptContent(message) as unknown as SteerSessionRequest_unstable['prompt'],

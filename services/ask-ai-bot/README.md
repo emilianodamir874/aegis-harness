@@ -1,6 +1,6 @@
 # ask-ai-bot
 
-Discord support bot for goose. Replies normally stay under 120 words. It searches
+Discord support bot for aegis. Replies normally stay under 120 words. It searches
 relevant documentation sections, source code, recent GitHub comments, and releases.
 
 Run `bun run dev` here with `DISCORD_TOKEN`, `QUESTION_CHANNEL_ID`, and

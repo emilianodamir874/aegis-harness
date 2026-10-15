@@ -10,10 +10,10 @@ resolver = "2"
 edition = "2021"
 version = "1.54.0"
 rust-version = "1.94.1"
-authors = ["AAIF <ai-oss-tools@block.xyz>"]
+authors = ["Emiliano Ruiz <emilianodamir874@gmail.com>"]
 license = "Apache-2.0"
-repository = "https://github.com/aaif-goose/goose"
-description = "An AI agent"
+repository = "https://github.com/emilianodamir874/aegis"
+description = "Aegis - personal AI agent"
 
 [workspace.lints.clippy]
 uninlined_format_args = "allow"

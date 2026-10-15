@@ -12,7 +12,7 @@ import CLIExtensionInstructions from '@site/src/components/CLIExtensionInstructi
 
 ![blog cover](mcp-ui-shot.png)
 
-Goose recently released support for [MCP-UI](https://mcpui.dev/) which allows MCP servers to suggest and contribute user interface elements back to the agent.
+Aegis recently released support for [MCP-UI](https://mcpui.dev/) which allows MCP servers to suggest and contribute user interface elements back to the agent.
 
 :::warning
 MCP-UI is still an [open RFC](https://github.com/modelcontextprotocol-community/working-groups/issues/35) being considering for adoption into the MCP spec. It works as is but may change as the proposal advances.
@@ -40,15 +40,15 @@ Essentially, MCP servers are suggesting GUI elements for the client (agent) to r
 
 ## How do I use this
 
-Starting from Goose v1.3.0, you can add MCP-UI as an extension. 
+Starting from Aegis v1.3.0, you can add MCP-UI as an extension. 
 
-:::tip Add MCP-UI to Goose
+:::tip Add MCP-UI to Aegis
 <Tabs groupId="interface">
-  <TabItem value="ui" label="goose Desktop" default>
-  [Launch the installer](goose://extension?type=streamable_http&url=https%3A%2F%2Fmcp-aharvard.netlify.app%2Fmcp&id=mcpuidemo&name=MCP-UI%20Demo&description=Demo%20MCP-UI-enabled%20extension)
+  <TabItem value="ui" label="aegis Desktop" default>
+  [Launch the installer](aegis://extension?type=streamable_http&url=https%3A%2F%2Fmcp-aharvard.netlify.app%2Fmcp&id=mcpuidemo&name=MCP-UI%20Demo&description=Demo%20MCP-UI-enabled%20extension)
   </TabItem>
-  <TabItem value="cli" label="goose CLI">
-  Use `goose configure` to add a `Remote Extension (Streaming HTTP)` extension type with:
+  <TabItem value="cli" label="aegis CLI">
+  Use `aegis configure` to add a `Remote Extension (Streaming HTTP)` extension type with:
 
   **Endpoint URL**
   ```

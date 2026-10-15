@@ -117,7 +117,7 @@ This is research, assumptions, domain knowledge, edge cases, terminology, anythi
 Now save it somewhere accessible:
 
 - a file in the project  
-- a context file (goosehints, Cursor rules, etc)
+- a context file (aegishints, Cursor rules, etc)
 - a memory extension   
 
 Anything that outlives the chat window.

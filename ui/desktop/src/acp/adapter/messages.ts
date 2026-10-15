@@ -7,7 +7,7 @@ import {
   type AcpChatStateChange,
   type AdapterState,
   DEFAULT_VISIBLE_MESSAGE_METADATA,
-  getGooseMessageMeta,
+  getAegisMessageMeta,
   messagesChange,
 } from './shared';
 
@@ -26,50 +26,50 @@ export function applyContentChunk(
     return [];
   }
 
-  const gooseMeta = getGooseMessageMeta(update);
-  const messageId = update.messageId ?? gooseMeta.messageId;
-  const existing = findMessageForChunk(state, role, messageId, gooseMeta.created);
+  const aegisMeta = getAegisMessageMeta(update);
+  const messageId = update.messageId ?? aegisMeta.messageId;
+  const existing = findMessageForChunk(state, role, messageId, aegisMeta.created);
 
   if (existing) {
     const isOutputLimitFallbackChunk =
-      gooseMeta.outputTokenLimitReached === true && gooseMeta.fallbackContent === true;
+      aegisMeta.outputTokenLimitReached === true && aegisMeta.fallbackContent === true;
     const existingMessageHasContent = existing.content.length > 0;
     const shouldSkipFallbackChunk = isOutputLimitFallbackChunk && existingMessageHasContent;
 
-    existing.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
+    existing.metadata.outputTokenLimitReached = aegisMeta.outputTokenLimitReached;
     existing.metadata.fallbackContent = shouldSkipFallbackChunk
       ? undefined
-      : gooseMeta.fallbackContent;
+      : aegisMeta.fallbackContent;
 
     if (shouldSkipFallbackChunk) {
-      return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
+      return messagesChangeWithLocalSteerConfirmation(state, existing, aegisMeta.steer);
     }
 
     const lastContent = existing.content[existing.content.length - 1];
-    if (reconcileLocalSteerTextChunk(state, existing, content, gooseMeta.steer)) {
-      return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
+    if (reconcileLocalSteerTextChunk(state, existing, content, aegisMeta.steer)) {
+      return messagesChangeWithLocalSteerConfirmation(state, existing, aegisMeta.steer);
     }
 
     if (lastContent?.type === 'text' && content.type === 'text') {
       lastContent.text += content.text;
     } else if (content.type === 'image' && hasImageContent(existing, content)) {
-      return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
+      return messagesChangeWithLocalSteerConfirmation(state, existing, aegisMeta.steer);
     } else {
       existing.content.push(content);
     }
 
-    return messagesChangeWithLocalSteerConfirmation(state, existing, gooseMeta.steer);
+    return messagesChangeWithLocalSteerConfirmation(state, existing, aegisMeta.steer);
   } else {
     state.messages.push({
       ...(messageId ? { id: messageId } : {}),
       role,
-      created: gooseMeta.created ?? Math.floor(Date.now() / 1000),
+      created: aegisMeta.created ?? Math.floor(Date.now() / 1000),
       content: [content],
       metadata: {
         ...DEFAULT_VISIBLE_MESSAGE_METADATA,
-        ...(gooseMeta.steer ? { steer: true } : {}),
-        outputTokenLimitReached: gooseMeta.outputTokenLimitReached,
-        fallbackContent: gooseMeta.fallbackContent,
+        ...(aegisMeta.steer ? { steer: true } : {}),
+        outputTokenLimitReached: aegisMeta.outputTokenLimitReached,
+        fallbackContent: aegisMeta.fallbackContent,
       },
     });
   }
@@ -85,22 +85,22 @@ export function applyThoughtChunk(
     return [];
   }
 
-  const gooseMeta = getGooseMessageMeta(update);
-  const messageId = update.messageId ?? gooseMeta.messageId;
-  let message = findMessageForChunk(state, 'assistant', messageId, gooseMeta.created);
+  const aegisMeta = getAegisMessageMeta(update);
+  const messageId = update.messageId ?? aegisMeta.messageId;
+  let message = findMessageForChunk(state, 'assistant', messageId, aegisMeta.created);
 
   if (!message) {
     message = {
       ...(messageId ? { id: messageId } : {}),
       role: 'assistant',
-      created: gooseMeta.created ?? Math.floor(Date.now() / 1000),
+      created: aegisMeta.created ?? Math.floor(Date.now() / 1000),
       content: [],
       metadata: { ...DEFAULT_VISIBLE_MESSAGE_METADATA },
     };
     state.messages.push(message);
   }
 
-  message.metadata.outputTokenLimitReached = gooseMeta.outputTokenLimitReached;
+  message.metadata.outputTokenLimitReached = aegisMeta.outputTokenLimitReached;
 
   const lastContent = message.content[message.content.length - 1];
   if (lastContent?.type === 'thinking') {

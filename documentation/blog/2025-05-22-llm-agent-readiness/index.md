@@ -7,7 +7,7 @@ authors:
 
 ![blog cover](llm-agent-test.png)
 
-[Goose](/) is LLM-agnostic, meaning you can plug in the model of your choice. However, not every LLM is suitable to work with agents. Some may be great at *answering* things, but not actually *doing* things. If you're considering which model to use with an agent, these 3 prompts can quickly give you a sense of the model's capabilities.
+[Aegis](/) is LLM-agnostic, meaning you can plug in the model of your choice. However, not every LLM is suitable to work with agents. Some may be great at *answering* things, but not actually *doing* things. If you're considering which model to use with an agent, these 3 prompts can quickly give you a sense of the model's capabilities.
 
 <!-- truncate -->
 
@@ -16,7 +16,7 @@ authors:
 This initial prompt tests for tool calling capabilities. Its ask is forceful to reduce a shy model's hesitation to make function calls.
 
 ```bash
-Create a file at ~/workspace/loose-goose/tool-test.txt with the contents "Hello World".
+Create a file at ~/workspace/loose-aegis/tool-test.txt with the contents "Hello World".
 
 Use the write tool. Do not ask for confirmation. Just do it.
 ```
@@ -29,7 +29,7 @@ Use the write tool. Do not ask for confirmation. Just do it.
 
 ```bash
 ─── text_editor | developer ──────────────────────────
-path: ~/workspace/loose-goose/tool-test.txt
+path: ~/workspace/loose-aegis/tool-test.txt
 command: write
 file_text: Hello World
 
@@ -56,7 +56,7 @@ Now append a new line that says: "I know what I'm doing"
 
 ```bash
 ─── text_editor | developer ──────────────────────────
-path: ~/workspace/loose-goose/tool-test.txt
+path: ~/workspace/loose-aegis/tool-test.txt
 command: write
 file_text: Hello World
 I know what I'm doing
@@ -80,7 +80,7 @@ What is the current content of tool-test.txt?
 
 ```bash
 ─── text_editor | developer ──────────────────────────
-path: ~/workspace/loose-goose/tool-test.txt
+path: ~/workspace/loose-aegis/tool-test.txt
 command: read
 
 Hello World

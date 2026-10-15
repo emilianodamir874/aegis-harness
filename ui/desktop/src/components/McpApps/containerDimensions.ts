@@ -1,7 +1,7 @@
 import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps/app-bridge';
-import type { DimensionLayout, GooseDisplayMode } from './types';
+import type { DimensionLayout, AegisDisplayMode } from './types';
 
-export const DISPLAY_MODE_LAYOUTS: Record<GooseDisplayMode, DimensionLayout> = {
+export const DISPLAY_MODE_LAYOUTS: Record<AegisDisplayMode, DimensionLayout> = {
   inline: { width: 'fixed', height: 'unbounded' },
   fullscreen: { width: 'fixed', height: 'fixed' },
   standalone: { width: 'fixed', height: 'fixed' },
@@ -9,7 +9,7 @@ export const DISPLAY_MODE_LAYOUTS: Record<GooseDisplayMode, DimensionLayout> = {
 };
 
 export function getContainerDimensions(
-  displayMode: GooseDisplayMode,
+  displayMode: AegisDisplayMode,
   measuredWidth: number,
   measuredHeight: number
 ): McpUiHostContext['containerDimensions'] {

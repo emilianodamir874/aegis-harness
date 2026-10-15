@@ -13,8 +13,8 @@ export function useProviderDeviceCode(providerId: string) {
         setDeviceCode(detail);
       }
     };
-    window.addEventListener('goose:device-code', handler);
-    return () => window.removeEventListener('goose:device-code', handler);
+    window.addEventListener('aegis:device-code', handler);
+    return () => window.removeEventListener('aegis:device-code', handler);
   }, [providerId]);
 
   return {

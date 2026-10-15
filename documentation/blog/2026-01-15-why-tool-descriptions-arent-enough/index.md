@@ -8,7 +8,7 @@ authors:
 ![blog banner](/img/blog/tool-descriptions-banner.png)
 
 :::note
-This post describes a historical MCP feature. [Sampling was deprecated](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in the 2026-07-28 MCP specification, and goose no longer supports it. MCP servers that need model inference should integrate directly with an LLM provider API.
+This post describes a historical MCP feature. [Sampling was deprecated](https://modelcontextprotocol.io/specification/2026-07-28/deprecated) in the 2026-07-28 MCP specification, and aegis no longer supports it. MCP servers that need model inference should integrate directly with an LLM provider API.
 :::
 
 The first question I had when I heard about MCP sampling was:
@@ -47,7 +47,7 @@ Without sampling, the tool mostly acts like a messenger. It fetches data, return
 ![with sampling](with-mcp.png)
 
 
-With sampling, the behavior changes. The tool gathers its data, then uses the same LLM you already configured in Goose to ask a targeted question from its own context before returning anything. Instead of just passing information upward, it’s now contributing to the thinking.
+With sampling, the behavior changes. The tool gathers its data, then uses the same LLM you already configured in Aegis to ask a targeted question from its own context before returning anything. Instead of just passing information upward, it’s now contributing to the thinking.
 
 It’s the same model and the same agent, but the behavior changes completely.
 

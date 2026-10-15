@@ -23,7 +23,7 @@ describe('AlertBox', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRead.mockImplementation(async (key: string) =>
-      key === 'GOOSE_AUTO_COMPACT_THRESHOLD' ? 0.8 : 225000
+      key === 'AEGIS_AUTO_COMPACT_THRESHOLD' ? 0.8 : 225000
     );
     mockUpsert.mockResolvedValue(undefined);
   });
@@ -134,7 +134,7 @@ describe('AlertBox', () => {
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(await screen.findByText('Auto compact at 250k')).toBeInTheDocument();
       expect(mockUpsert).toHaveBeenCalledExactlyOnceWith(
-        'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
+        'AEGIS_AUTO_COMPACT_TOKEN_LIMIT',
         250000,
         false
       );
@@ -151,7 +151,7 @@ describe('AlertBox', () => {
       fireEvent.keyDown(input, { key: 'Enter' });
       expect(await screen.findByText('Auto compact at 70%')).toBeInTheDocument();
       expect(mockUpsert).toHaveBeenCalledExactlyOnceWith(
-        'GOOSE_AUTO_COMPACT_THRESHOLD',
+        'AEGIS_AUTO_COMPACT_THRESHOLD',
         0.7,
         false
       );
@@ -166,7 +166,7 @@ describe('AlertBox', () => {
       fireEvent.change(input, { target: { value: '900000' } });
       fireEvent.keyDown(input, { key: 'Enter' });
       await waitFor(() =>
-        expect(mockUpsert).toHaveBeenCalledWith('GOOSE_AUTO_COMPACT_TOKEN_LIMIT', 900000, false)
+        expect(mockUpsert).toHaveBeenCalledWith('AEGIS_AUTO_COMPACT_TOKEN_LIMIT', 900000, false)
       );
       expect(screen.getByText('Auto compact at 80%')).toBeInTheDocument();
     });
@@ -192,7 +192,7 @@ describe('AlertBox', () => {
       fireEvent.keyDown(input, { key: 'Enter' });
       await waitFor(() =>
         expect(mockUpsert).toHaveBeenCalledExactlyOnceWith(
-          'GOOSE_AUTO_COMPACT_TOKEN_LIMIT',
+          'AEGIS_AUTO_COMPACT_TOKEN_LIMIT',
           250000,
           false
         )
@@ -215,7 +215,7 @@ describe('AlertBox', () => {
 
     it('keeps disabled compaction disabled across context changes', async () => {
       mockRead.mockImplementation(async (key: string) =>
-        key === 'GOOSE_AUTO_COMPACT_THRESHOLD' ? 0 : 225000
+        key === 'AEGIS_AUTO_COMPACT_THRESHOLD' ? 0 : 225000
       );
       const { rerender } = renderWithIntl(<AlertBox alert={progressAlert(1000000)} />);
       await screen.findByText('Auto compact at 0%');
