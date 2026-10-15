@@ -552,6 +552,7 @@ pub fn format_messages_with_options(
     }
 
     merge_split_tool_call_messages(&mut messages_spec);
+    normalize_interleaved_messages(&mut messages_spec);
 
     if let Some(format) = options.thinking_preservation_format {
         inline_reasoning_content(&mut messages_spec, format);
@@ -596,6 +597,77 @@ fn inline_reasoning_content(messages: &mut [Value], format: ThinkingPreservation
 ///
 /// Only merges when `reasoning_content` is present and matches, since that is
 /// the only signal that messages were split from the same turn.
+/// Repair provider-visible tool-call ordering when internal or user messages were
+/// inserted before every result for an assistant tool-call batch. Strict OpenAI-compatible
+/// APIs require all corresponding role=tool messages before the next non-tool message.
+fn normalize_interleaved_messages(messages: &mut Vec<Value>) {
+    let mut i = 0;
+    while i < messages.len() {
+        let Some(calls) = messages[i]
+            .get("tool_calls")
+            .and_then(Value::as_array)
+        else {
+            i += 1;
+            continue;
+        };
+        if messages[i].get("role") != Some(&json!("assistant")) {
+            i += 1;
+            continue;
+        }
+        let expected: std::collections::HashSet<&str> = calls
+            .iter()
+            .filter_map(|call| call.get("id").and_then(Value::as_str))
+            .collect();
+        if expected.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        let mut end = i + 1;
+        let mut deferred_count = 0usize;
+        while end < messages.len() && seen.len() < expected.len() {
+            let role = messages[end].get("role");
+            if role == Some(&json!("assistant")) || role == Some(&json!("system")) { break; }
+            if role == Some(&json!("tool")) {
+                let Some(id) = messages[end].get("tool_call_id").and_then(Value::as_str) else { break; };
+                if !expected.contains(id) { break; }
+                seen.insert(id.to_string());
+            } else {
+                deferred_count += 1;
+            }
+            end += 1;
+        }
+
+        // Do not rewrite genuinely incomplete histories. The provider will return a clearer
+        // error, and changing an unmatched block cannot make it valid safely.
+        if seen.len() != expected.len() || deferred_count == 0 {
+            // Leave incomplete/malformed blocks untouched; only complete response batches
+            // can be safely reordered.
+            i = end.max(i + 1);
+            continue;
+        }
+
+        // Stable-partition the completed block: all tool responses first, then the messages
+        // that had been interleaved. This preserves the relative order of both groups.
+        let block_start = i + 1;
+        let block: Vec<Value> = messages.drain(block_start..end).collect();
+        let mut tool_results = Vec::with_capacity(block.len());
+        let mut deferred = Vec::with_capacity(deferred_count);
+        for message in block {
+            if message.get("role") == Some(&json!("tool")) {
+                tool_results.push(message);
+            } else {
+                deferred.push(message);
+            }
+        }
+        let insert_at = block_start + tool_results.len();
+        messages.splice(block_start..block_start, tool_results);
+        messages.splice(insert_at..insert_at, deferred);
+        i = insert_at + (end - block_start);
+    }
+}
+
 fn merge_split_tool_call_messages(messages: &mut Vec<Value>) {
     let mut i = 0;
     while i < messages.len() {
@@ -4933,6 +5005,64 @@ data: [DONE]"#;
             found_error,
             "expected an error but stream completed successfully"
         );
+    }
+
+    #[test]
+    fn normalize_interleaved_messages_puts_tool_results_before_other_messages() {
+        let mut messages = vec![
+            json!({"role": "assistant", "content": null, "tool_calls": [{"id": "call_a", "type": "function", "function": {"name": "read", "arguments": "{}"}}, {"id": "call_b", "type": "function", "function": {"name": "write", "arguments": "{}"}}]}),
+            json!({"role": "user", "content": "internal run log"}),
+            json!({"role": "tool", "tool_call_id": "call_a", "content": "result a"}),
+            json!({"role": "user", "content": "next prompt"}),
+            json!({"role": "tool", "tool_call_id": "call_b", "content": "result b"}),
+            json!({"role": "assistant", "content": "done"}),
+        ];
+        normalize_interleaved_messages(&mut messages);
+        assert_eq!(messages.len(), 6);
+        assert_eq!(messages[1]["role"], "tool");
+        assert_eq!(messages[1]["tool_call_id"], "call_a");
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "call_b");
+        assert_eq!(messages[3]["content"], "internal run log");
+        assert_eq!(messages[4]["content"], "next prompt");
+        assert_eq!(messages[5]["content"], "done");
+    }
+
+    #[test]
+    fn normalize_interleaved_messages_leaves_incomplete_tool_batches_untouched() {
+        let mut messages = vec![
+            json!({"role": "assistant", "content": null, "tool_calls": [{"id": "call_a", "type": "function", "function": {"name": "read", "arguments": "{}"}}, {"id": "call_b", "type": "function", "function": {"name": "write", "arguments": "{}"}}]}),
+            json!({"role": "user", "content": "internal"}),
+            json!({"role": "tool", "tool_call_id": "call_a", "content": "result a"}),
+        ];
+        let before = messages.clone();
+        normalize_interleaved_messages(&mut messages);
+        assert_eq!(messages, before);
+    }
+
+    #[test]
+    fn normalize_interleaved_messages_keeps_valid_order_unchanged() {
+        let mut messages = vec![
+            json!({"role": "assistant", "content": null, "tool_calls": [{"id": "call_a", "type": "function", "function": {"name": "read", "arguments": "{}"}}]}),
+            json!({"role": "tool", "tool_call_id": "call_a", "content": "result a"}),
+            json!({"role": "user", "content": "next prompt"}),
+        ];
+        let before = messages.clone();
+        normalize_interleaved_messages(&mut messages);
+        assert_eq!(messages, before);
+    }
+
+    #[test]
+    fn normalize_interleaved_messages_does_not_consume_following_tool_batch() {
+        let mut messages = vec![
+            json!({"role": "assistant", "content": null, "tool_calls": [{"id": "call_a", "type": "function", "function": {"name": "read", "arguments": "{}"}}]}),
+            json!({"role": "user", "content": "interleaved"}),
+            json!({"role": "assistant", "content": null, "tool_calls": [{"id": "call_b", "type": "function", "function": {"name": "write", "arguments": "{}"}}]}),
+            json!({"role": "tool", "tool_call_id": "call_b", "content": "result b"}),
+        ];
+        let before = messages.clone();
+        normalize_interleaved_messages(&mut messages);
+        assert_eq!(messages, before);
     }
 
     #[test]
