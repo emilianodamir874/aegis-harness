@@ -87,7 +87,8 @@ impl<'a> ChatHistorySearch<'a> {
             });
         }
 
-        let rows = self.fetch_rows(&keywords).await?;
+        let fts = self.fts_query().await;
+        let rows = self.fetch_rows(&keywords, fts.as_deref()).await?;
         let session_messages = self.process_rows(rows);
         let session_totals = self.get_session_totals(&session_messages).await?;
         let results = self.convert_to_results(session_messages, session_totals);
@@ -95,12 +96,19 @@ impl<'a> ChatHistorySearch<'a> {
         Ok(results)
     }
 
-    async fn fetch_rows(&self, keywords: &[String]) -> Result<Vec<SqlQueryRow>> {
-        let sql = self.build_sql(keywords);
+    async fn fetch_rows(&self, keywords: &[String], fts: Option<&str>) -> Result<Vec<SqlQueryRow>> {
+        let sql = self.build_sql(keywords, fts);
         let mut query_builder = sqlx::query_as::<_, SqlQueryRow>(AssertSqlSafe(sql));
 
-        for keyword in keywords {
-            query_builder = query_builder.bind(keyword);
+        match fts {
+            Some(fts_query) => {
+                query_builder = query_builder.bind(fts_query);
+            }
+            None => {
+                for keyword in keywords {
+                    query_builder = query_builder.bind(keyword);
+                }
+            }
         }
 
         if let Some(exclude_id) = &self.exclude_session_id {
@@ -123,6 +131,37 @@ impl<'a> ChatHistorySearch<'a> {
         Ok(query_builder.fetch_all(self.pool).await?)
     }
 
+    /// FTS5 prefix query for the keywords, when the messages_fts index is present.
+    /// Returns None when the index is missing or no usable term remains, in which
+    /// case the caller falls back to the LIKE scan.
+    async fn fts_query(&self) -> Option<String> {
+        let present = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages_fts'",
+        )
+        .fetch_one(self.pool)
+        .await
+        .unwrap_or(0);
+        if present == 0 {
+            return None;
+        }
+        let terms: Vec<String> = self
+            .query
+            .split_whitespace()
+            .map(|word| {
+                word.chars()
+                    .filter(|ch| ch.is_alphanumeric() || *ch == '_')
+                    .collect::<String>()
+            })
+            .filter(|word| word.chars().count() >= 2)
+            .map(|word| format!("{}*", word.to_lowercase()))
+            .collect();
+        if terms.is_empty() {
+            None
+        } else {
+            Some(terms.join(" OR "))
+        }
+    }
+
     fn parse_keywords(&self) -> Vec<String> {
         self.query
             .split_whitespace()
@@ -130,7 +169,7 @@ impl<'a> ChatHistorySearch<'a> {
             .collect()
     }
 
-    fn build_sql(&self, keywords: &[String]) -> String {
+    fn build_sql(&self, keywords: &[String], fts: Option<&str>) -> String {
         let mut sql = String::from(
             r#"
             SELECT 
@@ -172,11 +211,18 @@ impl<'a> ChatHistorySearch<'a> {
         "#,
         );
 
-        for (i, _) in keywords.iter().enumerate() {
-            if i > 0 {
-                sql.push_str(" OR ");
+        match fts {
+            Some(_) => {
+                sql.push_str("m.id IN (SELECT row_id FROM messages_fts WHERE messages_fts MATCH ?)");
             }
-            sql.push_str("LOWER(json_extract(content.value, '$.text')) LIKE ?");
+            None => {
+                for (i, _) in keywords.iter().enumerate() {
+                    if i > 0 {
+                        sql.push_str(" OR ");
+                    }
+                    sql.push_str("LOWER(json_extract(content.value, '$.text')) LIKE ?");
+                }
+            }
         }
 
         sql.push_str(

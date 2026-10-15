@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 17;
+pub const CURRENT_SCHEMA_VERSION: i32 = 18;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -1764,7 +1764,24 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
-            17 => {
+                    18 => {
+                // Full-text index over the text blocks of every message. FTS5 may be
+                // missing in some SQLite builds: setup failures are logged and ignored
+                // so the database still opens, and search falls back to LIKE.
+                let statements = [
+                    r#"CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(row_id UNINDEXED, text, tokenize='unicode61 remove_diacritics 2')"#,
+                    r#"INSERT INTO messages_fts(row_id, text) SELECT m.id, COALESCE((SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(m.content_json) WHERE json_extract(value, '$.type') = 'text'), '') FROM messages m WHERE NOT EXISTS (SELECT 1 FROM messages_fts f WHERE f.row_id = m.id)"#,
+                    r#"CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN INSERT INTO messages_fts(row_id, text) VALUES (new.id, COALESCE((SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(new.content_json) WHERE json_extract(value, '$.type') = 'text'), '')); END"#,
+                    r#"CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN DELETE FROM messages_fts WHERE row_id = old.id; END"#,
+                    r#"CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF content_json ON messages BEGIN DELETE FROM messages_fts WHERE row_id = old.id; INSERT INTO messages_fts(row_id, text) VALUES (new.id, COALESCE((SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(new.content_json) WHERE json_extract(value, '$.type') = 'text'), '')); END"#,
+                ];
+                for statement in statements {
+                    if let Err(error) = sqlx::query(statement).execute(&mut **tx).await {
+                        tracing::warn!("messages_fts setup skipped: {error}");
+                    }
+                }
+            }
+    17 => {
                 for column in [
                     "system_prompt_override",
                     "system_prompt_extras_json",
@@ -3954,6 +3971,48 @@ mod tests {
         set_sessions_updated_at(sm, std::slice::from_ref(&session.id), updated_at).await;
 
         session.id
+    }
+
+    #[tokio::test]
+    async fn test_search_chat_history_uses_full_text_index() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+
+        // "cafe" only matches "café" through the FTS index (remove_diacritics),
+        // never through a LIKE scan: this pins the index as the search path.
+        let _session = create_search_session(
+            &sm,
+            "Acentos",
+            SessionType::User,
+            "2026-06-01T00:00:00Z",
+            &[(
+                "preparar un cafe con leche y el sabor del café molido",
+                "2026-06-01T00:00:00Z",
+            )],
+        )
+        .await;
+
+        let results = sm
+            .search_chat_history("cafe", Some(5), None, None, None, vec![SessionType::User])
+            .await
+            .unwrap();
+
+        assert_eq!(results.results.len(), 1, "el indice FTS deberia encontrar 'cafe'");
+        assert!(!results.results[0].messages.is_empty());
+
+        // Prefix search keeps working: the index tokenises and expands.
+        let prefixed = sm
+            .search_chat_history("molid", Some(5), None, None, None, vec![SessionType::User])
+            .await
+            .unwrap();
+        assert_eq!(prefixed.results.len(), 1, "prefijo de palabra via FTS");
+
+        // Y una palabra que no esta no devuelve nada.
+        let missing = sm
+            .search_chat_history("zzzznoexiste", Some(5), None, None, None, vec![SessionType::User])
+            .await
+            .unwrap();
+        assert!(missing.results.is_empty());
     }
 
     #[tokio::test]
