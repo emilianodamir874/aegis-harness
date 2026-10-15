@@ -6,7 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const acpUrl = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const out = {};
 const stage = (k, v) => console.log('STAGE ' + k + ' ' + JSON.stringify(v));
@@ -72,7 +72,7 @@ try {
       ejemplo: (() => { const e = [...document.querySelectorAll('#msg-inner .tool')].find((x) => x.querySelector('.tint')); return e ? e.querySelector('.tool-title').textContent.trim().slice(0, 100) : null; })(),
     }));
     stage('replay-marca', out.replayColgadas);
-    await page.screenshot({ path: 'C:/goose-web/tools/shots/interrumpidas-mobile.png' });
+    await page.screenshot({ path: 'C:/aegis-web/tools/shots/interrumpidas-mobile.png' });
   }
 
   // ---------- 2) turno adoptado que produce mensajes nuevos ----------
@@ -100,7 +100,7 @@ try {
     runbar: await page.evaluate(() => { const x = document.querySelector('#runbar'); return !x || x.hidden ? null : { text: x.querySelector('#runbar-text').textContent, time: x.querySelector('#runbar-time').textContent, stop: !x.querySelector('#runbar-stop').hidden }; }),
   };
   stage('live-adoptado', out.live);
-  await page.screenshot({ path: 'C:/goose-web/tools/shots/live-adoptado-mobile.png' });
+  await page.screenshot({ path: 'C:/aegis-web/tools/shots/live-adoptado-mobile.png' });
   await page.evaluate(() => document.querySelector('#runbar-stop')?.click());
   await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 30000 }).catch(() => {});
   await Promise.race([promptP, new Promise((r) => setTimeout(r, 20000))]);

@@ -1,11 +1,11 @@
-// ACP probe: minimal headless client for aegis serve (diagnostics for goose-web).
+// ACP probe: minimal headless client for aegis serve (diagnostics for aegis-web).
 // Creates a session, sends a prompt, streams session/update notifications.
 // Run:  cd ui/desktop && node scripts/acp-probe.mjs ["prompt text"]
 import { readFileSync } from 'node:fs';
 import { client, methods } from '@agentclientprotocol/sdk';
 import { createWebSocketStream } from '@agentclientprotocol/sdk/experimental/ws-client';
 
-const cfg = JSON.parse(readFileSync('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(readFileSync('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://127.0.0.1:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const promptText = process.argv[2] || 'Respondé exactamente: PONG. Nada más.';
 const cwd = process.env.PROBE_CWD || 'C:\\Users\\Emiliano';

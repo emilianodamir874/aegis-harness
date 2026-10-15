@@ -3,7 +3,7 @@
 import { chromium } from '@playwright/test';
 import { readFileSync, writeFileSync } from 'node:fs';
 const WS = globalThis.WebSocket; // Node 22+ trae WebSocket global (no necesita el paquete `ws`)
-const CFG = JSON.parse(readFileSync('C:/goose-web/config.json', 'utf8'));
+const CFG = JSON.parse(readFileSync('C:/aegis-web/config.json', 'utf8'));
 const URL = `ws://${CFG.publicHost}:${CFG.servePort}/acp?token=${CFG.secretKey}`;
 const MARK = 'STEER-VIVO ' + Math.floor(Math.random() * 90000 + 10000);
 const PASOS = 6, SEGS = 14; // ~84 s de herramientas silenciosas
@@ -90,7 +90,7 @@ out.consumida = out.enServidor && out.posicion && !out.posicion.esUltimoMensaje;
 out.errores = errs;
 await owner.req('session/delete', { sessionId: sid }).catch(() => {});
 out.limpieza = 'sesion borrada: ' + sid;
-const dest = process.argv[2] || 'C:/goose-web/tools/steer-live.json';
+const dest = process.argv[2] || 'C:/aegis-web/tools/steer-live.json';
 writeFileSync(dest, JSON.stringify(out, null, 1));
 console.log(JSON.stringify(out, null, 1));
 await br.close(); owner.ws.close(); v.ws.close(); process.exit(0);

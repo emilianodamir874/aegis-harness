@@ -1,9 +1,9 @@
 // Verificacion puntual: una sesion VIEJA con herramientas sin resultado (run muerto de
 // verdad, sin run activo) DEBE quedar marcada "interrumpido" en el replay, no girando.
-// Uso: node scripts/goose-web-deadrun-targeted.mjs <sessionId>
+// Uso: node scripts/aegis-web-deadrun-targeted.mjs <sessionId>
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const sid = process.argv[2];
 const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
 const browser = await chromium.launch();

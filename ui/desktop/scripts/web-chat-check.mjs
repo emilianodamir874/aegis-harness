@@ -1,4 +1,4 @@
-// goose-web chat e2e: dismisses the first-run modal, sends a message in the
+// aegis-web chat e2e: dismisses the first-run modal, sends a message in the
 // default chat and captures the streamed answer. Requires the web stack up.
 // Run:  cd ui/desktop && node scripts/web-chat-check.mjs [url]
 import { chromium } from '@playwright/test';

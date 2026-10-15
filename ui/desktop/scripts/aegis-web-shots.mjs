@@ -1,7 +1,7 @@
 // Capturas rápidas del estado final (desktop + phone) para control visual.
 import { chromium } from '@playwright/test';
 const url = process.argv[2] || 'http://192.168.100.34:3788/';
-const shots = 'C:/goose-web/tools/shots';
+const shots = 'C:/aegis-web/tools/shots';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 try {
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 } });

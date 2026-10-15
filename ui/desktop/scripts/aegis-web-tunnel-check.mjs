@@ -1,17 +1,17 @@
-// Check del tunel Cloudflare de goose-web (v7): puerta de login, WS sin sesion, y round-trip
+// Check del tunel Cloudflare de aegis-web (v7): puerta de login, WS sin sesion, y round-trip
 // real por el tunel (login -> app -> wss://<host>/acp -> session/list -> replay de una sesion).
-// Uso: node scripts/goose-web-tunnel-check.mjs [https://xxx.trycloudflare.com]
+// Uso: node scripts/aegis-web-tunnel-check.mjs [https://xxx.trycloudflare.com]
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
 const arg = process.argv[2];
-const urlTxt = await readFile('C:/goose-web/tunnel-url.txt', 'utf8').catch(() => '');
+const urlTxt = await readFile('C:/aegis-web/tunnel-url.txt', 'utf8').catch(() => '');
 const base = (arg || (urlTxt.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/) || [])[0] || '').replace(/\/$/, '');
 if (!base) {
   console.log(JSON.stringify({ ok: false, motivo: 'sin URL: tunnel-url.txt vacio' }));
   process.exit(1);
 }
-const pw = JSON.parse(await readFile('C:/goose-web/auth.json', 'utf8')).password;
+const pw = JSON.parse(await readFile('C:/aegis-web/auth.json', 'utf8')).password;
 const out = { url: base };
 
 // 1) la puerta: sin cookie no se ve nada

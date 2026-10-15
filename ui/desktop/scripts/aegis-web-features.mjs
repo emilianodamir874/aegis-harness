@@ -1,18 +1,18 @@
-// Verificación v4 de las features nuevas de goose-web:
+// Verificación v4 de las features nuevas de aegis-web:
 //  - welcome de sesión vacía (estado vacío explícito)
 //  - adjuntar archivos de texto (file input) + drag & drop sobre la ventana
 //  - menú de fila: exportar Markdown/JSON (descarga real) y archivar/desarchivar
 //  - autocompletado de slash commands en el composer
 //  - steering: mandar un mensaje mientras el agente trabaja
 //  - estructura nueva del sidebar (botón ⋮, grupos de archivadas, "cargar más")
-// Run: cd ui/desktop && node scripts/goose-web-features.mjs [url]
+// Run: cd ui/desktop && node scripts/aegis-web-features.mjs [url]
 import { chromium } from '@playwright/test';
 import { mkdirSync, readFileSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://192.168.100.34:3788/';
-const shots = 'C:/goose-web/tools/shots';
+const shots = 'C:/aegis-web/tools/shots';
 mkdirSync(shots, { recursive: true });
-const SAMPLE = 'C:/goose-web/tools/sample-context.txt';
+const SAMPLE = 'C:/aegis-web/tools/sample-context.txt';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const out = { url, features: {}, errors: [] };

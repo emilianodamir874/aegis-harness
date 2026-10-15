@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
@@ -10,11 +10,11 @@ await page.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.rpc && w
 await page.waitForTimeout(9000);
 await page.evaluate(() => { const m = document.querySelector('.messages'); m.scrollTop = m.scrollHeight; });
 await page.waitForTimeout(600);
-await page.screenshot({ path: 'C:/goose-web/tools/shot-mobile.png' });
+await page.screenshot({ path: 'C:/aegis-web/tools/shot-mobile.png' });
 // drawer abierto para ver el sidebar en movil
 await page.click('#btn-menu');
 await page.waitForTimeout(700);
-await page.screenshot({ path: 'C:/goose-web/tools/shot-mobile-drawer.png' });
+await page.screenshot({ path: 'C:/aegis-web/tools/shot-mobile-drawer.png' });
 console.log('ok');
 await browser.close();
 process.exit(0);

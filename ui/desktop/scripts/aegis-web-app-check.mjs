@@ -1,12 +1,12 @@
-// Verificación e2e v3 de goose-web: conexión, sesiones, envío+streaming,
+// Verificación e2e v3 de aegis-web: conexión, sesiones, envío+streaming,
 // cambio de modelo (chip), tool card, permisos (approve), adjuntar imagen,
 // borrar sesión, abrir sesión existente (replay), flujo móvil completo.
-// Run: cd ui/desktop && node scripts/goose-web-app-check.mjs [url]
+// Run: cd ui/desktop && node scripts/aegis-web-app-check.mjs [url]
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://192.168.100.34:3788/';
-const shots = 'C:/goose-web/tools/shots';
+const shots = 'C:/aegis-web/tools/shots';
 mkdirSync(shots, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -133,7 +133,7 @@ try {
 
   // adjuntar imagen (file input) y mandarla
   try {
-    await page.setInputFiles('#file-input', 'C:/goose-web/tools/test-red.png');
+    await page.setInputFiles('#file-input', 'C:/aegis-web/tools/test-red.png');
     await page.waitForTimeout(900);
     out.desktop.attThumbs = await page.locator('.att-thumb').count();
     await page.screenshot({ path: shots + '/v3-desktop-attach.png' });

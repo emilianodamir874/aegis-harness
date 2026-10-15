@@ -1,15 +1,15 @@
-// Auditoría de móvil (390×844) de goose-web — reproduce y verifica el feedback de Emiliano:
+// Auditoría de móvil (390×844) de aegis-web — reproduce y verifica el feedback de Emiliano:
 //  A. header: ¿están TODOS los desplegables (chips) visibles y legibles?
 //  B. composer: costo de tipear (tecla → frame pintado) en reposo, DURANTE el streaming,
 //     y A/B del throttle de render (live=false lo desactiva = comportamiento previo).
 //  C. turno: ¿se ve que trabaja? ¿Detener corta de verdad? ¿y si se cae el WS / se recarga?
-// Uso: node scripts/goose-web-phone-audit.mjs [url]
+// Uso: node scripts/aegis-web-phone-audit.mjs [url]
 // Correr DESPRENDIDO (Start-Process + log): el wrapper de background mata node con stdin no-tty.
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://127.0.0.1:3788/';
-const shots = 'C:/goose-web/tools/shots';
+const shots = 'C:/aegis-web/tools/shots';
 mkdirSync(shots, { recursive: true });
 
 const out = { url, header: {}, idle: {}, streaming: {}, stop: {}, offline: {}, errors: [] };

@@ -44,7 +44,7 @@ const shot = await page.evaluate(() => {
   const w = art.querySelector('.tbl-wrap');
   return { anchoWrap: Math.round(w.getBoundingClientRect().width), scrollX: w.scrollWidth, desbordaPagina: document.documentElement.scrollWidth > window.innerWidth + 1 };
 });
-await page.screenshot({ path: 'C:/goose-web/tools/shots/tabla-markdown-mobile.png' });
+await page.screenshot({ path: 'C:/aegis-web/tools/shots/tabla-markdown-mobile.png' });
 console.log(JSON.stringify({ ...res, pintado: shot, errores: errs }, null, 1));
 await br.close();
 process.exit(0);

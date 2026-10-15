@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
 const sid = process.argv[2];
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -22,7 +22,7 @@ const geo = await page.evaluate(() => {
     readout: a.textContent,
   };
 });
-await page.screenshot({ path: 'C:/goose-web/tools/shot-pop.png' });
+await page.screenshot({ path: 'C:/aegis-web/tools/shot-pop.png' });
 console.log('GEO ' + JSON.stringify(geo));
 await browser.close();
 process.exit(0);

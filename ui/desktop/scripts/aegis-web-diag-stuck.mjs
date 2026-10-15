@@ -5,7 +5,7 @@ import { chromium } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 
 const TITLE = process.env.DIAG_TITLE || 'Session stalled after stream';
-const OUT = process.env.DIAG_OUT || 'C:/goose-web/tools/diag-stuck.json';
+const OUT = process.env.DIAG_OUT || 'C:/aegis-web/tools/diag-stuck.json';
 const WAIT_MS = Number(process.env.DIAG_WAIT_MS || 12000);
 
 const b = await chromium.launch({ channel: 'chrome', headless: true });

@@ -1,7 +1,7 @@
 // ¿Qué expone session/info DURANTE un turno con herramientas?
 // El poll de adopción resincroniza sólo si cambia messageCount|lastMessageAt.
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const acpUrl = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 let id = 0;
 const pend = new Map();
