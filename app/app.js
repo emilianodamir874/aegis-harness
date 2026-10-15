@@ -3591,7 +3591,11 @@
   // stream. Nada de afuera del bloque se lee. Y todo esto pasa solo si el modo esta encendido.
   var READ_ON = false;
   try { READ_ON = localStorage.getItem('aegis.readOn') === '1'; } catch (e) {}
-  var READ = { key: null, spoken: 0, rate: 1.02, voice: null };
+  var READ = { key: null, consumed: 0, spoken: 0, rate: 1.02, voice: null, engine: 'piper', voiceName: 'es_AR-daniela-high', fallos: 0 };
+  try {
+    READ.engine = localStorage.getItem('aegis.ttsEngine') || 'piper';
+    READ.voiceName = localStorage.getItem('aegis.ttsVoice') || 'es_AR-daniela-high';
+  } catch (e) {}
   var TICK = String.fromCharCode(96); // comilla invertida (para armar los patrones de code fences)
 
   function readHeading(t) {
@@ -3628,11 +3632,39 @@
       READ.voice = es[0] || vs[0] || null;
     } catch (e) {}
   }
-  function readSay(text) {
+  // Motor del server (Piper, voces neuronales locales) con cola de audio: una frase a la vez,
+  // y si algo falla cae a la voz del dispositivo en vez de quedarse mudo.
+  var AUD = { q: [], playing: false, cur: null };
+  function audNext() {
+    if (AUD.playing || !AUD.q.length) return;
+    var t = AUD.q.shift();
+    AUD.playing = true;
+    var a = new Audio('/tts?engine=' + encodeURIComponent(READ.engine) + '&voice=' + encodeURIComponent(READ.voiceName) + '&text=' + encodeURIComponent(t));
+    AUD.cur = a;
+    var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); };
+    var fallar = function () {
+      if (AUD.cur === a) { AUD.playing = false; AUD.cur = null; }
+      READ.fallos = (READ.fallos || 0) + 1;
+      readSayDevice(t);
+      audNext();
+    };
+    a.onended = segir;
+    a.onerror = fallar;
+    var pr = a.play();
+    if (pr && pr.catch) pr.catch(fallar);
+  }
+  function audStop() {
+    AUD.q.length = 0;
+    if (AUD.cur) { try { AUD.cur.pause(); } catch (e) {} AUD.cur = null; }
+    AUD.playing = false;
+  }
+  function readSayDevice(text) {
     var t = String(text || '').trim();
     if (!t) return;
     try {
       if (!window.speechSynthesis) return;
+      var btn0 = document.getElementById('btn-read');
+      if (btn0) btn0.classList.add('speaking');
       var u = new SpeechSynthesisUtterance(t);
       u.lang = (READ.voice && READ.voice.lang) || 'es-AR';
       if (READ.voice) u.voice = READ.voice;
@@ -3642,7 +3674,20 @@
       if (btn) btn.classList.add('speaking');
     } catch (e) {}
   }
+  function readSay(text) {
+    var t = String(text || '').trim();
+    if (!t) return;
+    if (READ.engine && READ.engine !== 'device') {
+      var btn = document.getElementById('btn-read');
+      if (btn) btn.classList.add('speaking');
+      AUD.q.push(t);
+      audNext();
+      return;
+    }
+    readSayDevice(t);
+  }
   function readReset(cancelar) {
+    audStop();
     READ.spoken = 0; READ.key = null;
     try { if (cancelar && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     var btn = document.getElementById('btn-read');
@@ -3709,7 +3754,8 @@
   }
   if (!readSyncBtn()) document.addEventListener('DOMContentLoaded', readSyncBtn, { once: true });
 
-  window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
+  window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+    engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
 
   wire();
   rpc.connect();

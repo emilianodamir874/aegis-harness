@@ -251,6 +251,38 @@ function proxyAcp(req, socket, head) {
   up.end();
 }
 
+// --- Piper: voces neuronales LOCALES (offline, sin claves, CPU). Es el motor por defecto.
+const PIPER_EXE = 'C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe';
+const PIPER_DIR = 'C:/Aegis-Proyects/core/state/piper/voices';
+async function piperTts(texto, voz) {
+  const { spawn } = await import('node:child_process');
+  const fss = await import('node:fs');
+  const modelo = String(voz || 'es_AR-daniela-high').replace(/[^A-Za-z0-9_.-]/g, '');
+  // OJO: en piper 1.2.0 el audio por defecto NO va a stdout: crea un .wav propio y escribe la
+  // ruta por stdout (por eso el endpoint devolvia 47 bytes con un path). Se usa -f <tmp> y se lee.
+  const tmp = 'C:/Aegis-Proyects/tmp/piper-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + '.wav';
+  try {
+    return await new Promise((resolve, reject) => {
+      const p = spawn(PIPER_EXE, ['-m', PIPER_DIR + '/' + modelo + '.onnx', '-f', tmp]);
+      let err = '';
+      p.stderr.on('data', (d) => { err += d.toString(); });
+      p.on('error', reject);
+      p.on('close', (code) => {
+        try {
+          if (code !== 0) return reject(new Error('piper exit ' + code + ' ' + err.slice(0, 200)));
+          const buf = fss.readFileSync(tmp);
+          if (!buf || buf.length < 100) return reject(new Error('piper sin audio: ' + err.slice(0, 150)));
+          resolve(buf);
+        } catch (e) { reject(e); }
+      });
+      p.stdin.write(String(texto));
+      p.stdin.end();
+    });
+  } finally {
+    try { fss.unlinkSync(tmp); } catch (e) {}
+  }
+}
+
 // --- Groq TTS (playai-tts): voces neuronales por HTTP simple. Usa la misma clave que el dictado.
 async function groqKey() {
   const ahora = Date.now();
@@ -341,16 +373,20 @@ const handler = async (req, res) => {
     // Voces neuronales de Microsoft (edge-tts). El cliente pide una frase y recibe mp3.
     if (url.pathname === '/tts' && req.method === 'GET') {
       const texto = String(url.searchParams.get('text') || '').slice(0, 700);
-      const motor = String(url.searchParams.get('engine') || cfg.ttsEngine || 'groq');
-      const voz = String(url.searchParams.get('voice') || cfg.ttsVoice || (motor === 'groq' ? 'autumn' : 'es-AR-TomasNeural'));
+      const motor = String(url.searchParams.get('engine') || cfg.ttsEngine || 'piper');
+      const voz = String(url.searchParams.get('voice') || cfg.ttsVoice ||
+        (motor === 'piper' ? 'es_AR-daniela-high' : motor === 'groq' ? 'autumn' : 'es-AR-TomasNeural'));
       const rate = Number(url.searchParams.get('rate') || cfg.ttsRate || 1.05);
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
       try {
         const modelo = String(url.searchParams.get('model') || cfg.ttsModel || 'canopylabs/orpheus-v1-english');
-        const mp3 = motor === 'edge' ? await edgeTts(texto, voz, rate) : await groqTts(texto, voz, modelo);
-        if (!mp3 || !mp3.length) throw new Error('sin audio');
-        res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': String(mp3.length), 'cache-control': 'no-store' });
-        res.end(mp3);
+        const audio = motor === 'edge' ? await edgeTts(texto, voz, rate)
+          : motor === 'groq' ? await groqTts(texto, voz, modelo)
+          : await piperTts(texto, voz);
+        if (!audio || !audio.length) throw new Error('sin audio');
+        const esWav = audio.slice(0, 4).toString('ascii') === 'RIFF';
+        res.writeHead(200, { 'content-type': esWav ? 'audio/wav' : 'audio/mpeg', 'content-length': String(audio.length), 'cache-control': 'no-store' });
+        res.end(audio);
       } catch (err) {
         res.writeHead(502, { 'content-type': 'text/plain' });
         res.end('tts: ' + (err && err.message ? err.message : String(err)));
