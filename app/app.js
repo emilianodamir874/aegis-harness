@@ -277,7 +277,16 @@
     request(method, params) {
       return new Promise((res, rej) => {
         const id = this.nextId++;
-        this.pending.set(id, { res, rej });
+        // Los Invalid params del log no decian que request los producia (33 casos el
+        // 14/10) y eran indiagnosticables: el metodo viaja pegado al error.
+        this.pending.set(id, {
+          res,
+          rej: (err) => {
+            const m = err && err.message ? err.message : String(err);
+            const ya = m.indexOf("[metodo: ") >= 0;
+            rej(new Error(ya ? m : m + " [metodo: " + method + "]"));
+          },
+        });
         try { this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params })); }
         catch (e) { this.pending.delete(id); rej(e); }
       });
@@ -328,15 +337,17 @@
         // repetir lo que ya trajo el session/load: se adopta o se descarta, sin duplicar.
         if (mid && userBubbleOnScreen(mid)) break;
         if (mid && u.content && u.content.type === 'text' && adoptLocalEcho(mid, u.content.text)) break;
-        if (u.content && u.content.type === 'text') addUser(u.content.text, true, null, { mid });
-        else if (u.content && u.content.type === 'image') addUser('', true, [u.content], { mid });
+        const oculto = gooseMeta(u).agentVisible === false;
+        if (u.content && u.content.type === 'text') addUser(u.content.text, true, null, { mid, hidden: oculto });
+        else if (u.content && u.content.type === 'image') addUser('', true, [u.content], { mid, hidden: oculto });
+        if (oculto) markHiddenTail();
         break;
       }
       case 'agent_message_chunk':
-        if (u.content && u.content.type === 'text') streamAppend(u.messageId || 'a', u.content.text, false);
+        if (u.content && u.content.type === 'text') streamAppend(u.messageId || 'a', u.content.text, false, gooseMeta(u).agentVisible === false);
         break;
       case 'agent_thought_chunk':
-        if (u.content && u.content.type === 'text') streamAppend(thoughtKeyFor(u), u.content.text, true);
+        if (u.content && u.content.type === 'text') streamAppend(thoughtKeyFor(u), u.content.text, true, gooseMeta(u).agentVisible === false);
         break;
       case 'tool_call':
       case 'tool_call_update':
@@ -677,13 +688,14 @@
     // Durante un refresco suave no se toca el DOM: se bufferea y se aplica al final
     // (sólo las burbujas nuevas; las que ya están pintadas se saltan por messageId).
     if (SOFT.on && replay && !(opts && opts.local)) {
-      SOFT.users.push({ text, atts, mid: (opts && opts.mid) || '' });
+      SOFT.users.push({ text, atts, mid: (opts && opts.mid) || '', hidden: !!(opts && opts.hidden) });
       softPush('user', SOFT.users.length - 1);
       return null;
     }
     hideWelcome();
     const el = document.createElement('div');
-    el.className = 'msg-user' + (opts && opts.queued ? ' queued' : ''); if (!replay) el.classList.add('in');
+    el.className = 'msg-user' + (opts && opts.queued ? ' queued' : '') + (opts && opts.hidden ? ' hidden-from-agent' : '');
+    if (!replay) el.classList.add('in');
     if (opts && opts.mid) el.dataset.mid = opts.mid;
     let html = text ? md(text) : '';
     for (const a of atts || []) {
@@ -691,10 +703,96 @@
       else if (a && a.data && a.mimeType) html += `<img src="data:${esc(a.mimeType)};base64,${a.data}" alt="${esc(a.name || 'adjunto')}">`;
     }
     el.innerHTML = html;
+    if (opts && opts.mid && !opts.queued) {
+      const rw = document.createElement('button');
+      rw.type = 'button';
+      rw.className = 'rewind-btn';
+      rw.title = 'Rebobinar a este mensaje (el modelo deja de ver de aca en adelante)';
+      rw.setAttribute('aria-label', 'Rebobinar a este mensaje');
+      rw.textContent = '\u21ba';
+      el.appendChild(rw);
+    }
     msgWrap().appendChild(el);
     scrollBottom(replay);
     return el;
   }
+
+  // ---- rebobinar a un mensaje anterior -------------------------------------
+  // El modelo deja de ver desde ese mensaje en adelante (nada se borra: el
+  // transcript queda entero, atenuado) y el texto vuelve al composer para
+  // editarlo y reenviarlo. Mismo mecanismo que el /rewind del CLI.
+  const gooseMeta = (u) => ((u && u._meta && u._meta.goose) || {});
+
+  // Atenua la cola que el modelo dejo de ver. Las filas marcadas por el server
+  // (`agentVisible: false`) delimitan la region; lo que quedo en el medio sin
+  // marca propia (tarjetas de herramientas) se atenua con ellas. Lo que llegue
+  // DESPUES del ultimo mensaje marcado ya es conversacion nueva: no se toca.
+  function markHiddenTail() {
+    const inner = $('#msg-inner');
+    if (!inner) return;
+    for (const m of inner.querySelectorAll('.rw-marker')) m.remove();
+    const kids = [...inner.children];
+    const first = kids.findIndex((k) => k.classList.contains('hidden-from-agent'));
+    if (first < 0) {
+      for (const k of kids) k.classList.remove('hidden-tail', 'rw-boundary');
+      return;
+    }
+    let last = first;
+    for (let i = kids.length - 1; i >= first; i--) {
+      if (kids[i].classList.contains('hidden-from-agent')) { last = i; break; }
+    }
+    kids.forEach((k, i) => {
+      k.classList.toggle('hidden-tail', i >= first && i <= last);
+      k.classList.toggle('rw-boundary', i === first);
+    });
+    const marker = document.createElement('div');
+    marker.className = 'rw-marker';
+    marker.textContent = 'El modelo no ve desde aca';
+    inner.insertBefore(marker, kids[first]);
+  }
+
+  function askRewind(el) {
+    if (!el || el.querySelector('.rw-confirm')) return;
+    if (state.busy) { toast('Espera a que termine el turno para rebobinar.', 'err'); return; }
+    const c = document.createElement('div');
+    c.className = 'rw-confirm';
+    c.innerHTML = '<span>Rebobinar aca?</span><button class="ym" type="button">Si</button><button class="nn" type="button">No</button>';
+    el.appendChild(c);
+    c.querySelector('.nn').addEventListener('click', (e) => { e.stopPropagation(); c.remove(); });
+    c.querySelector('.ym').addEventListener('click', async (e) => { e.stopPropagation(); c.remove(); await rewindTo(el); });
+  }
+
+  async function rewindTo(el) {
+    const mid = el && el.dataset.mid;
+    const cur = state.current;
+    if (!mid || !cur) return;
+    try {
+      const res = await rpc.request('_goose/unstable/session/rewind', { sessionId: cur.id, messageId: mid });
+      // Todo lo que esta pintado desde esta burbuja ya no lo ve el modelo; lo que
+      // llegue despues si, asi que se marca solo lo que hay en pantalla ahora.
+      const inner = $('#msg-inner');
+      if (inner) {
+        let seen = false;
+        for (const k of inner.children) {
+          if (k === el) seen = true;
+          if (seen) k.classList.add('hidden-from-agent');
+        }
+      }
+      markHiddenTail();
+      if (res && res.text) { input.value = res.text; autosize(); refreshSlashMenu(); input.focus(); }
+      systemNote('Rebobinado: el modelo ya no ve ' + ((res && res.hidden) || 0) + ' mensaje(s) desde aca. El texto quedo en el composer para editarlo.');
+    } catch (err) {
+      toast('No se pudo rebobinar: ' + ((err && err.message) || err), 'err');
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest && e.target.closest('.rewind-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    askRewind(btn.closest('.msg-user'));
+  });
 
   const setQueuedNote = (el, msg) => {
     if (el && el.el) el = el.el; // acepta {el, text, atts}
@@ -825,7 +923,7 @@
     return state.thoughtKey;
   }
 
-  function streamAppend(key, text, thought) {
+  function streamAppend(key, text, thought, hidden) {
     // (v6.4) Replay del hub: el mismo mensaje parcial puede haberlo traído ya el
     // session/load, así que el texto del replay se acumula aparte y se reconcilia por
     // prefijo común (hubApplyReplayText) en vez de pegarse dos veces.
@@ -857,7 +955,7 @@
     if (!rec) {
       if (!thought) clearStreaming();
       const el = document.createElement('div');
-      el.className = 'msg-a';
+      el.className = 'msg-a' + (hidden ? ' hidden-from-agent' : '');
       const body = document.createElement('div');
       body.className = thought ? 'thought' : 'content';
       el.appendChild(body);
@@ -988,10 +1086,11 @@
         const usr = SOFT.users[k];
         if (!usr) continue;
         if (usr.mid && midOk.has(usr.mid)) continue; // ya estaba pintada
-        addUser(usr.text, true, usr.atts, { mid: usr.mid });
+        addUser(usr.text, true, usr.atts, { mid: usr.mid, hidden: usr.hidden });
         res.user++;
       }
     }
+    markHiddenTail();
     return res;
   }
 
@@ -1175,7 +1274,7 @@
       const pct = s.limit ? Math.round((s.used / s.limit) * 100) : null;
       L.push('Contexto: ' + fmtTok(s.used) + (s.limit ? ' de ' + fmtTok(s.limit) + ' tok (' + pct + '%)' : ' tok (el server no informo limite)'));
       if (s.limit) {
-        const trig = Math.round(s.limit * COMPACT_RATIO);
+        const trig = Math.round(compactTrig(s).at);
         L.push('Compacta sola a ~' + fmtTok(trig) + ' (' + Math.round(COMPACT_RATIO * 100) + '%)  ·  margen ' + fmtTok(Math.max(0, trig - s.used)) + ' tok');
       }
     }
@@ -1198,11 +1297,32 @@
     if (!L.length) L.push('Sin datos de uso todavia.');
     return L;
   }
+  // Disparador real de compactacion: lo manda el server (autoCompactAt/autoCompactPct,
+  // ya resuelto contra GOOSE_AUTO_COMPACT_TOKEN_LIMIT). Si todavia no llego, cae al 80%
+  // del limite y la UI lo marca como estimado.
+  function compactTrig(st) {
+    if (!st) return { at: null, pct: null, estimated: true };
+    if (st.autoCompactAt != null) {
+      return {
+        at: st.autoCompactAt,
+        pct: st.autoCompactPct != null ? st.autoCompactPct * 100 : (st.limit ? (st.autoCompactAt / st.limit) * 100 : null),
+        estimated: false
+      };
+    }
+    if (st.limit) return { at: st.limit * COMPACT_RATIO, pct: COMPACT_RATIO * 100, estimated: true };
+    return { at: null, pct: null, estimated: true };
+  }
+
   function resetUsageForSession() {
     const sid = (state.current && state.current.id) || null;
     if (state.usageSid === sid) return;
+    // Cache por sesion: el server manda el desglose al abrir la sesion y al cerrar cada
+    // turno, no en cada notificacion. Sin cache, cambiar de chat (o recargar la pagina)
+    // tiraba el desglose y el popover volvia a la version corta hasta el proximo turno.
+    const cache = state.usageBySid || (state.usageBySid = {});
+    if (state.usageSid) cache[state.usageSid] = state.usage || {};
     state.usageSid = sid;
-    state.usage = {};
+    state.usage = (sid && cache[sid]) || {};
     renderUsage();
   }
   // ---------- popover de contexto: chico, anclado al readout, estilo Claude ----------
@@ -1258,17 +1378,19 @@
     const s = state.usage || {};
     const mp = modelParts() || {};
     const pct = s.limit && s.used != null ? Math.min(100, (s.used / s.limit) * 100) : null;
-    const trig = s.limit ? s.limit * COMPACT_RATIO : null;
-    const col = pct == null ? 'var(--text-4)' : pct >= COMPACT_RATIO * 100 ? 'var(--danger)' : pct >= 50 ? 'var(--warn)' : 'var(--ok)';
+    const ct = compactTrig(s);
+    const trig = ct.at;
+    const trigPct = ct.pct != null ? ct.pct : COMPACT_RATIO * 100;
+    const col = pct == null ? 'var(--text-4)' : pct >= trigPct ? 'var(--danger)' : pct >= 50 ? 'var(--warn)' : 'var(--ok)';
     w.querySelector('.up-pct').textContent = pct == null ? '--' : Math.round(pct) + '%';
     w.querySelector('.up-pct').style.color = col;
     const vd = w.querySelector('.up-verdict');
-    vd.textContent = pct == null ? 'sin medir todavia' : pct >= COMPACT_RATIO * 100 ? 'va a compactar' : pct >= 50 ? 'mas de la mitad' : 'holgado';
+    vd.textContent = pct == null ? 'sin medir todavia' : pct >= trigPct ? 'va a compactar' : pct >= 50 ? 'mas de la mitad' : 'holgado';
     const bar = w.querySelector('.up-meter i');
     bar.style.background = col === 'var(--text-4)' ? 'var(--text-4)' : 'linear-gradient(90deg, ' + col + ', ' + col + ')';
-    w.querySelector('.up-meter em').style.left = Math.round(COMPACT_RATIO * 100) + '%';
+    w.querySelector('.up-meter em').style.left = Math.round(trigPct) + '%';
     w.querySelector('.up-sub').innerHTML = s.used == null ? 'todavia sin datos de uso' :
-      '<b>' + niceTok(s.used) + '</b> de ' + niceTok(s.limit) + ' tok' + (trig ? '  ·  compacta a ' + niceTok(trig) + ' (' + Math.round(COMPACT_RATIO * 100) + '%)' : '');
+      '<b>' + niceTok(s.used) + '</b> de ' + niceTok(s.limit) + ' tok' + (trig ? '  ·  compacta a ' + niceTok(trig) + ' (' + Math.round(trigPct) + '%)' + (ct.estimated ? ' (estimado)' : '') : '');
     const mu = s.last || {};
     const cachePct = mu.cacheReadTokens != null && (mu.inputTokens || 0) + mu.cacheReadTokens > 0
       ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--';
@@ -1277,7 +1399,7 @@
         (mu.elapsedMs != null ? '  ·  ' + (mu.elapsedMs / 1000).toFixed(1) + 's' : '')) +
       popRow('cache', cachePct + (mu.timeToFirstTokenMs != null ? '  ·  1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')) +
       popRow('sesion', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok)) +
-      popRow('margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok antes de compactar' : '--');
+      popRow('margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok antes de compactar' + (ct.estimated ? ' (estimado)' : '') : '--');
     // DESGLOSE: donde se va la ventana. tool results, MOIM por turno, historial
     // oculto por compactar y el prompt fijo (sistema + esquemas de tools). Las partes
     // las estima el server y suman exactamente el 'usado' de arriba.
@@ -1295,7 +1417,34 @@
           + '</span></div>';
       }).join('');
       w.querySelector('.up-rows').insertAdjacentHTML('beforeend', sep + body);
+    } else {
+      // El desglose llega al abrir la sesion y al cerrar cada turno. Antes de eso no hay
+      // nada que mostrar: decirlo, en vez de dejar el panel a medias.
+      w.querySelector('.up-rows').insertAdjacentHTML('beforeend', popRow('desglose del contexto', 'se completa al cerrar el proximo turno'));
     }
+    // Gasto real por modelo (una sesion puede cambiar de modelo a mitad de camino) y
+    // compactacion interna, que se cobra pero no deja mensaje: filas aparte.
+    (function () {
+      const mid = '  ' + String.fromCharCode(183) + '  ';
+      // Precios: si prices.json tiene numeros, se muestra el costo por modelo.
+      const price = (m) => {
+        const pr = pricesCache && pricesCache[m.provider + '/' + m.model];
+        const eff = pr.inputEffective != null ? pr.inputEffective : pr.input;
+        if (eff == null) return '';
+        const usd = (m.inputTokens / 1e6) * eff;
+        return '  ' + String.fromCharCode(183) + '  USD ' + usd.toFixed(3);
+      };
+      let extra = '';
+      if (Array.isArray(s.modelUsage) && s.modelUsage.length) {
+        extra += s.modelUsage.map(function (m) {
+          return popRow('  ' + m.model, m.calls + ' llam' + mid + 'entrada ' + niceTok(m.inputTokens) + mid + 'salida ' + niceTok(m.outputTokens) + price(m));
+        }).join('');
+      }
+      if (s.compactionCalls) {
+        extra += popRow('compactacion interna', s.compactionCalls + ' llam' + mid + 'entrada ' + niceTok(s.compactionInputTokens) + mid + 'salida ' + niceTok(s.compactionOutputTokens));
+      }
+      if (extra) w.querySelector('.up-rows').insertAdjacentHTML('beforeend', extra);
+    })();
     w.querySelector('.up-foot').textContent =
       (mp.model || 'modelo ?') + (mp.effort ? '  ·  esfuerzo ' + mp.effort + (mp.fromAlias ? ' (alias)' : '') : '') + (s.cost != null ? '  ·  ' + fmtCost(s.cost) : '');
     w.hidden = false;
@@ -1348,6 +1497,9 @@
     el.style.cursor = 'pointer';
     el.onclick = () => openUsagePop();
   }
+  // Precios por modelo (C:/goose-web/prices.json, servido por el server web).
+  let pricesCache = null;
+  fetch('./prices.json').then((r) => r.json()).then((p) => { pricesCache = p || {}; }).catch(() => { pricesCache = {}; });
   function setUsage(u) {
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, lastSet: null, lastMsg: null });
     dbg.setUsage++; dbg.lastSet = u;
@@ -1363,6 +1515,12 @@
     // Desglose de que compone el contexto (usage_update -> contextBreakdown, lo manda
     // el server). Se guarda tal cual para que el popover lo muestre cuando se abra.
     if (Array.isArray(u.contextBreakdown) && u.contextBreakdown.length) s.contextBreakdown = u.contextBreakdown;
+    if (u.autoCompactAt != null) s.autoCompactAt = u.autoCompactAt;
+    if (Array.isArray(u.modelUsage) && u.modelUsage.length) s.modelUsage = u.modelUsage;
+    if (u.compactionCalls != null) s.compactionCalls = u.compactionCalls;
+    if (u.compactionInputTokens != null) s.compactionInputTokens = u.compactionInputTokens;
+    if (u.compactionOutputTokens != null) s.compactionOutputTokens = u.compactionOutputTokens;
+    if (u.autoCompactPct != null) s.autoCompactPct = u.autoCompactPct;
     renderUsage();
   }
   // message_usage (goose-sdk-types): uso POR PASO, con cache y tiempos. El cliente lo ignoraba.
@@ -1531,7 +1689,37 @@
       state.offscreen = null;
       state.replaying = false;
       flushRender();
+      markHiddenTail();
     }
+  }
+
+  // (2026-10-14) Abrir un chat de miles de mensajes costaba 13,6 MB de replay en 4162 frames
+  // y ~2 s (medido en la sesion 20261013_51: 5750 mensajes). El server ya soporta replayTail
+  // por meta: manda solo la cola, alineada a un mensaje de usuario, y el resto queda a un
+  // click. replayMaxBlockBytes recorta bloques enormes (la UI ya corta la vista a 6000).
+  const REPLAY_TAIL = 400;
+  const REPLAY_MAX_BLOCK = 8192;
+  const replayMeta = (full) => ({
+    _meta: { replayTail: full ? 1000000000 : REPLAY_TAIL, replayMaxBlockBytes: REPLAY_MAX_BLOCK },
+  });
+
+  function tailPill(show) {
+    const box = $('#messages');
+    if (!box) return;
+    let el = box.querySelector('#tail-pill');
+    if (!show) { if (el) el.remove(); return; }
+    if (el) return;
+    el = document.createElement('div');
+    el.id = 'tail-pill';
+    el.style.cssText = 'text-align:center;font-size:12px;opacity:.8;margin:6px 0 12px';
+    el.innerHTML = 'Para abrir rapido se cargaron los ultimos ' + REPLAY_TAIL +
+      ' mensajes. <button class="sk-btn" id="tail-full">Ver historial completo</button>';
+    el.querySelector('#tail-full').onclick = (ev) => {
+      ev.stopPropagation();
+      el.remove();
+      renderSession(state.current, { quiet: true, full: true });
+    };
+    box.insertBefore(el, box.firstChild);
   }
 
   async function renderSession(entry, opts) {
@@ -1556,7 +1744,7 @@
     }
     state.replaying = true;
     try {
-      const res = await rpc.request('session/load', { sessionId: id, cwd: state.current.cwd || CFG.cwd, mcpServers: [] });
+      const res = await rpc.request('session/load', { sessionId: id, cwd: state.current.cwd || CFG.cwd, mcpServers: [], ...replayMeta(!!(opts && opts.full)) });
       if (res && Array.isArray(res.configOptions)) state.current.configOptions = res.configOptions;
       if (res && res.modes) state.current.modes = res.modes;
       renderChips();
@@ -1571,6 +1759,8 @@
     if (state.msgs.size) hideWelcome();
     else showWelcome('empty', state.current.title);
     updateMetaHints();
+    // Si llegaron tantos mensajes como pedimos de cola, es probable que haya mas arriba.
+    tailPill(!(opts && opts.full) && state.msgs.size >= REPLAY_TAIL);
     scrollBottom(true);
     pinBottom(1400);
   }
@@ -1785,6 +1975,23 @@
     return blocks;
   };
 
+  // Un swap del serve o una caida de red mataba el prompt en silencio (41 casos en el
+  // log del 14/10). Si el error es de conexion, reintentamos el mismo texto: el server
+  // arranca un turno y la burbuja del usuario no se vuelve a pintar.
+  async function promptConRetry(text, atts) {
+    for (let intento = 1; intento <= 3; intento++) {
+      try {
+        return await rpc.request('session/prompt', { sessionId: state.current.id, prompt: promptBlocks(text, atts) });
+      } catch (e) {
+        const msg = String((e && e.message) || e);
+        const transitorio = /conexi|closed|ECONNRESET|socket|network/i.test(msg);
+        if (!transitorio || intento === 3) throw e;
+        systemNote('Se corto la conexion; reintentando tu mensaje (' + intento + ' de 2)...');
+        await new Promise(function (r) { setTimeout(r, intento * 3000); });
+        for (let i = 0; i < 20 && !rpc.ready; i++) await new Promise(function (r) { setTimeout(r, 1000); });
+      }
+    }
+  }
   async function sendText(text, atts, bubble) {
     const el = bubble || addUser(text, false, atts);
     const sid = state.current && state.current.id; // dueño del turno: si te vas a otro chat, esa vista no se toca
@@ -1793,7 +2000,7 @@
     let label = 'Respuesta completa';
     let loMandoComoIndicacion = false;
     try {
-      const res = await rpc.request('session/prompt', { sessionId: state.current.id, prompt: promptBlocks(text, atts) });
+      const res = await promptConRetry(text, atts);
       if (!(state.current && state.current.id === sid)) { report('adopt', 'turno terminó en ' + (sid || '?') + ' con la vista en otro chat'); return; }
       if (res && res.usage && res.usage.totalTokens != null) setUsage({ used: res.usage.totalTokens });
       stopNote(res && res.stopReason);
