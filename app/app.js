@@ -2187,13 +2187,21 @@
     return blocks;
   };
 
-  // Un swap del serve o una caida de red mataba el prompt en silencio (41 casos en el
-  // log del 14/10). Si el error es de conexion, reintentamos el mismo texto: el server
-  // arranca un turno y la burbuja del usuario no se vuelve a pintar.
+  // Un swap del serve o una caida de red mataba el prompt en silencio (41 casos en el log del
+  // 14/10). Si el error es de conexion se reintenta el mismo texto, pero SOLO con evidencia de que
+  // el intento anterior no llego: reenviar a ciegas era lo que creaba el mensaje y el turno duplicados.
+  function sessionMsgCount(sid) {
+    // session/list devuelve _meta.messageCount por sesion (verificado contra el serve vivo: 493).
+    const s = (state.sessions || []).find(function (x) { return x && x.sessionId === sid; });
+    const n = s && s._meta && s._meta.messageCount;
+    return (typeof n === 'number') ? n : null;
+  }
+
   async function promptConRetry(text, atts, sidArg) {
     // (2026-10-15) sid explicito: antes usaba state.current.id en CADA intento, asi que si te ibas
     // a otro chat mientras esperaba el reintento, el prompt podia caer en la sesion equivocada.
     const sid = sidArg || (state.current && state.current.id);
+    const antes = sessionMsgCount(sid); // linea base: si el mensaje se persiste, el conteo sube
     for (let intento = 1; intento <= 3; intento++) {
       try {
         return await rpc.request('session/prompt', { sessionId: sid, prompt: promptBlocks(text, atts) });
@@ -2201,23 +2209,38 @@
         const msg = String((e && e.message) || e);
         const transitorio = /conexi|closed|ECONNRESET|socket|network/i.test(msg);
         if (!transitorio || intento === 3) throw e;
-        systemNote('Se corto la conexion; reintentando tu mensaje (' + intento + ' de 2)...');
+        systemNote('Se corto la conexion; verificando si tu mensaje llego...');
         await new Promise(function (r) { setTimeout(r, intento * 3000); });
         for (let i = 0; i < 20 && !rpc.ready; i++) await new Promise(function (r) { setTimeout(r, 1000); });
-        // ANTES de reenviar: averiguar si el prompt YA llego. Si el server arranco el turno pero se
-        // perdio la respuesta (hipo del tunel), reenviar creaba un SEGUNDO mensaje del usuario y un
-        // segundo turno. Medido: dos filas identicas en el store (16:26:16 y 16:27:02, len=235) y el
-        // client.log con "reintentando tu mensaje (1 de 2)" y "(2 de 2)". Si la sesion figura
-        // corriendo, llego: se reengancha la vista y NO se reenvia.
+        // Dos señales independientes de que el intento anterior SI llego:
+        //  1) la sesion figura corriendo (el turno arranco);
+        //  2) subio _meta.messageCount (el mensaje quedo persistido) — cubre el caso en que el turno
+        //     ya habia terminado cuando llego el reintento, que la señal 1 sola no ve.
+        // Si el conteo no subio, el mensaje NO llego y reintentar es seguro (y necesario).
+        let verificado = false;
         try {
+          // refreshSessions se traga el error de conexion (solo reporta), asi que por si solo no
+          // sirve como señal de "no pude verificar": se chequea la conexion de forma directa.
+          if (!rpc.ready) throw new Error('sin conexion');
           await refreshSessions();
-          if (sid && state.runningIds && state.runningIds.has(sid)) {
-            report('adopt', 'el prompt ya habia llegado: no se reenvia (evita el turno duplicado)');
+          const despues = sessionMsgCount(sid);
+          const corriendo = !!(sid && state.runningIds && state.runningIds.has(sid));
+          const crecio = (antes != null && despues != null && despues > antes);
+          if (corriendo || crecio) {
+            report('adopt', 'el prompt ya habia llegado (' + (corriendo ? 'turno corriendo' : 'messageCount ' + antes + '->' + despues) + '): no se reenvia');
             systemNote('La conexion volvio: tu mensaje ya estaba enviado.');
             try { await resyncAdoptedRun(); } catch (e2) {}
             return {};
           }
-        } catch (e3) {}
+          verificado = (antes != null && despues != null);
+        } catch (e3) { /* la conexion no volvio: no se pudo verificar */ }
+        if (!verificado) {
+          // Sin poder comprobar, antes se reenviaba a ciegas y eso duplicaba el turno. Mejor
+          // devolverle el texto al usuario que mandarlo dos veces.
+          const errNC = new Error('No se pudo confirmar si tu mensaje llego.');
+          errNC.aegisNoConfirmado = true;
+          throw errNC;
+        }
       }
     }
   }
@@ -2329,6 +2352,17 @@
       if (sr === 'cancelled') label = 'Turno detenido';
       else if (sr && sr !== 'end_turn') label = 'Turno interrumpido (' + sr + ')';
     } catch (e) {
+      if (e && e.aegisNoConfirmado) {
+        // El reintento no pudo verificar si el mensaje llego: no se reenvia a ciegas (eso duplicaba
+        // el turno) y el texto vuelve al composer para que el usuario decida.
+        label = 'No se pudo confirmar el envío';
+        if (state.current && state.current.id === sid) {
+          const inp = document.getElementById('input');
+          if (inp && !inp.value.trim()) { inp.value = text; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.focus(); }
+        }
+        systemNote('No pude confirmar si tu mensaje llegó (la conexión no volvió a tiempo). Te lo dejé en el composer: mirá si arriba quedó la respuesta y, si no, reenvialo.');
+        return;
+      }
       if (!(state.current && state.current.id === sid)) {
         report('error', 'prompt de ' + (sid || '?') + ' falló con la vista en otro chat: ' + String((e && e.message) || e).slice(0, 140));
         return;
