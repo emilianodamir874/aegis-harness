@@ -1,0 +1,12 @@
+{
+  "name": "goose-web-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Herramientas de la web de goose (probes node/playwright contra el cliente web)",
+  "scripts": {
+    "pop-clamp-check": "node tools/usage-pop-clamp-check.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}
