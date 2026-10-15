@@ -1,12 +1,12 @@
 # Instala la tarea programada Aegis_Web_Tunnel (requiere elevacion: el registro de tareas
 # programadas no lo permite un proceso no elevado).
-# Tarea: wscript.exe goose-web-tunnel.vbs loop
+# Tarea: wscript.exe aegis-web-tunnel.vbs loop
 #   - trigger: al iniciar sesion + repeticion cada 10 min (red de seguridad si el residente muere)
 #   - ExecutionTimeLimit 0 (sin limite: el watchdog queda residente), MultipleInstances IgnoreNew
 $ErrorActionPreference = 'Stop'
-$log = 'C:\goose-web\logs\install-task.log'
+$log = 'C:\aegis-web\logs\install-task.log'
 try {
-    $vbs = 'C:\goose-web\scripts\goose-web-tunnel.vbs'
+    $vbs = 'C:\aegis-web\scripts\aegis-web-tunnel.vbs'
     if (-not (Test-Path $vbs)) { throw "falta $vbs" }
 
     $act = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '" loop')

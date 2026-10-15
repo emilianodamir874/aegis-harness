@@ -8,7 +8,7 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const acpUrl = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const rate = Number(process.argv[2] || 4);
 const out = {};
@@ -203,7 +203,7 @@ try {
   out.D = { detenerMs: await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 30000 }).then(() => Date.now() - td).catch(() => 'timeout-30s') };
   out.D.trasDetener = await snap();
   out.D.runbar = await page.evaluate(() => { const x = document.querySelector('#runbar'); return x && !x.hidden ? { text: x.querySelector('#runbar-text').textContent, stop: !x.querySelector('#runbar-stop').hidden } : null; });
-  await page.screenshot({ path: 'C:/goose-web/tools/shots/typing-adopt-mobile.png' });
+  await page.screenshot({ path: 'C:/aegis-web/tools/shots/typing-adopt-mobile.png' });
 } catch (e) {
   out.fatal = String((e && e.message) || e).slice(0, 300);
 }

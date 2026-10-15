@@ -7,7 +7,7 @@
 # Uso: powershell -NoProfile -ExecutionPolicy Bypass -File restart-latest-detached.ps1 [-DelaySecs 40] [-IdleSeconds 25]
 param([int]$DelaySecs = 40, [int]$IdleSeconds = 25, [int]$IdleTimeoutSecs = 600, [string]$Version = '')
 $ErrorActionPreference = 'Continue'
-$root = 'C:/goose-web'
+$root = 'C:/aegis-web'
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $log = "$root/logs/restart-latest-$stamp.log"
 function W($m) { Add-Content -Path $log -Value ((Get-Date).ToString('HH:mm:ss') + ' ' + [string]$m) }

@@ -1,7 +1,7 @@
 // Manda el Punto 5 (cambiar de chat con turno en curso) a la sesión _28.
 // Si hay run activo → steer con el runId real; si no → prompt normal.
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const SID = '20261012_28';
 const TEXT = '[Punto 5 (pedido directo de Emiliano, prioridad ALTA en esta ronda): "no me gusta que no me deje cambiar de chat si está en streaming el que estoy". Hoy `openSession` bloquea el cambio con el aviso "Esperá a que termine la respuesta actual." cuando state.busy. Comportamiento pedido: poder cambiar de chat aunque haya un turno en curso (propio o adoptado): (a) el run sigue en el server, no se cancela; (b) los `session/update` de una sesión que NO es la visible NO se renderizan (filtrar por `params.sessionId` en el handler de updates y en `noteRunActivity` — hoy van al view actual); (c) la barra/Detener aplican solo a la sesión visible; al VOLVER a la sesión con el run, `checkAdoptedRun()` ya re-adopta (barra + refresco periódico — esto ya funciona); (d) la resolución del `session/prompt` propio no debe tocar la UI si mientras tanto cambiaste de sesión (guard: sesión de la respuesta ≠ state.current ⇒ no tocar setBusy/runBar/finishStream); (e) mismo cuidado para "+ Nuevo chat" y para renombrar/borrar durante un run. Test: cambiar de sesión en medio de un run con chunks llegando; sin contaminación cruzada; al volver: barra + Detener + refresco OK; el run termina sano.]';

@@ -1,6 +1,6 @@
 // Read-only: segunda conexion a una sesion con run activo -> cuenta notificaciones.
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const SID = process.argv[2];
 let id = 0; const pend = new Map(); const notes = [];

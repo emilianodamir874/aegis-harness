@@ -2,7 +2,7 @@
 // notificaciones de streaming. Crea una sesión de prueba y la borra al final.
 import { readFile } from 'node:fs/promises';
 
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 
 let id = 0;

@@ -1,4 +1,4 @@
-﻿# Build seguro de aegis (B1/B3/B4 del relevamiento de dolor):
+# Build seguro de aegis (B1/B3/B4 del relevamiento de dolor):
 #  - espera a que no haya actividad del modelo, para no arrastrar tus turnos
 #  - neutraliza sccache como corresponde (comentar rustc-wrapper y restaurar)
 #  - copia el binario SOLO si el build termino con exit 0
@@ -11,7 +11,7 @@ param(
   [switch]$KeepSccache
 )
 $ErrorActionPreference = 'Continue'
-$repo = 'C:\aegis-src'; $logDir = 'C:\goose-web\logs'; $log = "$logDir\build-$Version.log"
+$repo = 'C:\aegis-src'; $logDir = 'C:\aegis-web\logs'; $log = "$logDir\build-$Version.log"
 $cfg = 'C:\Users\Emiliano\.cargo\config.toml'
 $out = "$repo\target\debug\aegis-$Version.exe"
 function Last-ModelWrite {

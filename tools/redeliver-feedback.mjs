@@ -3,9 +3,9 @@
 // Incluye la foto original adjunta. Corre desprendido; escribe progreso.
 import { readFile } from 'node:fs/promises';
 
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
-const b64 = (await readFile('C:/goose-web/tools/user-photo.jpg')).toString('base64');
+const b64 = (await readFile('C:/aegis-web/tools/user-photo.jpg')).toString('base64');
 
 const PREFACE =
   '[Feedback de Emiliano sobre la UI de aegis-web, reenviado por su asistente a una sesión nueva: ' +

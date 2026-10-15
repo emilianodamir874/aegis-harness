@@ -1,6 +1,6 @@
 // ¿Hay un run activo en la sesión _23 ahora mismo? + meta (messageCount/lastMessageAt).
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 let id = 0; const pend = new Map();
 const ws = new WebSocket(url);

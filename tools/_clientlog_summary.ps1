@@ -1,5 +1,5 @@
 $ErrorActionPreference='SilentlyContinue'
-$c = Get-Content 'C:\goose-web\logs\client.log' -Raw
+$c = Get-Content 'C:\aegis-web\logs\client.log' -Raw
 $blocks = $c -split '--- '
 Write-Output ('bloques=' + ($blocks.Count - 1))
 $kinds = @{}

@@ -1,4 +1,4 @@
-﻿STAGE scan {"id":"20261012_23","msgs":323,"colgadas":2}
+STAGE scan {"id":"20261012_23","msgs":323,"colgadas":2}
 STAGE scan {"id":"20261012_25","msgs":781,"colgadas":0}
 STAGE scan {"id":"20261012_24","msgs":8,"colgadas":0}
 STAGE scan {"id":"20261012_22","msgs":5,"colgadas":0}
@@ -23,7 +23,7 @@ STAGE live-adoptado {"domAntes":{"nodes":3,"msgs":1},"domDespues":{"nodes":34,"m
     },
     {
      "status": "pending",
-     "title": "shell · cd /d C:\\goose-web & node --check tools\\deadrun-live"
+     "title": "shell · cd /d C:\\aegis-web & node --check tools\\deadrun-live"
     }
    ]
   },
@@ -97,7 +97,7 @@ STAGE live-adoptado {"domAntes":{"nodes":3,"msgs":1},"domDespues":{"nodes":34,"m
    },
    {
     "status": "pending",
-    "title": "shell · cd /d C:\\goose-web & node --check tools\\deadrun-live"
+    "title": "shell · cd /d C:\\aegis-web & node --check tools\\deadrun-live"
    }
   ]
  },

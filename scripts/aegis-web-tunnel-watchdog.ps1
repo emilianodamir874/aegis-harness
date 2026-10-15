@@ -1,20 +1,20 @@
 # aegis-web: tunel Cloudflare (quick tunnel) + vigilancia del stack web.
 # - Mantiene vivo el tunel a la UI local (127.0.0.1:3788) y, si hace falta, arranca el stack
-#   (start-goose-web.ps1 -> aegis serve + server.mjs).
+#   (start-aegis-web.ps1 -> aegis serve + server.mjs).
 # - Escribe la URL publica en tunnel-url.txt y las credenciales en tunnel-access.txt.
-# - Una pasada por defecto; -Loop queda residente cada 60 s (lanzador oculto goose-web-tunnel.vbs).
-# Log: C:\goose-web\logs\tunnel-watchdog.log
+# - Una pasada por defecto; -Loop queda residente cada 60 s (lanzador oculto aegis-web-tunnel.vbs).
+# Log: C:\aegis-web\logs\tunnel-watchdog.log
 param([switch]$Loop)
 
 $ErrorActionPreference = 'SilentlyContinue'
-$Root    = 'C:\goose-web'
+$Root    = 'C:\aegis-web'
 $Log     = Join-Path $Root 'logs\tunnel-watchdog.log'
 $UrlFile = Join-Path $Root 'tunnel-url.txt'
 $AccFile = Join-Path $Root 'tunnel-access.txt'
 $CfLog   = Join-Path $Root 'logs\cloudflared-aegis.log'
 $CfExe   = 'C:\Users\Emiliano\AppData\Local\hermes\bin\cloudflared.exe'
 $Origin  = 'http://127.0.0.1:3788'
-$StartPs = Join-Path $Root 'scripts\start-goose-web.ps1'
+$StartPs = Join-Path $Root 'scripts\start-aegis-web.ps1'
 $AuthFile = Join-Path $Root 'auth.json'
 
 function Write-Log([string]$m) {
@@ -71,9 +71,9 @@ function Get-AegisTunnel {
 function Save-TunnelUrl {
     if (-not (Test-Path $CfLog)) { return }
     $txt = Get-Content -Path $CfLog -Tail 400 | Out-String
-    $m = [regex]::Match($txt, 'https://[a-z0-9-]+\.trycloudflare\.com')
-    if (-not $m.Success) { return }
-    $new = $m.Value
+    $ms = [regex]::Matches($txt, 'https://[a-z0-9-]+\.trycloudflare\.com')
+    if ($ms.Count -eq 0) { return }
+    $new = $ms[$ms.Count - 1].Value
     $old = ''
     if (Test-Path $UrlFile) { $old = (Get-Content -Path $UrlFile -Raw) }
     if ($old -like ('*' + $new + '*')) { return }
@@ -111,7 +111,7 @@ $effectiveLoop = ($Loop -and $owner)
 do {
     $code = Get-WebCode
     if (-not ($code -ge 200 -and $code -lt 500)) {
-        Write-Log 'stack web caido -> start-goose-web.ps1'
+        Write-Log 'stack web caido -> start-aegis-web.ps1'
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $StartPs | Out-Null
         Start-Sleep -Seconds 6
         $code = Get-WebCode

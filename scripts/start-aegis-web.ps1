@@ -2,7 +2,7 @@
 # Idempotent. Hidden-window friendly (used by the Aegis_Web scheduled task).
 $ErrorActionPreference = 'SilentlyContinue'
 
-$root = 'C:\goose-web'
+$root = 'C:\aegis-web'
 $nodeCandidates = @(
   'C:\Users\Emiliano\AppData\Local\hermes\tools\node-26.7.0-win32-x64\node.exe',
   'C:\Users\Emiliano\scoop\apps\fnm\current\node-versions\v22.23.2\installation\node.exe',

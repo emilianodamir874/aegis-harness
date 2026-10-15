@@ -1,4 +1,4 @@
-﻿# aegis-web
+# aegis-web
 
 Acceso a aegis del fork de Emiliano desde el navegador por LAN (sin instalar nada en los dispositivos).
 
@@ -33,7 +33,7 @@ los tokens de Hermes web (chrome `#0d0d0e`, tarjetas `#161618`, acento `#0053fd`
 
 ## Code Mode como vía principal (2026-10-12 — backend v2)
 
-- `aegis-serve-v2.exe` (build 16:18; `rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode`) reemplaza a v1 en `scripts/start-goose-web.ps1` (backup `.bak-pre-v2`; el binario v1 queda en disco para rollback).
+- `aegis-serve-v2.exe` (build 16:18; `rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode`) reemplaza a v1 en `scripts/start-aegis-web.ps1` (backup `.bak-pre-v2`; el binario v1 queda en disco para rollback).
 - **Sesiones NUEVAS del web corren Code Mode** (extensión `code_execution` habilitada en la config): el agente trabaja vía `execute_typescript`/`list_functions`. Las sesiones VIEJAS retomadas NO lo heredan (el set de extensiones queda fijado al crear la sesión) — para cm, chat nuevo (memoria vía chatrecall). Verificado: `tools/smoke-serve-v2.mjs` (nueva → `execute typescript` → resultado OK) + resume de `_22` (sin `execute_typescript`).
 - El CLI principal también: `aegis.cmd` → `aegis-codemode-v2.exe` (backup `.bak-pre-cm-main`); `aegis-cm.cmd` queda de alias.
 
@@ -41,14 +41,14 @@ los tokens de Hermes web (chrome `#0d0d0e`, tarjetas `#161618`, acento `#0053fd`
 
 - `openSession`, `newSession` y el handler de `#btn-new` ya no bloquean cuando hay un run en curso: la vista se libera (`detachRunView()`), el run sigue vivo en el server, y al volver `checkAdoptedRun()` lo re-adopta (barra + Detener + refresco). `sendText` no toca la UI si la resolución del prompt llega con la vista en otro chat; `onUpdate` filtra por `sessionId` (ya en v6.2).
 - Ojo: el handler del botón `+ Nuevo chat` tenía su PROPIA guarda (`Esperá a que termine…`) además de la de `newSession` — eliminada; no reintroducir guardas bloqueantes (el único aviso válido es informativo).
-- Tests (3, verdes): `ui/desktop/scripts/goose-web-switch-check.mjs` (run adoptado), `-newchat-check.mjs` (+ Nuevo chat con turno activo), `-owner-switch-check.mjs` (turno propio; run verificado VIVO desde afuera durante el cambio). Backups: `app/app.js.bak-pre-detach`, `.bak-pre-btnnew`.
+- Tests (3, verdes): `ui/desktop/scripts/aegis-web-switch-check.mjs` (run adoptado), `-newchat-check.mjs` (+ Nuevo chat con turno activo), `-owner-switch-check.mjs` (turno propio; run verificado VIVO desde afuera durante el cambio). Backups: `app/app.js.bak-pre-detach`, `.bak-pre-btnnew`.
 - Nota: si el turno propio termina mientras estás en otro chat, no se muestran "fin del turno"/temporizador (no se toca la vista ajena); al volver la conversación está completa.
-- **Watchdog de turno huérfano (v6.3+wd, 2026-10-12)**: si un `session/prompt` propio queda sin respuesta porque el run murió en silencio (sin run activo en el server), el cliente lo detecta (doble sonda con gracia de 4 s, tick 15 s, solo en modo dueño) y **libera la consola + reenvía la cola + settleSteers** — mata el caso "después de mandar un mensaje no puedo enviar más" (caso real: sesión _36, 12/10 17:27). Test: `goose-web-watchdog-sanity.mjs`. Backup: `app/app.js.bak-pre-watchdog`. Headers de versión: `v6.3+detach+wd`.
-- **Steer descartado al cierre (fix "+sc", 2026-10-12)**: `clear_active_run` descarta las indicaciones encoladas al cerrar un run → quedaban persistidas SIN respuesta (casos reales: "vos podes sacar screenshots" 17:27 y "Vamos con todo!!" 18:08 en _36). Antes, `finishSettle`/`flushPendingSteers` marcaban "recibida" si el texto estaba en el historial — pero **persistido ≠ consumido**. Ahora `steerAnsweredInHistory()` exige RESPUESTA DEL ASISTENTE DESPUÉS de la indicación (burbujas `.msg-a`); si no la hay, se reencola como mensaje y `flushQueue` la envía (run nuevo). Además `endAdoptedRun()` ahora también settlea (antes, un turno ADOPTADO no revisaba sus steers al terminar: hueco #1). Test determinista: `goose-web-swallow3-check.mjs` (steer → Detener → nota "se reenvía como mensaje" a los ~4 s → respuesta del asistente ✓). Backup: `app/app.js.bak-pre-sc`. Versión: `v6.3+detach+wd+sc`.
+- **Watchdog de turno huérfano (v6.3+wd, 2026-10-12)**: si un `session/prompt` propio queda sin respuesta porque el run murió en silencio (sin run activo en el server), el cliente lo detecta (doble sonda con gracia de 4 s, tick 15 s, solo en modo dueño) y **libera la consola + reenvía la cola + settleSteers** — mata el caso "después de mandar un mensaje no puedo enviar más" (caso real: sesión _36, 12/10 17:27). Test: `aegis-web-watchdog-sanity.mjs`. Backup: `app/app.js.bak-pre-watchdog`. Headers de versión: `v6.3+detach+wd`.
+- **Steer descartado al cierre (fix "+sc", 2026-10-12)**: `clear_active_run` descarta las indicaciones encoladas al cerrar un run → quedaban persistidas SIN respuesta (casos reales: "vos podes sacar screenshots" 17:27 y "Vamos con todo!!" 18:08 en _36). Antes, `finishSettle`/`flushPendingSteers` marcaban "recibida" si el texto estaba en el historial — pero **persistido ≠ consumido**. Ahora `steerAnsweredInHistory()` exige RESPUESTA DEL ASISTENTE DESPUÉS de la indicación (burbujas `.msg-a`); si no la hay, se reencola como mensaje y `flushQueue` la envía (run nuevo). Además `endAdoptedRun()` ahora también settlea (antes, un turno ADOPTADO no revisaba sus steers al terminar: hueco #1). Test determinista: `aegis-web-swallow3-check.mjs` (steer → Detener → nota "se reenvía como mensaje" a los ~4 s → respuesta del asistente ✓). Backup: `app/app.js.bak-pre-sc`. Versión: `v6.3+detach+wd+sc`.
 
 ## Qué hay de nuevo en v6.1 (2026-10-12 — fin de turno adoptado + cursor fantasma)
 
-Tres bugs de v6 cazados con `ui/desktop/scripts/goose-web-end-transition.mjs`, `goose-web-fresh-check.mjs` y `goose-web-live-cursor.mjs`:
+Tres bugs de v6 cazados con `ui/desktop/scripts/aegis-web-end-transition.mjs`, `aegis-web-fresh-check.mjs` y `aegis-web-live-cursor.mjs`:
 
 1. **El fin de turno adoptado jamás se detectaba**: al terminar el run, el sondeo (`session/steer` con `expectedRunId` imposible) recibe `error.message:"Invalid params"` con `error.data:"no active run to steer"` (string) — el cliente testeaba `message` y quedaba `known:false` para siempre: barra "Turno en curso" y cursor eternos. Fix en `activeRunId()`: combinar `message` + `data` (string u objeto) y buscar ahí; el caso activo trae `data.actualRunId` (objeto) o el id embebido (`run_[0-9a-f-]+`).
 2. **Cursor fantasma en el replay**: `streamAppend` agregaba `.streaming` también durante el replay (`state.replaying`) y nadie lo limpiaba al cerrar → cada carga de una sesión mostraba el cursor pegado en el último mensaje (reporte del operador: "no termina más el streaming cuando claramente terminó"). Fix doble: `if (!thought && !state.replaying)` + `clearStreaming()` al final de `renderSession`.
@@ -67,7 +67,7 @@ celda (`:---`, `:---:`, `---:`), formato inline dentro de las celdas (`**negrita
 el teléfono (la página nunca desborda). Un bloque de código con pipes sigue siendo código y una línea
 con un solo `|` no se confunde con tabla.
 
-Verificado con `ui/desktop/scripts/goose-web-md-tables.mjs` (8 casos: básica, alineación, sin
+Verificado con `ui/desktop/scripts/aegis-web-md-tables.mjs` (8 casos: básica, alineación, sin
 cuerpo, con texto antes/después, inline en celdas, code con pipes, falso positivo, listas/citas) y
 humo sobre el replay real: la sesión de 1.167 mensajes pinta 372 elementos en 1,9 s sin errores y ya
 muestra 1 tabla que antes salía como texto crudo (la corrección aplica a todo el historial).
@@ -91,7 +91,7 @@ el lag no venía del composer ni del streaming, venía de **reconstruir toda la 
 (`clearMessages` + replay de `session/load`) en una sesión larga, que en un teléfono son cientos de
 ms de main thread bloqueado: la tecla que cae dentro de ese bloque llega tarde.
 
-Además, con `goose-web-watch-probe.mjs` se midió que **el `messageCount` que ve una conexión que NO
+Además, con `aegis-web-watch-probe.mjs` se midió que **el `messageCount` que ve una conexión que NO
 es dueña del run viene congelado** (18 polls seguidos con la misma clave durante 45 s de
 herramientas): el resync por cambio de clave de v6 casi nunca disparaba en el caso del teléfono.
 
@@ -165,13 +165,13 @@ Reproducido en vivo y arreglado en el cliente (sin tocar el backend):
   se **reencola como mensaje normal** con aviso ("queda sin respuesta: se reenvía").
   Las indicaciones pendientes también sobreviven a una recarga (`localStorage`), así
   que un steer escrito justo antes de recargar se reenvía al volver.
-- Medido en móvil (390×844) con `scripts/goose-web-reload-test.mjs --mobile` y
-  `goose-web-phone-audit.mjs`: ver la sección de verificación.
+- Medido en móvil (390×844) con `scripts/aegis-web-reload-test.mjs --mobile` y
+  `aegis-web-phone-audit.mjs`: ver la sección de verificación.
 
 ## Qué hay de nuevo en v5 (2026-10-12 · feedback del celular)
 
 Tres cosas reportadas desde el teléfono (390 px), con medición antes/después usando
-`ui/desktop/scripts/goose-web-phone-audit.mjs` (Playwright, viewport 390×844, isMobile):
+`ui/desktop/scripts/aegis-web-phone-audit.mjs` (Playwright, viewport 390×844, isMobile):
 
 - **Los desplegables del header no se veían.** En ≤880 px los chips vivían en la misma fila
   del título: el chip de **proveedor se ocultaba** (`display:none` en ≤480 px) y el del
@@ -190,7 +190,7 @@ Tres cosas reportadas desde el teléfono (390 px), con medición antes/después 
   `STREAM_RENDER_MS = 90 ms` (con borde final garantizado) y el throttle no aplica en el replay;
   (c) el textarea pide `enterkeyhint="send"` para que el teclado del teléfono muestre "Enviar".
 
-  **Lo medido, sin maquillar** (`goose-web-phone-audit.mjs`, 390×844, sesión de 1080 mensajes):
+  **Lo medido, sin maquillar** (`aegis-web-phone-audit.mjs`, 390×844, sesión de 1080 mensajes):
   tecla → frame pintado p50 **7.9 ms en reposo** y **12.7 ms con texto entrando en vivo**, sin un
   solo frame perdido (17 ms), con el renderer en ~0.6% de CPU y ~5 layouts/s durante el stream.
   La comparación A/B del throttle (activado vs `live=false`, o sea el comportamiento viejo) dio
@@ -245,7 +245,7 @@ Sobre la base v3, todo verificado con los checks de `ui/desktop/scripts`:
   sigue el cursor con botón "Cargar más sesiones" (antes las sesiones >50 eran invisibles).
 - **Rendimiento del replay**: un solo `requestAnimationFrame` para todos los registros sucios y sin
   autoscroll durante la carga. Sesión de 1166 mensajes: primera pintura 431 ms → 23 ms, total
-  2.78 s → 1.35 s (medido con `goose-web-perf.mjs`).
+  2.78 s → 1.35 s (medido con `aegis-web-perf.mjs`).
 - Toasts para confirmaciones, `#meta-left` con atajos (oculto en teléfono), hint de steering mientras
   el agente trabaja, y `window.__aegisWeb` como superficie mínima de depuración (estado + showWelcome).
 
@@ -261,35 +261,35 @@ WebSocket: la autenticación va como `?token=` en la URL del WS (el server lo ac
 
 ```bash
 cd C:\aegis-src/ui/desktop
-node scripts/goose-web-app-check.mjs     # e2e completo: conexión, enviar+streaming, chips,
+node scripts/aegis-web-app-check.mjs     # e2e completo: conexión, enviar+streaming, chips,
                                          # permisos, rename, imagen, borrado, replay, móvil
-node scripts/goose-web-viewports.mjs     # barrido 360→1920 (abre una sesión para medir los chips;
+node scripts/aegis-web-viewports.mjs     # barrido 360→1920 (abre una sesión para medir los chips;
                                          # cero desbordes horizontales)
-node scripts/goose-web-features.mjs      # features v4: welcome vacío, adjuntos de texto + drag&drop,
+node scripts/aegis-web-features.mjs      # features v4: welcome vacío, adjuntos de texto + drag&drop,
                                          # export md/json (descarga), archivar/desarchivar, slash, steering
-node scripts/goose-web-perf.mjs          # tiempo de replay de las 3 sesiones más grandes
-node scripts/goose-web-shots.mjs         # capturas desktop/móvil
-node scripts/goose-web-phone-audit.mjs   # móvil 390×844: desplegables del header, costo de tipear
+node scripts/aegis-web-perf.mjs          # tiempo de replay de las 3 sesiones más grandes
+node scripts/aegis-web-shots.mjs         # capturas desktop/móvil
+node scripts/aegis-web-phone-audit.mjs   # móvil 390×844: desplegables del header, costo de tipear
                                          # (reposo / streaming, A/B del throttle) y estado del turno
                                          # (Detener, caída del WebSocket, reconexión)
 
 # v6.2 — tecleo y turno adoptado (móvil + CPU 4x vía CDP; el backend debe estar sirviendo la app)
-node scripts/goose-web-stream-typing.mjs    # reposo vs streaming vs recién terminado, con costo real
+node scripts/aegis-web-stream-typing.mjs    # reposo vs streaming vs recién terminado, con costo real
                                             # de render/tecla (window.__aegisWeb.metrics)
-node scripts/goose-web-typing-big.mjs       # sesión larga (importa una copia) + turno adoptado:
+node scripts/aegis-web-typing-big.mjs       # sesión larga (importa una copia) + turno adoptado:
                                             # ventana A (poll encendido) vs B (apagado)
-node scripts/goose-web-soft-check.mjs       # refresco suave: fase tecleando (debe postergar),
+node scripts/aegis-web-soft-check.mjs       # refresco suave: fase tecleando (debe postergar),
                                             # fase reposo (debe traer lo nuevo barato) y marca de
                                             # herramientas interrumpidas
-node scripts/goose-web-watch-probe.mjs      # trazas del poll: ticks, session/info, messageCount
+node scripts/aegis-web-watch-probe.mjs      # trazas del poll: ticks, session/info, messageCount
                                             # congelado en conexiones que no son dueñas del run
-node scripts/goose-web-deadrun-live.mjs     # busca sesiones con herramientas sin resultado y
+node scripts/aegis-web-deadrun-live.mjs     # busca sesiones con herramientas sin resultado y
                                             # verifica la marca; mide el refresco que trae avances
-node scripts/goose-web-steer-settle.mjs     # steer no consumido -> reencolado + aviso + reenvío
-node scripts/goose-web-typing-check.mjs     # adopción + Detener desde la pestaña recargada
+node scripts/aegis-web-steer-settle.mjs     # steer no consumido -> reencolado + aviso + reenvío
+node scripts/aegis-web-typing-check.mjs     # adopción + Detener desde la pestaña recargada
 ```
 
-Probes ACP crudos y utilidades en `C:/goose-web/tools/` (probe2/3/4/5, ls-sessions,
+Probes ACP crudos y utilidades en `C:/aegis-web/tools/` (probe2/3/4/5, ls-sessions,
 cleanup-test-sessions). Los checks se corren DESPRENDIDOS (Start-Process + log):
 el wrapper de background mata node con "stdin is not a tty".
 
@@ -297,8 +297,8 @@ el wrapper de background mata node con "stdin is not a tty".
 
 ```powershell
 # start/stop (no elevado)
-powershell -NoProfile -File C:\goose-web\scripts\start-goose-web.ps1
-powershell -NoProfile -File C:\goose-web\scripts\stop-goose-web.ps1
+powershell -NoProfile -File C:\aegis-web\scripts\start-aegis-web.ps1
+powershell -NoProfile -File C:\aegis-web\scripts\stop-aegis-web.ps1
 
 # autostart (ya instalado; corre al iniciar sesión)
 schtasks /Run /TN Aegis_Web
@@ -318,15 +318,15 @@ Detalle completo: **docs/tunnel-cloudflare.md**. Resumen:
   **proxea el WebSocket** `/acp` a `127.0.0.1:3284` reescribiendo `Origin` a
   `http://127.0.0.1:3788` (el que ya estaba en `--allowed-origin`). El backend no se expone, el
   token no viaja a un segundo host y el tunel no necesita conocer la URL publica.
-- **Watchdog + tarea**: `scripts/goose-web-tunnel-watchdog.ps1` (+ `.vbs`) mantiene stack y tunel,
+- **Watchdog + tarea**: `scripts/aegis-web-tunnel-watchdog.ps1` (+ `.vbs`) mantiene stack y tunel,
   escribe `tunnel-url.txt` / `tunnel-access.txt`; tarea programada `Aegis_Web_Tunnel` (al iniciar
   sesion + repeticion cada 10 min, residente cada 60 s, mutex para no duplicarse).
-- **Verificado** end-to-end con `ui/desktop/scripts/goose-web-tunnel-check.mjs` por la URL publica:
+- **Verificado** end-to-end con `ui/desktop/scripts/aegis-web-tunnel-check.mjs` por la URL publica:
   puerta (302/401 y WS sin sesion rechazado), login, `Conectado`, 50 sesiones, replay real de 38
   mensajes, 0 errores de JS.
 - La URL del quick tunnel **cambia** si cloudflared se reinicia (no hay cuenta Cloudflare): mirar
   `tunnel-url.txt`. URL fija = tunnel con nombre + Cloudflare Access (procedimiento en el doc).
-- Backups: `server.mjs.bak-pre-tunnel`, `scripts/start-goose-web.ps1.bak-pre-tunnel`.
+- Backups: `server.mjs.bak-pre-tunnel`, `scripts/start-aegis-web.ps1.bak-pre-tunnel`.
 
 ## Security notes
 
@@ -391,10 +391,10 @@ Detalle completo: **docs/tunnel-cloudflare.md**. Resumen:
 - `window.__aegisWeb` ahora también expone `dropSocket()` (solo para los checks: cortar el WS real).
 - **Sondeo de run (v6.1)**: la respuesta del server a un steer con `expectedRunId` imposible SIEMPRE trae `error.message:"Invalid params"`; lo útil va en `error.data` como **string** ("no active run to steer") o **objeto** (`{actualRunId}`). Buscar "no active run" solo en `message` jamás matchea → el fin de turno no se detecta y la barra/cursor quedan eternos. No volver a simplificar ese parseo.
 - **Cursor de streaming (v6.1)**: `streamAppend` NO debe agregar `.streaming` durante el replay (`state.replaying`) y `renderSession` DEBE limpiar con `clearStreaming()` al terminar; si no, cada carga de sesión deja un cursor pegado en el último mensaje.
-- **Scripts de check**: los Playwright tienen que vivir en `ui/desktop/scripts/` (import resuelve desde `ui/desktop/node_modules`; un script suelto en `C:/goose-web/tools` explota con `ERR_MODULE_NOT_FOUND`).
+- **Scripts de check**: los Playwright tienen que vivir en `ui/desktop/scripts/` (import resuelve desde `ui/desktop/node_modules`; un script suelto en `C:/aegis-web/tools` explota con `ERR_MODULE_NOT_FOUND`).
 - **`session/info` de una conexión que NO es dueña del run viene congelado (v6.2)**: el `messageCount`/`lastMessageAt` no se mueve mientras el run trabaja (medido: 18 polls con la misma clave en 45 s). El dueño sí lo ve crecer. Por eso el resync no puede depender sólo del cambio de clave: hay que refrescar periódicamente. No "arreglar" sacando el respaldo.
 - **Refresco del turno adoptado: NUNCA `clearMessages()` + replay (v6.2)**: reconstruir el DOM de una sesión larga cuesta ~2,3 s de main thread bloqueado (tramos de 206 ms) y en el teléfono las teclas llegan tarde. Usar `softResync()` (bufferiza y pinta sólo lo nuevo). El rebuild completo queda para la carga inicial de la sesión y para depurar (`window.__aegisWeb.resync`).
-- **Teclado (v6.2)**: el costo por tecla del cliente es <1 ms (medido) — no buscar el lag ahí. Antes de "optimizar el composer", medir con `goose-web-stream-typing.mjs` y `goose-web-soft-check.mjs` (CPU 4x): lo caro es render/layout de conversaciones grandes, no el composer.
+- **Teclado (v6.2)**: el costo por tecla del cliente es <1 ms (medido) — no buscar el lag ahí. Antes de "optimizar el composer", medir con `aegis-web-stream-typing.mjs` y `aegis-web-soft-check.mjs` (CPU 4x): lo caro es render/layout de conversaciones grandes, no el composer.
 - **`page.evaluate` en Playwright acepta UN solo argumento**: `page.evaluate(fn, a, b)` tira "Too many arguments"; pasar un objeto.
 - **Bug de runtime del serve (2026-10-12, sin arreglar)**: un run murió en silencio justo después de que el tool terminó (`tools/stream-typing.json` se escribió completo y el resultado nunca llegó); en la sesión quedaron 2 `tool_call` con último estado `pending`. Sirve de caso de prueba para `sweepInterruptedTools()` (la UI ahora las marca "interrumpido").
 - **Tablas markdown (v6.3)**: `mdBlocks` recorre las líneas con índice (`for (let _i ...)`) para poder mirar la línea siguiente (el separador) y saltear las filas consumidas. Si volvés a `for (const line of lines)` se rompen las tablas. Las celdas pasan por `inline()`: cualquier formato nuevo hay que agregarlo ahí, no en `tableHtml`.

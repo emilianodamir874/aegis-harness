@@ -1571,7 +1571,7 @@
       try { openUsagePop(); } catch (err) { report('error', 'popover de contexto: ' + (err && err.message ? err.message : err)); console.error(err); }
     };
   }
-  // Precios por modelo (C:/goose-web/prices.json, servido por el server web).
+  // Precios por modelo (C:/aegis-web/prices.json, servido por el server web).
   let pricesCache = null;
   fetch('./prices.json').then((r) => r.json()).then((p) => { pricesCache = p || {}; }).catch(() => { pricesCache = {}; });
   function setUsage(u) {

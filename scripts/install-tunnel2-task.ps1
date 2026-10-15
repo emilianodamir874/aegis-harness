@@ -1,8 +1,8 @@
 # Instala la tarea programada Aegis_Web_Tunnel2 (tunel 2 de respaldo de aegis-web).
 $ErrorActionPreference = 'Stop'
-$log = 'C:\goose-web\logs\install-task2.log'
+$log = 'C:\aegis-web\logs\install-task2.log'
 try {
-    $vbs = 'C:\goose-web\scripts\goose-web-tunnel2.vbs'
+    $vbs = 'C:\aegis-web\scripts\aegis-web-tunnel2.vbs'
     if (-not (Test-Path $vbs)) { throw "falta $vbs" }
 
     $act = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '" loop')

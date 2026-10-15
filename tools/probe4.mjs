@@ -1,7 +1,7 @@
 // probe4: reproducir el caso del e2e — modo approve + modelo flash vs flash-max.
 // ¿El server pide permiso? ¿El modelo llama a la herramienta?
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 let id = 0;
 const pend = new Map();

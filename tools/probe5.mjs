@@ -1,7 +1,7 @@
 // probe5: resetear permiso de 'shell' a ask_before y verificar el flujo de
 // permisos en modo approve (allow_once; debe volver a preguntar la 2da vez).
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 let id = 0;
 const pend = new Map();

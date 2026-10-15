@@ -1,4 +1,4 @@
-﻿// Gate v6.4: fan-out por sesión + run desacoplado (5 asserts del spec).
+// Gate v6.4: fan-out por sesión + run desacoplado (5 asserts del spec).
 // Uso: node fanout-two-client.mjs [puerto]
 //
 // Los 5 asserts del "Gate de aceptación" del spec:
@@ -9,7 +9,7 @@
 //   5) regresión: cliente viejo (sin watch) sigue funcionando
 import { readFile } from 'node:fs/promises';
 
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const PORT = process.argv[2] || '3392';
 const URL = `ws://127.0.0.1:${PORT}/acp?token=${cfg.secretKey}`;
 const CWD = cfg.cwd || 'C:\aegis-src';

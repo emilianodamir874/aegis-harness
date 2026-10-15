@@ -1,10 +1,10 @@
 # aegis-web: SEGUNDO tunel Cloudflare (quick tunnel) al mismo origen (127.0.0.1:3788).
 # URL de respaldo / acceso alterno. NO toca el tunel principal ni su watchdog.
-# Log: C:\goose-web\logs\tunnel2-watchdog.log   URL: tunnel-url-2.txt
+# Log: C:\aegis-web\logs\tunnel2-watchdog.log   URL: tunnel-url-2.txt
 param([switch]$Loop)
 
 $ErrorActionPreference = 'SilentlyContinue'
-$Root     = 'C:\goose-web'
+$Root     = 'C:\aegis-web'
 $Log      = Join-Path $Root 'logs\tunnel2-watchdog.log'
 $UrlFile  = Join-Path $Root 'tunnel-url-2.txt'
 $AccFile  = Join-Path $Root 'tunnel-access-2.txt'

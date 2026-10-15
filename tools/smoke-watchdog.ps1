@@ -1,5 +1,5 @@
-﻿$ErrorActionPreference = 'Continue'
-$root = 'C:\goose-web'
+$ErrorActionPreference = 'Continue'
+$root = 'C:\aegis-web'
 $node = 'C:\Users\Emiliano\AppData\Local\hermes\tools\node-26.7.0-win32-x64\node.exe'
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 $env:AEGIS_SERVER__SECRET_KEY = $cfg.secretKey

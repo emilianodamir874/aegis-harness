@@ -1,9 +1,9 @@
 # aegis-web: one-time elevated setup (firewall rules + logon autostart task).
-# Run ELEVATED:  Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','C:\goose-web\scripts\setup-goose-web.ps1'
-# Log: C:\goose-web\logs\setup.log
-Start-Transcript -Path 'C:\goose-web\logs\setup.log' -Force | Out-Null
+# Run ELEVATED:  Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','C:\aegis-web\scripts\setup-aegis-web.ps1'
+# Log: C:\aegis-web\logs\setup.log
+Start-Transcript -Path 'C:\aegis-web\logs\setup.log' -Force | Out-Null
 $ErrorActionPreference = 'Continue'
-$cfg = Get-Content 'C:\goose-web\config.json' -Raw | ConvertFrom-Json
+$cfg = Get-Content 'C:\aegis-web\config.json' -Raw | ConvertFrom-Json
 
 # --- firewall: allow LAN (private profile, local subnet only) ---
 foreach ($port in @($cfg.webPort, $cfg.servePort)) {
@@ -13,7 +13,7 @@ foreach ($port in @($cfg.webPort, $cfg.servePort)) {
 }
 
 # --- scheduled task: start the stack at logon (hidden) ---
-schtasks.exe /Create /TN Aegis_Web /TR "wscript.exe C:\goose-web\scripts\goose-web-launch.vbs" /SC ONLOGON /RL LIMITED /F
+schtasks.exe /Create /TN Aegis_Web /TR "wscript.exe C:\aegis-web\scripts\aegis-web-launch.vbs" /SC ONLOGON /RL LIMITED /F
 
 # --- task settings: no 72h limit, run on battery, don't duplicate ---
 $t = Get-ScheduledTask -TaskName 'Aegis_Web'

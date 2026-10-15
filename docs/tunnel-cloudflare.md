@@ -1,4 +1,4 @@
-﻿# aegis-web por tunel de Cloudflare (v7, 2026-10-13)
+# aegis-web por tunel de Cloudflare (v7, 2026-10-13)
 
 Acceso al chat de aegis desde cualquier lado por una URL `https://*.trycloudflare.com`,
 sin abrir puertos en el router. Mismo esquema que el dashboard de Hermes.
@@ -31,7 +31,7 @@ Por que asi y no dos tuneles (3788 + 3284):
 
 ## La puerta (login)
 
-- `auth.json` (`C:\goose-web\auth.json`) tiene la password. **No** esta en `config.json` ni en
+- `auth.json` (`C:\aegis-web\auth.json`) tiene la password. **No** esta en `config.json` ni en
   ningun archivo que se sirva: el server la lee al arrancar.
 - Cookie `gw_auth` = `<expiracion>.<HMAC-SHA256(secretKey)>`, `HttpOnly; SameSite=Lax; Secure`
   (Secure solo cuando el pedido viene por https), 30 dias. Se verifica con `timingSafeEqual`.
@@ -46,26 +46,26 @@ Por que asi y no dos tuneles (3788 + 3284):
 
 ```powershell
 # watchdog: pasada unica o residente (cada 60 s)
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\goose-web\scripts\goose-web-tunnel-watchdog.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File C:\goose-web\scripts\goose-web-tunnel-watchdog.ps1 -Loop
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\aegis-web\scripts\aegis-web-tunnel-watchdog.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\aegis-web\scripts\aegis-web-tunnel-watchdog.ps1 -Loop
 
 # tarea programada (al iniciar sesion + repeticion cada 10 min como red de seguridad)
 schtasks /Run /TN Aegis_Web_Tunnel
 schtasks /Query /TN Aegis_Web_Tunnel /V /FO LIST
 
 # URL publica vigente y credenciales
-type C:\goose-web\tunnel-url.txt
-type C:\goose-web\tunnel-access.txt
+type C:\aegis-web\tunnel-url.txt
+type C:\aegis-web\tunnel-access.txt
 ```
 
 El watchdog (idempotente, protegido por mutex global para no duplicarse):
 
-1. si `/healthz` no responde, corre `start-goose-web.ps1` (serve 3284 + server.mjs 3788);
+1. si `/healthz` no responde, corre `start-aegis-web.ps1` (serve 3284 + server.mjs 3788);
 2. si no hay un `cloudflared` con `127.0.0.1:3788` en la linea de comandos, lo relanza
    (`--logfile logs\cloudflared-aegis.log`, `--no-autoupdate`, ventana oculta);
 3. extrae la URL del log, la escribe en `tunnel-url.txt` y `tunnel-access.txt` (con la password).
 
-Log: `C:\goose-web\logs\tunnel-watchdog.log` (rota a `.old` al pasar 1 MB).
+Log: `C:\aegis-web\logs\tunnel-watchdog.log` (rota a `.old` al pasar 1 MB).
 
 **La URL cambia** cada vez que cloudflared se reinicia (es un quick tunnel sin cuenta). Despues de
 un reboot hay que volver a mirar `tunnel-url.txt`. Si hace falta una URL fija hay que pasar a un
@@ -74,13 +74,13 @@ ingress), y ahi conviene sumar Cloudflare Access (OTP por mail) en lugar del log
 
 ## Verificacion (2026-10-13 07:2x)
 
-`node scripts/goose-web-tunnel-check.mjs [url]` (vive en `C:\aegis-src\ui\desktop\scripts\`, como el
+`node scripts/aegis-web-tunnel-check.mjs [url]` (vive en `C:\aegis-src\ui\desktop\scripts\`, como el
 resto de los checks de Playwright). Corre desprendido:
 
 ```powershell
 Start-Process -FilePath "$env:LOCALAPPDATA\hermes\tools\node-26.7.0-win32-x64\node.exe" `
-  -ArgumentList 'scripts/goose-web-tunnel-check.mjs' -WorkingDirectory 'C:\aegis-src\ui\desktop' `
-  -RedirectStandardOutput 'C:\goose-web\logs\check-tunnel.out.log' -RedirectStandardError 'C:\goose-web\logs\check-tunnel.err.log'
+  -ArgumentList 'scripts/aegis-web-tunnel-check.mjs' -WorkingDirectory 'C:\aegis-src\ui\desktop' `
+  -RedirectStandardOutput 'C:\aegis-web\logs\check-tunnel.out.log' -RedirectStandardError 'C:\aegis-web\logs\check-tunnel.err.log'
 ```
 
 Resultado con el tunel vivo (390x844, Chrome headless):

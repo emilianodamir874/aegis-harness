@@ -1,9 +1,9 @@
-﻿# Serve de laboratorio: mismo binario, STORE COPIADO y puerto propio. Sirve para medir sin
+# Serve de laboratorio: mismo binario, STORE COPIADO y puerto propio. Sirve para medir sin
 # tocar el serve que usa la web (el 2026-10-14 saturé el serve vivo con pruebas y se cayeron
 # las conexiones de los clientes reales).
 # Uso:  scratch-serve.ps1 [-Version v24] [-Port 3399] [-Stop]
 param([string]$Version = 'v24', [int]$Port = 3399, [switch]$Stop)
-$root = 'C:/goose-web'
+$root = 'C:/aegis-web'
 $probe = "$env:USERPROFILE\aegis-probe-root"
 if ($Stop) {
   $c = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue

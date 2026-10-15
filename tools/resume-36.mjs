@@ -1,6 +1,6 @@
 // Reenvía a _36 el mensaje que quedó sin respuesta ("vos podes sacar screenshots").
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const SID = '20261012_36';
 const TEXT = '[Reenvío del asistente: tu mensaje de las 17:27 quedó sin respuesta (el turno anterior terminó sin levantarlo — el server descarta indicaciones en cola al cerrar un run). El mensaje de Emiliano que quedó sin contestar fue:] vos podes sacar screenshots. [Pedido: respondelo y hacé lo que pide — el round de captura documentado para que vea las pantallas del lector en la tablet.]';

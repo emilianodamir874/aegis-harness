@@ -1,6 +1,6 @@
 // Probe: pide el enriquecimiento de titulos y mide si el server manda 'title' en el replay.
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const port = process.argv[2] || '3284';
 const sid = process.argv[3] || '20261012_25';
 const url = 'ws://' + cfg.publicHost + ':' + port + '/acp?token=' + cfg.secretKey;

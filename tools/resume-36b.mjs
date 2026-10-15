@@ -1,6 +1,6 @@
 // Reenvía "Vamos con todo!!" a _36 (quedó persistido sin run que lo levante).
 import { readFile } from 'node:fs/promises';
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const SID = '20261012_36';
 const TEXT = '[Reenvío del asistente: el "Vamos con todo!!" de Emiliano (18:08) quedó escrito en el chat pero ningún run lo levantó — se perdió al vuelo. El asistente lo reenvía: Emiliano dio luz verde a los DOS pendientes: (1) MOBI/AZW3 real — conseguí uno real (Z-Library) y probá el parser en serio; (2) flasheá la imagen de las 13:26 en la tablet para que un reinicio limpio deje el lector v3 + estos arreglos instalados de fábrica. Contá el plan en una línea y andá con todo.]';

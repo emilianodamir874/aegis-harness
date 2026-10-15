@@ -16,7 +16,7 @@
 //      (o CWC_URL=ws://host:puerto/acp?token=... para apuntar a otro lado)
 import { readFile } from 'node:fs/promises';
 
-const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
 const port = process.argv[2] || '3392';
 const url = process.env.CWC_URL || `ws://${cfg.publicHost}:${port}/acp?token=${cfg.secretKey}`;
 const T0 = Date.now();

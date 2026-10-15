@@ -1,12 +1,12 @@
-﻿# Swap generico del serve de aegis-web: repunta el launcher a aegis-<Version>.exe y, si
+# Swap generico del serve de aegis-web: repunta el launcher a aegis-<Version>.exe y, si
 # se pide, reinicia esperando a que el modelo este quieto (para no matar un turno en curso).
 # Uso:  swap-serve.ps1 -Version v21 -Restart -DelaySecs 240
 param([Parameter(Mandatory=$true)][string]$Version, [switch]$Restart, [int]$DelaySecs = 0,
       [int]$IdleSeconds = 20, [int]$IdleTimeoutSecs = 600)
 $ErrorActionPreference = 'Continue'
-$root = 'C:/goose-web'
+$root = 'C:/aegis-web'
 $exe = "C:\aegis-src/target/debug/goose-$Version.exe"
-$launcher = "$root/scripts/start-goose-web.ps1"
+$launcher = "$root/scripts/start-aegis-web.ps1"
 if (-not (Test-Path $exe)) { Write-Output "ERROR: no existe $exe"; exit 1 }
 $m = (Select-String -Path $launcher -Pattern "serveExe = '([^']+)'").Matches
 if (-not $m) { Write-Output 'ERROR: no encuentro serveExe en el launcher'; exit 1 }

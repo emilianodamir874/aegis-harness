@@ -1,9 +1,9 @@
-﻿# Swap aegis serve v2 -> v3 (v3 = parches de robustez de aegis: stall watchdog,
+# Swap aegis serve v2 -> v3 (v3 = parches de robustez de aegis: stall watchdog,
 # aviso de interrupcion inesperada, client_cancelled, touch_progress).
 # Uso: powershell -NoProfile -ExecutionPolicy Bypass -File swap-serve-v3.ps1
 # NO correr mientras haya un run activo que importe: bajar el serve mata los runs en memoria.
 $ErrorActionPreference = 'SilentlyContinue'
-$root = 'C:\goose-web'
+$root = 'C:\aegis-web'
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 $port = $cfg.servePort
 
@@ -20,7 +20,7 @@ if ($conn) {
 }
 
 # 2) repuntar el script de arranque v2 -> v3 (backup unico)
-$ps1 = "$root\scripts\start-goose-web.ps1"
+$ps1 = "$root\scripts\start-aegis-web.ps1"
 if (-not (Test-Path "$ps1.bak-pre-v3")) { Copy-Item $ps1 "$ps1.bak-pre-v3" -Force }
 $c = Get-Content $ps1 -Raw
 $c = $c -replace 'aegis-serve-v2\.exe', 'aegis-serve-v3.exe'
