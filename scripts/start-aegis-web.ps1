@@ -10,6 +10,10 @@ $nodeCandidates = @(
 )
 $node = ($nodeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1)
 if (-not $node) { Write-Output 'aegis-web: NO hay node.exe disponible'; exit 1 }
+# HTTPS en LAN (3789): sin esto el dictado por voz no anda por la IP, porque getUserMedia
+# exige contexto seguro. El 3788 sigue siendo http (origen del tunel y de los enlaces viejos).
+if (-not $env:AEGIS_WEB_TLS_DIR) { $env:AEGIS_WEB_TLS_DIR = 'C:\Aegis-Proyects\core\state\tls' }
+if (-not $env:AEGIS_WEB_HTTPS_PORT) { $env:AEGIS_WEB_HTTPS_PORT = '3789' }
 # Version del serve: sale del PUNTERO (C:\Aegis-Proyects\core\state\current-version.json), no de este archivo.
 # Antes estaba clavada aca (aegis-v34.exe): asi se desincronizo del resto del stack el 14/10.
 $ptrFile = 'C:\Aegis-Proyects\core\state\current-version.json'
