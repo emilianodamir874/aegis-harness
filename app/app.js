@@ -427,7 +427,7 @@
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     if (state.conn !== 'open') return;
-    Promise.resolve(loadList()).catch(() => {});
+    try { Promise.resolve(loadList()).catch(() => {}); } catch (err) { /* refresco best-effort */ }
   }, 20000);
 
   function renderList() {
