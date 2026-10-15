@@ -1,4 +1,4 @@
-# Inserta la seccion v6 en el README de goose-web (antes de la v5) y suma pitfalls.
+# Inserta la seccion v6 en el README de aegis-web (antes de la v5) y suma pitfalls.
 import io, sys
 
 P = r'C:\goose-web\README.md'
@@ -22,12 +22,12 @@ Reproducido en vivo y arreglado en el cliente (sin tocar el backend):
   en modo adoptado: aparece la **barra de turno con Detener** aunque la herramienta
   esté en silencio, y el cronómetro corre. `session/cancel` se rutea al dueño del run,
   así que **Detener corta igual** desde la pestaña recargada.
-  Cómo se pregunta: `_goose/unstable/session/steer` con un `expectedRunId` imposible —
+  Cómo se pregunta: `_aegis/unstable/session/steer` con un `expectedRunId` imposible —
   el server valida el run **antes** de tocar al agente, de modo que no encola nada y
   contesta el run real en `error.data.actualRunId` (o "no active run to steer"). Es la
   única lectura pública de "¿está corriendo?"; `session/info` no lo expone.
 - **Refresco sin recargar a mano.** Mientras el turno está adoptado, cada 2,5 s se
-  consulta `_goose/unstable/session/info` (barato): si `messageCount`/`lastMessageAt`
+  consulta `_aegis/unstable/session/info` (barato): si `messageCount`/`lastMessageAt`
   creció, la conversación se recarga sola (`session/load` con el turno adoptado
   preservado: barra, cronómetro, Detener y las indicaciones en cola siguen ahí). Al
   terminar el run la barra pasa a "El turno terminó (otra conexión)" y el último
@@ -54,7 +54,7 @@ if t.count(anchor) != 1:
     sys.exit('ancla README no unica: %d' % t.count(anchor))
 t = t.replace(anchor, V6 + anchor, 1)
 
-PIT_A = '- `window.__gooseWeb` ahora tambi\u00e9n expone `dropSocket()`'
+PIT_A = '- `window.__aegisWeb` ahora tambi\u00e9n expone `dropSocket()`'
 PIT_B = """- **Turno adoptado / recarga**: las notificaciones van a la conexión que lanzó el
   prompt; una pestaña recargada **nunca** recibe ese streaming. No inventes "reconectar
   el stream": hay que sondear (`activeRunId()` = steer con `expectedRunId` imposible) y
@@ -64,7 +64,7 @@ PIT_B = """- **Turno adoptado / recarga**: las notificaciones van a la conexión
   turno se resuelven en `finishSettle()`: eco → recibida; sin eco y sin rastro en el
   historial persistido → **reencolar como prompt**. `state.suppressSettle` evita reencolar
   por una caída de red (ahí el run puede seguir vivo y consumirla después).
-- `window.__gooseWeb` ahora tambi\u00e9n expone `dropSocket()`"""
+- `window.__aegisWeb` ahora tambi\u00e9n expone `dropSocket()`"""
 if t.count(PIT_A) != 1:
     sys.exit('ancla pitfalls no unica: %d' % t.count(PIT_A))
 t = t.replace(PIT_A, PIT_B, 1)

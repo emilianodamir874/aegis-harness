@@ -6,7 +6,7 @@
 // Escribe capturas en C:/Users/Emiliano/backups/runbar-tps-<escenario>.png
 //
 // Es read-only sobre el serve: carga la pagina, alimenta el velocimetro con los hooks de
-// __gooseWeb (speedStart/speedFeed/speedFinish) y mira el DOM. No manda prompts.
+// __aegisWeb (speedStart/speedFeed/speedFinish) y mira el DOM. No manda prompts.
 
 import { chromium } from 'playwright';
 
@@ -32,19 +32,19 @@ try {
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await page.goto(url, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => !!(window.__gooseWeb && window.__gooseWeb.state), null, { timeout: 20000 });
+    await page.waitForFunction(() => !!(window.__aegisWeb && window.__aegisWeb.state), null, { timeout: 20000 });
 
     // Runbar visible, como durante un turno.
     await page.evaluate(() => {
       document.querySelector('#runbar').hidden = false;
-      document.querySelector('#runbar-text').textContent = 'Goose esta trabajando…';
+      document.querySelector('#runbar-text').textContent = 'Aegis esta trabajando…';
       document.querySelector('#runbar-time').textContent = '3.4 s';
-      window.__gooseWeb.speedStart();
+      window.__aegisWeb.speedStart();
     });
 
     // En vivo: 6 tandas de 400 chars cada 250 ms (≈2400 chars en 1,5 s ≈ 400 tok/s estimados).
     for (let i = 0; i < 6; i++) {
-      await page.evaluate(() => window.__gooseWeb.speedFeed('x'.repeat(400)));
+      await page.evaluate(() => window.__aegisWeb.speedFeed('x'.repeat(400)));
       await page.waitForTimeout(250);
     }
     await page.waitForTimeout(320);
@@ -67,10 +67,10 @@ try {
 
     // Cierre del turno: exacto del ultimo paso + promedio ponderado + total.
     const done = await page.evaluate(() => {
-      const st = window.__gooseWeb.state.speed;
+      const st = window.__aegisWeb.state.speed;
       st.exact = 43.26; st.runOut = 4123; st.runGen = 98000;
       document.querySelector('#runbar').classList.add('done'); // como runBarDone
-      const sum = window.__gooseWeb.speedFinish();
+      const sum = window.__aegisWeb.speedFinish();
       const badge = document.querySelector('#runbar-tps');
       const avg = document.querySelector('#runbar-avg');
       const order = [...document.querySelectorAll('#runbar > *')].map((n) => n.id || n.className);
@@ -88,7 +88,7 @@ try {
 
     // Marca de fin de turno en la conversacion (es lo unico que queda cuando el runbar se va).
     const note = await page.evaluate(() => {
-      window.__gooseWeb.turnEndNote(12300);
+      window.__aegisWeb.turnEndNote(12300);
       const el = [...document.querySelectorAll('.turn-end')].pop();
       const tps = el.querySelector('.te-tps');
       return { text: el.textContent, tpsFont: tps ? getComputedStyle(tps).fontFamily : null, html: el.innerHTML.length };
@@ -100,7 +100,7 @@ try {
 
     // Popover de contexto: el mismo numero, calculado de message_usage.
     const pop = await page.evaluate(() => {
-      const w = window.__gooseWeb;
+      const w = window.__aegisWeb;
       w.state.usage = {
         used: 412000, limit: 500000, inTok: 1234567, outTok: 45678, cost: 3.21,
         last: { inputTokens: 90000, outputTokens: 3000, cacheReadTokens: 45000, elapsedMs: 12300, timeToFirstTokenMs: 2100 }

@@ -207,7 +207,7 @@ slice_rep("  function setBusy(b, note) {",
 NEW_SEND = """  async function sendText(text, atts, bubble) {
     const el = bubble || addUser(text, false, atts);
     state.adopted = false;
-    setBusy(true, 'Goose está trabajando.');
+    setBusy(true, 'Aegis está trabajando.');
     let label = 'Respuesta completa';
     let loMandoComoIndicacion = false;
     try {
@@ -289,7 +289,7 @@ NEW_SEND = """  async function sendText(text, atts, bubble) {
   async function steerTo(runId, text, atts, el, note) {
     if (!rpc.ready || !state.current) return false;
     try {
-      const res = await rpc.request('_goose/unstable/session/steer', {
+      const res = await rpc.request('_aegis/unstable/session/steer', {
         sessionId: state.current.id,
         prompt: promptBlocks(text, atts || []),
         expectedRunId: runId,
@@ -351,7 +351,7 @@ NEW_SEND = """  async function sendText(text, atts, bubble) {
   async function activeRunId() {
     if (!rpc.ready || !state.current) return { known: false, runId: null };
     try {
-      const res = await rpc.request('_goose/unstable/session/steer', {
+      const res = await rpc.request('_aegis/unstable/session/steer', {
         sessionId: state.current.id,
         prompt: [{ type: 'text', text: '.' }],
         expectedRunId: 'probe' + Math.random().toString(36).slice(2),
@@ -403,7 +403,7 @@ NEW_SEND = """  async function sendText(text, atts, bubble) {
     }
     if (probe.runId && probe.runId !== state.runId) state.runId = probe.runId;
     if (!state.busy) adoptRun(probe.runId, ADOPTED_NOTE);
-    const info = await rpc.request('_goose/unstable/session/info', { sessionId: cur.id }).catch(() => null);
+    const info = await rpc.request('_aegis/unstable/session/info', { sessionId: cur.id }).catch(() => null);
     const meta = (info && info.session && info.session._meta) || {};
     const key = meta.messageCount != null ? String(meta.messageCount) + '|' + String(meta.lastMessageAt || '') : '';
     if (key && watchKey && key !== watchKey) await resyncAdoptedRun();
@@ -574,8 +574,8 @@ slice_rep("  async function onBoot() {",
 """, 'onBoot')
 
 # ---------- 13. superficie de depuracion + version ----------
-rep("  window.__gooseWeb = { state, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} } };",
-    "  window.__gooseWeb = { state, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending };", 'debug-surface')
+rep("  window.__aegisWeb = { state, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} } };",
+    "  window.__aegisWeb = { state, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending };", 'debug-surface')
 rep("  report('boot', 'app cargada (v5)');", "  report('boot', 'app cargada (v6)');", 'version')
 
 out = text.encode('utf-8')

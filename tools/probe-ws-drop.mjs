@@ -34,7 +34,7 @@ function connect() {
 
 const probeRun = async (c, sessionId) => {
   try {
-    const r = await c.req('_goose/unstable/session/steer', { sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
+    const r = await c.req('_aegis/unstable/session/steer', { sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
     return { ok: true, result: r };
   } catch (e) {
     return { ok: false, raw: e.raw };

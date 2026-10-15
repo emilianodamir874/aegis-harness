@@ -20,20 +20,20 @@ const req = (method, params, ms = 60000) => new Promise((res, rej) => {
   ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params }));
   setTimeout(() => { if (pend.has(mid)) { pend.delete(mid); rej(new Error('timeout ' + ms + 'ms')); } }, ms);
 });
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'io-probe', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'io-probe', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 const list = await req('session/list', {});
 const sorted = (list.sessions || []).slice().sort((a, b) => ((b._meta && b._meta.messageCount) || 0) - ((a._meta && a._meta.messageCount) || 0));
 const res = { n: sorted.length, top3: sorted.slice(0, 3).map((s) => ({ id: s.sessionId, m: (s._meta && s._meta.messageCount) || 0 })) };
 const big = sorted[0];
 try {
-  const exp = await req('_goose/unstable/session/export', { sessionId: big.sessionId, format: 'json' });
+  const exp = await req('_aegis/unstable/session/export', { sessionId: big.sessionId, format: 'json' });
   res.exportBytes = exp.data.length;
 } catch (e) { res.exportErr = String(e.message).slice(0, 200); }
 const small = sorted[sorted.length - 1];
 try {
-  const e2 = await req('_goose/unstable/session/export', { sessionId: small.sessionId, format: 'json' });
+  const e2 = await req('_aegis/unstable/session/export', { sessionId: small.sessionId, format: 'json' });
   res.smallExportBytes = e2.data.length;
-  const imp = await req('_goose/unstable/session/import', { input: e2.data }, 30000);
+  const imp = await req('_aegis/unstable/session/import', { input: e2.data }, 30000);
   res.smallImport = { sid: imp.sessionId, msgs: imp.message_count };
   await req('session/delete', { sessionId: imp.sessionId });
 } catch (e) { res.smallErr = String(e.message).slice(0, 200); }

@@ -1,4 +1,4 @@
-# Build seguro de goose (B1/B3/B4 del relevamiento de dolor):
+﻿# Build seguro de aegis (B1/B3/B4 del relevamiento de dolor):
 #  - espera a que no haya actividad del modelo, para no arrastrar tus turnos
 #  - neutraliza sccache como corresponde (comentar rustc-wrapper y restaurar)
 #  - copia el binario SOLO si el build termino con exit 0
@@ -11,11 +11,11 @@ param(
   [switch]$KeepSccache
 )
 $ErrorActionPreference = 'Continue'
-$repo = 'C:\goose'; $logDir = 'C:\goose-web\logs'; $log = "$logDir\build-$Version.log"
+$repo = 'C:\aegis-src'; $logDir = 'C:\goose-web\logs'; $log = "$logDir\build-$Version.log"
 $cfg = 'C:\Users\Emiliano\.cargo\config.toml'
-$out = "$repo\target\debug\goose-$Version.exe"
+$out = "$repo\target\debug\aegis-$Version.exe"
 function Last-ModelWrite {
-  $f = Get-ChildItem "$env:APPDATA\Block\goose\data\logs\llm_request.*.jsonl" -ErrorAction SilentlyContinue |
+  $f = Get-ChildItem "$env:APPDATA\Aegis\aegis\data\logs\llm_request.*.jsonl" -ErrorAction SilentlyContinue |
        Sort-Object LastWriteTime -Descending | Select-Object -First 1
   if ($f) { $f.LastWriteTime } else { (Get-Date).AddDays(-1) }
 }
@@ -47,15 +47,15 @@ try {
     $env:RUSTC_WRAPPER = ''; $env:CARGO_BUILD_RUSTC_WRAPPER = ''
   }
   Set-Location $repo
-  & cargo build -p goose-cli --bin goose --no-default-features --features $Features 2>&1 | Set-Content $log
+  & cargo build -p aegis-cli --bin aegis --no-default-features --features $Features 2>&1 | Set-Content $log
   $code = $LASTEXITCODE
   Add-Content $log ("EXITCODE=$code")
   if ($code -ne 0) { Add-Content $log 'BUILD_FAILED: no se copia nada'; exit 1 }
-  Copy-Item "$repo\target\debug\goose.exe" $out -Force
-  $srcHash = (Get-FileHash "$repo\target\debug\goose.exe" -Algorithm SHA256).Hash
+  Copy-Item "$repo\target\debug\aegis.exe" $out -Force
+  $srcHash = (Get-FileHash "$repo\target\debug\aegis.exe" -Algorithm SHA256).Hash
   $dstHash = (Get-FileHash $out -Algorithm SHA256).Hash
   if ($srcHash -ne $dstHash) {
-    Add-Content $log ("COPY_FAILED: el destino no coincide con goose.exe (origen {0}, destino {1})" -f $srcHash.Substring(0,16), $dstHash.Substring(0,16))
+    Add-Content $log ("COPY_FAILED: el destino no coincide con aegis.exe (origen {0}, destino {1})" -f $srcHash.Substring(0,16), $dstHash.Substring(0,16))
     Write-Host 'copia fallida: el binario destino quedo viejo (probablemente en uso)'
     exit 1
   }

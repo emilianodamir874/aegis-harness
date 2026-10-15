@@ -39,7 +39,7 @@ function client(name) {
     ws.addEventListener('open', res);
     ws.addEventListener('error', () => rej(new Error('ws error ' + name)));
   });
-  const init = () => req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name, version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+  const init = () => req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name, version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
   return { name, ws, req, open, init, notes };
 }
 
@@ -73,7 +73,7 @@ B.notes.length = 0;
 
 // sondeo del run activo (expectedRunId inválido)
 try {
-  const r = await B.req('_goose/unstable/session/steer', {
+  const r = await B.req('_aegis/unstable/session/steer', {
     sessionId: sid,
     prompt: [{ type: 'text', text: '(sondeo de run activo)' }],
     expectedRunId: 'run_sondeo-invalido',
@@ -92,7 +92,7 @@ out.A_total_notas = A.notes.length;
 
 // ¿session/info trae algo sobre el run?
 try {
-  out.info = await B.req('_goose/unstable/session/info', { sessionId: sid });
+  out.info = await B.req('_aegis/unstable/session/info', { sessionId: sid });
 } catch (e) {
   out.infoErr = String(e?.err || e).slice(0, 200);
 }

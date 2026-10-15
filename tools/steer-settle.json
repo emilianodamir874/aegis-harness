@@ -1,4 +1,4 @@
-STAGE trasSteer {"busy":true,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow","MARCATEST 70667: avisá que la recibisteindicación recibida p"],"steerNotes":["indicación recibida por el agente"],"sysnotes":[],"runbar":"Goose está trabajando."}
+STAGE trasSteer {"busy":true,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow","MARCATEST 70667: avisá que la recibisteindicación recibida p"],"steerNotes":["indicación recibida por el agente"],"sysnotes":[],"runbar":"Aegis está trabajando."}
 STAGE trasDetener {"busy":false,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow","MARCATEST 70667: avisá que la recibisteindicación recibida p"],"steerNotes":["indicación recibida por el agente"],"sysnotes":["Cancelando…","Respuesta detenida."],"runbar":"El turno terminó"}
 STAGE settled {"busy":false,"queue":0,"steers":0,"queued":[],"userMsgs":["Ejecutá con shell, en orden, estos 10 comandos: (paso 1) pow","MARCATEST 70667: avisá que la recibisteindicación recibida p"],"steerNotes":["indicación recibida por el agente"],"sysnotes":["Cancelando…","Respuesta detenida."],"runbar":null}
 STAGE historial {"userMsgs":2,"contieneMarca":true}
@@ -15,7 +15,7 @@ STAGE historial {"userMsgs":2,"contieneMarca":true}
   ],
   "steerNotes": [],
   "sysnotes": [],
-  "runbar": "Goose está trabajando."
+  "runbar": "Aegis está trabajando."
  },
  "trasSteer": {
   "busy": true,
@@ -30,7 +30,7 @@ STAGE historial {"userMsgs":2,"contieneMarca":true}
    "indicación recibida por el agente"
   ],
   "sysnotes": [],
-  "runbar": "Goose está trabajando."
+  "runbar": "Aegis está trabajando."
  },
  "detenerMs": true,
  "trasDetener": {

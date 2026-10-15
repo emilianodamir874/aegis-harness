@@ -1,4 +1,4 @@
-import io, sys
+﻿import io, sys
 
 CRLF = chr(13) + chr(10)
 LF = chr(10)
@@ -20,8 +20,8 @@ def patch(path, edits, label):
         f.write(src)
     print('OK %s (%d edits)' % (label, len(edits)))
 
-AR = 'C:/goose/crates/goose/src/execution/active_run.rs'
-SV = 'C:/goose/crates/goose/src/acp/server.rs'
+AR = 'C:\aegis-src/crates/goose/src/execution/active_run.rs'
+SV = 'C:\aegis-src/crates/goose/src/acp/server.rs'
 
 ar_edits = []
 
@@ -243,10 +243,10 @@ sv_edits.append(('''        self.clear_active_run(&session_id, &run_id).await;
             ));
         }'''))
 
-sv_edits.append(('''fn prompt_stop_reason(was_cancelled: bool, output_token_limit_reached: bool) -> StopReason {''', '''/// Stall watchdog timeout. GOOSE_RUN_STALL_TIMEOUT_SECS (default 900, 0 disables).
+sv_edits.append(('''fn prompt_stop_reason(was_cancelled: bool, output_token_limit_reached: bool) -> StopReason {''', '''/// Stall watchdog timeout. AEGIS_RUN_STALL_TIMEOUT_SECS (default 900, 0 disables).
 fn run_watchdog_stall_timeout() -> Option<std::time::Duration> {
     let secs = Config::global()
-        .get_param::<u64>("GOOSE_RUN_STALL_TIMEOUT_SECS")
+        .get_param::<u64>("AEGIS_RUN_STALL_TIMEOUT_SECS")
         .unwrap_or(900);
     if secs == 0 {
         None
@@ -255,10 +255,10 @@ fn run_watchdog_stall_timeout() -> Option<std::time::Duration> {
     }
 }
 
-/// How often the watchdog samples progress. GOOSE_RUN_WATCHDOG_POLL_SECS (default 30).
+/// How often the watchdog samples progress. AEGIS_RUN_WATCHDOG_POLL_SECS (default 30).
 fn run_watchdog_poll_interval() -> std::time::Duration {
     let secs = Config::global()
-        .get_param::<u64>("GOOSE_RUN_WATCHDOG_POLL_SECS")
+        .get_param::<u64>("AEGIS_RUN_WATCHDOG_POLL_SECS")
         .unwrap_or(30);
     std::time::Duration::from_secs(secs.max(5))
 }
@@ -303,7 +303,7 @@ fn spawn_run_watchdog(
                 acp_session.clone(),
                 SessionUpdate::AgentMessageChunk(chunk),
             ));
-            let _ = GooseAcpAgent::send_active_run_update(&cx, &acp_session, None);
+            let _ = AegisAcpAgent::send_active_run_update(&cx, &acp_session, None);
             registry.cancel_agent_run(&session_id);
             cancel_token.cancel();
             return;

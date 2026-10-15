@@ -1,6 +1,6 @@
 // Latencia de tecleo en móvil, con CPU limitada 4x (proxy del teléfono real):
 //   reposo (sesión larga)  vs  streaming de una respuesta larga  vs  recién terminado
-// Mide tecla->frame, long tasks del main thread y el costo real del render (window.__gooseWeb.metrics).
+// Mide tecla->frame, long tasks del main thread y el costo real del render (window.__aegisWeb.metrics).
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
@@ -24,7 +24,7 @@ try { await cdp.send('Emulation.setCPUThrottlingRate', { rate }); out.cpuThrottl
 
 const instrument = () =>
   page.evaluate(() => {
-    const g = window.__gooseWeb;
+    const g = window.__aegisWeb;
     g.__lt = { n: 0, total: 0, max: 0 };
     try {
       new PerformanceObserver((l) => { for (const e of l.getEntries()) { g.__lt.n++; g.__lt.total += Math.round(e.duration); g.__lt.max = Math.max(g.__lt.max, Math.round(e.duration)); } }).observe({ entryTypes: ['longtask'] });
@@ -37,8 +37,8 @@ const measure = (n, gap) =>
   page.evaluate(
     async ([n, gap]) => {
       const t = document.querySelector('#input');
-      const lt0 = { ...window.__gooseWeb.__lt };
-      const m0 = { ...window.__gooseWeb.metrics };
+      const lt0 = { ...window.__aegisWeb.__lt };
+      const m0 = { ...window.__aegisWeb.metrics };
       t.focus();
       t.value = '';
       await new Promise((r) => requestAnimationFrame(r));
@@ -51,8 +51,8 @@ const measure = (n, gap) =>
         lat.push(+(performance.now() - t0).toFixed(1));
         if (gap) await new Promise((r) => setTimeout(r, gap));
       }
-      const m1 = { ...window.__gooseWeb.metrics };
-      const lt = window.__gooseWeb.__lt;
+      const m1 = { ...window.__aegisWeb.metrics };
+      const lt = window.__aegisWeb.__lt;
       const p = (q) => lat.slice().sort((x, y) => x - y)[Math.min(lat.length - 1, Math.floor((lat.length * q) / 100))] || 0;
       return {
         keys: n,
@@ -79,7 +79,7 @@ try {
 
   // ---------- reposo: sesión más larga disponible ----------
   const big = await page.evaluate(() => {
-    const s = window.__gooseWeb.state.sessions.slice().sort((a, b) => (b._meta?.messageCount || 0) - (a._meta?.messageCount || 0))[0];
+    const s = window.__aegisWeb.state.sessions.slice().sort((a, b) => (b._meta?.messageCount || 0) - (a._meta?.messageCount || 0))[0];
     return s ? { id: s.sessionId, n: s._meta?.messageCount || 0 } : null;
   });
   out.bigSession = big;
@@ -97,7 +97,7 @@ try {
   await page.waitForTimeout(2500);
   await page.fill('#input', LONG_PROMPT);
   await page.evaluate(() => document.querySelector('#btn-send').click());
-  await page.waitForFunction(() => window.__gooseWeb.state.busy, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__aegisWeb.state.busy, null, { timeout: 30000 });
   await page.waitForFunction(() => document.querySelector('.msg-a.streaming'), null, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await instrument();
@@ -107,7 +107,7 @@ try {
   await page.screenshot({ path: 'C:/goose-web/tools/shots/stream-typing-mobile.png' });
 
   // ---------- control: mismo chat, ya sin streaming ----------
-  await page.waitForFunction(() => !window.__gooseWeb.state.busy, null, { timeout: 180000 }).catch(() => {});
+  await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 180000 }).catch(() => {});
   await page.waitForTimeout(1500);
   await instrument();
   out.trasTerminar = await measure(40, 25);

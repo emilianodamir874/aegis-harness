@@ -1,11 +1,11 @@
-$cfg = 'C:\Users\Emiliano\.cargo\config.toml'
+﻿$cfg = 'C:\Users\Emiliano\.cargo\config.toml'
 Copy-Item $cfg ($cfg + '.bak-test') -Force
 try {
   (Get-Content $cfg) -replace '^rustc-wrapper', '#rustc-wrapper' | Set-Content $cfg
   $env:RUSTC_WRAPPER = ''
   $env:CARGO_BUILD_RUSTC_WRAPPER = ''
-  Set-Location C:\goose
-  $out = & cargo check -p goose-provider-types 2>&1 | Out-String
+  Set-Location C:\aegis-src
+  $out = & cargo check -p aegis-provider-types 2>&1 | Out-String
   $has = $out -match 'sccache'
   Write-Output ('SCCACHE_EN_LA_SALIDA=' + $has)
   Write-Output ($out.Substring([Math]::Max(0, $out.Length - 400)))

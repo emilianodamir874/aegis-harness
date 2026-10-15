@@ -21,7 +21,7 @@ ws.addEventListener('message', (ev) => {
 await new Promise((r) => ws.addEventListener('open', r));
 const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 160))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
 try {
-  const init = await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true, toolCallLabelEnrichment: true } } }, clientInfo: { name: 'probe-labels', version: '1' } });
+  const init = await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true, toolCallLabelEnrichment: true } } }, clientInfo: { name: 'probe-labels', version: '1' } });
   fases.push('init ok');
   await req('session/load', { sessionId: sid, cwd: cfg.cwd, mcpServers: [] });
   await new Promise((r) => setTimeout(r, 3500));

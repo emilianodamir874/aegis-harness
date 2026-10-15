@@ -1,5 +1,5 @@
 // Reanuda la sesión _23 tras la muerte silenciosa del run (14:53:50).
-// Le da a goose: el estado (run muerto, shell completado pero resultado perdido),
+// Le da a aegis: el estado (run muerto, shell completado pero resultado perdido),
 // los artefactos listos, el mensaje pendiente que se perdió, y su propio plan.
 import { readFile } from 'node:fs/promises';
 const cfg = JSON.parse(await readFile('C:/goose-web/config.json', 'utf8'));
@@ -36,7 +36,7 @@ ws.addEventListener('message', (ev) => {
 await new Promise((r) => ws.addEventListener('open', r));
 const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 200))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
 
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'resume23', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'resume23', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 log('reanudando sesión', SID);
 try {
   const res = await req('session/prompt', { sessionId: SID, prompt: [{ type: 'text', text: TEXT }] });

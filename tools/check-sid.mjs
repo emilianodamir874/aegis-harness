@@ -11,7 +11,7 @@ const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pe
 await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'check-sid', version: '1' } });
 const out = {};
 try {
-  await req('_goose/unstable/session/steer', { sessionId: sid, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
+  await req('_aegis/unstable/session/steer', { sessionId: sid, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
   out.activo = false;
 } catch (e) {
   const d = e.raw && e.raw.data;
@@ -20,7 +20,7 @@ try {
   else out.err = JSON.stringify(e.raw || e.message).slice(0, 160);
 }
 try {
-  const info = await req('_goose/unstable/session/info', { sessionId: sid });
+  const info = await req('_aegis/unstable/session/info', { sessionId: sid });
   const meta = (info && info.session && info.session._meta) || {};
   out.messageCount = meta.messageCount; out.lastMessageAt = meta.lastMessageAt;
 } catch (e) { out.infoErr = String(e.raw || e.message).slice(0, 120); }

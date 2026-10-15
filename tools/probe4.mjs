@@ -26,7 +26,7 @@ await new Promise((res) => ws.addEventListener('open', res));
 const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 200))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'probe4', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'probe4', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 
 async function trial(label, model) {
   const s = await req('session/new', { cwd: cfg.cwd, mcpServers: [] });

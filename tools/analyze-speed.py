@@ -6,7 +6,7 @@
 # - mensajes huérfanos (sesiones borradas dejaron restos?)
 import sqlite3, datetime, json, collections, statistics
 TZ = datetime.timezone(datetime.timedelta(hours=-3))
-db = 'C:/Users/Emiliano/AppData/Roaming/Block/goose/data/sessions/sessions.db'
+db = 'C:/Users/Emiliano/AppData/Roaming/Aegis/aegis/data/sessions/sessions.db'
 con = sqlite3.connect(f'file:{db}?mode=ro', uri=True, timeout=10)
 c = con.cursor()
 

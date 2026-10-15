@@ -14,11 +14,11 @@ const target = all.find((s) => s.sessionId === '20261012_23') || all.find((s) =>
 const out = { encontrada: target ? { id: target.sessionId, title: target.title } : null, nSesiones: all.length };
 if (target) {
   try {
-    const r = await req('_goose/unstable/session/steer', { sessionId: target.sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
+    const r = await req('_aegis/unstable/session/steer', { sessionId: target.sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
     out.sondeo = { ok: true, result: r };
   } catch (e) { out.sondeo = { ok: false, raw: e.raw }; }
   try {
-    const info = await req('_goose/unstable/session/info', { sessionId: target.sessionId });
+    const info = await req('_aegis/unstable/session/info', { sessionId: target.sessionId });
     const meta = (info && info.session && info.session._meta) || {};
     out.info = { messageCount: meta.messageCount, lastMessageAt: meta.lastMessageAt, activeRunId: meta.activeRunId, metaKeys: Object.keys(meta) };
   } catch (e) { out.info = String((e && e.raw) || (e && e.message) || e).slice(0, 250); }

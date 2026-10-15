@@ -11,7 +11,7 @@ Motores, en orden (el primero que responde gana; se informa cual se uso):
   3. ddgs        (via uvx, cacheado por uv)
   4. DuckDuckGo HTML (scraping directo, sin dependencias)
 
-El resultado se cachea en %LOCALAPPDATA%/goose-websearch/<sha1>.json.
+El resultado se cachea en %LOCALAPPDATA%/aegis-websearch/<sha1>.json.
 """
 from __future__ import annotations
 
@@ -27,8 +27,8 @@ import time
 import urllib.parse
 import urllib.request
 
-CACHE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "goose-websearch")
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) goose-websearch/1.0"
+CACHE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "aegis-websearch")
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) aegis-websearch/1.0"
 
 TAG_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.S | re.I)
 TAG_STRIP_RE = re.compile(r"<[^>]+>")

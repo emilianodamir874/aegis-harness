@@ -14,7 +14,7 @@ const out = [];
 for (const s of sessions) {
   let run = null, err = null;
   try {
-    await req('_goose/unstable/session/steer', { sessionId: s.sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
+    await req('_aegis/unstable/session/steer', { sessionId: s.sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
   } catch (e) {
     const d = e.raw && e.raw.data;
     if (d && typeof d === 'object' && d.actualRunId) run = d.actualRunId;

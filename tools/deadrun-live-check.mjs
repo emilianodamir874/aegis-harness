@@ -30,12 +30,12 @@ ws.addEventListener('message', (ev) => {
       if (tcid) seen.pending.set(tcid, { status: u.status || 'pending', title: (u.title || u.kind || '').slice(0, 60) });
     }
     const meta = u._meta;
-    if (meta && meta.goose && meta.goose.activeRunId) runId = meta.goose.activeRunId;
+    if (meta && meta.aegis && meta.aegis.activeRunId) runId = meta.aegis.activeRunId;
   }
 });
 await new Promise((r) => ws.addEventListener('open', r));
 const req = (method, params, ms = 120000) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 160))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); setTimeout(() => { if (pend.has(mid)) { pend.delete(mid); rej(new Error('timeout ' + ms + 'ms en ' + method)); } }, ms); });
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'dead-run-check', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'dead-run-check', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 
 // ---------- 1) buscar sesiones con herramientas sin resultado ----------
 const list = await req('session/list', {});
@@ -63,7 +63,7 @@ try {
     await page.waitForFunction(() => document.querySelector('#conn-text')?.textContent === 'Conectado', null, { timeout: 60000 });
     await page.evaluate((sid) => localStorage.setItem('gweb.last', sid), conColgadas.id);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.__gooseWeb && window.__gooseWeb.state.current && window.__gooseWeb.state.current.id === localStorage.getItem('gweb.last'), null, { timeout: 60000 }).catch(() => {});
+    await page.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state.current && window.__aegisWeb.state.current.id === localStorage.getItem('gweb.last'), null, { timeout: 60000 }).catch(() => {});
     await page.waitForTimeout(6000);
     out.replayColgadas = await page.evaluate(() => ({
       tools: document.querySelectorAll('#msg-inner .tool').length,
@@ -88,21 +88,21 @@ try {
   await page.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.evaluate((sid) => localStorage.setItem('gweb.last', sid), sid);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__gooseWeb?.state.busy && window.__gooseWeb.state.adopted, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction(() => window.__aegisWeb?.state.busy && window.__aegisWeb.state.adopted, null, { timeout: 30000 }).catch(() => {});
   out.adoptMs2 = Date.now() - t0;
   const dom0 = await page.evaluate(() => ({ nodes: document.querySelectorAll('#msg-inner *').length, msgs: document.querySelectorAll('.msg-a,.msg-user,.tool').length }));
   await page.waitForTimeout(35000); // en reposo: los refrescos suaves deben traer lo nuevo
   const dom1 = await page.evaluate(() => ({ nodes: document.querySelectorAll('#msg-inner *').length, msgs: document.querySelectorAll('.msg-a,.msg-user,.tool').length }));
   out.live = {
     domAntes: dom0, domDespues: dom1, crecio: dom1.msgs > dom0.msgs || dom1.nodes > dom0.nodes,
-    watch: await page.evaluate(() => ({ ticks: window.__gooseWeb.watchDbg.ticks, softResyncs: window.__gooseWeb.watchDbg.softResyncs, softMs: Math.round(window.__gooseWeb.watchDbg.softMs), maxSoftMs: Math.round(window.__gooseWeb.watchDbg.maxSoftMs), lastSoft: window.__gooseWeb.watchDbg.lastSoft, deferred: window.__gooseWeb.watchDbg.softDeferred })),
+    watch: await page.evaluate(() => ({ ticks: window.__aegisWeb.watchDbg.ticks, softResyncs: window.__aegisWeb.watchDbg.softResyncs, softMs: Math.round(window.__aegisWeb.watchDbg.softMs), maxSoftMs: Math.round(window.__aegisWeb.watchDbg.maxSoftMs), lastSoft: window.__aegisWeb.watchDbg.lastSoft, deferred: window.__aegisWeb.watchDbg.softDeferred })),
     ultimoTexto: await page.evaluate(() => (document.querySelectorAll('.msg-a .content').length ? document.querySelectorAll('.msg-a .content')[document.querySelectorAll('.msg-a .content').length - 1].textContent.slice(-120) : null)),
     runbar: await page.evaluate(() => { const x = document.querySelector('#runbar'); return !x || x.hidden ? null : { text: x.querySelector('#runbar-text').textContent, time: x.querySelector('#runbar-time').textContent, stop: !x.querySelector('#runbar-stop').hidden }; }),
   };
   stage('live-adoptado', out.live);
   await page.screenshot({ path: 'C:/goose-web/tools/shots/live-adoptado-mobile.png' });
   await page.evaluate(() => document.querySelector('#runbar-stop')?.click());
-  await page.waitForFunction(() => !window.__gooseWeb.state.busy, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 30000 }).catch(() => {});
   await Promise.race([promptP, new Promise((r) => setTimeout(r, 20000))]);
   await req('session/delete', { sessionId: sid }).catch(() => {});
 } catch (e) { out.fatal = String((e && e.message) || e).slice(0, 300); }

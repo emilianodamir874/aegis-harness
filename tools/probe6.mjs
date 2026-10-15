@@ -13,7 +13,7 @@ ws.addEventListener('message', (ev) => {
 });
 await new Promise((res) => ws.addEventListener('open', res));
 const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 200))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
-await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'probe6', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'probe6', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 
 const s = await req('session/new', { cwd: cfg.cwd, mcpServers: [] });
 const modelOf = (r) => ((r.configOptions || []).find((o) => o.id === 'model') || {}).currentValue;
@@ -30,7 +30,7 @@ console.log('session_info_update durante prompt:', infoUpd.length, JSON.stringif
 const load = await req('session/load', { sessionId: s.sessionId, cwd: cfg.cwd, mcpServers: [] });
 console.log('tras load (persistencia):', modelOf(load));
 
-const list = await req('session/list', { meta: { goose: { includeLastMessageSnippet: false } } });
+const list = await req('session/list', { meta: { aegis: { includeLastMessageSnippet: false } } });
 const me = (list.sessions || []).find((x) => x.sessionId === s.sessionId);
 console.log('session/list meta.modelId:', me && me._meta && me._meta.modelId);
 

@@ -24,7 +24,7 @@ const out = { nSesiones: all.length, target: target ? target.sessionId : null };
 
 async function trySteer(label, sessionId) {
   try {
-    const r = await req('_goose/unstable/session/steer', { sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
+    const r = await req('_aegis/unstable/session/steer', { sessionId, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
     out[label] = { ok: true, result: r };
   } catch (e) {
     out[label] = { ok: false, code: e.code, message: e.message, data: e.data };

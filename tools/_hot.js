@@ -7,7 +7,7 @@
   async function hotTick() {
     const cur = state.current;
     if (!cur || !rpc.ready) { stopHotWatch(); return; }
-    const info = await rpc.request('_goose/unstable/session/info', { sessionId: cur.id }).catch(() => null);
+    const info = await rpc.request('_aegis/unstable/session/info', { sessionId: cur.id }).catch(() => null);
     const meta = (info && info.session && info.session._meta) || {};
     const key = String(meta.messageCount != null ? meta.messageCount : '') + '|' + String(meta.lastMessageAt || '');
     const fresh = meta.lastMessageAt ? (Date.now() - Date.parse(meta.lastMessageAt)) < 90000 : false;

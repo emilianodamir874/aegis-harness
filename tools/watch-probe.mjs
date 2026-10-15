@@ -21,23 +21,23 @@ ws.addEventListener('message', (ev) => {
     return;
   }
   const meta = m.params && m.params.update && m.params.update._meta;
-  if (meta && meta.goose && meta.goose.activeRunId) runId = meta.goose.activeRunId;
+  if (meta && meta.aegis && meta.aegis.activeRunId) runId = meta.aegis.activeRunId;
 });
 await new Promise((r) => ws.addEventListener('open', r));
 const req = (method, params, ms = 90000) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 200))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); setTimeout(() => { if (pend.has(mid)) { pend.delete(mid); rej(new Error('timeout ' + ms + 'ms en ' + method)); } }, ms); });
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'watch-probe', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'watch-probe', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 
 const list = await req('session/list', {});
 const sorted = (list.sessions || []).slice().sort((a, b) => ((b._meta && b._meta.messageCount) || 0) - ((a._meta && a._meta.messageCount) || 0));
 let exp = null;
 for (const c of sorted.slice(0, 6)) {
   let e = null;
-  try { e = await req('_goose/unstable/session/export', { sessionId: c.sessionId, format: 'json' }); } catch { continue; }
+  try { e = await req('_aegis/unstable/session/export', { sessionId: c.sessionId, format: 'json' }); } catch { continue; }
   stage('export', { id: c.sessionId, m: (c._meta && c._meta.messageCount) || 0, bytes: e.data.length });
   if (e.data.length <= 4000000) { exp = e; out.origen = { id: c.sessionId, msgs: (c._meta && c._meta.messageCount) || 0, bytes: e.data.length }; break; }
 }
 if (!exp) { console.log(JSON.stringify({ fatal: 'sin sesión exportable <4MB' })); process.exit(0); }
-const imp = await req('_goose/unstable/session/import', { input: exp.data });
+const imp = await req('_aegis/unstable/session/import', { input: exp.data });
 const sid = imp.sessionId;
 stage('import', { sid, msgs: imp.message_count });
 
@@ -58,7 +58,7 @@ try {
   await page.evaluate((sid) => localStorage.setItem('gweb.last', sid), sid);
   const t0 = Date.now();
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__gooseWeb?.state.busy && window.__gooseWeb.state.adopted, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction(() => window.__aegisWeb?.state.busy && window.__aegisWeb.state.adopted, null, { timeout: 30000 }).catch(() => {});
   out.adoptMs = Date.now() - t0;
   await page.waitForFunction(() => document.querySelectorAll('.msg-a,.msg-user,.tool').length > 300, null, { timeout: 120000 }).catch(() => {});
   stage('adoptado', { adoptMs: out.adoptMs });
@@ -78,8 +78,8 @@ try {
   }
   const pct = (a, q) => a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor((a.length * q) / 100))];
   out.ventana = { ms: Date.now() - t1, keys: lat.length, p50: pct(lat, 50), p95: pct(lat, 95), max: Math.max(...lat) };
-  out.watch = await page.evaluate(() => ({ ...window.__gooseWeb.watchDbg, keys: window.__gooseWeb.watchDbg.keys.slice(-20).map((k) => k.key) }));
-  out.metrics = await page.evaluate(() => ({ ...window.__gooseWeb.metrics }));
+  out.watch = await page.evaluate(() => ({ ...window.__aegisWeb.watchDbg, keys: window.__aegisWeb.watchDbg.keys.slice(-20).map((k) => k.key) }));
+  out.metrics = await page.evaluate(() => ({ ...window.__aegisWeb.metrics }));
   out.dom = await page.evaluate(() => ({ nodes: document.querySelectorAll('#msg-inner *').length, msgs: document.querySelectorAll('.msg-a,.msg-user,.tool').length }));
   stage('ventana', out.ventana);
   stage('watch', { ticks: out.watch.ticks, infos: out.watch.infos, infoErrs: out.watch.infoErrs, resyncs: out.watch.resyncs, resyncMs: Math.round(out.watch.resyncMs), maxResyncMs: Math.round(out.watch.maxResyncMs) });

@@ -1,5 +1,5 @@
 // Escenario A2: tecleo en móvil (CPU 4x) en una conversación LARGA de verdad, con turno adoptado.
-// Copia la sesión más grande vía _goose/unstable/session/export+import (no ensucia la original).
+// Copia la sesión más grande vía _aegis/unstable/session/export+import (no ensucia la original).
 //   bigQuiet : sesión larga, sin run (costo puro del DOM grande)
 //   A        : turno adoptado con el poll de la v6 encendido (session/load + rebuild)
 //   B        : mismo turno, mismo DOM, poll apagado (control)
@@ -25,11 +25,11 @@ ws.addEventListener('message', (ev) => {
     return;
   }
   const meta = m.params && m.params.update && m.params.update._meta;
-  if (meta && meta.goose && meta.goose.activeRunId) runId = meta.goose.activeRunId;
+  if (meta && meta.aegis && meta.aegis.activeRunId) runId = meta.aegis.activeRunId;
 });
 await new Promise((r) => ws.addEventListener('open', r));
 const req = (method, params, ms = 90000) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 200))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); setTimeout(() => { if (pend.has(mid)) { pend.delete(mid); rej(new Error('timeout ' + ms + 'ms en ' + method)); } }, ms); });
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'typing-big', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'typing-big', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 
 // copia de una sesión larga: la más grande cuyo export entre por WebSocket (~4 MB)
 const list = await req('session/list', {});
@@ -39,14 +39,14 @@ out.exportSizes = [];
 let exp = null;
 for (const c of sorted.slice(0, 6)) {
   let e = null;
-  try { e = await req('_goose/unstable/session/export', { sessionId: c.sessionId, format: 'json' }); } catch (err) { out.exportSizes.push({ id: c.sessionId, err: String(err.message).slice(0, 60) }); continue; }
+  try { e = await req('_aegis/unstable/session/export', { sessionId: c.sessionId, format: 'json' }); } catch (err) { out.exportSizes.push({ id: c.sessionId, err: String(err.message).slice(0, 60) }); continue; }
   out.exportSizes.push({ id: c.sessionId, m: (c._meta && c._meta.messageCount) || 0, bytes: e.data.length });
   stage('export', { id: c.sessionId, m: (c._meta && c._meta.messageCount) || 0, bytes: e.data.length });
   if (e.data.length <= 4000000) { exp = e; out.origen = { id: c.sessionId, msgs: (c._meta && c._meta.messageCount) || 0, bytes: e.data.length }; break; }
 }
 if (!exp) { console.log(JSON.stringify({ fatal: 'no hay sesión exportable bajo 4 MB', ...out }, null, 1)); process.exit(0); }
 let imp = null;
-try { imp = await req('_goose/unstable/session/import', { input: exp.data }, 120000); } catch (err) { console.log(JSON.stringify({ fatal: 'import falló: ' + String(err.message).slice(0, 160), ...out }, null, 1)); process.exit(0); }
+try { imp = await req('_aegis/unstable/session/import', { input: exp.data }, 120000); } catch (err) { console.log(JSON.stringify({ fatal: 'import falló: ' + String(err.message).slice(0, 160), ...out }, null, 1)); process.exit(0); }
 const sid = imp.sessionId;
 stage('import', { sid, msgs: imp.message_count });
 out.copia = { sid, msgs: imp.message_count, title: imp.title };
@@ -57,7 +57,7 @@ const page = await ctx.newPage();
 const cdp = await ctx.newCDPSession(page);
 try { await cdp.send('Emulation.setCPUThrottlingRate', { rate }); out.cpuThrottle = rate; } catch (e) { out.cpuThrottle = 'no-aplicado: ' + String(e.message).slice(0, 60); }
 
-const counts = () => page.evaluate(() => ({ ...window.__gooseWeb.__counts, ...window.__gooseWeb.metrics, nodes: document.querySelectorAll('#msg-inner *').length, msgs: document.querySelectorAll('.msg-a,.msg-user,.tool').length, busy: window.__gooseWeb.state.busy, adopted: window.__gooseWeb.state.adopted }));
+const counts = () => page.evaluate(() => ({ ...window.__aegisWeb.__counts, ...window.__aegisWeb.metrics, nodes: document.querySelectorAll('#msg-inner *').length, msgs: document.querySelectorAll('.msg-a,.msg-user,.tool').length, busy: window.__aegisWeb.state.busy, adopted: window.__aegisWeb.state.adopted }));
 const measure = (n, gap) => page.evaluate(async ([n, gap]) => {
   const t = document.querySelector('#input');
   t.focus(); t.value = '';
@@ -76,7 +76,7 @@ const measure = (n, gap) => page.evaluate(async ([n, gap]) => {
 const pct = (a, q) => (a.length ? a.slice().sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor((a.length * q) / 100))] : 0);
 
 const instrument = () => page.evaluate(() => {
-  const g = window.__gooseWeb;
+  const g = window.__aegisWeb;
   g.__counts = { loads: 0, steers: 0, longTasks: 0, longMs: 0, maxLong: 0 };
   if (!g.__patched) {
     const orig = g.rpc.request.bind(g.rpc);
@@ -111,7 +111,7 @@ try {
   await page.evaluate((sid) => localStorage.setItem('gweb.last', sid), sid);
   const tReplay = Date.now();
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => { const g = window.__gooseWeb; return g && g.state.current && !document.querySelector('#status-pill') && document.querySelectorAll('.msg-a,.msg-user,.tool').length > 50; }, null, { timeout: 120000 }).catch(() => {});
+  await page.waitForFunction(() => { const g = window.__aegisWeb; return g && g.state.current && !document.querySelector('#status-pill') && document.querySelectorAll('.msg-a,.msg-user,.tool').length > 50; }, null, { timeout: 120000 }).catch(() => {});
   out.replayMs = Date.now() - tReplay;
   stage('replay', { ms: out.replayMs });
   out.trasCargar = await counts();
@@ -131,22 +131,22 @@ try {
 
   const tAdopt = Date.now();
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__gooseWeb?.state.busy && window.__gooseWeb.state.adopted, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction(() => window.__aegisWeb?.state.busy && window.__aegisWeb.state.adopted, null, { timeout: 30000 }).catch(() => {});
   out.adoptMs = Date.now() - tAdopt;
   stage('adopt', { ms: out.adoptMs });
-  await page.waitForFunction(() => { const g = window.__gooseWeb; return g && g.state.current && !document.querySelector('#status-pill') && document.querySelectorAll('.msg-a,.msg-user,.tool').length > 50; }, null, { timeout: 120000 }).catch(() => {});
+  await page.waitForFunction(() => { const g = window.__aegisWeb; return g && g.state.current && !document.querySelector('#status-pill') && document.querySelectorAll('.msg-a,.msg-user,.tool').length > 50; }, null, { timeout: 120000 }).catch(() => {});
   await instrument();
   out.A = await windowTest(25000);
   stage('A', out.A);
-  await page.evaluate(() => window.__gooseWeb.stopWatch());
+  await page.evaluate(() => window.__aegisWeb.stopWatch());
   await page.waitForTimeout(1500);
   out.B = await windowTest(25000);
   stage('B', out.B);
-  await page.evaluate(() => window.__gooseWeb.startWatch());
+  await page.evaluate(() => window.__aegisWeb.startWatch());
   await page.waitForTimeout(2500);
   const td = Date.now();
   await page.evaluate(() => document.querySelector('#runbar-stop')?.click());
-  out.D = { detenerMs: await page.waitForFunction(() => !window.__gooseWeb.state.busy, null, { timeout: 30000 }).then(() => Date.now() - td).catch(() => 'timeout-30s') };
+  out.D = { detenerMs: await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 30000 }).then(() => Date.now() - td).catch(() => 'timeout-30s') };
   out.D.tras = await counts();
 } catch (e) {
   out.fatal = String((e && e.message) || e).slice(0, 300);

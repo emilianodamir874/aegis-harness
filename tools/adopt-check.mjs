@@ -23,11 +23,11 @@ ws.addEventListener('message', (ev) => {
     return;
   }
   const meta = m.params && m.params.update && m.params.update._meta;
-  if (meta && meta.goose && meta.goose.activeRunId) activeRunId = meta.goose.activeRunId;
+  if (meta && meta.aegis && meta.aegis.activeRunId) activeRunId = meta.aegis.activeRunId;
 });
 await new Promise((res) => ws.addEventListener('open', res));
 const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 200))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'adopt-check', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'adopt-check', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 const s = await req('session/new', { cwd: cfg.cwd, mcpServers: [] });
 const sid = s.sessionId;
 out.sid = sid;
@@ -41,9 +41,9 @@ const b = await chromium.launch({ channel: 'chrome', headless: true });
 const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) Mobile Safari/537.36' });
 const page = await ctx.newPage();
 const snap = () => page.evaluate(() => ({
-  busy: window.__gooseWeb.state.busy,
-  adopted: window.__gooseWeb.state.adopted,
-  runId: window.__gooseWeb.state.runId,
+  busy: window.__aegisWeb.state.busy,
+  adopted: window.__aegisWeb.state.adopted,
+  runId: window.__aegisWeb.state.runId,
   runbar: (() => { const x = document.querySelector('#runbar'); return !x || x.hidden ? null : { text: x.querySelector('#runbar-text').textContent, time: x.querySelector('#runbar-time').textContent, stopVisible: !x.querySelector('#runbar-stop').hidden }; })(),
   notes: [...document.querySelectorAll('.sysnote')].map((e) => e.textContent).slice(-2),
 }));
@@ -53,8 +53,8 @@ try {
   await page.evaluate((sid) => localStorage.setItem('gweb.last', sid), sid);
   const t0 = Date.now();
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__gooseWeb && window.__gooseWeb.state.current && window.__gooseWeb.state.current.id === (localStorage.getItem('gweb.last')), null, { timeout: 30000 }).catch(() => {});
-  out.adoptMs = await page.waitForFunction(() => window.__gooseWeb.state.busy && window.__gooseWeb.state.adopted, null, { timeout: 20000 }).then(() => Date.now() - t0).catch(() => 'timeout-20s');
+  await page.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state.current && window.__aegisWeb.state.current.id === (localStorage.getItem('gweb.last')), null, { timeout: 30000 }).catch(() => {});
+  out.adoptMs = await page.waitForFunction(() => window.__aegisWeb.state.busy && window.__aegisWeb.state.adopted, null, { timeout: 20000 }).then(() => Date.now() - t0).catch(() => 'timeout-20s');
   out.trasRecarga = await snap();
   await page.waitForTimeout(3000);
   out.aLos3s = await snap();
@@ -62,7 +62,7 @@ try {
   // Detener desde la pestaña recargada
   const ts = Date.now();
   await page.evaluate(() => document.querySelector('#runbar-stop')?.click());
-  out.detenerMs = await page.waitForFunction(() => !window.__gooseWeb.state.busy, null, { timeout: 30000 }).then(() => Date.now() - ts).catch(() => 'timeout-30s');
+  out.detenerMs = await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 30000 }).then(() => Date.now() - ts).catch(() => 'timeout-30s');
   out.trasDetener = await snap();
 } catch (e) { out.fatal = String((e && e.message) || e).slice(0, 300); }
 await promptP;

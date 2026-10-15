@@ -84,7 +84,7 @@
       'El <b>contexto</b> es lo que se reenvia en cada request (historial + herramientas + adjuntos), no lo que escribis. ' +
       'El <b>razonamiento</b> de cada paso se cuenta dentro de la <b>salida</b>, por eso la salida pesa mas de lo que se ve en el chat. ' +
       (stepsLeft ? 'Al ritmo del ultimo paso quedan ~<b>' + stepsLeft + '</b> pasos antes de compactar. ' : '') +
-      'Cuando llega a <b>' + Math.round(COMPACT_RATIO * 100) + '%</b> del limite el historial se resume solo (<b>GOOSE_AUTO_COMPACT_THRESHOLD</b>).';
+      'Cuando llega a <b>' + Math.round(COMPACT_RATIO * 100) + '%</b> del limite el historial se resume solo (<b>AEGIS_AUTO_COMPACT_THRESHOLD</b>).';
     // animar el anillo desde 0 para que se vea el despliegue
     arc.style.transition = 'none';
     arc.style.strokeDashoffset = String(RING_CIRC);

@@ -44,9 +44,9 @@ const req = (method, params) =>
 
 const init = await req('initialize', {
   protocolVersion: 1,
-  clientCapabilities: { _meta: { goose: { customNotifications: true } } },
-  clientInfo: { name: 'goose-web-probe', version: '0.1' },
-  _meta: { 'goose/useLoginShellPath': true },
+  clientCapabilities: { _meta: { aegis: { customNotifications: true } } },
+  clientInfo: { name: 'aegis-web-probe', version: '0.1' },
+  _meta: { 'aegis/useLoginShellPath': true },
 });
 console.log('== initialize ==');
 console.log(
@@ -61,13 +61,13 @@ const ns = await req('session/new', { cwd: 'C:\\Users\\Emiliano', mcpServers: []
 console.log('\n== session/new (truncado) ==');
 console.log(JSON.stringify(ns, null, 1).slice(0, 4000));
 
-const list = await req('session/list', { meta: { goose: { includeLastMessageSnippet: true } } });
+const list = await req('session/list', { meta: { aegis: { includeLastMessageSnippet: true } } });
 console.log('\n== session/list: cantidad =', Array.isArray(list.sessions) ? list.sessions.length : list.sessions);
 console.log(JSON.stringify(list.sessions?.slice?.(0, 3) ?? list, null, 1).slice(0, 2600));
 
 try {
-  const prov = await req('_goose/unstable/providers/list', {});
-  console.log('\n== _goose/unstable/providers/list ==');
+  const prov = await req('_aegis/unstable/providers/list', {});
+  console.log('\n== _aegis/unstable/providers/list ==');
   console.log(JSON.stringify(prov, null, 1).slice(0, 4500));
 } catch (e) {
   console.log('providers/list err:', String(e).slice(0, 400));

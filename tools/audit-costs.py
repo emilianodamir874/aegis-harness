@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Auditoria de costo y tokens de Goose, read-only (A3/A6 del relevamiento).
+"""Auditoria de costo y tokens de Aegis, read-only (A3/A6 del relevamiento).
 
 Uso: python audit-costs.py [--days 2] [--db <ruta>]
 
@@ -10,7 +10,7 @@ que se cobran sin dejar mensaje de assistant) y el residual no atribuible.
 """
 import argparse, collections, datetime, io, json, sqlite3, sys
 
-DEFAULT_DB = r'C:/Users/Emiliano/AppData/Roaming/Block/goose/data/sessions/sessions.db'
+DEFAULT_DB = r'C:/Users/Emiliano/AppData/Roaming/Aegis/aegis/data/sessions/sessions.db'
 PRICES = r'C:/goose-web/prices.json'
 
 

@@ -46,7 +46,7 @@
 .wsug .sug:nth-child(1) { animation-delay: .16s; }
 .wsug .sug:nth-child(2) { animation-delay: .21s; }
 .wsug .sug:nth-child(3) { animation-delay: .26s; }
-.welcome-goose { animation: msgIn .5s cubic-bezier(.16, 1, .3, 1) both; }
+.welcome-aegis { animation: msgIn .5s cubic-bezier(.16, 1, .3, 1) both; }
 .sb-item { transition: background .13s ease, transform .1s ease; }
 .sb-item:active { transform: scale(.985); }
 .icon-btn, .sb-del, .sb-rename, .sb-more, .sb-more-btn, .sb-arch-toggle, .pb, .chip, .sug, .send, .btn-new, .slash-item, .menu-row {
@@ -85,6 +85,6 @@
 #jump-bottom svg { display: block; }
 @media (prefers-reduced-motion: reduce) {
   .msg-user.in, .msg-a.in, .menu, .slash-menu, .perm, .toast, #usage-pop,
-  .welcome h1, .welcome-sub, .wsug .sug, .welcome-goose, .runbar { animation: none !important; }
+  .welcome h1, .welcome-sub, .wsug .sug, .welcome-aegis, .runbar { animation: none !important; }
   .runbar::after, .dot:not(.ok):not(.err) { animation: none !important; }
 }

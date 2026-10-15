@@ -14,8 +14,8 @@ rep("  function renderUsage() {" + SEP + "    const el = $('#meta-right');" + SE
     "    if (!el) return;" + SEP +
     "    const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, render: 0, lastSet: null, lastMsg: null });" + SEP +
     "    dbg.render++;")
-rep("  window.__gooseWeb = { state, ",
-    "  window.__gooseWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), ")
+rep("  window.__aegisWeb = { state, ",
+    "  window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), ")
 with io.open(P, 'w', encoding='utf-8', newline='') as f:
     f.write(raw)
 print('OK render dbg')

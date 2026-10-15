@@ -18,7 +18,7 @@
    "kind": null
   },
   {
-   "title": "shell · dir /b \"%APPDATA%\\Block\\goose\" 2>nul & echo --- & dir ...…",
+   "title": "shell · dir /b \"%APPDATA%\\Block\\aegis\" 2>nul & echo --- & dir ...…",
    "kind": null
   },
   {
@@ -26,7 +26,7 @@
    "kind": null
   },
   {
-   "title": "shell · dir /b \"%APPDATA%\\Block\\goose\\data\\sessions\" 2>nul | f...…",
+   "title": "shell · dir /b \"%APPDATA%\\Block\\aegis\\data\\sessions\" 2>nul | f...…",
    "kind": null
   }
  ],

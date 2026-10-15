@@ -23,13 +23,13 @@ await new Promise((res) => ws.addEventListener('open', res));
 const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 300))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'probe5', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'probe5', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 
 // 1) reset del permiso que quedo en always_allow de las pruebas
 try {
   for (const permission of ['ask_before', 'askBefore']) {
     try {
-      const r = await req('_goose/unstable/tools/permissions/set', { toolPermissions: [{ toolName: 'shell', permission }] });
+      const r = await req('_aegis/unstable/tools/permissions/set', { toolPermissions: [{ toolName: 'shell', permission }] });
       console.log('reset shell ->', permission, 'OK', JSON.stringify(r).slice(0, 80));
       break;
     } catch (e) { console.log('reset con', permission, 'fallo:', String(e).slice(0, 140)); }

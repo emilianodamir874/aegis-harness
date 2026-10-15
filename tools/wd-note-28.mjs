@@ -13,14 +13,14 @@ const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pe
 await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'wd-note', version: '1' } });
 let runId = null;
 try {
-  await req('_goose/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
+  await req('_aegis/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
 } catch (e) {
   const d = e.raw && e.raw.data;
   if (d && typeof d === 'object' && d.actualRunId) runId = d.actualRunId;
 }
 try {
   if (runId) {
-    const r = await req('_goose/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: TEXT }], expectedRunId: runId });
+    const r = await req('_aegis/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: TEXT }], expectedRunId: runId });
     console.log('STEER enviado ✓', JSON.stringify(r).slice(0, 140));
   } else {
     const r = await req('session/prompt', { sessionId: SID, prompt: [{ type: 'text', text: TEXT }] });

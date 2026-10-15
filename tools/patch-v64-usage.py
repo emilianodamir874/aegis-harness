@@ -19,7 +19,7 @@ while lines[j] != '  }':
 # 2) case message_usage en el dispatcher
 k = find("      case 'usage_update':")
 assert lines[k+1].strip() == 'setUsage(u);' and lines[k+2].strip() == 'break;'
-# 3) onGooseUpdate
+# 3) onAegisUpdate
 m = find("    if (u.sessionUpdate === 'usage_update') setUsage(u);")
 for pos, txt in sorted([(m+1, ["    if (u.sessionUpdate === 'message_usage') setMsgUsage(u.usage);"]),
                         (k+3, ["      case 'message_usage':", "        setMsgUsage(u.usage);", "        break;"]),

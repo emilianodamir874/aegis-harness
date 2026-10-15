@@ -18,15 +18,15 @@ ws.addEventListener('message', (ev) => {
 });
 await new Promise((r) => ws.addEventListener('open', r));
 const req = (method, params, ms = 60000) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 160))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); setTimeout(() => { if (pend.has(mid)) { pend.delete(mid); rej(new Error('timeout ' + ms)); } }, ms); });
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'steer-check', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'steer-check', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 
 const br = await chromium.launch({ channel: 'chrome', headless: true });
 const ctx = await br.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) Mobile Safari/537.36' });
 const page = await ctx.newPage();
 const snap = () => page.evaluate(() => ({
-  busy: window.__gooseWeb.state.busy,
-  queue: window.__gooseWeb.state.queue.length,
-  steers: [...window.__gooseWeb.__steersDbg ? [] : []].length,
+  busy: window.__aegisWeb.state.busy,
+  queue: window.__aegisWeb.state.queue.length,
+  steers: [...window.__aegisWeb.__steersDbg ? [] : []].length,
   queued: [...document.querySelectorAll('.msg-user.queued')].map((e) => e.textContent.trim().slice(0, 60)),
   userMsgs: [...document.querySelectorAll('.msg-user')].map((e) => e.textContent.trim().slice(0, 60)),
   steerNotes: [...document.querySelectorAll('.steer-note')].map((e) => e.textContent),
@@ -47,8 +47,8 @@ try {
     t.dispatchEvent(new Event('input', { bubbles: true }));
     document.querySelector('#btn-send').click();
   }, { PASOS, SEGS });
-  await page.waitForFunction(() => window.__gooseWeb.state.busy, null, { timeout: 30000 });
-  out.sid = await page.evaluate(() => window.__gooseWeb.state.current.id);
+  await page.waitForFunction(() => window.__aegisWeb.state.busy, null, { timeout: 30000 });
+  out.sid = await page.evaluate(() => window.__aegisWeb.state.current.id);
   await page.waitForTimeout(6000); // que el run esté haciendo herramientas
   out.antesDelSteer = await snap();
 
@@ -60,7 +60,7 @@ try {
 
   // Detener enseguida (el turno no va a consumir la indicación)
   await page.evaluate(() => document.querySelector('#btn-stop')?.click());
-  out.detenerMs = await page.waitForFunction(() => !window.__gooseWeb.state.busy, null, { timeout: 30000 }).then(() => true).catch(() => false);
+  out.detenerMs = await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 30000 }).then(() => true).catch(() => false);
   await page.waitForTimeout(1500);
   out.trasDetener = await snap();
   stage('trasDetener', out.trasDetener);
@@ -87,7 +87,7 @@ try {
     if (m.id !== undefined && m.method === undefined) { const f = p2.get(m.id); if (f) { f(m); p2.delete(m.id); } }
   });
   const req2 = (method, params) => new Promise((res, rej) => { const mid = ++id2; p2.set(mid, (m) => (m.error ? rej(new Error(JSON.stringify(m.error).slice(0, 120))) : res(m.result))); ws2.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
-  await req2('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'hist', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+  await req2('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'hist', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
   await req2('session/load', { sessionId: out.sid, cwd: cfg.cwd, mcpServers: [] }).catch(() => {});
   out.enServidor = hist.some((t) => t.includes(marca));
   out.userMsgsServidor = hist.length;

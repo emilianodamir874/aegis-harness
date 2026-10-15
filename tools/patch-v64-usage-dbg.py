@@ -35,8 +35,8 @@ rep("  function renderUsage() {",
     "  function renderUsage() {")
 
 # C) exponer para depuracion
-rep("  window.__gooseWeb = { state, ",
-    "  window.__gooseWeb = { state, usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, ")
+rep("  window.__aegisWeb = { state, ",
+    "  window.__aegisWeb = { state, usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, ")
 
 with io.open(P, 'w', encoding='utf-8', newline='') as f:
     f.write(raw)

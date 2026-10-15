@@ -16,7 +16,7 @@ await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo
 // 1) ¿run activo?
 let runId = null;
 try {
-  await req('_goose/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
+  await req('_aegis/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) });
 } catch (e) {
   const d = e.raw && e.raw.data;
   if (d && typeof d === 'object' && d.actualRunId) runId = d.actualRunId;
@@ -24,7 +24,7 @@ try {
 console.log('run activo en _28:', runId);
 try {
   if (runId) {
-    const r = await req('_goose/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: TEXT }], expectedRunId: runId });
+    const r = await req('_aegis/unstable/session/steer', { sessionId: SID, prompt: [{ type: 'text', text: TEXT }], expectedRunId: runId });
     console.log('STEER enviado ✓', JSON.stringify(r).slice(0, 200));
   } else {
     const r = await req('session/prompt', { sessionId: SID, prompt: [{ type: 'text', text: TEXT }] });

@@ -29,7 +29,7 @@ ws.addEventListener('message', (ev) => {
     return;
   }
   const meta = m.params && m.params.update && m.params.update._meta;
-  if (meta && meta.goose && meta.goose.activeRunId) runId = meta.goose.activeRunId;
+  if (meta && meta.aegis && meta.aegis.activeRunId) runId = meta.aegis.activeRunId;
 });
 await new Promise((r) => ws.addEventListener('open', r));
 const req = (method, params) =>
@@ -41,9 +41,9 @@ const req = (method, params) =>
 
 await req('initialize', {
   protocolVersion: 1,
-  clientCapabilities: { _meta: { goose: { customNotifications: true } } },
+  clientCapabilities: { _meta: { aegis: { customNotifications: true } } },
   clientInfo: { name: 'typing-adopt', version: '1' },
-  _meta: { 'goose/useLoginShellPath': true },
+  _meta: { 'aegis/useLoginShellPath': true },
 });
 const s = await req('session/new', { cwd: cfg.cwd, mcpServers: [] });
 const sid = s.sessionId;
@@ -88,16 +88,16 @@ try { await cdp.send('Emulation.setCPUThrottlingRate', { rate }); out.cpuThrottl
 
 const snap = () =>
   page.evaluate(() => ({
-    busy: window.__gooseWeb.state.busy,
-    adopted: window.__gooseWeb.state.adopted,
-    runId: window.__gooseWeb.state.runId,
+    busy: window.__aegisWeb.state.busy,
+    adopted: window.__aegisWeb.state.adopted,
+    runId: window.__aegisWeb.state.runId,
     msgs: document.querySelectorAll('.msg-a,.msg-user,.tool').length,
     nodes: document.querySelectorAll('#msg-inner *').length,
     runbar: (() => { const x = document.querySelector('#runbar'); return !x || x.hidden ? null : { text: x.querySelector('#runbar-text').textContent, time: x.querySelector('#runbar-time').textContent, stop: !x.querySelector('#runbar-stop').hidden }; })(),
     steerNotes: [...document.querySelectorAll('.steer-note')].map((e) => e.textContent).slice(-2),
   }));
 
-const counts = () => page.evaluate(() => ({ ...window.__gooseWeb.__counts, ...window.__gooseWeb.metrics }));
+const counts = () => page.evaluate(() => ({ ...window.__aegisWeb.__counts, ...window.__aegisWeb.metrics }));
 
 const measure = (n, gap) =>
   page.evaluate(
@@ -156,13 +156,13 @@ try {
   const t0 = Date.now();
   await page.reload({ waitUntil: 'domcontentloaded' });
   out.adoptMs = await page
-    .waitForFunction(() => window.__gooseWeb?.state.busy && window.__gooseWeb.state.adopted, null, { timeout: 25000 })
+    .waitForFunction(() => window.__aegisWeb?.state.busy && window.__aegisWeb.state.adopted, null, { timeout: 25000 })
     .then(() => Date.now() - t0)
     .catch(() => 'timeout-25s');
   out.trasRecarga = await snap();
 
   await page.evaluate(() => {
-    const g = window.__gooseWeb;
+    const g = window.__aegisWeb;
     g.__counts = { loads: 0, steers: 0, longTasks: 0, longMs: 0, maxLong: 0 };
     const orig = g.rpc.request.bind(g.rpc);
     g.rpc.request = (m, p) => {
@@ -181,11 +181,11 @@ try {
   out.A.tras = await snap();
 
   // ventana B: watch OFF (control). La conversación se deja como está: mismo DOM, mismo run.
-  await page.evaluate(() => window.__gooseWeb.stopWatch());
+  await page.evaluate(() => window.__aegisWeb.stopWatch());
   await page.waitForTimeout(1500);
   out.B = await windowTest(25000);
   out.B.tras = await snap();
-  await page.evaluate(() => window.__gooseWeb.startWatch());
+  await page.evaluate(() => window.__aegisWeb.startWatch());
   await page.waitForTimeout(2600);
 
   // ventana C: mensaje escrito en el medio de una herramienta silenciosa
@@ -200,7 +200,7 @@ try {
   // ventana D: Detener desde la pestaña recargada
   const td = Date.now();
   await page.evaluate(() => document.querySelector('#runbar-stop')?.click());
-  out.D = { detenerMs: await page.waitForFunction(() => !window.__gooseWeb.state.busy, null, { timeout: 30000 }).then(() => Date.now() - td).catch(() => 'timeout-30s') };
+  out.D = { detenerMs: await page.waitForFunction(() => !window.__aegisWeb.state.busy, null, { timeout: 30000 }).then(() => Date.now() - td).catch(() => 'timeout-30s') };
   out.D.trasDetener = await snap();
   out.D.runbar = await page.evaluate(() => { const x = document.querySelector('#runbar'); return x && !x.hidden ? { text: x.querySelector('#runbar-text').textContent, stop: !x.querySelector('#runbar-stop').hidden } : null; });
   await page.screenshot({ path: 'C:/goose-web/tools/shots/typing-adopt-mobile.png' });

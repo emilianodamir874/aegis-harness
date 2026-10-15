@@ -27,7 +27,7 @@ const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pe
 try {
   await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'smoke-v2', version: '1' } });
   const s = await req('session/new', { cwd: cfg.cwd, mcpServers: [] });
-  await req('_goose/unstable/session/rename', { sessionId: s.sessionId, title: 'zz smoke cm v2' }).catch(() => {});
+  await req('_aegis/unstable/session/rename', { sessionId: s.sessionId, title: 'zz smoke cm v2' }).catch(() => {});
   const res = await req('session/prompt', { sessionId: s.sessionId, prompt: [{ type: 'text', text: 'Calculá 2+3 usando la herramienta execute_typescript (no mentalmente) y respondé SOLO el resultado numérico.' }] });
   endTurn = res && res.stopReason;
   try { await req('session/delete', { sessionId: s.sessionId }); } catch {}

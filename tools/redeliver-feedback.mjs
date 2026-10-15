@@ -1,5 +1,5 @@
-// Reenvía a goose (sesión nueva) el feedback de Emiliano que quedó sin
-// respuesta en "goose-web UI perfection" (el turno murió por auto-compactación).
+// Reenvía a aegis (sesión nueva) el feedback de Emiliano que quedó sin
+// respuesta en "aegis-web UI perfection" (el turno murió por auto-compactación).
 // Incluye la foto original adjunta. Corre desprendido; escribe progreso.
 import { readFile } from 'node:fs/promises';
 
@@ -8,8 +8,8 @@ const url = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`
 const b64 = (await readFile('C:/goose-web/tools/user-photo.jpg')).toString('base64');
 
 const PREFACE =
-  '[Feedback de Emiliano sobre la UI de goose-web, reenviado por su asistente a una sesión nueva: ' +
-  'el turno anterior (sesión "goose-web UI perfection") quedó sin respuesta porque esa sesión estaba al ' +
+  '[Feedback de Emiliano sobre la UI de aegis-web, reenviado por su asistente a una sesión nueva: ' +
+  'el turno anterior (sesión "aegis-web UI perfection") quedó sin respuesta porque esa sesión estaba al ' +
   'límite de contexto y la auto-compactación se lo comió. La foto adjunta es una captura del celular (~390px).]';
 const HIS =
   'Te paso una foto de como se ve. Arriba izquierda no veo todos los desplegables. Además escribir en la barra por celular se nota lento. Si lo hago muy rápido se pierden caracteres. Además no puedo notar cuando termina el streaming de la respuesta o detenerlo.';
@@ -63,11 +63,11 @@ const req = (method, params) =>
     ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params }));
   });
 
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'redeliver', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'redeliver', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 const s = await req('session/new', { cwd: cfg.cwd, mcpServers: [] });
 log('sesión nueva:', s.sessionId);
 try {
-  await req('_goose/unstable/session/rename', { sessionId: s.sessionId, title: 'Feedback UI móvil (3 puntos)' });
+  await req('_aegis/unstable/session/rename', { sessionId: s.sessionId, title: 'Feedback UI móvil (3 puntos)' });
   log('renombrada -> "Feedback UI móvil (3 puntos)"');
 } catch (e) {
   log('rename falló:', String(e).slice(0, 140));

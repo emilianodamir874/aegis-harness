@@ -10,7 +10,7 @@ const PREFACE =
   'Emiliano la usó y escribió el siguiente mensaje a las 13:43, PERO quedó sin respuesta: entró como steer/indicación al turno ' +
   'en curso y el turno terminó sin consumirlo (ni tu respuesta final lo menciona). Además el asistente reprodujo el escenario en vivo ' +
   'sobre la v5 y encontró huecos que confirman su reporte: (a) turno largo en curso → recargar la página → durante ~75s de una ' +
-  'herramienta silenciosa NO aparece la barra "Goose está trabajando…" ni Detener, y no llegan actualizaciones (parece muerto y hay ' +
+  'herramienta silenciosa NO aparece la barra "Aegis está trabajando…" ni Detener, y no llegan actualizaciones (parece muerto y hay ' +
   'que recargar a mano, exactamente lo que él describe); (b) en esa ventana, enviar un mensaje NO se encola ni steer-ea (la UI cree ' +
   'que no hay run) y no da feedback claro; (c) un steer que el turno no consume queda persistido sin respuesta para siempre; ' +
   '(d) Detener sí funciona (75 ms) cuando la barra está visible ✓. El mensaje de Emiliano:]';
@@ -45,10 +45,10 @@ ws.addEventListener('message', (ev) => {
 await new Promise((res) => ws.addEventListener('open', res));
 const req = (method, params) => new Promise((res, rej) => { const mid = ++id; pend.set(mid, (m) => (m.error ? rej(new Error(method + ': ' + JSON.stringify(m.error).slice(0, 200))) : res(m.result))); ws.send(JSON.stringify({ jsonrpc: '2.0', id: mid, method, params })); });
 
-await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { goose: { customNotifications: true } } }, clientInfo: { name: 'redeliver2', version: '1' }, _meta: { 'goose/useLoginShellPath': true } });
+await req('initialize', { protocolVersion: 1, clientCapabilities: { _meta: { aegis: { customNotifications: true } } }, clientInfo: { name: 'redeliver2', version: '1' }, _meta: { 'aegis/useLoginShellPath': true } });
 const s = await req('session/new', { cwd: cfg.cwd, mcpServers: [] });
 log('sesión nueva:', s.sessionId);
-try { await req('_goose/unstable/session/rename', { sessionId: s.sessionId, title: 'Feedback recarga y streaming (2)' }); log('renombrada'); } catch (e) { log('rename falló:', String(e).slice(0, 120)); }
+try { await req('_aegis/unstable/session/rename', { sessionId: s.sessionId, title: 'Feedback recarga y streaming (2)' }); log('renombrada'); } catch (e) { log('rename falló:', String(e).slice(0, 120)); }
 
 log('enviando prompt…');
 try {

@@ -23,7 +23,7 @@ const req = (method, params) =>
   });
 
 await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo: { name: 'cleanup', version: '1' } });
-const { sessions } = await req('session/list', { meta: { goose: { includeLastMessageSnippet: false } } });
+const { sessions } = await req('session/list', { meta: { aegis: { includeLastMessageSnippet: false } } });
 const now = Date.now();
 const targets = sessions.filter((s) => {
   const meta = s._meta || {};

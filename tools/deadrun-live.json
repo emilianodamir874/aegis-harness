@@ -1,4 +1,4 @@
-STAGE scan {"id":"20261012_23","msgs":323,"colgadas":2}
+﻿STAGE scan {"id":"20261012_23","msgs":323,"colgadas":2}
 STAGE scan {"id":"20261012_25","msgs":781,"colgadas":0}
 STAGE scan {"id":"20261012_24","msgs":8,"colgadas":0}
 STAGE scan {"id":"20261012_22","msgs":5,"colgadas":0}
@@ -6,7 +6,7 @@ STAGE scan {"id":"20261012_20","msgs":213,"colgadas":0}
 STAGE scan {"id":"20261012_5","msgs":326,"colgadas":0}
 STAGE scan {"id":"20261011_6","msgs":1167,"colgadas":0}
 STAGE scan {"id":"20261012_19","msgs":226,"colgadas":0}
-STAGE replay-marca {"tools":198,"girando":0,"marcadas":2,"ejemplo":"shell · cd /d C:\\goose\\ui\\desktop & \"C:\\Users\\Emiliano\\AppData...… · interrumpido (sin resultado)"}
+STAGE replay-marca {"tools":198,"girando":0,"marcadas":2,"ejemplo":"shell · cd /d C:\aegis-src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppData...… · interrumpido (sin resultado)"}
 STAGE live-adoptado {"domAntes":{"nodes":3,"msgs":1},"domDespues":{"nodes":34,"msgs":7},"crecio":true,"watch":{"ticks":14,"softResyncs":2,"softMs":39,"maxSoftMs":21,"lastSoft":{"ms":18,"text":0,"tool":2,"user":0,"updated":0,"interrupted":0},"deferred":0},"ultimoTexto":null,"runbar":{"text":"Turno en curso (seguía corriendo al recargar)","time":"35.0 s","stop":true}}
 {
  "escaneadas": [
@@ -19,7 +19,7 @@ STAGE live-adoptado {"domAntes":{"nodes":3,"msgs":1},"domDespues":{"nodes":34,"m
    "ejemplos": [
     {
      "status": "pending",
-     "title": "shell · cd /d C:\\goose\\ui\\desktop & \"C:\\Users\\Emiliano\\AppDa"
+     "title": "shell · cd /d C:\aegis-src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppDa"
     },
     {
      "status": "pending",
@@ -93,7 +93,7 @@ STAGE live-adoptado {"domAntes":{"nodes":3,"msgs":1},"domDespues":{"nodes":34,"m
   "ejemplos": [
    {
     "status": "pending",
-    "title": "shell · cd /d C:\\goose\\ui\\desktop & \"C:\\Users\\Emiliano\\AppDa"
+    "title": "shell · cd /d C:\aegis-src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppDa"
    },
    {
     "status": "pending",
@@ -105,7 +105,7 @@ STAGE live-adoptado {"domAntes":{"nodes":3,"msgs":1},"domDespues":{"nodes":34,"m
   "tools": 198,
   "girando": 0,
   "marcadas": 2,
-  "ejemplo": "shell · cd /d C:\\goose\\ui\\desktop & \"C:\\Users\\Emiliano\\AppData...… · interrumpido (sin resultado)"
+  "ejemplo": "shell · cd /d C:\aegis-src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppData...… · interrumpido (sin resultado)"
  },
  "sid2": "20261012_26",
  "runId2": "run_f9a2f07f-9d87-4222-81e0-1e5b15d2aebb",

@@ -28,7 +28,7 @@ function connect(name) {
   return { ws, req, init };
 }
 const probe = async (c, sid) => {
-  try { await c.req('_goose/unstable/session/steer', { sessionId: sid, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) }); return 'ok(no error)'; }
+  try { await c.req('_aegis/unstable/session/steer', { sessionId: sid, prompt: [{ type: 'text', text: '.' }], expectedRunId: 'probe' + Math.random().toString(36).slice(2) }); return 'ok(no error)'; }
   catch (e) {
     const d = e.raw && e.raw.data;
     if (typeof d === 'string') return d;
@@ -63,7 +63,7 @@ for (const w of [3000, 7000, 15000, 20000, 25000, 30000]) {
   out.log.push([at(), 'c2 probe: ' + (await probe(c2, sid))]);
 }
 try {
-  const l = await c2.req('session/list', { meta: { goose: { includeLastMessageSnippet: true } } });
+  const l = await c2.req('session/list', { meta: { aegis: { includeLastMessageSnippet: true } } });
   const s = (l.sessions || []).find((x) => x.sessionId === sid);
   out.snippet = s && s._meta && s._meta.lastMessageSnippet;
 } catch (e) { out.snippetErr = String(e.message); }

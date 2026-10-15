@@ -68,10 +68,10 @@ try {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     // `state`: el readout esta vacio hasta que llega el primer uso, asi que existe pero no es visible.
     await page.waitForSelector('#meta-right', { state: 'attached', timeout: 20000 });
-    await page.waitForFunction(() => !!(window.__gooseWeb && window.__gooseWeb.state), null, { timeout: 20000 });
+    await page.waitForFunction(() => !!(window.__aegisWeb && window.__aegisWeb.state), null, { timeout: 20000 });
 
     await page.evaluate((usage) => {
-      const w = window.__gooseWeb;
+      const w = window.__aegisWeb;
       w.state.usage = usage;
       w.renderUsagePublic();
     }, s.data);

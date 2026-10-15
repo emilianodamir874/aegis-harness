@@ -40,9 +40,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 await req('initialize', {
   protocolVersion: 1,
-  clientCapabilities: { _meta: { goose: { customNotifications: true } } },
+  clientCapabilities: { _meta: { aegis: { customNotifications: true } } },
   clientInfo: { name: 'probe3', version: '1' },
-  _meta: { 'goose/useLoginShellPath': true },
+  _meta: { 'aegis/useLoginShellPath': true },
 });
 
 // ---------- 1) session/load: que devuelve y que replay emite ----------

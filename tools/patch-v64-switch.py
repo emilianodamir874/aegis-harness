@@ -33,7 +33,7 @@ ins(1273, "      if (!state.current || state.current.id !== mySession) return; /
 ins(1267, "      if (!state.current || state.current.id !== mySession) return; // cambiaste de chat: no tocar esta vista",
     "      if (res && res.usage")
 
-ins(1262, "    const mySession = state.current.id;", "    setBusy(true, 'Goose est")
+ins(1262, "    const mySession = state.current.id;", "    setBusy(true, 'Aegis est")
 
 ins(1233, """
   // Suelta la vista de un turno en curso SIN cerrarlo: el run sigue vivo en el
