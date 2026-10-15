@@ -15,6 +15,7 @@ use goose_providers::retry::ProviderRetry;
 use goose_providers::thinking::ThinkingEffort;
 use rmcp::model::Tool;
 use serde_json::{json, Value};
+use std::time::Duration;
 
 use super::base::ProviderDef;
 use crate::config::{Config, ExtensionConfig};
@@ -26,6 +27,14 @@ use crate::providers::catalog::{
 pub const PROVIDER_NAME: &str = "open_design";
 pub const BASE_URL: &str = "https://amr-link.open-design.ai/v1";
 pub const MODEL: &str = "deepseek-v4.1-flash";
+
+/// Idle timeout for the streaming connection. reqwest reads this as the maximum gap
+/// between reads, not total request time, so it only fires when the endpoint goes
+/// silent. The shared 600s default turned a dead stream into a ten-minute hang
+/// (observed max elapsed 606.9s, sitting on the timeout). The longest legitimate
+/// silence measured is a 147.6s time-to-first-token, so 300s keeps 2x headroom
+/// while halving the worst case.
+pub const STREAM_IDLE_TIMEOUT_SECS: u64 = 300;
 const KNOWN_MODELS: &[&str] = &[
     MODEL,
     "deepseek-v4.1-flash-none",
@@ -82,6 +91,19 @@ impl ProviderDescriptor for OpenDesignProvider {
     }
 }
 
+/// Build the streaming client for this endpoint. One function so the bounded-idle
+/// invariant is covered by the tests, which cannot call `from_env` (it needs a real
+/// API key).
+fn stream_client(base_url: String, key: String, tls_config: Option<TlsConfig>) -> Result<ApiClient> {
+    Ok(ApiClient::with_timeout_and_tls(
+        base_url,
+        AuthMethod::BearerToken(key),
+        Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS),
+        tls_config,
+    )?
+    .with_request_builder(crate::session_context::session_id_request_builder()))
+}
+
 impl ProviderDef for OpenDesignProvider {
     type Provider = Self;
 
@@ -95,12 +117,7 @@ impl ProviderDef for OpenDesignProvider {
                 bail!("OPEN_DESIGN_API_KEY is empty; configure the Open Design provider first");
             }
             Ok(Self {
-                client: ApiClient::new_with_tls(
-                    BASE_URL.to_string(),
-                    AuthMethod::BearerToken(key),
-                    tls_config,
-                )?
-                .with_request_builder(crate::session_context::session_id_request_builder()),
+                client: stream_client(BASE_URL.to_string(), key, tls_config)?,
             })
         })
     }
@@ -277,9 +294,9 @@ mod tests {
             .mount(&server)
             .await;
         let provider = OpenDesignProvider {
-            client: ApiClient::new_with_tls(
+            client: stream_client(
                 server.uri() + "/v1",
-                AuthMethod::BearerToken("test-only-key".into()),
+                "test-only-key".into(),
                 None,
             )
             .unwrap(),
@@ -303,5 +320,16 @@ mod tests {
         let body: Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(body["model"], MODEL);
         assert_eq!(body["reasoning_effort"], "max");
+    }
+
+    #[test]
+    fn stream_client_uses_a_bounded_idle_timeout() {
+        let client =
+            stream_client("https://example.invalid/v1".into(), "k".into(), None).unwrap();
+        assert_eq!(client.timeout(), Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS));
+        assert!(
+            STREAM_IDLE_TIMEOUT_SECS < 600,
+            "must stay tighter than the shared provider default"
+        );
     }
 }
