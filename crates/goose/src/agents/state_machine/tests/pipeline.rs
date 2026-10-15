@@ -138,6 +138,8 @@ impl TestPipeline {
                 self.model_config.clone(),
                 tool_call_cutoff,
                 !self.provider_features.manages_own_context,
+                // Harness: 0 = compactar siempre, comportamiento previo al ratio.
+                0,
             )),
             Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.session_manager.clone())),

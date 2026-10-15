@@ -710,7 +710,7 @@ mod tests {
             hidden_marked_message,
         ]);
 
-        let messages = messages_for_acp_replay(&conversation);
+        let messages = messages_for_acp_replay(&conversation, 0, None);
 
         assert_eq!(
             messages
