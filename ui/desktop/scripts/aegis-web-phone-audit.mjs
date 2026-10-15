@@ -9,7 +9,7 @@ import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://127.0.0.1:3788/';
-const shots = 'C:/aegis-web/tools/shots';
+const shots = 'C:/Aegis-Proyects/web/tools/shots';
 mkdirSync(shots, { recursive: true });
 
 const out = { url, header: {}, idle: {}, streaming: {}, stop: {}, offline: {}, errors: [] };

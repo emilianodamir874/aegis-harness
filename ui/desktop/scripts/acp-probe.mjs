@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { client, methods } from '@agentclientprotocol/sdk';
 import { createWebSocketStream } from '@agentclientprotocol/sdk/experimental/ws-client';
 
-const cfg = JSON.parse(readFileSync('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(readFileSync('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const url = `ws://127.0.0.1:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 const promptText = process.argv[2] || 'Respondé exactamente: PONG. Nada más.';
 const cwd = process.env.PROBE_CWD || 'C:\\Users\\Emiliano';

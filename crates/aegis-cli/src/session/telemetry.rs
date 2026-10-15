@@ -627,7 +627,7 @@ mod tests {
 
     fn session() -> Session {
         let mut session = serde_json::from_value::<Session>(serde_json::json!({
-            "id": "telemetry-test", "working_dir": "C:/aegis", "name": "test",
+            "id": "telemetry-test", "working_dir": "C:/Aegis-Proyects/core", "name": "test",
             "session_type": "user", "created_at": "2026-01-01T00:00:00Z",
             "updated_at": "2026-01-01T00:00:00Z", "extension_data": {},
             "accumulated_cost": null, "schedule_id": null, "recipe": null,

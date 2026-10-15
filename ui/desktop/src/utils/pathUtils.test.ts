@@ -26,7 +26,7 @@ describe('resolveAegisPathRoot', () => {
   });
 
   it('matches Rust absolute-path handling on Windows', () => {
-    expect(isAbsoluteAegisPath('C:\\aegis\\root', 'win32')).toBe(true);
+    expect(isAbsoluteAegisPath('C:\\Aegis-Proyects\\core\\root', 'win32')).toBe(true);
     expect(isAbsoluteAegisPath('\\\\server\\share\\aegis', 'win32')).toBe(true);
     expect(isAbsoluteAegisPath('C:aegis\\root', 'win32')).toBe(false);
     expect(isAbsoluteAegisPath('\\aegis\\root', 'win32')).toBe(false);

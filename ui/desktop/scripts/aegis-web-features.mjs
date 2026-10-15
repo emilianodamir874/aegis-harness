@@ -10,9 +10,9 @@ import { chromium } from '@playwright/test';
 import { mkdirSync, readFileSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://192.168.100.34:3788/';
-const shots = 'C:/aegis-web/tools/shots';
+const shots = 'C:/Aegis-Proyects/web/tools/shots';
 mkdirSync(shots, { recursive: true });
-const SAMPLE = 'C:/aegis-web/tools/sample-context.txt';
+const SAMPLE = 'C:/Aegis-Proyects/web/tools/sample-context.txt';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const out = { url, features: {}, errors: [] };

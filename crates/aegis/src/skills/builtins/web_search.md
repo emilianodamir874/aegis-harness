@@ -75,8 +75,8 @@ echo "(Full content saved to $tmpfile)"
 On this machine prefer the cached wrapper over calling `ddgs` by hand:
 
 ```bash
-python C:/aegis-web/tools/websearch.py search "query" -n 5 --extract 2
-python C:/aegis-web/tools/websearch.py fetch https://url
+python C:/Aegis-Proyects/web/tools/websearch.py search "query" -n 5 --extract 2
+python C:/Aegis-Proyects/web/tools/websearch.py fetch https://url
 ```
 
 It tries Tavily (if `TAVILY_API_KEY`), SearXNG (if `SEARXNG_URL`), then `ddgs` with retries across

@@ -30,10 +30,10 @@ You can select `gemini-3.8-flash` as an alias: with no explicit thinking effort 
 
 ## Build on Windows
 
-The default Aegis CLI features can produce duplicate-symbol errors from V8 and llama.cpp in the Windows linker. Use the same feature set across rebuilds and keep `C:\aegis\target` intact:
+The default Aegis CLI features can produce duplicate-symbol errors from V8 and llama.cpp in the Windows linker. Use the same feature set across rebuilds and keep `C:\Aegis-Proyects\core\target` intact:
 
 ```powershell
-cd C:\aegis
+cd C:\Aegis-Proyects\core
 $env:RUSTC_WRAPPER = ''
 $env:CARGO_BUILD_JOBS = '4'
 cargo build -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp

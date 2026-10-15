@@ -5,11 +5,11 @@
 import { chromium } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const out = { pasos: [] };
 const b = await chromium.launch({ channel: 'chrome', headless: true });
 let sid = null;
-const shot = (n) => `C:/aegis-web/tools/shots/reload-test-${n}.png`;
+const shot = (n) => `C:/Aegis-Proyects/web/tools/shots/reload-test-${n}.png`;
 
 // En móvil el sidebar es un drawer: los clicks van por JS (fuera del viewport).
 const clickIn = (pg, sel) => pg.evaluate((s) => document.querySelector(s)?.click(), sel);

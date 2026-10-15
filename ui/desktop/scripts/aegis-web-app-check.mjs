@@ -6,7 +6,7 @@ import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://192.168.100.34:3788/';
-const shots = 'C:/aegis-web/tools/shots';
+const shots = 'C:/Aegis-Proyects/web/tools/shots';
 mkdirSync(shots, { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -133,7 +133,7 @@ try {
 
   // adjuntar imagen (file input) y mandarla
   try {
-    await page.setInputFiles('#file-input', 'C:/aegis-web/tools/test-red.png');
+    await page.setInputFiles('#file-input', 'C:/Aegis-Proyects/web/tools/test-red.png');
     await page.waitForTimeout(900);
     out.desktop.attThumbs = await page.locator('.att-thumb').count();
     await page.screenshot({ path: shots + '/v3-desktop-attach.png' });

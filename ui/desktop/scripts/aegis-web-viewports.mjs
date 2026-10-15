@@ -6,7 +6,7 @@ import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 
 const url = process.argv[2] || 'http://192.168.100.34:3788/';
-const shots = 'C:/aegis-web/tools/shots';
+const shots = 'C:/Aegis-Proyects/web/tools/shots';
 mkdirSync(shots, { recursive: true });
 
 const VIEWPORTS = [

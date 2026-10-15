@@ -1,6 +1,6 @@
 // aegis-web smoke check: loads the built web UI in headless system Chrome and
 // reports boot state + console output. Requires: aegis-web servers running
-// (node C:/aegis-web/server.mjs and aegis-serve-v1.exe serve), and a web build
+// (node C:/Aegis-Proyects/web/server.mjs and aegis-serve-v1.exe serve), and a web build
 // (pnpm exec vite build --config vite.web.config.mts).
 //
 // Run:  cd ui/desktop && node scripts/web-e2e-check.mjs [url]

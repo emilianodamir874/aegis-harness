@@ -5,13 +5,13 @@ import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
 
 const arg = process.argv[2];
-const urlTxt = await readFile('C:/aegis-web/tunnel-url.txt', 'utf8').catch(() => '');
+const urlTxt = await readFile('C:/Aegis-Proyects/web/tunnel-url.txt', 'utf8').catch(() => '');
 const base = (arg || (urlTxt.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/) || [])[0] || '').replace(/\/$/, '');
 if (!base) {
   console.log(JSON.stringify({ ok: false, motivo: 'sin URL: tunnel-url.txt vacio' }));
   process.exit(1);
 }
-const pw = JSON.parse(await readFile('C:/aegis-web/auth.json', 'utf8')).password;
+const pw = JSON.parse(await readFile('C:/Aegis-Proyects/web/auth.json', 'utf8')).password;
 const out = { url: base };
 
 // 1) la puerta: sin cookie no se ve nada

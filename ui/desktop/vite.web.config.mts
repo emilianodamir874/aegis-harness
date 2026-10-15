@@ -1,6 +1,6 @@
 // Web build of the aegis Desktop renderer (for aegis-web: browser + aegis serve backend).
 // Differences vs the electron build: only index.html is an input (no electron main),
-// output goes to dist-web/ and is copied to C:/aegis-web/dist by scripts/copy-web-build.sh.
+// output goes to dist-web/ and is copied to C:/Aegis-Proyects/web/dist by scripts/copy-web-build.sh.
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';

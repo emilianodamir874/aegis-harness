@@ -3,7 +3,7 @@
 // Uso: node scripts/aegis-web-deadrun-targeted.mjs <sessionId>
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const sid = process.argv[2];
 const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
 const browser = await chromium.launch();

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { chromium } from '@playwright/test';
-const cfg = JSON.parse(await readFile('C:/aegis-web/config.json', 'utf8'));
+const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const url = 'http://' + cfg.publicHost + ':' + cfg.webPort + '/';
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });

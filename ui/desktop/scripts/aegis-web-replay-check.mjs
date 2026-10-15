@@ -72,7 +72,7 @@ const tipo = await page.evaluate(async () => {
   return { p50: +lat[15].toFixed(1), p95: +lat[Math.floor(lat.length * 0.95)].toFixed(1), max: +lat[lat.length - 1].toFixed(1) };
 });
 const out = { version: await page.evaluate(() => 'v' + (window.__aegisWeb ? '' : '')), sesion: big, cargaMs, ...st, tecleoPostCarga: tipo, errores: errs };
-const dest = process.argv[2] || 'C:/aegis-web/tools/replay-check.json';
+const dest = process.argv[2] || 'C:/Aegis-Proyects/web/tools/replay-check.json';
 writeFileSync(dest, JSON.stringify(out, null, 1));
 console.log(JSON.stringify(out, null, 1));
 await br.close();
