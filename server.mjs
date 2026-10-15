@@ -251,6 +251,33 @@ function proxyAcp(req, socket, head) {
   up.end();
 }
 
+// --- Groq TTS (playai-tts): voces neuronales por HTTP simple. Usa la misma clave que el dictado.
+async function groqKey() {
+  const ahora = Date.now();
+  if (_gk.k && ahora - _gk.t < 300000) return _gk.k;
+  try {
+    const fss = await import('node:fs');
+    const raw = fss.readFileSync('C:/Aegis-Proyects/state/config/secrets.yaml', 'utf8');
+    const m = raw.match(/gsk_[A-Za-z0-9]{30,}/);
+    if (m) _gk = { k: m[0], t: ahora };
+  } catch (e) {}
+  return _gk.k;
+}
+let _gk = { k: '', t: 0 };
+async function groqTts(texto, voz, modelo) {
+  const key = await groqKey();
+  if (!key) throw new Error('sin clave de Groq en state/config/secrets.yaml');
+  // Groq retiro playai-tts (31/12) y hoy solo ofrece Orpheus: v1-english y arabic-saudi. NO hay
+  // modelo en espanol, asi que el texto en castellano lo lee una voz inglesa (acento malo).
+  const r = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' },
+    body: JSON.stringify({ model: modelo || 'canopylabs/orpheus-v1-english', voice: voz, input: texto, response_format: 'mp3' }),
+  });
+  if (!r.ok) throw new Error('groq ' + r.status + ': ' + (await r.text()).slice(0, 220));
+  return Buffer.from(await r.arrayBuffer());
+}
+
 // ---------------------------------------------------------------- edge-tts (voces neuronales)
 // Voces de Microsoft (gratis, sin clave). El protocolo es WebSocket + SSML, asi que va aca en el
 // server y el cliente pide /tts?text=... y recibe mp3. Requiere el token publico + Sec-MS-GEC.
@@ -314,11 +341,13 @@ const handler = async (req, res) => {
     // Voces neuronales de Microsoft (edge-tts). El cliente pide una frase y recibe mp3.
     if (url.pathname === '/tts' && req.method === 'GET') {
       const texto = String(url.searchParams.get('text') || '').slice(0, 700);
-      const voz = String(url.searchParams.get('voice') || cfg.ttsVoice || 'es-AR-TomasNeural');
+      const motor = String(url.searchParams.get('engine') || cfg.ttsEngine || 'groq');
+      const voz = String(url.searchParams.get('voice') || cfg.ttsVoice || (motor === 'groq' ? 'autumn' : 'es-AR-TomasNeural'));
       const rate = Number(url.searchParams.get('rate') || cfg.ttsRate || 1.05);
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
       try {
-        const mp3 = await edgeTts(texto, voz, rate);
+        const modelo = String(url.searchParams.get('model') || cfg.ttsModel || 'canopylabs/orpheus-v1-english');
+        const mp3 = motor === 'edge' ? await edgeTts(texto, voz, rate) : await groqTts(texto, voz, modelo);
         if (!mp3 || !mp3.length) throw new Error('sin audio');
         res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': String(mp3.length), 'cache-control': 'no-store' });
         res.end(mp3);
