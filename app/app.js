@@ -84,9 +84,13 @@
   };
   const alignsOf = (sep) => splitRow(sep).map((c) => (c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : c.startsWith(':') ? 'left' : ''));
   const tableHtml = (head, aligns, rows) => {
-    const cell = (tag, txt, i) => { const a = aligns[i]; return `<${tag}${a ? ` style="text-align:${a}"` : ''}>${inline(txt)}</${tag}>`; };
+    // data-label = texto plano del encabezado de esa columna: en pantalla angosta la tabla se
+    // rearma como tarjetas (una fila = una tarjeta con etiqueta y valor). Sin eso, el navegador
+    // aplasta la columna y parte las palabras letra por letra.
+    const plain = (s) => String(s == null ? '' : s).replace(/[*`_]/g, '').trim();
+    const cell = (tag, txt, i, label) => { const a = aligns[i]; return `<${tag}${a ? ` style="text-align:${a}"` : ''}${label ? ` data-label="${esc(label)}"` : ''}>${inline(txt)}</${tag}>`; };
     return '<div class="tbl-wrap"><table><thead><tr>' + head.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>'
-      + (rows.length ? '<tbody>' + rows.map((r) => '<tr>' + head.map((_, i) => cell('td', r[i] == null ? '' : r[i], i)).join('') + '</tr>').join('') + '</tbody>' : '')
+      + (rows.length ? '<tbody>' + rows.map((r) => '<tr>' + head.map((_, i) => cell('td', r[i] == null ? '' : r[i], i, plain(head[i]))).join('') + '</tr>').join('') + '</tbody>' : '')
       + '</table></div>';
   };
   const mdBlocks = (t) => {

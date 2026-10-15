@@ -227,14 +227,30 @@ input, textarea { font-family: inherit; color: inherit; }
   border-left: 2px solid var(--border); padding: 1px 0 1px 12px;
   color: var(--text-2); margin: 8px 0;
 }
-/* tablas markdown: scroll horizontal en el teléfono en vez de romper el ancho del chat */
-.msg-a .tbl-wrap { overflow-x: auto; margin: 10px 0; border: 1px solid var(--border-soft); border-radius: 10px; background: rgba(255, 255, 255, 0.02); }
-.msg-a table { border-collapse: collapse; font-size: 12.5px; min-width: 100%; }
+/* tablas markdown.
+   Escritorio: tabla normal. `width: max-content` evita que el navegador aplaste una columna para
+   hacer entrar todo; si no entra, el wrapper scrollea.
+   Teléfono (<=640px): la tabla se rearma como tarjetas (una fila = una tarjeta con etiqueta y
+   valor) usando el data-label que pone el render. Asi no hay scroll horizontal ni palabras
+   partidas letra por letra (que era lo que pasaba con `overflow-wrap: anywhere` heredado). */
+.msg-a .tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 10px 0; border: 1px solid var(--border-soft); border-radius: 10px; background: rgba(255, 255, 255, 0.02); }
+.msg-a table { border-collapse: collapse; font-size: 12.5px; width: max-content; min-width: 100%; }
 .msg-a th, .msg-a td { padding: 7px 11px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
-.msg-a td { color: var(--text-2); white-space: normal; }
+.msg-a td { color: var(--text-2); white-space: normal; overflow-wrap: break-word; }
 .msg-a th { color: var(--text); font-weight: 600; background: rgba(255, 255, 255, 0.045); position: sticky; top: 0; }
 .msg-a tbody tr:last-child td { border-bottom: none; }
 .msg-a table code { background: rgba(255, 255, 255, 0.08); padding: 0 4px; }
+
+@media (max-width: 640px) {
+  .msg-a .tbl-wrap { overflow: visible; border: none; background: none; border-radius: 0; }
+  .msg-a table, .msg-a thead, .msg-a tbody, .msg-a tr, .msg-a td { display: block; width: auto; min-width: 0; }
+  .msg-a thead { display: none; }
+  .msg-a tr { border: 1px solid var(--border-soft); border-radius: 10px; background: rgba(255, 255, 255, 0.025); margin-bottom: 8px; padding: 6px 4px; }
+  .msg-a td { border: none; padding: 3px 10px; text-align: left !important; white-space: normal; }
+  .msg-a td::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 600; color: var(--text-4); margin-bottom: 1px; }
+  .msg-a td:not([data-label])::before { display: none; }
+  .msg-a td:not([data-label]) { font-weight: 600; color: var(--text); padding-bottom: 4px; }
+}
 .msg-a hr { border: none; border-top: 1px solid var(--border-soft); margin: 14px 0; }
 .msg-a pre {
   background: #0a0a0c; border: 1px solid var(--border-soft); border-radius: 10px;
