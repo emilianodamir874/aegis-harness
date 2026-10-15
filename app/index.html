@@ -7,8 +7,8 @@
   <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Goose">
-  <title>Goose · Chat</title>
+  <meta name="apple-mobile-web-app-title" content="Aegis">
+  <title>Aegis · Chat</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="manifest" href="./manifest.json">
@@ -19,8 +19,8 @@
     <aside id="sidebar" class="sidebar">
       <div class="sb-head">
         <div class="brand">
-          <span class="brand-goose">🪿</span>
-          <span class="brand-name">Goose</span>
+          <span class="brand-aegis"><svg class="brand-mark" viewBox="0 0 128 128" width="17" height="17" aria-hidden="true"><circle cx="64" cy="66" r="36" fill="none" stroke="currentColor" stroke-width="13" stroke-dasharray="196 30" stroke-linecap="round" transform="rotate(-110 64 66)"/><circle cx="46" cy="34" r="13" fill="currentColor"/></svg></span>
+          <span class="brand-name">Aegis</span>
           <span class="brand-chip">web</span>
           <button id="btn-close-drawer" class="icon-btn sb-close" aria-label="Cerrar menú">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -56,9 +56,9 @@
 
       <div id="messages" class="messages">
         <div id="welcome" class="welcome">
-          <div class="welcome-goose">🪿</div>
+          <div class="welcome-aegis"><svg class="welcome-mark" viewBox="0 0 128 128" width="54" height="54" aria-hidden="true"><defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fd8e5"/><stop offset="1" stop-color="#1a7c8a"/></linearGradient></defs><circle cx="64" cy="66" r="36" fill="none" stroke="url(#wg)" stroke-width="13" stroke-dasharray="196 30" stroke-linecap="round" transform="rotate(-110 64 66)"/><circle cx="46" cy="34" r="13" fill="url(#wg)"/><circle cx="41" cy="31" r="2.8" fill="#0d0d0e"/></svg></div>
           <h1 id="welcome-h1">Buenas tardes</h1>
-          <p class="welcome-sub">Goose está listo. Puede leer y editar archivos de esta máquina, correr comandos y buscar en la web.</p>
+          <p class="welcome-sub">Aegis está listo. Puede leer y editar archivos de esta máquina, correr comandos y buscar en la web.</p>
           <div class="wsug">
             <button class="sug">¿Qué proyectos tengo en el escritorio?</button>
             <button class="sug">Corré los tests y contame cómo salió</button>
@@ -70,7 +70,7 @@
       <footer class="composer-wrap">
         <div id="runbar" class="runbar" role="status" aria-live="polite" hidden>
           <span class="runbar-spin" aria-hidden="true"></span>
-          <span id="runbar-text" class="runbar-text">Goose está trabajando…</span>
+          <span id="runbar-text" class="runbar-text">Aegis está trabajando…</span>
           <span id="runbar-time" class="runbar-time"></span>
           <button id="runbar-stop" class="runbar-stop" type="button">Detener</button>
         </div>
@@ -82,6 +82,9 @@
           </button>
           <input id="file-input" type="file" accept="image/*,.txt,.md,.markdown,.json,.jsonl,.csv,.tsv,.log,.yml,.yaml,.toml,.ini,.cfg,.conf,.env,.sh,.ps1,.bat,.js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.rs,.go,.rb,.php,.java,.kt,.c,.h,.cpp,.hpp,.cs,.swift,.sql,.html,.htm,.css,.scss,.xml,.svg,.gitignore,.dockerfile" multiple hidden>
           <textarea id="input" rows="1" placeholder="Escribí un mensaje…" enterkeyhint="send" autocomplete="off" autocapitalize="sentences" spellcheck="false" title="Enter envía · Shift+Enter salto de línea · Ctrl+V pega capturas"></textarea>
+          <button id="btn-mic" class="icon-btn mic-btn" aria-label="Dictar por voz" title="Dictar por voz (necesita HTTPS · tocá para grabar, tocá de nuevo para transcribir)">
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M10 12.5a2.5 2.5 0 0 0 2.5-2.5V5a2.5 2.5 0 0 0-5 0v5A2.5 2.5 0 0 0 10 12.5Z" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 9.5v.5a4.5 4.5 0 0 0 9 0v-.5M10 14.5V17M7.5 17h5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
           <button id="btn-send" class="send" aria-label="Enviar">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 16V5M5.5 9.5 10 5l4.5 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>

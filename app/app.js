@@ -1,8 +1,8 @@
-// goose-web · cliente de chat ACP v3 (sin dependencias): sesiones, streaming,
+// aegis-web · cliente de chat ACP v3 (sin dependencias): sesiones, streaming,
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
 (() => {
   'use strict';
-  const CFG = window.__GOOSE_APP__ || {};
+  const CFG = window.__AEGIS_APP__ || {};
   const $ = (s) => document.querySelector(s);
 
   // ---------- reporter mínimo ----------
@@ -189,7 +189,7 @@
     showArchived: false,
     welcomeMode: 'new',
     // ---------- v6.4: watch por sesión (hub con fan-out) ----------
-    hubWatch: undefined, // true = el server implementa _goose/unstable/session/watch; false = v2/v3
+    hubWatch: undefined, // true = el server implementa _aegis/unstable/session/watch; false = v2/v3
     hubCursor: null, // último cursor del hub para la sesión en pantalla (re-watch al reconectar)
     hubWatchSid: null, // sesión a la que está enganchada esta conexión
     hubWatchers: null, // watcherCount que reportó el server (hint de UI)
@@ -209,9 +209,9 @@
         try {
           await this.request('initialize', {
             protocolVersion: 1,
-            clientCapabilities: { _meta: { goose: { customNotifications: true, toolCallLabelEnrichment: true } } },
-            clientInfo: { name: 'goose-web', version: '1.3' },
-            _meta: { 'goose/useLoginShellPath': true },
+            clientCapabilities: { _meta: { aegis: { customNotifications: true, toolCallLabelEnrichment: true } } },
+            clientInfo: { name: 'aegis-web', version: '1.3' },
+            _meta: { 'aegis/useLoginShellPath': true },
           });
           const wasReady = this.ready;
           this.ready = true; this.backoff = 1000;
@@ -303,10 +303,10 @@
 
   function handleServerMessage(m) {
     if (m.method === 'session/update') return onUpdate(m.params || {});
-    if (m.method === '_goose/unstable/session/update') return onGooseUpdate(m.params || {});
+    if (m.method === '_aegis/unstable/session/update') return onAegisUpdate(m.params || {});
     if (m.method === 'session/request_permission') return showPermCard(m);
     // (v6.4) El hub avisa que truncó su ring: hay que recargar la conversación completa.
-    if (m.method === '_goose/unstable/session/replay_gap') return onReplayGap(m.params || {});
+    if (m.method === '_aegis/unstable/session/replay_gap') return onReplayGap(m.params || {});
     if (m.id !== undefined) {
       try { rpc.ws.send(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'no soportado: ' + m.method } })); } catch {}
     }
@@ -337,7 +337,7 @@
         // repetir lo que ya trajo el session/load: se adopta o se descarta, sin duplicar.
         if (mid && userBubbleOnScreen(mid)) break;
         if (mid && u.content && u.content.type === 'text' && adoptLocalEcho(mid, u.content.text)) break;
-        const oculto = gooseMeta(u).agentVisible === false;
+        const oculto = aegisMeta(u).agentVisible === false;
         if (u.content && u.content.type === 'text') addUser(u.content.text, true, null, { mid, hidden: oculto });
         else if (u.content && u.content.type === 'image') addUser('', true, [u.content], { mid, hidden: oculto });
         if (oculto) markHiddenTail();
@@ -345,12 +345,12 @@
       }
       case 'agent_message_chunk':
         if (u.content && u.content.type === 'text') {
-          streamAppend(u.messageId || 'a', u.content.text, false, gooseMeta(u).agentVisible === false);
+          streamAppend(u.messageId || 'a', u.content.text, false, aegisMeta(u).agentVisible === false);
           speedChunk(u.content.text);
         }
         break;
       case 'agent_thought_chunk':
-        if (u.content && u.content.type === 'text') streamAppend(thoughtKeyFor(u), u.content.text, true, gooseMeta(u).agentVisible === false);
+        if (u.content && u.content.type === 'text') streamAppend(thoughtKeyFor(u), u.content.text, true, aegisMeta(u).agentVisible === false);
         break;
       case 'tool_call':
       case 'tool_call_update':
@@ -370,7 +370,7 @@
         }
         break;
       case 'session_info_update': {
-        const g = (u._meta && u._meta.goose) || {};
+        const g = (u._meta && u._meta.aegis) || {};
         // (v6.4) El estado del run pasa por applyActiveRunId: con el hub es también el
         // aviso de fin de turno del DUEÑO del prompt, no sólo del turno adoptado.
         if (g.activeRunId !== undefined) applyActiveRunId(g.activeRunId || null);
@@ -389,14 +389,14 @@
     }
   }
 
-  function onGooseUpdate(params) {
+  function onAegisUpdate(params) {
     const cur = state.current;
     if (!cur) return;
     const u = params.update || {};
-    // (v6.4) El arranque y el FIN de turno llegan por acá (`params.goose.activeRunId`): con
+    // (v6.4) El arranque y el FIN de turno llegan por acá (`params.aegis.activeRunId`): con
     // el hub es el único aviso cuando el response del prompt se pierde (reload, socket
     // caído) o cuando el turno lo arrancó otra conexión.
-    const g = params.goose || (u._meta && u._meta.goose) || (params._meta && params._meta.goose);
+    const g = params.aegis || (u._meta && u._meta.aegis) || (params._meta && params._meta.aegis);
     if (g && g.activeRunId !== undefined && (!params.sessionId || params.sessionId === cur.id)) applyActiveRunId(g.activeRunId || null);
     if (params.sessionId !== cur.id) return; // el resto de las notificaciones sí son de esta sesión
     if (u.sessionUpdate === 'usage_update') setUsage(u);
@@ -505,7 +505,7 @@
 
   async function archiveSession(id) {
     try {
-      await rpc.request('_goose/unstable/session/archive', { sessionId: id });
+      await rpc.request('_aegis/unstable/session/archive', { sessionId: id });
     } catch (e) { toast('No se pudo archivar: ' + e.message, 'err'); return; }
     const s = state.sessions.find((x) => x.sessionId === id);
     state.sessions = state.sessions.filter((x) => x.sessionId !== id);
@@ -520,7 +520,7 @@
 
   async function unarchiveSession(id) {
     try {
-      await rpc.request('_goose/unstable/session/unarchive', { sessionId: id });
+      await rpc.request('_aegis/unstable/session/unarchive', { sessionId: id });
     } catch (e) { toast('No se pudo desarchivar: ' + e.message, 'err'); return; }
     const s = state.archived.find((x) => x.sessionId === id);
     state.archived = state.archived.filter((x) => x.sessionId !== id);
@@ -549,7 +549,7 @@
     const ext = format === 'markdown' ? 'md' : 'json';
     let data = '';
     try {
-      const res = await rpc.request('_goose/unstable/session/export', { sessionId: id, format });
+      const res = await rpc.request('_aegis/unstable/session/export', { sessionId: id, format });
       data = (res && res.data) || '';
     } catch (e) { toast('No se pudo exportar: ' + e.message, 'err'); return; }
     if (!data) { toast('La exportación vino vacía.', 'err'); return; }
@@ -574,7 +574,7 @@
       for (let i = 0; i < pages; i++) {
         const res = await rpc.request('session/list', {
           cursor: cursor || undefined,
-          meta: { goose: { includeLastMessageSnippet: false } },
+          meta: { aegis: { includeLastMessageSnippet: false } },
         });
         all.push(...((res && res.sessions) || []));
         const rmeta = (res && (res._meta || res.meta)) || {};
@@ -644,7 +644,7 @@
       const title = input.value.trim();
       if (save && title) {
         let ok = false;
-        try { await rpc.request('_goose/unstable/session/rename', { sessionId: id, title }); ok = true; }
+        try { await rpc.request('_aegis/unstable/session/rename', { sessionId: id, title }); ok = true; }
         catch (e) { systemNote('No se pudo renombrar: ' + e.message); }
         if (ok) {
           const fresh = state.sessions.find((s) => s.sessionId === id);
@@ -688,7 +688,7 @@
       if (sub) sub.textContent = (title ? `«${title}» ` : 'Esta sesión ') + 'todavía no tiene mensajes. Escribí abajo para arrancar la conversación.';
     } else {
       if (h1) h1.textContent = greeting();
-      if (sub) sub.textContent = 'Goose está listo. Puede leer y editar archivos de esta máquina, correr comandos y buscar en la web.';
+      if (sub) sub.textContent = 'Aegis está listo. Puede leer y editar archivos de esta máquina, correr comandos y buscar en la web.';
     }
     w.hidden = false;
   }
@@ -736,7 +736,7 @@
   // El modelo deja de ver desde ese mensaje en adelante (nada se borra: el
   // transcript queda entero, atenuado) y el texto vuelve al composer para
   // editarlo y reenviarlo. Mismo mecanismo que el /rewind del CLI.
-  const gooseMeta = (u) => ((u && u._meta && u._meta.goose) || {});
+  const aegisMeta = (u) => ((u && u._meta && u._meta.aegis) || {});
 
   // Atenua la cola que el modelo dejo de ver. Las filas marcadas por el server
   // (`agentVisible: false`) delimitan la region; lo que quedo en el medio sin
@@ -782,7 +782,7 @@
     const cur = state.current;
     if (!mid || !cur) return;
     try {
-      const res = await rpc.request('_goose/unstable/session/rewind', { sessionId: cur.id, messageId: mid });
+      const res = await rpc.request('_aegis/unstable/session/rewind', { sessionId: cur.id, messageId: mid });
       // Todo lo que esta pintado desde esta burbuja ya no lo ve el modelo; lo que
       // llegue despues si, asi que se marca solo lo que hay en pantalla ahora.
       const inner = $('#msg-inner');
@@ -959,6 +959,19 @@
     // conexión (o sobrevivió a un reload): lo adoptamos para poder mostrarlo y cortarlo.
     noteRunActivity();
     let rec = state.msgs.get(key);
+    // (2026-10-15) El hub puede re-entregar notificaciones desde un cursor viejo y el provider
+    // reemitir el texto ACUMULADO en vez de un delta. Si lo que llega ya esta pintado en este
+    // mismo key se descarta; si es un superconjunto se pinta solo el delta. Sin esto la respuesta
+    // se veia DUPLICADA, y peor: si un tool habia cerrado la caja, el texto repetido abria una
+    // caja NUEVA aparte (la respuesta entera dos veces). Los umbrales evitan comerse un chunk
+    // legitimo que por casualidad sea prefijo de lo ya pintado.
+    if (rec && rec.text) {
+      const prev = String(rec.text);
+      const inc = String(text == null ? '' : text);
+      if (inc && inc.length >= 12 && prev === inc) return;
+      if (inc && inc.length > prev.length && inc.startsWith(prev)) { text = inc.slice(prev.length); if (!text) return; }
+      else if (inc && inc.length >= 40 && prev.startsWith(inc)) return;
+    }
     if (rec && rec.closed) {
       // (v6.6) Un cierre a mitad de turno (closeAllRecs) partia el razonamiento en dos
       // cajas. Si la caja sigue siendo lo ultimo pintado, se reusa en vez de abrir otra;
@@ -1199,7 +1212,7 @@
     const cmd = tc.rawInput && (tc.rawInput.command || tc.rawInput.path) ? String(tc.rawInput.command || tc.rawInput.path) : '';
     const showCmd = cmd && !String(tc.title || '').includes(cmd.slice(0, 32));
     el.innerHTML =
-      '<div class="perm-head">🔐 Goose pide permiso para usar una herramienta</div>' +
+      '<div class="perm-head">🔐 Aegis pide permiso para usar una herramienta</div>' +
       `<div class="perm-tool">${esc(tc.title || tc.kind || 'Herramienta')}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ''}</div>` +
       '<div class="perm-btns"></div>';
     const btns = el.querySelector('.perm-btns');
@@ -1255,7 +1268,7 @@
   // El server SI manda contextLimit en usage_update (acp/server.rs build_usage_updates),
   // pero el response de session/prompt trae solo totalTokens: si se pisa el estado con eso,
   // el readout queda en "131.4k tok" y no dice nada. Por eso se MEZCLA (state.usage).
-  const COMPACT_RATIO = 0.8; // GOOSE_AUTO_COMPACT_THRESHOLD por defecto: compacta a 80% del limite
+  const COMPACT_RATIO = 0.8; // AEGIS_AUTO_COMPACT_THRESHOLD por defecto: compacta a 80% del limite
   // Modelo y esfuerzo efectivos. OJO: cuando el id termina en -none/-low/-high/-max el
   // esfuerzo lo fija el ALIAS (open_design::selected_effort gana sobre el chip), asi que
   // mostrar solo el chip miente.
@@ -1313,7 +1326,7 @@
     return L;
   }
   // Disparador real de compactacion: lo manda el server (autoCompactAt/autoCompactPct,
-  // ya resuelto contra GOOSE_AUTO_COMPACT_TOKEN_LIMIT). Si todavia no llego, cae al 80%
+  // ya resuelto contra AEGIS_AUTO_COMPACT_TOKEN_LIMIT). Si todavia no llego, cae al 80%
   // del limite y la UI lo marca como estimado.
   function compactTrig(st) {
     if (!st) return { at: null, pct: null, estimated: true };
@@ -1584,7 +1597,7 @@
     if (u.autoCompactPct != null) s.autoCompactPct = u.autoCompactPct;
     renderUsage();
   }
-  // message_usage (goose-sdk-types): uso POR PASO, con cache y tiempos. El cliente lo ignoraba.
+  // message_usage (aegis-sdk-types): uso POR PASO, con cache y tiempos. El cliente lo ignoraba.
   function setMsgUsage(u) {
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, lastSet: null, lastMsg: null });
     dbg.setMsgUsage++; dbg.lastMsg = u;
@@ -1725,7 +1738,13 @@
 
   // ---------- sesiones: abrir / crear / borrar estado ----------
   function clearMessages() {
-    $('#msg-inner')?.remove();
+    // (2026-10-15) Antes se removia SOLO el primero por id. Si dos cargas se cruzaban (recargar
+    // muy rapido: el resume del boot y el re-watch del hub), cada una pintaba en su propio
+    // contenedor y la conversacion se veia DOS veces (duplicado solo visual, el store intacto).
+    // Se barren todos los contenedores y la pildora de cola.
+    const box = $('#messages');
+    if (box) box.querySelectorAll('.msg-inner, #tail-pill').forEach((n) => n.remove());
+    else $('#msg-inner')?.remove();
     $('#status-pill')?.remove();
     hideWelcome();
   }
@@ -1901,7 +1920,12 @@
     box.insertBefore(el, box.firstChild);
   }
 
+  // (2026-10-15) Sólo la carga MAS NUEVA pinta. Con recarga rapida se solapan el resume del
+  // boot con el re-watch del hub / el camino de gap: dos renderSession concurrentes pintaban la
+  // misma conversacion dos veces. La vieja ahora se retira en vez de pisar el DOM.
+  let renderGen = 0;
   async function renderSession(entry, opts) {
+    const gen = ++renderGen;
     const id = entry.sessionId || entry.id;
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
@@ -1930,6 +1954,7 @@
     } catch (e) {
       systemNote('No se pudo cargar la sesión: ' + e.message);
     }
+    if (gen !== renderGen) return; // otra carga mas nueva ya tomo el DOM: no pintar esta
     state.replaying = false;
     if (state.replayBuf) await paintReplayTwoPhase(); else await drainRender(); // el replay se pinta por tramos: esperar al último antes de cerrar y scrollear
     clearStreaming(); // el replay nunca debe dejar un cursor de streaming colgado
@@ -1964,7 +1989,7 @@
     clearTimeout(runDoneTimer);
     bar.hidden = false;
     bar.classList.remove('done', 'cancelling');
-    $('#runbar-text').textContent = text || 'Goose está trabajando…';
+    $('#runbar-text').textContent = text || 'Aegis está trabajando…';
     $('#runbar-stop').hidden = false;
     $('#runbar-stop').disabled = false;
     if (!runStart) runStart = performance.now();
@@ -2165,10 +2190,13 @@
   // Un swap del serve o una caida de red mataba el prompt en silencio (41 casos en el
   // log del 14/10). Si el error es de conexion, reintentamos el mismo texto: el server
   // arranca un turno y la burbuja del usuario no se vuelve a pintar.
-  async function promptConRetry(text, atts) {
+  async function promptConRetry(text, atts, sidArg) {
+    // (2026-10-15) sid explicito: antes usaba state.current.id en CADA intento, asi que si te ibas
+    // a otro chat mientras esperaba el reintento, el prompt podia caer en la sesion equivocada.
+    const sid = sidArg || (state.current && state.current.id);
     for (let intento = 1; intento <= 3; intento++) {
       try {
-        return await rpc.request('session/prompt', { sessionId: state.current.id, prompt: promptBlocks(text, atts) });
+        return await rpc.request('session/prompt', { sessionId: sid, prompt: promptBlocks(text, atts) });
       } catch (e) {
         const msg = String((e && e.message) || e);
         const transitorio = /conexi|closed|ECONNRESET|socket|network/i.test(msg);
@@ -2176,18 +2204,124 @@
         systemNote('Se corto la conexion; reintentando tu mensaje (' + intento + ' de 2)...');
         await new Promise(function (r) { setTimeout(r, intento * 3000); });
         for (let i = 0; i < 20 && !rpc.ready; i++) await new Promise(function (r) { setTimeout(r, 1000); });
+        // ANTES de reenviar: averiguar si el prompt YA llego. Si el server arranco el turno pero se
+        // perdio la respuesta (hipo del tunel), reenviar creaba un SEGUNDO mensaje del usuario y un
+        // segundo turno. Medido: dos filas identicas en el store (16:26:16 y 16:27:02, len=235) y el
+        // client.log con "reintentando tu mensaje (1 de 2)" y "(2 de 2)". Si la sesion figura
+        // corriendo, llego: se reengancha la vista y NO se reenvia.
+        try {
+          await refreshSessions();
+          if (sid && state.runningIds && state.runningIds.has(sid)) {
+            report('adopt', 'el prompt ya habia llegado: no se reenvia (evita el turno duplicado)');
+            systemNote('La conexion volvio: tu mensaje ya estaba enviado.');
+            try { await resyncAdoptedRun(); } catch (e2) {}
+            return {};
+          }
+        } catch (e3) {}
       }
     }
   }
+  // --- Dictado por voz (2026-10-15) -------------------------------------------------------
+  // El backend existia desde antes (_aegis/unstable/dictation/transcribe) y no tenia cliente.
+  // Se graba con MediaRecorder y se manda el audio en base64; el texto se pega en el cursor.
+  // getUserMedia exige contexto seguro: HTTPS o localhost. Por la IP de LAN el navegador no
+  // da el permiso ni pregunta, asi que se avisa en vez de fallar en silencio.
+  var VOICE_PROVIDER = 'groq'; // Aegis ya lo tiene cableado (GROQ_API_KEY en secrets.yaml)
+  var micRec = null, micChunks = [];
+
+  function micSecure() { return !!window.isSecureContext; }
+
+  function micInsert(txt) {
+    const t = document.getElementById('input');
+    if (!t) return;
+    const s = t.selectionStart == null ? t.value.length : t.selectionStart;
+    const e = t.selectionEnd == null ? t.value.length : t.selectionEnd;
+    const pre = t.value.slice(0, s), post = t.value.slice(e);
+    const sep = (pre && !/\s$/.test(pre)) ? ' ' : '';
+    t.value = pre + sep + txt + post;
+    const pos = (pre + sep + txt).length;
+    try { t.setSelectionRange(pos, pos); } catch (err) {}
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.focus();
+  }
+
+  function micSetState(on) {
+    const btn = document.getElementById('btn-mic');
+    if (!btn) return;
+    btn.classList.toggle('rec', !!on);
+    btn.title = on ? 'Grabando... tocá para cortar y transcribir' : 'Dictar por voz';
+  }
+
+  function micTranscribe() {
+    micSetState(false);
+    const rec = micRec; micRec = null;
+    const chunks = micChunks; micChunks = [];
+    const btn = document.getElementById('btn-mic');
+    try {
+      const type = ((rec && rec.mimeType) || 'audio/webm').split(';')[0];
+      const blob = new Blob(chunks, { type: type });
+      if (!blob.size) { systemNote('No se grabó audio.'); return; }
+      if (btn) btn.classList.add('busy');
+      systemNote('Transcribiendo ' + Math.round(blob.size / 1024) + ' KB con ' + VOICE_PROVIDER + '...');
+      const fr = new FileReader();
+      fr.onload = function () {
+        const b64 = String(fr.result).split(',')[1];
+        rpc.request('_aegis/unstable/dictation/transcribe', { audio: b64, mimeType: type, provider: VOICE_PROVIDER })
+          .then(function (r) {
+            if (btn) btn.classList.remove('busy');
+            const txt = ((r && r.text) || '').trim();
+            if (!txt) { systemNote('La transcripción vino vacía.'); return; }
+            micInsert(txt);
+            systemNote('Dictado: ' + txt.slice(0, 90));
+          })
+          .catch(function (e) {
+            if (btn) btn.classList.remove('busy');
+            systemNote('Falló la transcripción (' + VOICE_PROVIDER + '): ' + String((e && e.message) || e).slice(0, 160));
+          });
+      };
+      fr.onerror = function () { if (btn) btn.classList.remove('busy'); systemNote('No pude leer el audio grabado.'); };
+      fr.readAsDataURL(blob);
+    } catch (e) {
+      if (btn) btn.classList.remove('busy');
+      systemNote('Error al procesar el audio: ' + String((e && e.message) || e).slice(0, 160));
+    }
+  }
+
+  function micStart() {
+    if (micRec) { try { micRec.stop(); } catch (e) {} return; } // segundo toque: cortar y transcribir
+    if (!micSecure()) { systemNote('El micrófono necesita HTTPS (o localhost). Por esta dirección el navegador no lo permite: abrí la URL del túnel.'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { systemNote('Este navegador no soporta grabación de audio.'); return; }
+    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+      .then(function (st) {
+        const mt = (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) ? 'audio/webm;codecs=opus' : '';
+        micChunks = [];
+        micRec = mt ? new MediaRecorder(st, { mimeType: mt }) : new MediaRecorder(st);
+        micRec.ondataavailable = function (ev) { if (ev.data && ev.data.size) micChunks.push(ev.data); };
+        micRec.onstop = function () {
+          try { st.getTracks().forEach(function (x) { x.stop(); }); } catch (e) {}
+          micTranscribe();
+        };
+        micRec.start();
+        micSetState(true);
+        systemNote('Grabando... tocá el micrófono de nuevo para cortar y transcribir.');
+      })
+      .catch(function (e) { micRec = null; micSetState(false); systemNote('No pude abrir el micrófono: ' + String((e && e.message) || e).slice(0, 140)); });
+  }
+
+  (function bindMic() {
+    const btn = document.getElementById('btn-mic');
+    if (btn) btn.addEventListener('click', function () { micStart(); });
+  })();
+
   async function sendText(text, atts, bubble) {
     const el = bubble || addUser(text, false, atts);
     const sid = state.current && state.current.id; // dueño del turno: si te vas a otro chat, esa vista no se toca
     state.adopted = false;
-    setBusy(true, 'Goose está trabajando.');
+    setBusy(true, 'Aegis está trabajando.');
     let label = 'Respuesta completa';
     let loMandoComoIndicacion = false;
     try {
-      const res = await promptConRetry(text, atts);
+      const res = await promptConRetry(text, atts, sid);
       if (!(state.current && state.current.id === sid)) { report('adopt', 'turno terminó en ' + (sid || '?') + ' con la vista en otro chat'); return; }
       if (res && res.usage && res.usage.totalTokens != null) setUsage({ used: res.usage.totalTokens });
       stopNote(res && res.stopReason);
@@ -2275,7 +2409,7 @@
   async function steerTo(runId, text, atts, el, note) {
     if (!rpc.ready || !state.current) return false;
     try {
-      const res = await rpc.request('_goose/unstable/session/steer', {
+      const res = await rpc.request('_aegis/unstable/session/steer', {
         sessionId: state.current.id,
         prompt: promptBlocks(text, atts || []),
         expectedRunId: runId,
@@ -2338,16 +2472,16 @@
 
   // ==================== v6.4: watch por sesión (fan-out del hub) ====================
   // El server v4 replica las notificaciones de una sesión a TODAS las conexiones
-  // enganchadas (`_goose/unstable/session/watch`): un turno ya no pertenece a la conexión
+  // enganchadas (`_aegis/unstable/session/watch`): un turno ya no pertenece a la conexión
   // que lo arrancó, así que dos pestañas y el celular ven el mismo streaming y el fin de
-  // turno llega como evento (`_goose/unstable/session/update` con activeRunId=null), sin
+  // turno llega como evento (`_aegis/unstable/session/update` con activeRunId=null), sin
   // sondeos ni refrescos periódicos. Si el server no tiene el método (v2/v3) se marca
   // hubWatch=false y nada de esto corre: queda el comportamiento viejo (soft-poll +
   // sondeo por steer + orphan watch) tal como estaba.
   const HUB = { text: new Map(), kind: new Map(), gapRecovering: false, orphanMissAt: 0 };
 
   // El replay del hub se pinta con los MISMOS handlers que un evento vivo (onUpdate /
-  // onGooseUpdate), en orden; los chunks de texto se acumulan en HUB.text y se reconcilian
+  // onAegisUpdate), en orden; los chunks de texto se acumulan en HUB.text y se reconcilian
   // acá contra lo que ya está pintado (el session/load pudo traer el mismo mensaje parcial)
   // por prefijo común: nunca se pega el mismo texto dos veces.
   function hubApplyReplayText() {
@@ -2374,7 +2508,7 @@
   async function runIdFromInfo() {
     if (!rpc.ready || !state.current) return { known: false, runId: null };
     try {
-      const info = await rpc.request('_goose/unstable/session/info', { sessionId: state.current.id });
+      const info = await rpc.request('_aegis/unstable/session/info', { sessionId: state.current.id });
       const meta = (info && info.session && info.session._meta) || {};
       if (typeof meta.watcherCount === 'number') state.hubWatchers = meta.watcherCount;
       if (meta.activeRunId === undefined) return { known: false, runId: null };
@@ -2388,7 +2522,7 @@
   // Desengancha esta conexión de una sesión (al cambiar de chat o cerrar). Si el server no
   // tiene `unwatch` no pasa nada: el hub poda al watcher cuando muere la conexión.
   async function hubUnwatch(sessionId) {
-    try { await rpc.request('_goose/unstable/session/unwatch', { sessionId }); } catch {}
+    try { await rpc.request('_aegis/unstable/session/unwatch', { sessionId }); } catch {}
   }
 
   // ¿La burbuja del usuario ya está pintada con ese messageId? (el load o el propio envío
@@ -2422,7 +2556,7 @@
     try {
       for (const n of replay || []) {
         if (!n || !n.method) continue;
-        if (n.method === '_goose/unstable/session/replay_gap') { gap = true; continue; }
+        if (n.method === '_aegis/unstable/session/replay_gap') { gap = true; continue; }
         handleServerMessage(n);
       }
     } finally {
@@ -2447,7 +2581,7 @@
       // El watch no puede colgar la apertura de sesión: si el server no contesta,
       // caemos al camino viejo (que sí tiene red de seguridad propia).
       const res = await Promise.race([
-        rpc.request('_goose/unstable/session/watch', { sessionId: sid, since: since == null ? null : since }),
+        rpc.request('_aegis/unstable/session/watch', { sessionId: sid, since: since == null ? null : since }),
         new Promise((res2) => setTimeout(() => res2(null), 8000)),
       ]);
       if (res === null) { report('watch', 'session/watch sin respuesta en 8 s: se mantiene el refresco viejo'); return 'unsupported'; }
@@ -2483,7 +2617,7 @@
         state.hubWatch = false;
         state.hubWatchSid = null;
         WATCH_DBG.hubUnsupported = 1;
-        report('watch', 'server sin _goose/unstable/session/watch: se mantiene el refresco viejo (' + String((e && e.message) || '').slice(0, 120) + ')');
+        report('watch', 'server sin _aegis/unstable/session/watch: se mantiene el refresco viejo (' + String((e && e.message) || '').slice(0, 120) + ')');
         return 'unsupported';
       }
       WATCH_DBG.hubErrs++;
@@ -2612,7 +2746,7 @@
     // `steer` (ese sondeo dejaba 2505 ERROR "no active run to steer" en el log del server).
     if (state.hubWatch === true) return runIdFromInfo();
     try {
-      const res = await rpc.request('_goose/unstable/session/steer', {
+      const res = await rpc.request('_aegis/unstable/session/steer', {
         sessionId: state.current.id,
         prompt: [{ type: 'text', text: '.' }],
         expectedRunId: 'probe' + Math.random().toString(36).slice(2),
@@ -2676,7 +2810,7 @@
     }
     if (probe.runId && probe.runId !== state.runId) state.runId = probe.runId;
     if (!state.busy) adoptRun(probe.runId, ADOPTED_NOTE);
-    const info = await rpc.request('_goose/unstable/session/info', { sessionId: cur.id }).then((v) => { WATCH_DBG.infos++; return v; }).catch(() => { WATCH_DBG.infoErrs++; return null; });
+    const info = await rpc.request('_aegis/unstable/session/info', { sessionId: cur.id }).then((v) => { WATCH_DBG.infos++; return v; }).catch(() => { WATCH_DBG.infoErrs++; return null; });
     const meta = (info && info.session && info.session._meta) || {};
     const key = meta.messageCount != null ? String(meta.messageCount) + '|' + String(meta.lastMessageAt || '') : '';
     WATCH_DBG.prevKey = watchKey;
@@ -2717,7 +2851,7 @@
   async function hotTick() {
     const cur = state.current;
     if (!cur || !rpc.ready) { stopHotWatch(); return; }
-    const info = await rpc.request('_goose/unstable/session/info', { sessionId: cur.id }).catch(() => null);
+    const info = await rpc.request('_aegis/unstable/session/info', { sessionId: cur.id }).catch(() => null);
     const meta = (info && info.session && info.session._meta) || {};
     const key = String(meta.messageCount != null ? meta.messageCount : '') + '|' + String(meta.lastMessageAt || '');
     const fresh = meta.lastMessageAt ? (Date.now() - Date.parse(meta.lastMessageAt)) < 90000 : false;
@@ -2888,7 +3022,7 @@
     }
     stopRunWatch();
     // Recien aca se puede decidir: el probe de arriba ya dijo que NO hay run vivo.
-    if (!(probe.known && probe.runId)) { const _m = await rpc.request('_goose/unstable/session/info', { sessionId: state.current.id }).then((v) => (v && v.session && v.session._meta) || {}).catch(() => ({})); const _fresh = _m.lastMessageAt ? (Date.now() - Date.parse(_m.lastMessageAt)) < 150000 : false; if (_fresh) { unsweepInterruptedTools(); if (!state.busy) setBusy(true, 'Turno en curso (recuperado tras recargar)'); startHotWatch(); return true; } }
+    if (!(probe.known && probe.runId)) { const _m = await rpc.request('_aegis/unstable/session/info', { sessionId: state.current.id }).then((v) => (v && v.session && v.session._meta) || {}).catch(() => ({})); const _fresh = _m.lastMessageAt ? (Date.now() - Date.parse(_m.lastMessageAt)) < 150000 : false; if (_fresh) { unsweepInterruptedTools(); if (!state.busy) setBusy(true, 'Turno en curso (recuperado tras recargar)'); startHotWatch(); return true; } }
     // Antes esto corria dentro de renderSession, es decir ANTES de adoptar: una carta
     // pendiente de un run que si estaba vivo quedaba marcada como interrumpida.
     sweepInterruptedTools();
@@ -3129,7 +3263,7 @@
     if (state.slashLoaded || state.slashLoading || !rpc.ready) return;
     state.slashLoading = true;
     try {
-      const res = await rpc.request('_goose/unstable/slash-commands/list', {
+      const res = await rpc.request('_aegis/unstable/slash-commands/list', {
         cwd: CFG.cwd || undefined,
         sessionId: (state.current && state.current.id) || undefined,
       });
@@ -3214,7 +3348,7 @@
   // ---------- títulos / estado ----------
   function updateTitle() {
     $('#chat-title').textContent = (state.current && state.current.title) || 'Nuevo chat';
-    document.title = ((state.current && state.current.title) || 'Goose') + ' · Goose web';
+    document.title = ((state.current && state.current.title) || 'Aegis') + ' · Aegis web';
   }
   function setStatus(kind, text) {
     const dot = $('#conn-dot');
@@ -3403,7 +3537,7 @@
 
   // Superficie de depuración (LAN, un solo usuario): inspeccionar estado desde la consola
   // y desde los checks automatizados. No expone secretos (el WS ya vive en /config.js).
-  window.__gooseWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
+  window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
 
   wire();
   rpc.connect();
