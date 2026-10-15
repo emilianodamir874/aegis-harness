@@ -1513,7 +1513,9 @@
     el.dataset.level = pct == null ? 'na' : pct >= COMPACT_RATIO * 100 ? 'hot' : pct >= 50 ? 'warm' : 'ok';
     el.style.color = pct == null ? '' : pct >= COMPACT_RATIO * 100 ? 'var(--danger, #e5484d)' : pct >= 50 ? 'var(--warn, #d29922)' : '';
     el.style.cursor = 'pointer';
-    el.onclick = () => openUsagePop();
+    el.onclick = () => {
+      try { openUsagePop(); } catch (err) { report('error', 'popover de contexto: ' + (err && err.message ? err.message : err)); console.error(err); }
+    };
   }
   // Precios por modelo (C:/goose-web/prices.json, servido por el server web).
   let pricesCache = null;
