@@ -27,7 +27,18 @@ if (-not $SkipIdleGate) {
     Start-Sleep -Seconds 15
   }
 }
+$inUse = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -eq $out }
+if ($inUse) {
+  Add-Content $log ("VERSION_IN_USE: {0} esta corriendo (pid {1}); usa otra -Version" -f $out, ($inUse.ProcessId -join ','))
+  Write-Host ("abortado: {0} esta en uso; usa otra -Version" -f $out)
+  exit 1
+}
 Remove-Item $out -Force -ErrorAction SilentlyContinue
+if (Test-Path $out) {
+  Add-Content $log 'VERSION_LOCKED: no se pudo borrar el binario destino (en uso?)'
+  Write-Host 'abortado: el binario destino esta bloqueado'
+  exit 1
+}
 Copy-Item $cfg ($cfg + '.bak-build') -Force
 try {
   if (-not $KeepSccache) {
@@ -41,6 +52,13 @@ try {
   Add-Content $log ("EXITCODE=$code")
   if ($code -ne 0) { Add-Content $log 'BUILD_FAILED: no se copia nada'; exit 1 }
   Copy-Item "$repo\target\debug\goose.exe" $out -Force
+  $srcHash = (Get-FileHash "$repo\target\debug\goose.exe" -Algorithm SHA256).Hash
+  $dstHash = (Get-FileHash $out -Algorithm SHA256).Hash
+  if ($srcHash -ne $dstHash) {
+    Add-Content $log ("COPY_FAILED: el destino no coincide con goose.exe (origen {0}, destino {1})" -f $srcHash.Substring(0,16), $dstHash.Substring(0,16))
+    Write-Host 'copia fallida: el binario destino quedo viejo (probablemente en uso)'
+    exit 1
+  }
 } finally {
   Copy-Item ($cfg + '.bak-build') $cfg -Force
   Remove-Item ($cfg + '.bak-build') -Force
