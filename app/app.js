@@ -411,16 +411,24 @@
     const meta = s._meta || {};
     const active = state.current && state.current.id === s.sessionId ? ' active' : '';
     const n = meta.messageCount;
+    const running = !!state.runningIds && state.runningIds.has(s.sessionId);
     const sub = `${n != null ? n + ' · ' : ''}${fmtTime(s.updatedAt || meta.createdAt)}`;
     return (
       `<div class="sb-row" data-id="${esc(s.sessionId)}"${archived ? ' data-arch="1"' : ''}>` +
-      `<button class="sb-item${active}${archived ? ' arch' : ''}"><div class="sb-title">${esc(s.title || 'Sesión')}${archived ? '<span class="sb-tag">archivada</span>' : ''}</div><div class="sb-sub">${sub}</div></button>` +
+      `<button class="sb-item${active}${archived ? ' arch' : ''}"><div class="sb-title">${running ? '<span class="sb-run-dot" title="en produccion ahora">&#9679;</span>' : ''}${esc(s.title || 'Sesión')}${archived ? '<span class="sb-tag">archivada</span>' : ''}</div><div class="sb-sub">${sub}</div></button>` +
       `<button class="sb-rename" title="Renombrar" aria-label="Renombrar">✎</button>` +
       `<button class="sb-more" title="Más acciones" aria-label="Más acciones">⋮</button>` +
       `<button class="sb-del" title="Borrar sesión" aria-label="Borrar sesión">✕</button>` +
       `</div>`
     );
   };
+
+    // Refresca el estado 'en produccion' de la lista mientras la pestana este visible.
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (state.conn !== 'open') return;
+    Promise.resolve(loadList()).catch(() => {});
+  }, 20000);
 
   function renderList() {
     if (state.hold) return; // no pisar un editor/confirm abierto
@@ -561,6 +569,7 @@
     const pages = Math.max(1, state.pages);
     const all = [];
     let cursor = null;
+      const running = new Set();
     try {
       for (let i = 0; i < pages; i++) {
         const res = await rpc.request('session/list', {
@@ -568,9 +577,12 @@
           meta: { goose: { includeLastMessageSnippet: false } },
         });
         all.push(...((res && res.sessions) || []));
+        const rmeta = (res && (res._meta || res.meta)) || {};
+        for (const id of rmeta.runningSessionIds || []) running.add(id);
         cursor = (res && res.nextCursor) || null;
         if (!cursor) break;
       }
+      state.runningIds = running;
       state.sessions = all.filter((s) => !(s._meta && s._meta.archivedAt));
       state.archived = all.filter((s) => s._meta && s._meta.archivedAt);
       state.cursor = cursor;
