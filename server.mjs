@@ -251,6 +251,55 @@ function proxyAcp(req, socket, head) {
   up.end();
 }
 
+// ---------------------------------------------------------------- edge-tts (voces neuronales)
+// Voces de Microsoft (gratis, sin clave). El protocolo es WebSocket + SSML, asi que va aca en el
+// server y el cliente pide /tts?text=... y recibe mp3. Requiere el token publico + Sec-MS-GEC.
+const EDGE_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+function edgeGec() {
+  const t = Math.floor((Date.now() / 1000 + 11644473600) * 1e7);
+  const r = t - (t % 3000000000);                       // redondeo a 5 minutos
+  return crypto.createHash('sha256').update(r + EDGE_TOKEN, 'ascii').digest('hex').toUpperCase();
+}
+async function edgeTts(texto, voz, rate) {
+  // El WebSocket global de Node (undici) IGNORA las cabeceras personalizadas y Edge exige Origin
+  // (por eso el 502 "ws error"); la libreria ws si las manda.
+  const mod = await import('file:///C:/Aegis-Proyects/web/tools/tts-deps/node_modules/ws/index.js')
+    .catch(() => import('ws').catch(() => ({ default: globalThis.WebSocket })));
+  const WS = mod.WebSocket || mod.default || globalThis.WebSocket;
+  return await new Promise((resolve, reject) => {
+    const id = crypto.randomUUID().replace(/-/g, '');
+    const url = 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
+      + '?TrustedClientToken=' + EDGE_TOKEN + '&ConnectionId=' + id + '&Sec-MS-GEC=' + edgeGec() + '&Sec-MS-GEC-Version=1-130.0.2849.68';
+    const ws = new WS(url, { headers: {
+      'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    } });
+    ws.binaryType = 'arraybuffer';
+    const partes = [];
+    const fin = setTimeout(() => { try { ws.close(); } catch (e) {} reject(new Error('timeout')); }, 20000);
+    ws.onopen = () => {
+      const fecha = new Date().toString();
+      ws.send('X-Timestamp:' + fecha + '\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n'
+        + '{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},'
+        + '"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}');
+      const safe = String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const rateAttr = rate && rate !== 1 ? ' rate="' + (rate >= 1 ? '+' : '') + Math.round((rate - 1) * 100) + '%"' : '';
+      ws.send('X-RequestId:' + id + '\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:' + fecha + 'Z\r\nPath:ssml\r\n\r\n'
+        + "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='es-AR'><voice name='" + voz + "'" + rateAttr + '>' + safe + '</voice></speak>');
+    };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') { if (ev.data.includes('Path:turn.end')) { clearTimeout(fin); try { ws.close(); } catch (e) {} resolve(Buffer.concat(partes)); } return; }
+      const buf = Buffer.from(ev.data);
+      const idx = buf.indexOf('Path:audio\r\n');
+      const ini = idx >= 0 ? idx + 12 : buf.indexOf('\r\n\r\n') + 4;   // salta la cabecera
+      if (ini > 0 && ini < buf.length) partes.push(buf.slice(ini));
+    };
+    ws.onerror = (e) => { clearTimeout(fin); reject(new Error('ws: ' + ((e && e.message) || String(e)))); };
+    ws.onclose = (e) => { if (partes.length) { clearTimeout(fin); resolve(Buffer.concat(partes)); }
+      else { clearTimeout(fin); reject(new Error('cerrado ' + (e && e.code) + ' ' + ((e && e.reason) || ''))); } };
+  });
+}
+
 // ------------------------------------------------------------------- server
 const handler = async (req, res) => {
   try {
@@ -261,6 +310,24 @@ const handler = async (req, res) => {
       'requests.log',
       `${new Date().toISOString()} ${ip}${tunneled ? ' [tunel]' : ''} ${req.method} ${url.pathname}${url.search} ua="${(req.headers['user-agent'] || '').slice(0, 110)}"\n`
     );
+
+    // Voces neuronales de Microsoft (edge-tts). El cliente pide una frase y recibe mp3.
+    if (url.pathname === '/tts' && req.method === 'GET') {
+      const texto = String(url.searchParams.get('text') || '').slice(0, 700);
+      const voz = String(url.searchParams.get('voice') || cfg.ttsVoice || 'es-AR-TomasNeural');
+      const rate = Number(url.searchParams.get('rate') || cfg.ttsRate || 1.05);
+      if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
+      try {
+        const mp3 = await edgeTts(texto, voz, rate);
+        if (!mp3 || !mp3.length) throw new Error('sin audio');
+        res.writeHead(200, { 'content-type': 'audio/mpeg', 'content-length': String(mp3.length), 'cache-control': 'no-store' });
+        res.end(mp3);
+      } catch (err) {
+        res.writeHead(502, { 'content-type': 'text/plain' });
+        res.end('tts: ' + (err && err.message ? err.message : String(err)));
+      }
+      return;
+    }
 
     if (url.pathname === '/healthz') {
       const done = authed(req);
