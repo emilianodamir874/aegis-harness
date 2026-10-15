@@ -14,6 +14,7 @@ pub mod summarize;
 pub mod summon;
 pub mod todo;
 pub mod tom;
+pub mod websearch;
 
 use std::collections::HashMap;
 
@@ -185,7 +186,20 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
-        map.insert(
+                map.insert(
+            websearch::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: websearch::EXTENSION_NAME,
+                display_name: "Web Search",
+                description:
+                    "Search the web and fetch page text: Tavily/SearXNG when configured, Mojeek, Bing and DuckDuckGo lite in a fallback chain, with an in-process cache",
+                default_enabled: true,
+                unprefixed_tools: false,
+                hidden: false,
+                client_factory: |ctx| Some(Box::new(websearch::WebSearchClient::new(ctx).unwrap())),
+            },
+        );
+map.insert(
             tom::EXTENSION_NAME,
             PlatformExtensionDef {
                 name: tom::EXTENSION_NAME,
