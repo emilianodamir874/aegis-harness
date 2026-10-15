@@ -1342,6 +1342,23 @@
   }
   // ---------- popover de contexto: chico, anclado al readout, estilo Claude ----------
   let usagePop = null;
+  const POP_PAD = 8, POP_GAP = 9;
+  // Caja donde el panel tiene que entrar. Se usa `visualViewport` y no `innerWidth/Height`
+  // porque en el telefono (teclado abierto, zoom) la parte visible es mas chica que el
+  // viewport de layout: clampear contra el de layout dejaba el panel fuera de la pantalla.
+  function popBox() {
+    const vv = window.visualViewport;
+    const vw = (vv && vv.width) || window.innerWidth;
+    const vh = (vv && vv.height) || window.innerHeight;
+    return {
+      ox: (vv && vv.offsetLeft) || 0,
+      oy: (vv && vv.offsetTop) || 0,
+      vw, vh,
+      // Techo de alto: el desglose completo (mas las filas por modelo) puede medir mas que
+      // la pantalla; sin techo el panel no entra ni arriba ni abajo del readout.
+      maxH: Math.max(140, vh - POP_PAD * 2)
+    };
+  }
   function closeUsagePop() { if (usagePop) usagePop.hidden = true; }
   function buildUsagePop() {
     if (usagePop) return usagePop;
@@ -1356,6 +1373,13 @@
       '<div class="up-foot"></div>';
     document.body.appendChild(w);
     usagePop = w;
+    // Nace clampeado: si algo lo pinta antes del primer placeUsagePop, ya esta adentro.
+    const b = popBox();
+    w.style.maxHeight = b.maxH + 'px';
+    w.style.overflowY = 'auto';
+    w.style.overscrollBehavior = 'contain';
+    w.style.left = b.ox + POP_PAD + 'px';
+    w.style.top = b.oy + POP_PAD + 'px';
     document.addEventListener('pointerdown', (e) => {
       if (!usagePop || usagePop.hidden) return;
       const a = $('#meta-right');
@@ -1364,22 +1388,37 @@
     }, true);
     window.addEventListener('resize', placeUsagePop);
     window.addEventListener('scroll', placeUsagePop, true);
+    // El teclado del telefono cambia el viewport visible sin disparar resize de window.
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', placeUsagePop);
+      window.visualViewport.addEventListener('scroll', placeUsagePop);
+    }
     return w;
   }
   function placeUsagePop() {
     const w = usagePop;
     const a = $('#meta-right');
     if (!w || w.hidden || !a) return;
+    const b = popBox();
+    // El techo de alto se aplica antes de medir; si no cambio, no toca el layout.
+    const mh = b.maxH + 'px';
+    if (w.style.maxHeight !== mh) { w.style.maxHeight = mh; w.style.overflowY = 'auto'; }
     const r = a.getBoundingClientRect();
-    const pw = w.offsetWidth, ph = w.offsetHeight;
-    let top = r.top - ph - 9;
-    const above = top >= 8;
-    if (!above) top = r.bottom + 9;
+    const pw = Math.min(w.offsetWidth, Math.max(160, b.vw - POP_PAD * 2));
+    const ph = Math.min(w.offsetHeight, b.maxH);
+    // Prefiere abrirse arriba del readout; si no entra arriba ni abajo, se queda del lado
+    // con mas lugar y el clamp de las coordenadas lo mete entero en la pantalla.
+    const spaceAbove = r.top - POP_GAP - POP_PAD;
+    const spaceBelow = b.oy + b.vh - r.bottom - POP_GAP - POP_PAD;
+    const above = ph <= spaceAbove || spaceAbove >= spaceBelow;
+    let top = above ? r.top - POP_GAP - ph : r.bottom + POP_GAP;
     let left = r.right - pw;
-    left = Math.max(8, Math.min(left, window.innerWidth - pw - 8));
+    // Clamp al viewport visible: cuatro bordes, nunca afuera.
+    left = Math.max(b.ox + POP_PAD, Math.min(left, b.ox + b.vw - pw - POP_PAD));
+    top = Math.max(b.oy + POP_PAD, Math.min(top, b.oy + b.vh - ph - POP_PAD));
     w.dataset.above = above ? '1' : '0';
     w.style.left = Math.round(left) + 'px';
-    w.style.top = Math.round(Math.max(8, top)) + 'px';
+    w.style.top = Math.round(top) + 'px';
   }
   const niceTok = (n) => {
     if (n == null) return '--';
