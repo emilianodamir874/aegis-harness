@@ -1002,6 +1002,8 @@
       if (!thought) curStream = el;
     }
     rec.text += text;
+    // Lectura en voz alta: solo el texto de respuesta (no el pensamiento, no lo oculto, no el replay).
+    if (!thought && !hidden && !state.replaying) readPump(key, rec.text);
     rec.lastAppend = performance.now();
     rec.live = !state.replaying; // durante un replay se pinta una sola vez, al final
     queueRender(rec);
@@ -2140,6 +2142,7 @@
   function setBusy(b, note, startAt) {
     const was = state.busy;
     state.busy = b;
+    if (!b) readFlush();   // fin del turno: leer lo que haya quedado sin punto final
     if (b) startOrphanWatch(); else stopOrphanWatch();
     $('#btn-send').hidden = b;
     $('#btn-stop').hidden = !b;
@@ -3494,6 +3497,13 @@
     $('#btn-send').addEventListener('click', send);
     $('#btn-stop').addEventListener('click', stopRun);
     $('#runbar-stop').addEventListener('click', stopRun);
+    // Lectura en voz alta: el boton y el corte al enviar/detener (las funciones estan hoisted).
+    const rb = $('#btn-read');
+    if (rb) rb.addEventListener('click', () => readToggle());
+    const corta = () => readReset(true);
+    $('#btn-send').addEventListener('click', corta);
+    $('#btn-stop').addEventListener('click', corta);
+    readSyncBtn();
 
     const input = $('#input');
     // Tipear en el teléfono: nada de trabajo pesado dentro del evento `input`.
@@ -3575,7 +3585,131 @@
 
   // Superficie de depuración (LAN, un solo usuario): inspeccionar estado desde la consola
   // y desde los checks automatizados. No expone secretos (el WS ya vive en /config.js).
-  window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
+  // --- Lectura en voz alta (TTS) del bloque "Para escuchar" -------------------------------
+  // Reglas: se lee SOLO el bloque que abre con un encabezado tipo "## Para escuchar" (o "Para leer",
+  // "Lectura en voz alta"). Se lee EN VIVO: frase por frase, mientras el texto todavia llega por el
+  // stream. Nada de afuera del bloque se lee. Y todo esto pasa solo si el modo esta encendido.
+  var READ_ON = false;
+  try { READ_ON = localStorage.getItem('aegis.readOn') === '1'; } catch (e) {}
+  var READ = { key: null, spoken: 0, rate: 1.02, voice: null };
+  var TICK = String.fromCharCode(96); // comilla invertida (para armar los patrones de code fences)
+
+  function readHeading(t) {
+    var re = /^[ \t]*#{1,6}[ \t]*(?:[^\w\n]{0,4}[ \t]*)?(?:para[ \t]+(?:escuchar|leer|oir|oír)|lectura[ \t]+en[ \t]+voz)[^\n]*$/im;
+    var m = re.exec(String(t || ''));
+    return m ? { idx: m.index, len: m[0].length } : null;
+  }
+  // devuelve el texto crudo del bloque (sin el encabezado); termina en el proximo encabezado
+  function readBlock(t) {
+    var h = readHeading(t);
+    if (!h) return '';
+    var rest = String(t).slice(h.idx + h.len);
+    var end = rest.search(/^[ \t]*#{1,6}[ \t]/m);
+    return (end >= 0 ? rest.slice(0, end) : rest).trim();
+  }
+  // pasa markdown a texto hablable
+  function readClean(s) {
+    return String(s || '')
+      .replace(new RegExp(TICK + TICK + TICK + '[\\s\\S]*?' + TICK + TICK + TICK, 'g'), ' ')  // bloques de codigo
+      .replace(new RegExp(TICK + '([^' + TICK + ']*)' + TICK, 'g'), '$1')                          // codigo inline
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')                                                   // imagenes
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')                                                 // links -> texto
+      .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, '')                                           // vinetas
+      .replace(/^[ \t]*>[ \t]?/gm, '')                                                            // citas
+      .replace(/[#*_~|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function readVoicePick() {
+    try {
+      var vs = window.speechSynthesis.getVoices() || [];
+      if (!vs.length) return;
+      var es = vs.filter(function (v) { return /^es/i.test(v.lang || ''); });
+      READ.voice = es[0] || vs[0] || null;
+    } catch (e) {}
+  }
+  function readSay(text) {
+    var t = String(text || '').trim();
+    if (!t) return;
+    try {
+      if (!window.speechSynthesis) return;
+      var u = new SpeechSynthesisUtterance(t);
+      u.lang = (READ.voice && READ.voice.lang) || 'es-AR';
+      if (READ.voice) u.voice = READ.voice;
+      u.rate = READ.rate;
+      window.speechSynthesis.speak(u);
+      var btn = document.getElementById('btn-read');
+      if (btn) btn.classList.add('speaking');
+    } catch (e) {}
+  }
+  function readReset(cancelar) {
+    READ.spoken = 0; READ.key = null;
+    try { if (cancelar && window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+    var btn = document.getElementById('btn-read');
+    if (btn) btn.classList.remove('speaking');
+  }
+  // se llama en cada chunk del stream con el texto crudo acumulado del mensaje
+  // final=true (fin del turno): habla tambien lo que quedo sin punto final.
+  function readPump(key, rawText, final) {
+    if (!READ_ON) return;
+    if (READ.key !== key) { READ.key = key; READ.consumed = 0; }  // mensaje nuevo: arranca de cero
+    READ.lastKey = key; READ.lastRaw = rawText;
+    // El avance se mide sobre el TEXTO CRUDO del bloque, no sobre el limpio: el limpio cambia
+    // retroactivamente mientras llega markdown a medias (un ` sin cerrar, un [link](url sin
+    // terminar), y ahi los offsets se corrian y se hablaban pedazos ("ta y codigo.").
+    var raw = readBlock(rawText);
+    if (!raw) return;
+    var done = READ.consumed || 0;
+    if (raw.length <= done) return;
+    var pend = raw.slice(done);
+    // Corte en el ultimo fin de frase: seguido de espacio O al final del texto.
+    var cut = -1, m;
+    var reCut = /[.!?…](?=\s|$)/g;
+    while ((m = reCut.exec(pend))) cut = m.index + 1;
+    if (cut < 0) {
+      if (final) cut = pend.length;                              // cierre de turno: lo que haya
+      else if (pend.length > 220 && pend.indexOf(' ') > 0) cut = pend.lastIndexOf(' ');
+      else return;                                               // muy corto todavia: espera mas texto
+    }
+    var trozo = readClean(pend.slice(0, cut));
+    READ.consumed = done + cut;
+    if (trozo.length > 2) readSay(trozo);
+  }
+  // cierre del turno: habla el resto del bloque (texto sin punto final, etc.)
+  function readFlush() {
+    if (!READ_ON || !READ.lastKey) return;
+    readPump(READ.lastKey, READ.lastRaw || '', true);
+  }
+  function readToggle(force) {
+    READ_ON = (force === undefined) ? !READ_ON : !!force;
+    try { localStorage.setItem('aegis.readOn', READ_ON ? '1' : '0'); } catch (e) {}
+    var btn = document.getElementById('btn-read');
+    if (btn) {
+      btn.classList.toggle('on', READ_ON);
+      btn.title = READ_ON
+        ? 'Lectura en voz alta ENCENDIDA: se lee el bloque «Para escuchar» en vivo. Tocá para apagar.'
+        : 'Leer en voz alta: lee SOLO el bloque «Para escuchar» de cada respuesta, en vivo mientras llega';
+    }
+    if (!READ_ON) readReset(true);
+    else { readVoicePick(); readReset(true); }
+    readSyncBtn();
+    systemNote(READ_ON ? 'Lectura en voz alta encendida.' : 'Lectura en voz alta apagada.');
+    return READ_ON;
+  }
+  function readSyncBtn() {
+    var b = document.getElementById('btn-read');
+    if (!b) return false;
+    b.classList.toggle('on', READ_ON);
+    b.title = READ_ON
+      ? 'Lectura en voz alta ENCENDIDA: se lee el bloque «Para escuchar» en vivo. Tocá para apagar.'
+      : 'Leer en voz alta: lee SOLO el bloque «Para escuchar» de cada respuesta, en vivo mientras llega';
+    if (READ_ON) readVoicePick();
+    try { if (window.speechSynthesis) window.speechSynthesis.addEventListener('voiceschanged', readVoicePick); } catch (e) {}
+    return true;
+  }
+  if (!readSyncBtn()) document.addEventListener('DOMContentLoaded', readSyncBtn, { once: true });
+
+  window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
 
   wire();
   rpc.connect();
