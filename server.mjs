@@ -7,6 +7,8 @@
 //  - /config.js se adapta: en el tunel el WS va a wss://<host>/acp (mismo origen) y este
 //    server lo proxea a aegis serve en 127.0.0.1:<servePort> reescribiendo el Origin.
 import http from 'node:http';
+import https from 'node:https';
+import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { readFile, appendFile, mkdir, stat } from 'node:fs/promises';
 import zlib from 'node:zlib';
@@ -158,13 +160,17 @@ function readsHtml(req) {
 // ------------------------------------------------------- config.js por request
 function configFor(req) {
   const tunneled = isTunnel(req);
+  // https directo en LAN (3789): una pagina https NO puede abrir ws:// (mixed content), asi que
+  // tambien va por el proxy mismo-origen -> wss://<host>/acp. El login sigue siendo solo del tunel.
+  const secureReq = !!(req.socket && req.socket.encrypted);
+  const proxied = tunneled || secureReq;
   const host = req.headers.host || `${cfg.publicHost}:${cfg.webPort}`;
   return {
     tunneled,
-    acpUrl: tunneled
+    acpUrl: proxied
       ? `wss://${host}/acp?token=${cfg.secretKey}`
       : `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`,
-    host: tunneled ? host : `${cfg.publicHost}:${cfg.servePort}`,
+    host: proxied ? host : `${cfg.publicHost}:${cfg.servePort}`,
   };
 }
 
@@ -246,7 +252,7 @@ function proxyAcp(req, socket, head) {
 }
 
 // ------------------------------------------------------------------- server
-const server = http.createServer(async (req, res) => {
+const handler = async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     const ip = req.socket.remoteAddress || '?';
@@ -435,9 +441,11 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(500, { 'content-type': 'text/plain' });
     res.end(String(err));
   }
-});
+};
 
-server.on('upgrade', (req, socket, head) => {
+const server = http.createServer(handler);
+
+const onUpgrade = (req, socket, head) => {
   let url;
   try {
     url = new URL(req.url, 'http://localhost');
@@ -455,7 +463,8 @@ server.on('upgrade', (req, socket, head) => {
     return;
   }
   proxyAcp(req, socket, head);
-});
+};
+server.on('upgrade', onUpgrade);
 
 const port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
 server.listen(port, '0.0.0.0', () => {
@@ -464,3 +473,28 @@ server.listen(port, '0.0.0.0', () => {
   console.log(`[aegis-web] backend: ws://${cfg.publicHost}:${cfg.servePort}/acp   (directo, LAN)`);
   console.log(`[aegis-web] tunel:   wss://<host>/acp proxeado a 127.0.0.1:${cfg.servePort}  (login: ${auth ? 'auth.json' : 'SIN auth.json -> tunel cerrado'})`);
 });
+
+// ---- HTTPS en LAN (2026-10-15): getUserMedia exige contexto seguro, asi que por la IP de LAN el
+// dictado por voz no andaba (el navegador ni pide permiso). El tunel ya era https; esto le da https
+// tambien a la LAN. NO se toca el 3788: sigue siendo el origen http del tunel y de los enlaces viejos.
+const tlsDir = process.env.AEGIS_WEB_TLS_DIR || cfg.tlsDir || '';
+const httpsPort = Number(process.env.AEGIS_WEB_HTTPS_PORT || cfg.httpsPort || 3789);
+if (tlsDir) {
+  const crtPath = join(tlsDir, 'server.crt');
+  const keyPath = join(tlsDir, 'server.key');
+  try {
+    if (fs.existsSync(crtPath) && fs.existsSync(keyPath)) {
+      const secure = https.createServer({ cert: fs.readFileSync(crtPath), key: fs.readFileSync(keyPath) }, handler);
+      secure.on('upgrade', onUpgrade);
+      secure.listen(httpsPort, '0.0.0.0', () => {
+        console.log(`[aegis-web] UI TLS:  https://${cfg.publicHost}:${httpsPort}   (LAN, dictado por voz habilitado)`);
+        console.log(`[aegis-web] UI TLS:  https://127.0.0.1:${httpsPort}          (local)`);
+      });
+      secure.on('error', (e) => console.log('[aegis-web] TLS error: ' + e.message));
+    } else {
+      console.log('[aegis-web] sin certificado TLS en ' + tlsDir + ' (voz en LAN deshabilitada)');
+    }
+  } catch (e) {
+    console.log('[aegis-web] TLS no arranco: ' + e.message);
+  }
+}

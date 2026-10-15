@@ -2312,7 +2312,7 @@
 
   function micStart() {
     if (micRec) { try { micRec.stop(); } catch (e) {} return; } // segundo toque: cortar y transcribir
-    if (!micSecure()) { systemNote('El micrófono necesita HTTPS (o localhost). Por esta dirección el navegador no lo permite: abrí la URL del túnel.'); return; }
+    if (!micSecure()) { systemNote('El micrófono necesita HTTPS (o localhost). Por esta dirección el navegador no lo permite: usá https://' + location.hostname + ':3789 (la misma UI con TLS) o la URL del túnel.'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { systemNote('Este navegador no soporta grabación de audio.'); return; }
     navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
       .then(function (st) {
