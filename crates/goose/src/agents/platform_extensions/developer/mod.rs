@@ -1,5 +1,6 @@
 pub mod edit;
 pub mod image;
+pub mod read;
 pub mod shell;
 mod shell_output_streaming;
 pub mod tree;
@@ -11,6 +12,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use edit::{EditTools, FileEditParams, FileWriteParams};
 use image::{ImageReadParams, ImageTool};
+use read::{GrepParams, ReadFileParams, ReadTool};
 use indoc::indoc;
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
@@ -37,6 +39,7 @@ pub struct DeveloperClient {
     edit_tools: Arc<EditTools>,
     tree_tool: Arc<TreeTool>,
     image_tool: Arc<ImageTool>,
+    read_tool: Arc<ReadTool>,
 }
 
 fn developer_instructions() -> &'static str {
@@ -68,8 +71,8 @@ fn developer_instructions() -> &'static str {
             cost the user money.
 
             For editing software, prefer the flow of using tree to understand the codebase structure
-            and file sizes. When you need to search, prefer rg which correctly respects gitignored
-            content. Then use cat or sed to gather the context you need, always reading before editing.
+            and file sizes. When you need to search, prefer the grep tool which correctly respects gitignored
+            content. Then use read_file or grep to gather the context you need, always reading before editing.
             Use write and edit to efficiently make changes. Test and verify as appropriate.
 
             When running Python scripts or commands, always use `python3` instead of `python`.
@@ -89,6 +92,7 @@ impl DeveloperClient {
             edit_tools: Arc::new(EditTools::new()),
             tree_tool: Arc::new(TreeTool::new()),
             image_tool: Arc::new(ImageTool::new()),
+            read_tool: Arc::new(ReadTool::new()),
         })
     }
 
@@ -185,6 +189,30 @@ impl DeveloperClient {
                 Some(true),
                 Some(true),
             )),
+            Tool::new(
+                "read_file".to_string(),
+                "Read a UTF-8 text file with line numbers. Relative paths resolve against the session working directory. Returns up to 2000 lines per call and paginates with offset/limit; the output says how to continue when the file is longer.".to_string(),
+                Self::schema::<ReadFileParams>(),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Read File".to_string()),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(false),
+            )),
+            Tool::new(
+                "grep".to_string(),
+                "Search file contents with a Rust regular expression, honoring .gitignore. Optional glob filter for file names, case-insensitive matching, context lines and a result cap. Prefer this over shelling out to rg.".to_string(),
+                Self::schema::<GrepParams>(),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Grep".to_string()),
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(false),
+            )),
         ]
     }
 }
@@ -250,6 +278,18 @@ impl McpClientTrait for DeveloperClient {
                     .image_tool
                     .image_read_with_cwd(params, working_dir)
                     .await),
+                Err(error) => Ok(CallToolResult::error(vec![visible_text(format!(
+                    "Error: {error}"
+                ))])),
+            },
+            "read_file" => match Self::parse_args::<ReadFileParams>(arguments) {
+                Ok(params) => Ok(self.read_tool.read_file_with_cwd(params, working_dir)),
+                Err(error) => Ok(CallToolResult::error(vec![visible_text(format!(
+                    "Error: {error}"
+                ))])),
+            },
+            "grep" => match Self::parse_args::<GrepParams>(arguments) {
+                Ok(params) => Ok(self.read_tool.grep_with_cwd(params, working_dir)),
                 Err(error) => Ok(CallToolResult::error(vec![visible_text(format!(
                     "Error: {error}"
                 ))])),
