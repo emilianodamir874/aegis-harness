@@ -1,4 +1,30 @@
+# deps y salidas de node
+node_modules/
 logs/
 *.log
-node_modules/
 
+# SECRETOS: nunca versionar (auth.json estaba sin trackear y SIN ignorar: un git add -A lo commiteaba)
+auth.json
+config.json
+tunnel-access*.txt
+secrets.yaml
+*.lock
+
+# artefactos de una sola vez del deploy (se archivan en C:\aegis_archive)
+tools/shots/
+tools/*.out
+tools/*.err
+tools/*.json
+tools/patch-*.py
+tools/append-doc*.py
+tools/diag-stuck.*
+tools/brief-v*.log
+tools/brief-v*.mjs
+scripts/*.bak-*
+*.bak-pre-*
+*.bak-<motivo>-*
+
+# binarios y temporales
+*.exe
+*.pdb
+*.tmp

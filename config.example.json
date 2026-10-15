@@ -1,0 +1,16 @@
+{
+  "_comentario": "Plantilla del config.json real. config.json NO se versiona (tiene secretKey). Copiar, completar y guardar como config.json.",
+  "webPort": 3788,
+  "servePort": 3284,
+  "publicHost": "<IP LAN del host, p.ej. 192.168.1.50>",
+  "secretKey": "<AEGIS_SERVER__SECRET_KEY: generar con 32 bytes hex aleatorios>",
+  "appConfig": {
+    "AEGIS_VERSION": "1.54.0-web",
+    "AEGIS_DEFAULT_PROVIDER": "antigravity",
+    "AEGIS_DEFAULT_MODEL": "gemini-3.8-flash-medium",
+    "AEGIS_PREDEFINED_MODELS": [],
+    "_nota_path_root": "AEGIS_PATH_ROOT no lo aplica el serve (server.mjs solo usa AEGIS_VERSION). El store sale del default del binario: %APPDATA%\\Aegis\\aegis",
+    "AEGIS_WORKING_DIR": "<directorio de trabajo del agente>"
+  },
+  "cwd": "<directorio de trabajo>"
+}

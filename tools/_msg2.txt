@@ -1,3 +1,0 @@
-test(desktop): add the goose-web E2E harness
-
-Playwright scripts used to verify the web client: reload/recovery, steering, soft refresh, usage/context readout, theme and viewport shots, tool icons, watchdogs and the session-switch checks.
