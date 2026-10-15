@@ -69,3 +69,17 @@ echo "(Full content saved to $tmpfile)"
 - Respect robots.txt for scraping; do not hammer a host with repeated requests.
 - Never send authentication cookies or session tokens to external URLs.
 - If a page returns a login wall or CAPTCHA, report the URL and stop; do not attempt to bypass it.
+
+## Preferred local tool (Windows, cached)
+
+On this machine prefer the cached wrapper over calling `ddgs` by hand:
+
+```bash
+python C:/goose-web/tools/websearch.py search "query" -n 5 --extract 2
+python C:/goose-web/tools/websearch.py fetch https://url
+```
+
+It tries Tavily (if `TAVILY_API_KEY`), SearXNG (if `SEARXNG_URL`), then `ddgs` with retries across
+duckduckgo/bing/brave/yahoo, then Mojeek and Bing HTML, reports which engine answered, caches results and
+pages under `%LOCALAPPDATA%/goose-search` for 24h, and extracts page text without HTML boilerplate.
+Use it when the plain `uvx ddgs` path returns no results or when you need page content in one call.
