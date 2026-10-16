@@ -1,4 +1,4 @@
-# Build seguro de aegis (B1/B3/B4 del relevamiento de dolor):
+﻿# Build seguro de aegis (B1/B3/B4 del relevamiento de dolor):
 #  - espera a que no haya actividad del modelo, para no arrastrar tus turnos
 #  - neutraliza sccache como corresponde (comentar rustc-wrapper y restaurar)
 #  - copia el binario SOLO si el build termino con exit 0
@@ -13,7 +13,11 @@ param(
 $ErrorActionPreference = 'Continue'
 $repo = 'C:\Aegis-Proyects\src'; $logDir = 'C:\Aegis-Proyects\web\logs'; $log = "$logDir\build-$Version.log"
 $cfg = 'C:\Users\Emiliano\.cargo\config.toml'
-$out = "$repo\target\debug\aegis-$Version.exe"
+# OJO: cargo escribe en CARGO_TARGET_DIR (C:\Aegis-Proyects\target), NO en src\target. Apuntar a
+# src\target copiaba un binario VIEJO y verificaba hash contra otro viejo: decia "copia ok" y publicaba
+# codigo viejo (paso con v41/v42 el 16/10).
+$targetDir = 'C:\Aegis-Proyects\target\debug'
+$out = "$targetDir\aegis-$Version.exe"
 function Last-ModelWrite {
   $f = Get-ChildItem "$env:APPDATA\Aegis\aegis\data\logs\llm_request.*.jsonl" -ErrorAction SilentlyContinue |
        Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -51,8 +55,8 @@ try {
   $code = $LASTEXITCODE
   Add-Content $log ("EXITCODE=$code")
   if ($code -ne 0) { Add-Content $log 'BUILD_FAILED: no se copia nada'; exit 1 }
-  Copy-Item "$repo\target\debug\aegis.exe" $out -Force
-  $srcHash = (Get-FileHash "$repo\target\debug\aegis.exe" -Algorithm SHA256).Hash
+  Copy-Item "C:\Aegis-Proyects\target\debug\aegis.exe" $out -Force
+  $srcHash = (Get-FileHash "C:\Aegis-Proyects\target\debug\aegis.exe" -Algorithm SHA256).Hash
   $dstHash = (Get-FileHash $out -Algorithm SHA256).Hash
   if ($srcHash -ne $dstHash) {
     Add-Content $log ("COPY_FAILED: el destino no coincide con aegis.exe (origen {0}, destino {1})" -f $srcHash.Substring(0,16), $dstHash.Substring(0,16))
