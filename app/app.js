@@ -3267,10 +3267,23 @@
         const res = await rpc.request('session/set_config_option', { sessionId, configId, value: pend[configId] });
         if (res && Array.isArray(res.configOptions) && state.current) state.current.configOptions = res.configOptions;
       } catch (e) {
-        // No se oculta: si el servidor rechaza la opcion (p.ej. cambiar el proveedor de una sesion
-        // recien creada) el usuario tiene que enterarse, no quedarse creyendo que se aplico.
+        // No se oculta: si el servidor rechaza la opcion el usuario tiene que enterarse.
         systemNote('No se pudo aplicar «' + configId + '» elegido antes de crear el chat: ' + (e && e.message ? e.message : e));
       }
+    }
+    // Verificacion: el servidor puede aceptar la llamada y NO aplicar el cambio (medido con
+    // "provider": se pedia aegis y la sesion quedaba en open_design). Se compara lo que quedo y, si
+    // no coincide, se avisa en pantalla en vez de dejar creer que la eleccion se aplico.
+    const quedo = {};
+    for (const o of (state.current && state.current.configOptions) || []) {
+      if (o && o.id) quedo[o.id] = o.currentValue;
+    }
+    const sinAplicar = ids.filter((id) => quedo[id] !== undefined && quedo[id] !== pend[id]);
+    if (sinAplicar.length) {
+      systemNote(
+        'Ojo: la elección hecha antes de crear el chat no quedó aplicada (' + sinAplicar.join(', ') +
+          '). Cambiala con los selectores de arriba, ya con el chat abierto.'
+      );
     }
     state.pendingConfig = {};
     guardarPendientes();
