@@ -3939,9 +3939,11 @@
   }
   try { READ_ON = localStorage.getItem(readKeyFor(null)) === '1'; } catch (e) {}
   var READ = { key: null, consumed: 0, spoken: 0, rate: 1.02, voice: null, engine: 'piper', voiceName: 'es_AR-daniela-high', fallos: 0 };
+  // Solo Piper (local). Se borra cualquier motor/voz guardados de antes (edge y groq quedaron sin
+  // servicio) para no seguir mandando una voz que Piper no tiene en cada pedido.
   try {
-    READ.engine = localStorage.getItem('aegis.ttsEngine') || 'piper';
-    READ.voiceName = localStorage.getItem('aegis.ttsVoice') || 'es_AR-daniela-high';
+    if (localStorage.getItem('aegis.ttsEngine') !== 'piper') localStorage.removeItem('aegis.ttsEngine');
+    localStorage.removeItem('aegis.ttsVoice');
   } catch (e) {}
   var TICK = String.fromCharCode(96); // comilla invertida (para armar los patrones de code fences)
 
@@ -3981,12 +3983,27 @@
   }
   // Motor del server (Piper, voces neuronales locales) con cola de audio: una frase a la vez,
   // y si algo falla cae a la voz del dispositivo en vez de quedarse mudo.
-  var AUD = { q: [], playing: false, cur: null };
+  var AUD = { q: [], playing: false, cur: null, pre: null };
+  function ttsUrl(t) { return '/tts?voice=' + encodeURIComponent(READ.voiceName) + '&text=' + encodeURIComponent(t); }
+  // Se pide YA la frase siguiente mientras suena la actual: Piper tarda ~1 s por frase (casi todo es
+  // arrancar el proceso) y ese tiempo queda escondido detras del audio que ya esta sonando: antes cada
+  // punto y aparte se notaba como una pausa.
+  function audPrefetch() {
+    if (AUD.pre || !AUD.q.length) return;
+    var t = AUD.q[0];
+    var a = new Audio(ttsUrl(t));
+    a.preload = 'auto';
+    try { a.load(); } catch (e) {}
+    AUD.pre = { t: t, a: a };
+  }
   function audNext() {
     if (AUD.playing || !AUD.q.length) return;
-    var t = AUD.q.shift();
+    var t = AUD.q[0];
+    var a = (AUD.pre && AUD.pre.t === t) ? AUD.pre.a : null;
+    AUD.pre = null;
+    AUD.q.shift();
     AUD.playing = true;
-    var a = new Audio('/tts?engine=' + encodeURIComponent(READ.engine) + '&voice=' + encodeURIComponent(READ.voiceName) + '&text=' + encodeURIComponent(t));
+    a = a || new Audio(ttsUrl(t));
     AUD.cur = a;
     var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); };
     // Sin caida a la voz del dispositivo (a pedido: la del telefono suena mal). Si el server no
@@ -4002,39 +4019,26 @@
     a.onerror = fallar;
     var pr = a.play();
     if (pr && pr.catch) pr.catch(fallar);
+    audPrefetch();   // deja lista la frase siguiente
   }
   function audStop() {
     AUD.q.length = 0;
     if (AUD.cur) { try { AUD.cur.pause(); } catch (e) {} AUD.cur = null; }
+    AUD.pre = null;
     AUD.playing = false;
   }
-  function readSayDevice(text) {
-    var t = String(text || '').trim();
-    if (!t) return;
-    try {
-      if (!window.speechSynthesis) return;
-      var btn0 = document.getElementById('btn-read');
-      if (btn0) btn0.classList.add('speaking');
-      var u = new SpeechSynthesisUtterance(t);
-      u.lang = (READ.voice && READ.voice.lang) || 'es-AR';
-      if (READ.voice) u.voice = READ.voice;
-      u.rate = READ.rate;
-      window.speechSynthesis.speak(u);
-      var btn = document.getElementById('btn-read');
-      if (btn) btn.classList.add('speaking');
-    } catch (e) {}
-  }
+  // Se borro el camino de la voz del dispositivo (speechSynthesis): solo Piper.
   function readSay(text) {
     var t = String(text || '').trim();
     if (!t) return;
-    if (READ.engine && READ.engine !== 'device') {
-      var btn = document.getElementById('btn-read');
-      if (btn) btn.classList.add('speaking');
-      AUD.q.push(t);
-      audNext();
-      return;
-    }
-    readSayDevice(t);
+    var btn = document.getElementById('btn-read');
+    if (btn) btn.classList.add('speaking');
+    AUD.q.push(t);
+    audNext();
+    // Si ya hay algo sonando, este trozo quedo esperando: se sintetiza YA (Piper tarda ~1 s) para que
+    // al terminar el anterior arranque sin pausa. Antes la precarga salia solo si el trozo ya estaba
+    // encolado cuando arrancaba el anterior, que en el uso real casi nunca pasa.
+    audPrefetch();
   }
   function readReset(cancelar) {
     audStop();
@@ -4057,14 +4061,24 @@
     var done = READ.consumed || 0;
     if (raw.length <= done) return;
     var pend = raw.slice(done);
-    // Corte en el ultimo fin de frase: seguido de espacio O al final del texto.
-    var cut = -1, m;
+    // Corte de trozo: se agrupan oraciones hasta ~260 caracteres (menos pedidos y menos pausas:
+    // cada pedido cuesta ~1 s de arranque de Piper). El PRIMER trozo sale apenas hay una oracion
+    // completa, para que la voz arranque enseguida.
+    var cortes = [], mm;
     var reCut = /[.!?…](?=\s|$)/g;
-    while ((m = reCut.exec(pend))) cut = m.index + 1;
-    if (cut < 0) {
-      if (final) cut = pend.length;                              // cierre de turno: lo que haya
-      else if (pend.length > 220 && pend.indexOf(' ') > 0) cut = pend.lastIndexOf(' ');
-      else return;                                               // muy corto todavia: espera mas texto
+    while ((mm = reCut.exec(pend))) cortes.push(mm.index + 1);
+    var LIMITE = 260;
+    var cut = -1;
+    if (done === 0 && cortes.length) {
+      cut = cortes[0];
+    } else {
+      for (var i = 0; i < cortes.length; i++) if (cortes[i] <= LIMITE) cut = cortes[i];
+      if (cut < 0) {
+        if (cortes.length) cut = cortes[0];                      // oracion larguisima: corta igual
+        else if (final) cut = pend.length;                       // cierre de turno: lo que haya
+        else if (pend.length > LIMITE + 60 && pend.indexOf(' ') > 0) cut = pend.lastIndexOf(' ');
+        else return;                                             // poco texto todavia: espera mas
+      }
     }
     var trozo = readClean(pend.slice(0, cut));
     READ.consumed = done + cut;
@@ -4449,7 +4463,7 @@
     else arrancar();
   })();
 
-  window.__aegisWeb = { state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  window.__aegisWeb = { state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),

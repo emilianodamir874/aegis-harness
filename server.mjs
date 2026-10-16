@@ -286,114 +286,60 @@ function proxyAcp(req, socket, head) {
 // --- Piper: voces neuronales LOCALES (offline, sin claves, CPU). Es el motor por defecto.
 const PIPER_EXE = 'C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe';
 const PIPER_DIR = 'C:/Aegis-Proyects/core/state/piper/voices';
-// Motores que acaban de fallar (edge: 403 de Microsoft; groq: falta aceptar terminos). Se recuerdan
-// 10 minutos para no pagar el intento fallido en cada frase antes de caer al motor local.
-const _motoresRotos = new Map();
-const MOTOR_ROTO_MS = 10 * 60 * 1000;
-async function piperTts(texto, voz) {
-  const { spawn } = await import('node:child_process');
+// UNICO motor: Piper local. Se borraron edge-tts (Microsoft contesta 403 desde que cambio el
+// esquema de token) y Groq (exige aceptar terminos y no tiene voz en espanol): solo servian
+// para fallar y meter latencia.
+const PIPER_VOZ = 'es_AR-daniela-high';
+const _ttsCache = new Map();          // texto+voz ->Buffer, para no resintetizar lo mismo
+const TTS_CACHE_MAX = 24;
+let _vocesPiper = null;
+async function vozPiperValida(voz) {
   const fss = await import('node:fs');
-  const modelo = String(voz || 'es_AR-daniela-high').replace(/[^A-Za-z0-9_.-]/g, '');
-  // OJO: en piper 1.2.0 el audio por defecto NO va a stdout: crea un .wav propio y escribe la
-  // ruta por stdout (por eso el endpoint devolvia 47 bytes con un path). Se usa -f <tmp> y se lee.
-  const tmp = 'C:/Aegis-Proyects/tmp/piper-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + '.wav';
   try {
-    return await new Promise((resolve, reject) => {
-      const p = spawn(PIPER_EXE, ['-m', PIPER_DIR + '/' + modelo + '.onnx', '-f', tmp]);
-      let err = '';
-      p.stderr.on('data', (d) => { err += d.toString(); });
-      p.on('error', reject);
-      p.on('close', (code) => {
-        try {
-          if (code !== 0) return reject(new Error('piper exit ' + code + ' ' + err.slice(0, 200)));
-          const buf = fss.readFileSync(tmp);
-          if (!buf || buf.length < 100) return reject(new Error('piper sin audio: ' + err.slice(0, 150)));
-          resolve(buf);
-        } catch (e) { reject(e); }
-      });
-      p.stdin.write(String(texto));
-      p.stdin.end();
-    });
-  } finally {
-    try { fss.unlinkSync(tmp); } catch (e) {}
-  }
+    if (!_vocesPiper) {
+      _vocesPiper = new Set(
+        fss.readdirSync(PIPER_DIR).filter((f) => f.endsWith('.onnx')).map((f) => f.slice(0, -5))
+      );
+    }
+  } catch (e) { _vocesPiper = new Set([PIPER_VOZ]); }
+  const v = String(voz || '').replace(/[^A-Za-z0-9_.-]/g, '');
+  return _vocesPiper.has(v) ? v : PIPER_VOZ;   // voz de otro motor (es-AR-TomasNeural) cae a la local
 }
-
-// --- Groq TTS (playai-tts): voces neuronales por HTTP simple. Usa la misma clave que el dictado.
-async function groqKey() {
-  const ahora = Date.now();
-  if (_gk.k && ahora - _gk.t < 300000) return _gk.k;
-  try {
-    const fss = await import('node:fs');
-    const raw = fss.readFileSync('C:/Aegis-Proyects/state/config/secrets.yaml', 'utf8');
-    const m = raw.match(/gsk_[A-Za-z0-9]{30,}/);
-    if (m) _gk = { k: m[0], t: ahora };
-  } catch (e) {}
-  return _gk.k;
-}
-let _gk = { k: '', t: 0 };
-async function groqTts(texto, voz, modelo) {
-  const key = await groqKey();
-  if (!key) throw new Error('sin clave de Groq en state/config/secrets.yaml');
-  // Groq retiro playai-tts (31/12) y hoy solo ofrece Orpheus: v1-english y arabic-saudi. NO hay
-  // modelo en espanol, asi que el texto en castellano lo lee una voz inglesa (acento malo).
-  const r = await fetch('https://api.groq.com/openai/v1/audio/speech', {
-    method: 'POST',
-    headers: { authorization: 'Bearer ' + key, 'content-type': 'application/json' },
-    body: JSON.stringify({ model: modelo || 'canopylabs/orpheus-v1-english', voice: voz, input: texto, response_format: 'mp3' }),
-  });
-  if (!r.ok) throw new Error('groq ' + r.status + ': ' + (await r.text()).slice(0, 220));
-  return Buffer.from(await r.arrayBuffer());
-}
-
-// ---------------------------------------------------------------- edge-tts (voces neuronales)
-// Voces de Microsoft (gratis, sin clave). El protocolo es WebSocket + SSML, asi que va aca en el
-// server y el cliente pide /tts?text=... y recibe mp3. Requiere el token publico + Sec-MS-GEC.
-const EDGE_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
-function edgeGec() {
-  const t = Math.floor((Date.now() / 1000 + 11644473600) * 1e7);
-  const r = t - (t % 3000000000);                       // redondeo a 5 minutos
-  return crypto.createHash('sha256').update(r + EDGE_TOKEN, 'ascii').digest('hex').toUpperCase();
-}
-async function edgeTts(texto, voz, rate) {
-  // El WebSocket global de Node (undici) IGNORA las cabeceras personalizadas y Edge exige Origin
-  // (por eso el 502 "ws error"); la libreria ws si las manda.
-  const mod = await import('file:///C:/Aegis-Proyects/web/tools/tts-deps/node_modules/ws/index.js')
-    .catch(() => import('ws').catch(() => ({ default: globalThis.WebSocket })));
-  const WS = mod.WebSocket || mod.default || globalThis.WebSocket;
-  return await new Promise((resolve, reject) => {
-    const id = crypto.randomUUID().replace(/-/g, '');
-    const url = 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
-      + '?TrustedClientToken=' + EDGE_TOKEN + '&ConnectionId=' + id + '&Sec-MS-GEC=' + edgeGec() + '&Sec-MS-GEC-Version=1-130.0.2849.68';
-    const ws = new WS(url, { headers: {
-      'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-    } });
-    ws.binaryType = 'arraybuffer';
+async function piperTts(texto, voz, rate) {
+  const { spawn } = await import('node:child_process');
+  const modelo = await vozPiperValida(voz);
+  const ritmo = Number(rate) > 0.5 && Number(rate) < 2 ? 1 / Number(rate) : 1;  // >1 = mas lento
+  const clave = modelo + '|' + ritmo.toFixed(3) + '|' + texto;
+  const guardado = _ttsCache.get(clave);
+  if (guardado) return guardado;
+  const audio = await new Promise((resolve, reject) => {
+    // -f - escribe el WAV en stdout: sin archivo temporal (menos I/O y nada que limpiar).
+    const p = spawn(PIPER_EXE, [
+      '-m', PIPER_DIR + '/' + modelo + '.onnx',
+      '-f', '-',
+      '--length_scale', String(ritmo),
+      '--sentence_silence', '0.12',   // pausa mas corta entre oraciones (por defecto 0.2)
+      '-q',
+    ]);
     const partes = [];
-    const fin = setTimeout(() => { try { ws.close(); } catch (e) {} reject(new Error('timeout')); }, 20000);
-    ws.onopen = () => {
-      const fecha = new Date().toString();
-      ws.send('X-Timestamp:' + fecha + '\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n'
-        + '{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},'
-        + '"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}');
-      const safe = String(texto).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const rateAttr = rate && rate !== 1 ? ' rate="' + (rate >= 1 ? '+' : '') + Math.round((rate - 1) * 100) + '%"' : '';
-      ws.send('X-RequestId:' + id + '\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:' + fecha + 'Z\r\nPath:ssml\r\n\r\n'
-        + "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='es-AR'><voice name='" + voz + "'" + rateAttr + '>' + safe + '</voice></speak>');
-    };
-    ws.onmessage = (ev) => {
-      if (typeof ev.data === 'string') { if (ev.data.includes('Path:turn.end')) { clearTimeout(fin); try { ws.close(); } catch (e) {} resolve(Buffer.concat(partes)); } return; }
-      const buf = Buffer.from(ev.data);
-      const idx = buf.indexOf('Path:audio\r\n');
-      const ini = idx >= 0 ? idx + 12 : buf.indexOf('\r\n\r\n') + 4;   // salta la cabecera
-      if (ini > 0 && ini < buf.length) partes.push(buf.slice(ini));
-    };
-    ws.onerror = (e) => { clearTimeout(fin); reject(new Error('ws: ' + ((e && e.message) || String(e)))); };
-    ws.onclose = (e) => { if (partes.length) { clearTimeout(fin); resolve(Buffer.concat(partes)); }
-      else { clearTimeout(fin); reject(new Error('cerrado ' + (e && e.code) + ' ' + ((e && e.reason) || ''))); } };
+    let err = '';
+    p.stdout.on("data", (d) => partes.push(d));
+    p.stderr.on("data", (d) => { err += d.toString(); });
+    p.on("error", reject);
+    p.on("close", (code) => {
+      const buf = Buffer.concat(partes);
+      if (code !== 0) return reject(new Error('piper exit ' + code + ' ' + err.slice(0, 200)));
+      if (!buf || buf.length < 100) return reject(new Error('piper sin audio: ' + err.slice(0, 150)));
+      resolve(buf);
+    });
+    p.stdin.write(String(texto));
+    p.stdin.end();
   });
+  if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value);
+  _ttsCache.set(clave, audio);
+  return audio;
 }
+
 
 // ------------------------------------------------------------------- server
 const handler = async (req, res) => {
@@ -410,36 +356,22 @@ const handler = async (req, res) => {
     if (url.pathname === '/tts' && req.method === 'GET') {
       const texto = String(url.searchParams.get('text') || '').slice(0, 700);
       const motor = String(url.searchParams.get('engine') || cfg.ttsEngine || 'piper');
-      const voz = String(url.searchParams.get('voice') || cfg.ttsVoice ||
-        (motor === 'piper' ? 'es_AR-daniela-high' : motor === 'groq' ? 'autumn' : 'es-AR-TomasNeural'));
+      // La voz por defecto es la de Piper; si el cliente manda una de otro motor, piperTts la
+      // valida contra los modelos instalados y cae a la local.
+      const voz = String(url.searchParams.get('voice') || cfg.ttsVoice || PIPER_VOZ);
       const rate = Number(url.searchParams.get('rate') || cfg.ttsRate || 1.05);
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
       try {
-        const modelo = String(url.searchParams.get('model') || cfg.ttsModel || 'canopylabs/orpheus-v1-english');
-        const conMotor = (m, v) => m === 'edge' ? edgeTts(texto, v, rate)
-          : m === 'groq' ? groqTts(texto, v, modelo)
-          : piperTts(texto, v);
-        const rotoHasta = _motoresRotos.get(motor);
-        const pedido = rotoHasta && Date.now() < rotoHasta ? 'piper' : motor;
-        let audio, usado = pedido, nota = '';
-        try {
-          audio = await conMotor(pedido, pedido === 'piper' && motor !== 'piper' ? 'es_AR-daniela-high' : voz);
-        } catch (err) {
-          // edge-tts hoy contesta 403 (cambio el esquema de token de Microsoft) y groq exige aceptar
-          // terminos: en vez de dejar al usuario sin voz, se cae al motor LOCAL (piper), que es el
-          // unico que funciona sin depender de terceros. Antes el cliente salteaba la frase y
-          // parecia que la lectura en voz alta no andaba.
-          if (pedido === 'piper') throw err;
-          _motoresRotos.set(motor, Date.now() + MOTOR_ROTO_MS);
-          nota = (err && err.message ? err.message : String(err)).slice(0, 140);
-          audio = await conMotor('piper', 'es_AR-daniela-high');
-          usado = 'piper';
-        }
+        // Los parametros engine/model se aceptan y se ignoran: la web puede seguir mandando
+        // engine=edge de una config vieja y ahora se sintetiza igual con Piper.
+        const audio = await piperTts(texto, voz, rate);
         if (!audio || !audio.length) throw new Error('sin audio');
-        const esWav = audio.slice(0, 4).toString('ascii') === 'RIFF';
-        const cabeceras = { 'content-type': esWav ? 'audio/wav' : 'audio/mpeg', 'content-length': String(audio.length), 'cache-control': 'no-store', 'x-aegis-tts-engine': usado };
-        if (nota) cabeceras['x-aegis-tts-note'] = nota;
-        res.writeHead(200, cabeceras);
+        res.writeHead(200, {
+          'content-type': 'audio/wav',
+          'content-length': String(audio.length),
+          'cache-control': 'no-store',
+          'x-aegis-tts-engine': 'piper',
+        });
         res.end(audio);
       } catch (err) {
         res.writeHead(502, { 'content-type': 'text/plain' });
