@@ -948,14 +948,15 @@
     for (let i = kids.length - 1; i >= first; i--) {
       if (kids[i].classList.contains('hidden-from-agent')) { last = i; break; }
     }
-    kids.forEach((k, i) => {
-      k.classList.toggle('hidden-tail', i >= first && i <= last);
-      k.classList.toggle('rw-boundary', i === first);
-    });
+    // Lo que el modelo dejo de ver NO se muestra atenuado: se saca de la vista (a pedido,
+    // 2026-10-16). Antes quedaba en gris ocupando pantalla y confundia: parecia que la IA lo seguia
+    // teniendo en cuenta. Los mensajes siguen guardados en la sesion (esto es solo la vista).
+    const ocultos = kids.slice(first, last + 1);
     const marker = document.createElement('div');
     marker.className = 'rw-marker';
-    marker.textContent = 'El modelo no ve desde aca';
+    marker.textContent = 'Rebobinado: ' + ocultos.length + (ocultos.length === 1 ? ' mensaje oculto' : ' mensajes ocultos') + ' (el modelo no los ve; siguen guardados en la sesion)';
     inner.insertBefore(marker, kids[first]);
+    for (const k of ocultos) k.remove();
   }
 
   function askRewind(el) {
@@ -987,7 +988,7 @@
       }
       markHiddenTail();
       if (res && res.text) { input.value = res.text; autosize(); refreshSlashMenu(); input.focus(); }
-      systemNote('Rebobinado: el modelo ya no ve ' + ((res && res.hidden) || 0) + ' mensaje(s) desde aca. El texto quedo en el composer para editarlo.');
+      systemNote('Rebobinado: se ocultaron ' + ((res && res.hidden) || 0) + ' mensaje(s) desde aca (el modelo no los ve). El texto quedo en el composer para editarlo.');
     } catch (err) {
       toast('No se pudo rebobinar: ' + ((err && err.message) || err), 'err');
     }
@@ -4463,7 +4464,7 @@
     else arrancar();
   })();
 
-  window.__aegisWeb = { state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  window.__aegisWeb = { state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
