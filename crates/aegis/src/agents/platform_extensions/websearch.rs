@@ -108,7 +108,7 @@ impl WebSearchClient {
             ),
             Tool::new(
                 "web_fetch".to_string(),
-                "Fetch a URL and return its text without HTML boilerplate (cached for an hour).".to_string(),
+                "Fetch a URL and return its text without HTML boilerplate (cached for an hour). JSON responses are returned as-is, so static JSON APIs (catalogs, price feeds) work too.".to_string(),
                 schema(serde_json::to_value(schemars::schema_for!(WebFetchParams)).unwrap_or_default()),
             ),
         ]
@@ -292,6 +292,13 @@ impl WebSearchClient {
 
     async fn fetch_text(&self, url: &str, max_chars: usize) -> std::result::Result<String, String> {
         let markup = self.get_text(url).await?;
+        // APIs JSON: pasarlas por html_to_text las aplasta y queda un texto inservible. Si el cuerpo
+        // arranca con { o [ se devuelve tal cual (acotado a max_chars): sirve para los catalogos y
+        // precios que los sitios publican como JSON estatico (p.ej. static.compragamer.com/productos).
+        let limpio = markup.trim_start();
+        if limpio.starts_with('{') || limpio.starts_with('[') {
+            return Ok(cortar_chars(limpio, max_chars));
+        }
         Ok(html_to_text(&markup, max_chars))
     }
 }
@@ -325,6 +332,16 @@ fn collect_json_hits(payload: &serde_json::Value, count: usize) -> Vec<SearchHit
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Corta por CARACTERES (no bytes) para no partir un UTF-8 al medio, y avisa si recorto.
+fn cortar_chars(texto: &str, max_chars: usize) -> String {
+    let total = texto.chars().count();
+    if total <= max_chars {
+        return texto.to_string();
+    }
+    let corte: String = texto.chars().take(max_chars).collect();
+    format!("{corte}\n… (recortado: el cuerpo tenia {total} caracteres)")
 }
 
 /// Strips scripts, styles and tags, then collapses whitespace and entities.
