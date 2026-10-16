@@ -90,7 +90,9 @@
     // aplasta la columna y parte las palabras letra por letra.
     const plain = (s) => String(s == null ? '' : s).replace(/[*`_]/g, '').trim();
     const cell = (tag, txt, i, label) => { const a = aligns[i]; return `<${tag}${a ? ` style="text-align:${a}"` : ''}${label ? ` data-label="${esc(label)}"` : ''}>${inline(txt)}</${tag}>`; };
-    return '<div class="tbl-wrap"><table><thead><tr>' + head.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>'
+    // data-cols: en pantalla angosta, las de 2 columnas se muestran como tabla (etiqueta/valor) y
+    // solo las de 3+ se rearman como tarjetas (una fila = una tarjeta).
+    return '<div class="tbl-wrap"><table' + (head.length === 2 ? ' data-cols="2"' : '') + '><thead><tr>' + head.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>'
       + (rows.length ? '<tbody>' + rows.map((r) => '<tr>' + head.map((_, i) => cell('td', r[i] == null ? '' : r[i], i, plain(head[i]))).join('') + '</tr>').join('') + '</tbody>' : '')
       + '</table></div>';
   };
@@ -715,6 +717,53 @@
   // ---------- modelo por defecto de los chats nuevos ----------
   // Los selectores de modelo viven en la sesion (configOptions): antes de crear un chat no existen.
   // Lo que si se puede mostrar es con que modelo va a arrancar, que lo define el servidor.
+  // ---------- aviso de recorte del replay ----------
+  // Al reabrir un chat el servidor no reenvia bloques de mas de REPLAY_MAX_BLOCK (8 KB) y deja
+  // "... [recortado: N bytes omitidos del replay]". Se envuelve ese texto para mostrarlo como nota
+  // al pie con explicacion: el mensaje guardado esta completo, lo que se recorta es el envio.
+  (function wireRecortes() {
+    const RE = /…?\s*\[recortado: \d+ bytes omitidos del replay\]/;
+    const marcar = (raiz) => {
+      const raices = [];
+      if (raiz && raiz.nodeType === 1) {
+        const propio = raiz.matches && raiz.matches('#messages .msg-a .content') ? raiz : null;
+        if (propio) raices.push(propio);
+        if (raiz.querySelectorAll) for (const c of raiz.querySelectorAll('#messages .msg-a .content')) raices.push(c);
+      }
+      for (const c of raices) {
+        if (c.querySelector('.replay-cut')) continue;
+        for (const nodo of c.querySelectorAll('p, li, div, td')) {
+          for (const tn of [...nodo.childNodes]) {
+            if (tn.nodeType !== 3) continue;
+            const m = RE.exec(tn.nodeValue || '');
+            if (!m) continue;
+            const span = document.createElement('span');
+            span.className = 'replay-cut';
+            span.textContent = m[0].trim();
+            span.title = 'El servidor no reenvía bloques de más de 8 KB al reabrir el chat, así que esta parte no viajó. El mensaje guardado está completo.';
+            const antes = tn.nodeValue.slice(0, m.index);
+            const despues = tn.nodeValue.slice(m.index + m[0].length);
+            const frag = document.createDocumentFragment();
+            if (antes.trim()) frag.appendChild(document.createTextNode(antes.trim() + ' '));
+            frag.appendChild(span);
+            if (despues.trim()) frag.appendChild(document.createTextNode(' ' + despues.trim()));
+            tn.parentNode.replaceChild(frag, tn);
+          }
+        }
+      }
+    };
+    const arrancar = () => {
+      marcar(document);
+      const caja = document.getElementById('messages');
+      if (!caja) return;
+      new MutationObserver((muts) => {
+        for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) marcar(n);
+      }).observe(caja, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar, { once: true });
+    else arrancar();
+  })();
+
   function pintaModeloPorDefecto() {
     const el = document.getElementById('default-model-chip');
     if (!el) return;

@@ -1,0 +1,21 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })).newPage();
+await p.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded' });
+await p.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state, null, { timeout: 25000 });
+await p.waitForTimeout(2500);
+await p.click('#btn-menu').catch(() => {});
+await p.waitForTimeout(800);
+await p.click('[data-id="20261016_9"]');
+await p.waitForTimeout(13000);
+const info = await p.evaluate(() => {
+  const dos = document.querySelector('#messages table[data-cols="2"]');
+  const tres = [...document.querySelectorAll('#messages table')].find((t) => t.querySelectorAll('thead th').length > 2);
+  const estilo = (t) => { if (!t) return null; const td = t.querySelector('tbody td'); const cs = td ? getComputedStyle(td) : null; const bef = td ? getComputedStyle(td, '::before') : null; return { columnas: t.querySelectorAll('thead th').length, tdDisplay: cs ? cs.display : null, etiquetaAntes: bef ? bef.content : null, filas: t.querySelectorAll('tbody tr').length }; };
+  const rec = document.querySelector('.replay-cut');
+  const csr = rec ? getComputedStyle(rec) : null;
+  return { tabla2: estilo(dos), tabla3: estilo(tres), recorte: rec ? { texto: rec.textContent.slice(0, 60), fontSize: csr.fontSize, color: csr.color, estilo: csr.fontStyle, display: csr.display } : null, fila2Ejemplo: dos ? [...dos.querySelectorAll('tbody tr')].slice(0, 3).map((r) => [...r.querySelectorAll('td')].map((c) => c.textContent.trim().slice(0, 26)).join('  ||  ')) : null };
+});
+await p.screenshot({ path: 'C:/Users/Emiliano/tmp/inv/tabla-cel.png' });
+console.log(JSON.stringify(info, null, 1));
+await b.close();

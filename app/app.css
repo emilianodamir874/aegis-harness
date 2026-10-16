@@ -1050,3 +1050,24 @@ body { background: var(--bg); }
      se dibujaba DETRAS del cajon. */
   .menu, .slash-menu { z-index: 400; }
 }
+
+/* Tablas markdown de 2 COLUMNAS en pantalla angosta: se mantienen como tabla (etiqueta a la
+   izquierda, valor a la derecha, en negrita) en vez de rearmarse como tarjetas repitiendo el
+   encabezado. Las de 3+ columnas siguen como tarjetas, que ahi si ayudan. */
+@media (max-width: 640px) {
+  .msg-a table[data-cols="2"] { display: table; width: 100%; }
+  .msg-a table[data-cols="2"] tbody { display: table-row-group; }
+  .msg-a table[data-cols="2"] tr { display: table-row; border: none; border-radius: 0; background: none; margin: 0; padding: 0; }
+  .msg-a table[data-cols="2"] td { display: table-cell; border: none; padding: 6px 0; vertical-align: middle; white-space: normal; }
+  .msg-a table[data-cols="2"] td::before { content: none; display: none; }
+  .msg-a table[data-cols="2"] td:first-child { color: var(--text-2); font-weight: 400; padding-right: 12px; }
+  .msg-a table[data-cols="2"] td:last-child { color: var(--text); font-weight: 600; text-align: right !important; white-space: nowrap; }
+  .msg-a table[data-cols="2"] tr + tr td { border-top: 1px solid var(--border-soft); }
+}
+
+/* Aviso de recorte del replay: nota al pie, chica y explicada (el texto lo agrega el servidor). */
+.msg-a .replay-cut {
+  display: inline-block; margin-top: 6px; padding-left: 8px;
+  border-left: 2px solid var(--border-soft);
+  font-size: 11.5px; font-style: italic; color: var(--text-4);
+}
