@@ -286,6 +286,10 @@ function proxyAcp(req, socket, head) {
 // --- Piper: voces neuronales LOCALES (offline, sin claves, CPU). Es el motor por defecto.
 const PIPER_EXE = 'C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe';
 const PIPER_DIR = 'C:/Aegis-Proyects/core/state/piper/voices';
+// Motores que acaban de fallar (edge: 403 de Microsoft; groq: falta aceptar terminos). Se recuerdan
+// 10 minutos para no pagar el intento fallido en cada frase antes de caer al motor local.
+const _motoresRotos = new Map();
+const MOTOR_ROTO_MS = 10 * 60 * 1000;
 async function piperTts(texto, voz) {
   const { spawn } = await import('node:child_process');
   const fss = await import('node:fs');
@@ -412,12 +416,30 @@ const handler = async (req, res) => {
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
       try {
         const modelo = String(url.searchParams.get('model') || cfg.ttsModel || 'canopylabs/orpheus-v1-english');
-        const audio = motor === 'edge' ? await edgeTts(texto, voz, rate)
-          : motor === 'groq' ? await groqTts(texto, voz, modelo)
-          : await piperTts(texto, voz);
+        const conMotor = (m, v) => m === 'edge' ? edgeTts(texto, v, rate)
+          : m === 'groq' ? groqTts(texto, v, modelo)
+          : piperTts(texto, v);
+        const rotoHasta = _motoresRotos.get(motor);
+        const pedido = rotoHasta && Date.now() < rotoHasta ? 'piper' : motor;
+        let audio, usado = pedido, nota = '';
+        try {
+          audio = await conMotor(pedido, pedido === 'piper' && motor !== 'piper' ? 'es_AR-daniela-high' : voz);
+        } catch (err) {
+          // edge-tts hoy contesta 403 (cambio el esquema de token de Microsoft) y groq exige aceptar
+          // terminos: en vez de dejar al usuario sin voz, se cae al motor LOCAL (piper), que es el
+          // unico que funciona sin depender de terceros. Antes el cliente salteaba la frase y
+          // parecia que la lectura en voz alta no andaba.
+          if (pedido === 'piper') throw err;
+          _motoresRotos.set(motor, Date.now() + MOTOR_ROTO_MS);
+          nota = (err && err.message ? err.message : String(err)).slice(0, 140);
+          audio = await conMotor('piper', 'es_AR-daniela-high');
+          usado = 'piper';
+        }
         if (!audio || !audio.length) throw new Error('sin audio');
         const esWav = audio.slice(0, 4).toString('ascii') === 'RIFF';
-        res.writeHead(200, { 'content-type': esWav ? 'audio/wav' : 'audio/mpeg', 'content-length': String(audio.length), 'cache-control': 'no-store' });
+        const cabeceras = { 'content-type': esWav ? 'audio/wav' : 'audio/mpeg', 'content-length': String(audio.length), 'cache-control': 'no-store', 'x-aegis-tts-engine': usado };
+        if (nota) cabeceras['x-aegis-tts-note'] = nota;
+        res.writeHead(200, cabeceras);
         res.end(audio);
       } catch (err) {
         res.writeHead(502, { 'content-type': 'text/plain' });
