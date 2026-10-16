@@ -733,7 +733,58 @@
     if (force || state.pinUntil > performance.now() || m.scrollHeight - m.scrollTop - m.clientHeight < 140) m.scrollTop = m.scrollHeight;
   };
 
+  // ---------- objetivo del chat (/goal y /grind) ----------
+  // El serve guarda el objetivo como extension data de la sesion (GoalState: goal/grind) y no se lo
+  // manda al cliente, asi que se deduce de la conversacion: manda el ultimo "/goal <texto>" del
+  // usuario, "/goal off|clear|none" lo borra, y "/goal" pelado (consulta) no cambia nada.
+  // Se engancha en addUser, unico embudo de mensajes del usuario (los propios y los del historial):
+  // asi, al recargar la conversacion, el chip se reconstruye solo.
+  function goalFromText(text) {
+    const s = String(text == null ? '' : text).trim();
+    const m = s.match(/^\/(goal|grind)(?:\s+([\s\S]*))?$/i);
+    if (!m) return null;
+    const kind = m[1].toLowerCase();
+    const params = String(m[2] || '').trim();
+    if (!params) return { action: 'none', kind };
+    if (/^(off|clear|none)$/i.test(params)) return { action: 'clear', kind };
+    return { action: 'set', kind, goal: params };
+  }
+
+  function noteGoalFrom(text) {
+    const r = goalFromText(text);
+    if (!r) return;
+    if (r.action === 'set') { state.goal = r.goal; state.grind = r.kind === 'grind' ? r.goal : null; }
+    else if (r.action === 'clear') { state.goal = null; state.grind = null; }
+    renderGoalBar();
+  }
+
+  function renderGoalBar() {
+    const bar = document.getElementById('goalbar');
+    if (!bar) return;
+    const g = state.goal;
+    if (!g) { bar.hidden = true; bar.innerHTML = ''; return; }
+    bar.hidden = false;
+    bar.innerHTML = '';
+    const tag = document.createElement('span');
+    tag.className = 'goalbar-tag';
+    tag.textContent = state.grind ? 'Objetivo (a fondo)' : 'Objetivo';
+    const txt = document.createElement('span');
+    txt.className = 'goalbar-text';
+    txt.textContent = g;
+    txt.title = g;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.id = 'goalbar-x';
+    x.className = 'goalbar-x';
+    x.textContent = '×';
+    x.title = 'Quitar el objetivo (/goal off)';
+    x.setAttribute('aria-label', 'Quitar el objetivo');
+    x.addEventListener('click', () => { sendText('/goal off'); });
+    bar.append(tag, txt, x);
+  }
+
   function addUser(text, replay, atts, opts) {
+    noteGoalFrom(text);
     // Durante un refresco suave no se toca el DOM: se bufferea y se aplica al final
     // (sólo las burbujas nuevas; las que ya están pintadas se saltan por messageId).
     if (SOFT.on && replay && !(opts && opts.local)) {
@@ -1802,6 +1853,9 @@
     state.hubWatchSid = null;
     state.steers.clear();
     state.queue = [];
+    state.goal = null;   // el objetivo es de la sesion: al cambiar de chat se recalcula con el replay
+    state.grind = null;
+    renderGoalBar();
     stopRunWatch();
     renderAttachments();
     finishStream();
@@ -3928,7 +3982,7 @@
   });
   if (!wireDraft()) document.addEventListener('DOMContentLoaded', wireDraft, { once: true });
 
-  window.__aegisWeb = { state, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  window.__aegisWeb = { state, goalFromText: goalFromText, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
