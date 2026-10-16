@@ -1000,3 +1000,18 @@ body { background: var(--bg); }
 
 /* Redondeo final: 38 -> 40 px para cumplir el minimo tactil medido en la revision. */
 .sb-rename, .sb-more, .sb-del { min-width: 40px; min-height: 40px; }
+
+/* Chips del selector de modelo y boton de menu: tambien por debajo del minimo tactil (medidos 26 y 34 px) */
+#btn-menu { min-width: 40px; min-height: 40px; }
+.sb-more-btn { min-height: 38px; }
+
+/* Botones de icono (34x34 en toda la app: microfono, adjuntar, objetivos, menu) y chips del
+   selector de modelo (26 px): los dos por debajo del minimo tactil medido. */
+.icon-btn { width: 40px; height: 40px; }
+.chip { min-height: 34px; padding-top: 6px; padding-bottom: 6px; }
+
+/* Ultimos controles por debajo del minimo: el boton Detener de la barra de estado (30 px, es una
+   accion clave en el celular), "cargar mas sesiones" (38) y los chips del selector (34 -> 36). */
+.runbar-stop { min-height: 38px; padding: 8px 14px; }
+.sb-more-btn { min-height: 40px; }
+.chip { min-height: 36px; }
