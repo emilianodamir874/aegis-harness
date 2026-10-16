@@ -1792,7 +1792,7 @@
       resetTransient();
       clearMessages();
       showWelcome('new');
-      loadDraft();
+      loadDraft(); readLoad();
       updateTitle(); renderChips(); markActive(res.sessionId);
       localStorage.setItem('gweb.last', res.sessionId);
       closeDrawer();
@@ -1948,7 +1948,7 @@
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
     clearMessages();
-    updateTitle(); markActive(id); closeDrawer(); loadDraft();
+    updateTitle(); markActive(id); closeDrawer(); loadDraft(); readLoad();
     localStorage.setItem('gweb.last', id);
     if (!opts || !opts.quiet) setPill('Cargando conversación.');
     if (!SOFT.on) {
@@ -3604,7 +3604,25 @@
   // "Lectura en voz alta"). Se lee EN VIVO: frase por frase, mientras el texto todavia llega por el
   // stream. Nada de afuera del bloque se lee. Y todo esto pasa solo si el modo esta encendido.
   var READ_ON = false;
-  try { READ_ON = localStorage.getItem('aegis.readOn') === '1'; } catch (e) {}
+  // El modo de lectura es POR CHAT: cada chat recuerda si lo tiene encendido y al abrirlo se aplica
+  // (y se corta el audio del chat anterior). Clave: aegis.readOn.<sid>; 'nuevo' mientras no hay sesion.
+  function readKeyFor(id) { return 'aegis.readOn.' + (id || 'nuevo'); }
+  function readLoad() {
+    readReset(true);   // cambiar de chat corta lo que estuviera sonando
+    try {
+      var id = state.current && state.current.id;
+      var v = localStorage.getItem(readKeyFor(id));
+      if (v === null) {
+        var viejo = localStorage.getItem('aegis.readOn');   // migracion del interruptor global viejo
+        if (viejo !== null) { v = viejo === '1' ? '1' : '0'; localStorage.setItem(readKeyFor(id), v); localStorage.removeItem('aegis.readOn'); }
+        else { v = '0'; }
+      }
+      READ_ON = v === '1';
+    } catch (e) { READ_ON = false; }
+    readSyncBtn();
+    return READ_ON;
+  }
+  try { READ_ON = localStorage.getItem(readKeyFor(null)) === '1'; } catch (e) {}
   var READ = { key: null, consumed: 0, spoken: 0, rate: 1.02, voice: null, engine: 'piper', voiceName: 'es_AR-daniela-high', fallos: 0 };
   try {
     READ.engine = localStorage.getItem('aegis.ttsEngine') || 'piper';
@@ -3744,7 +3762,7 @@
   }
   function readToggle(force) {
     READ_ON = (force === undefined) ? !READ_ON : !!force;
-    try { localStorage.setItem('aegis.readOn', READ_ON ? '1' : '0'); } catch (e) {}
+    try { localStorage.setItem(readKeyFor(state.current && state.current.id), READ_ON ? '1' : '0'); } catch (e) {}
     var btn = document.getElementById('btn-read');
     if (btn) {
       btn.classList.toggle('on', READ_ON);
@@ -3866,6 +3884,7 @@
 
   window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
+    perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
     draft: { save: saveDraft, load: loadDraft, key: draftKey },
     engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };

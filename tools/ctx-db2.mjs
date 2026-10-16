@@ -1,0 +1,11 @@
+import { DatabaseSync } from 'node:sqlite';
+const db = new DatabaseSync('C:/Aegis-Proyects/tmp/sessions-copia.db', { readOnly: true });
+const rows = db.prepare("select role, count(*) as n from messages where cast(content_json as text) like '%Para escuchar%' group by role").all();
+console.log('mensajes con el bloque, por rol: ' + JSON.stringify(rows));
+const ej = db.prepare("select session_id, role, substr(cast(content_json as text), 1, 0) as x, length(cast(content_json as text)) as l, timestamp from messages where role='assistant' and cast(content_json as text) like '%Para escuchar%' order by timestamp desc limit 3").all();
+for (const r of ej) console.log('  assistant | sesion ' + String(r.session_id).slice(0, 8) + ' | ' + r.l + ' bytes | ' + r.timestamp);
+const tot = db.prepare("select count(*) as n from messages where role='assistant'").get();
+console.log('mensajes assistant totales: ' + tot.n);
+const size = db.prepare("select sum(length(cast(content_json as text))) as s from messages where role='assistant' and cast(content_json as text) like '%Para escuchar%'").get();
+console.log('bytes de esos mensajes: ' + size.s);
+db.close();
