@@ -232,9 +232,11 @@ impl WebSearchClient {
                 Ok(parse_mojeek(&markup, count))
             }
             EngineKind::Bing => {
+                // mkt=es-AR + setlang: sin esto Bing mezclaba resultados de otro mercado y de la
+                // otra acepcion de la palabra (buscar "notebook" traia el producto Gemini Notebook).
                 let markup = self
                     .get_text_como_navegador(&format!(
-                        "https://www.bing.com/search?q={}&count={count}",
+                        "https://www.bing.com/search?q={}&count={count}&mkt=es-AR&setlang=es",
                         encode(query)
                     ))
                     .await?;
