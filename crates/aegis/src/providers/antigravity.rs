@@ -666,10 +666,17 @@ impl Provider for AntigravityProvider {
             // closure de map_ok no puede pedir prestado un local (error E0373 en el primer intento).
             let lineas_pasada = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             let contador = std::sync::Arc::clone(&lineas_pasada);
+            // Ultima linea cruda del proveedor: si la pasada no trae MENSAJE (solo el evento de uso),
+            // este texto dice POR QUE cerro (finishReason STOP, SAFETY, bloqueo de recitacion...).
+            let ultima_linea = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+            let guardando_linea = std::sync::Arc::clone(&ultima_linea);
             let bytes = response.bytes_stream().map_err(io::Error::other);
             let lines = FramedRead::new(StreamReader::new(bytes), LinesCodec::new())
                 .map_ok(move |line| {
                     contador.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if let Ok(mut guardada) = guardando_linea.lock() {
+                        *guardada = line.chars().take(400).collect();
+                    }
                     unwrap_sse(&line)
                 })
                 .map_err(anyhow::Error::from);
@@ -715,11 +722,16 @@ impl Provider for AntigravityProvider {
                 "pasada de stream terminada"
             );
             if !hubo_contenido && pasada >= MAX_PASADAS {
+                let ultima = ultima_linea
+                    .lock()
+                    .map(|guardada| guardada.clone())
+                    .unwrap_or_default();
                 tracing::warn!(
                     target: "aegis::providers::antigravity",
                     pasada,
                     estado_http,
                     lineas,
+                    ultima_linea = %ultima,
                     "todas las pasadas volvieron sin contenido: el turno va a quedar vacio"
                 );
             }
