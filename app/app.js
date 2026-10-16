@@ -501,6 +501,7 @@
       b.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); fn(); });
       menu.appendChild(b);
     };
+    entry('Copiar ID de sesión', () => copySessionId(id));
     entry('Renombrar', () => startRename(id));
     entry('Exportar como Markdown', () => exportSession(id, 'markdown'));
     entry('Exportar como JSON', () => exportSession(id, 'json'));
@@ -599,6 +600,29 @@
     } catch (e) {
       report('error', 'session/list: ' + e.message);
     }
+  }
+
+  // Copia el ID de sesion al portapapeles. En http:// de la LAN no hay clipboard API (contexto no
+  // seguro), asi que cae a la copia clasica; si tampoco, muestra el ID en pantalla para copiarlo a mano.
+  async function copySessionId(id) {
+    const texto = String(id || '');
+    if (!texto) return;
+    let ok = false;
+    try { await navigator.clipboard.writeText(texto); ok = true; } catch (e) {}
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = texto;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select(); ta.setSelectionRange(0, texto.length);
+        ok = document.execCommand('copy');
+        ta.remove();
+      } catch (e) {}
+    }
+    systemNote(ok ? ('ID de sesión copiado: ' + texto) : ('No pude copiar solo; el ID es: ' + texto));
+    return ok;
   }
 
   async function loadMoreSessions() {
@@ -3882,7 +3906,7 @@
   });
   if (!wireDraft()) document.addEventListener('DOMContentLoaded', wireDraft, { once: true });
 
-  window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  window.__aegisWeb = { state, copyId: copySessionId, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
