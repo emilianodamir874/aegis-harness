@@ -3352,7 +3352,16 @@
     // antes quedaba fuera del viewport y no se podía tocar.
     if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 7);
     menu.style.top = Math.round(top) + 'px';
-    menu.style.right = Math.max(8, Math.round(window.innerWidth - r.right)) + 'px';
+    // Horizontal: el borde derecho del menú se alinea con el del chip, pero acotado al viewport.
+    // Antes no había tope a la IZQUIERDA: en el celular (menú de 250px, chip pegado a la izquierda)
+    // el menú se abría 130px fuera de pantalla y se veía cortado ("pprove" en vez de "Approve").
+    const anchoMenu = menu.offsetWidth;
+    const margen = 8;
+    let left = r.right - anchoMenu;
+    if (left < margen) left = margen;
+    if (left + anchoMenu > window.innerWidth - margen) left = Math.max(margen, window.innerWidth - margen - anchoMenu);
+    menu.style.left = Math.round(left) + 'px';
+    menu.style.right = 'auto';
     menuOpenedAt = Date.now();
   }
   let menuOpenedAt = 0;

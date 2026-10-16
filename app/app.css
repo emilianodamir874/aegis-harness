@@ -1030,3 +1030,23 @@ body { background: var(--bg); }
 /* Chip informativo del modelo por defecto (pantalla de bienvenida) */
 .chip-default { cursor: default; opacity: 0.7; font-size: 11.5px; }
 .chip-default[hidden] { display: none !important; }
+
+/* Menus desplegables (chips del chat, menu de cada chat) en pantallas angostas: que nunca se
+   salgan de pantalla ni se corten, y con filas comodas para el dedo. El tope de la izquierda lo
+   aplica openMenu() en app.js; aca se evita que el ancho minimo de 250px fuerce el desborde. */
+@media (max-width: 520px) {
+  .menu, .slash-menu { min-width: 0; width: auto; max-width: calc(100vw - 16px); }
+  .menu-row, .menu button { min-height: 40px; }
+}
+@media (max-width: 880px) {
+  /* El menu desplegable en el celu: sin animacion de entrada (momentos con opacity<1 y un
+     transform que ensucian el dibujado sobre el chat) y bien por encima de todo lo demas. */
+  .menu, .slash-menu { animation: none !important; opacity: 1 !important; z-index: 300; }
+  .chip-wrap.open .chip, .chip-wrap.open .chip::after { transition: none; }
+}
+
+@media (max-width: 880px) {
+  /* Por encima del cajon de sesiones (que en movil va arriba de todo): si no, el menu de una fila
+     se dibujaba DETRAS del cajon. */
+  .menu, .slash-menu { z-index: 400; }
+}
