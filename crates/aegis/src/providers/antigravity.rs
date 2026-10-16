@@ -641,20 +641,54 @@ impl Provider for AntigravityProvider {
         );
         let payload = create_request(&wire_config, system, messages, tools)?;
         let mut log = start_log(model_config, &payload)?;
-        let response = self
-            .post_stream(runtime, &payload, messages.len().max(1))
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
-        let stream = response.bytes_stream().map_err(io::Error::other);
+        let pasos = messages.len().max(1);
+        // Reintento por stream vacio. El proveedor puede cerrar la conexion en un borde de linea y el
+        // parser termina sin error, dejando el turno SIN contenido (8 turnos "[]" en 40 min en la
+        // sesion 20261012_5). El stream que se devuelve tiene que ser 'static, asi que el reintento se
+        // hace ANTES de construirlo: se pide, se lee hasta el primer item CON contenido (guardando lo
+        // previo) y, si una pasada no trae nada, se reintenta el pedido hasta MAX_PASADAS. Si ya hay
+        // contenido, el stream sigue tal cual (sin buffering, no se pierde el streaming).
+        const MAX_PASADAS: u32 = 3;
+        let mut pasada: u32 = 0;
+        let (previos, mut parser) = loop {
+            pasada += 1;
+            let response = self
+                .post_stream(runtime, &payload, pasos)
+                .await
+                .inspect_err(|e| {
+                    let _ = log.error(e);
+                })?;
+            let bytes = response.bytes_stream().map_err(io::Error::other);
+            let lines = FramedRead::new(StreamReader::new(bytes), LinesCodec::new())
+                .map_ok(|line| unwrap_sse(&line))
+                .map_err(anyhow::Error::from);
+            let mut parseando = Box::pin(response_to_streaming_message(lines));
+            let mut previos = Vec::new();
+            let mut hubo_contenido = false;
+            while let Some(item) = parseando.next().await {
+                let par = item.map_err(|e| {
+                    e.downcast::<ProviderError>()
+                        .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
+                })?;
+                let tiene = par.0.is_some() || par.1.is_some();
+                previos.push(par);
+                if tiene {
+                    hubo_contenido = true;
+                    break;
+                }
+            }
+            if hubo_contenido || pasada >= MAX_PASADAS {
+                break (previos, parseando);
+            }
+        };
         Ok(Box::pin(try_stream! {
-            let reader = StreamReader::new(stream);
-            let lines = FramedRead::new(reader, LinesCodec::new())
-                .map_ok(|line| unwrap_sse(&line)).map_err(anyhow::Error::from);
-            let parsed = response_to_streaming_message(lines);
-            pin!(parsed);
-            while let Some(item) = parsed.next().await {
+            for (message, usage) in previos {
+                if message.is_some() || usage.is_some() {
+                    log.write(&message, usage.as_ref().map(|u| u.usage).as_ref())?;
+                }
+                yield (message, usage);
+            }
+            while let Some(item) = parser.next().await {
                 let (message, usage) = item.map_err(|e| {
                     e.downcast::<ProviderError>()
                         .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
