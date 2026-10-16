@@ -145,17 +145,45 @@ impl WebSearchClient {
         if self.configured("SEARXNG_URL").is_some() {
             engines.push(("searxng", EngineKind::Searxng));
         }
-        engines.push(("mojeek", EngineKind::Mojeek));
+        // Orden por calidad comprobada: duckduckgo-lite devuelve titulo + URL real + resumen; mojeek y
+        // bing quedan de respaldo (bing devolvia titulos con redirects /ck/a y sin descripcion, y como
+        // ganaba el primero que traia algo, el resumen nunca llegaba).
+        // Bing primero: es el unico que responde desde esta red (duckduckgo-lite devuelve su pagina
+        // anti-bot "anomaly" y mojeek pide captcha), pero quedan de respaldo por si Bing cambia.
         engines.push(("bing", EngineKind::Bing));
         engines.push(("duckduckgo-lite", EngineKind::DuckDuckGoLite));
+        engines.push(("mojeek", EngineKind::Mojeek));
 
         let mut problems: Vec<String> = Vec::new();
+        let mut pobres: Option<(String, Vec<SearchHit>)> = None;
         for (name, kind) in engines {
             match self.run_engine(kind, query, count).await {
-                Ok(hits) if !hits.is_empty() => return Ok((name.to_string(), hits)),
-                Ok(_) => problems.push(format!("{name}: sin resultados")),
+                Ok(hits) if hits.is_empty() => problems.push(format!("{name}: sin resultados")),
+                Ok(hits) => {
+                    // Resultado "bueno": al menos la mitad trae resumen y hay URLs reales (no /ck/a).
+                    let con_resumen = hits.iter().filter(|h| !h.snippet.trim().is_empty()).count();
+                    let urls_reales = hits
+                        .iter()
+                        .filter(|h| !h.url.is_empty() && !h.url.contains("/ck/a"))
+                        .count();
+                    if con_resumen * 2 >= hits.len() && urls_reales > 0 {
+                        return Ok((name.to_string(), hits));
+                    }
+                    problems.push(format!(
+                        "{name}: {} resultados pero con poco resumen ({con_resumen}/{} con descripcion)",
+                        hits.len(),
+                        hits.len()
+                    ));
+                    if pobres.is_none() {
+                        pobres = Some((name.to_string(), hits));
+                    }
+                }
                 Err(error) => problems.push(format!("{name}: {error}")),
             }
+        }
+        // Ningun motor trajo resumenes: devolvemos lo mejor que haya, antes de fallar.
+        if let Some((name, hits)) = pobres {
+            return Ok((name, hits));
         }
         Err(problems.join("; "))
     }
@@ -205,7 +233,10 @@ impl WebSearchClient {
             }
             EngineKind::Bing => {
                 let markup = self
-                    .get_text(&format!("https://www.bing.com/search?q={}&count={count}", encode(query)))
+                    .get_text_como_navegador(&format!(
+                        "https://www.bing.com/search?q={}&count={count}",
+                        encode(query)
+                    ))
                     .await?;
                 Ok(parse_bing(&markup, count))
             }
@@ -216,6 +247,31 @@ impl WebSearchClient {
                 Ok(parse_duckduckgo_lite(&markup, count))
             }
         }
+    }
+
+    /// Igual que get_text pero presentandose como un navegador. Comprobado: sin User-Agent de
+    /// navegador Bing devuelve una pagina de resultados genericos (aparecian dolarhoy/economipedia
+    /// para una busqueda de notebooks) y con UA real devuelve los resultados correctos.
+    async fn get_text_como_navegador(&self, url: &str) -> std::result::Result<String, String> {
+        if let Some(cached) = self.cache_get(url) {
+            return Ok(cached);
+        }
+        const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        let response = self
+            .http
+            .get(url)
+            .header("user-agent", UA)
+            .header("accept-language", "es-AR,es;q=0.9,en;q=0.8")
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("HTTP {status}"));
+        }
+        let body = response.text().await.map_err(|error| error.to_string())?;
+        self.cache_put(url, &body);
+        Ok(body)
     }
 
     async fn get_text(&self, url: &str) -> std::result::Result<String, String> {
@@ -303,8 +359,93 @@ pub fn html_to_text(markup: &str, max_chars: usize) -> String {
     }
 }
 
+/// Bing y muchos sitios devuelven acentos y comillas como entidades numericas (&#250;, &#8217;).
+/// Sin esto los titulos y resumenes salian con "&#250;" literal en lugar de la letra.
+fn decode_numeric_entities(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = String::with_capacity(value.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'&' && i + 2 < bytes.len() && bytes[i + 1] == b'#' {
+            let (inicio, hexa) = if bytes[i + 2] == b'x' || bytes[i + 2] == b'X' {
+                (i + 3, true)
+            } else {
+                (i + 2, false)
+            };
+            let mut j = inicio;
+            while j < bytes.len() && bytes[j] != b';' && j - inicio < 8 {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b';' && j > inicio {
+                let cuerpo = &value[inicio..j];
+                let codigo = if hexa {
+                    u32::from_str_radix(cuerpo, 16).ok()
+                } else {
+                    cuerpo.parse::<u32>().ok()
+                };
+                if let Some(caracter) = codigo.and_then(char::from_u32) {
+                    out.push(caracter);
+                    i = j + 1;
+                    continue;
+                }
+            }
+        }
+        let caracter = value[i..].chars().next().unwrap_or('?');
+        out.push(caracter);
+        i += caracter.len_utf8();
+    }
+    out
+}
+
+/// Bing envuelve cada resultado en una redireccion https://www.bing.com/ck/a?...&u=a1<base64url>.
+/// Devuelve el destino real; sin esto la busqueda devolvia redirects inservibles para citar.
+fn desenvolver_enlace_bing(href: &str) -> String {
+    let limpio = href.replace("&amp;", "&");
+    if !limpio.contains("/ck/a") {
+        return limpio;
+    }
+    let Some(posicion) = limpio.find("u=") else {
+        return limpio;
+    };
+    let resto = &limpio[posicion + 2..];
+    let fin = resto.find('&').unwrap_or(resto.len());
+    let crudo = percent_decode(&resto[..fin]);
+    let sin_prefijo = crudo.strip_prefix("a1").unwrap_or(&crudo).trim_end_matches('=');
+    use base64::Engine as _;
+    let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(sin_prefijo) else {
+        return limpio;
+    };
+    let Ok(texto) = String::from_utf8(bytes) else {
+        return limpio;
+    };
+    if texto.starts_with("http://") || texto.starts_with("https://") {
+        texto
+    } else {
+        limpio
+    }
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(decodificado) = u8::from_str_radix(&value[i + 1..i + 3], 16) {
+                out.push(decodificado);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
 fn unescape_entities(value: &str) -> String {
-    value
+    decode_numeric_entities(
+        &value
         .replace("&nbsp;", " ")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
@@ -313,7 +454,8 @@ fn unescape_entities(value: &str) -> String {
         .replace("&apos;", "'")
         .replace("&mdash;", "-")
         .replace("&ndash;", "-")
-        .replace("&amp;", "&")
+        .replace("&amp;", "&"),
+    )
 }
 
 fn extract_attribute(tag: &str, attribute: &str) -> Option<String> {
@@ -402,15 +544,36 @@ pub fn parse_bing(markup: &str, count: usize) -> Vec<SearchHit> {
             .unwrap_or(markup.len());
         let block = &markup[at..next];
         search_from = next;
-        if let Some(hit) = first_anchor(block) {
+        if let Some(mut hit) = first_anchor(block) {
+            hit.snippet = snippet_del_bloque(block);
             hits.push(hit);
         }
     }
     if hits.is_empty() {
         hits = parse_h2_anchors(markup, count);
     }
-    fill_snippets(markup, &mut hits, "b_lineclamp");
     hits
+}
+
+/// El resumen de Bing vive dentro del propio bloque: <div class="b_caption"><p class="b_lineclamp2">
+/// texto</p>. Antes se buscaba por clase en todo el documento y ya no encontraba nada.
+fn snippet_del_bloque(block: &str) -> String {
+    for marca in ["b_caption", "b_lineclamp"] {
+        let Some(at) = block.find(marca) else { continue };
+        let Some(inicio) = block[at..].find('>').map(|fin| at + fin + 1) else {
+            continue;
+        };
+        let resto = &block[inicio..];
+        let fin = resto
+            .find("</p>")
+            .or_else(|| resto.find("</div>"))
+            .unwrap_or(resto.len().min(600));
+        let texto = html_to_text(&resto[..fin], 400);
+        if !texto.is_empty() {
+            return texto;
+        }
+    }
+    String::new()
 }
 
 /// First anchor with an absolute href inside a block, with its stripped text as title.
@@ -428,7 +591,7 @@ fn first_anchor(block: &str) -> Option<SearchHit> {
     }
     Some(SearchHit {
         title,
-        url: href,
+        url: desenvolver_enlace_bing(&href),
         snippet: String::new(),
     })
 }
@@ -446,7 +609,11 @@ fn parse_h2_anchors(markup: &str, count: usize) -> Vec<SearchHit> {
                 let href = extract_attribute(&block[anchor..open_end], "href").unwrap_or_default();
                 let title = html_to_text(&block[open_end + 1..], 200);
                 if href.starts_with("http") && !title.is_empty() {
-                    hits.push(SearchHit { title, url: href, snippet: String::new() });
+                    hits.push(SearchHit {
+                        title,
+                        url: desenvolver_enlace_bing(&href),
+                        snippet: String::new(),
+                    });
                 }
             }
         }
