@@ -284,6 +284,7 @@ function proxyAcp(req, socket, head) {
 }
 
 // --- Piper: voces neuronales LOCALES (offline, sin claves, CPU). Es el motor por defecto.
+import { piperVivo, piperDespertar } from './piper-vivo.mjs';
 const PIPER_EXE = 'C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe';
 const PIPER_DIR = 'C:/Aegis-Proyects/core/state/piper/voices';
 // UNICO motor: Piper local. Se borraron edge-tts (Microsoft contesta 403 desde que cambio el
@@ -305,10 +306,30 @@ async function vozPiperValida(voz) {
   const v = String(voz || '').replace(/[^A-Za-z0-9_.-]/g, '');
   return _vocesPiper.has(v) ? v : PIPER_VOZ;   // voz de otro motor (es-AR-TomasNeural) cae a la local
 }
+// Camino rapido: el proceso vivo ya tiene el modelo cargado. Si falla, se arranca uno nuevo
+// (piperSuelto), que es como se hacia antes.
+let _caminoTts = 'vivo';
+
 async function piperTts(texto, voz, rate) {
-  const { spawn } = await import('node:child_process');
   const modelo = await vozPiperValida(voz);
-  const ritmo = Number(rate) > 0.5 && Number(rate) < 2 ? 1 / Number(rate) : 1;  // >1 = mas lento
+  const ritmo = Number(rate) > 0.5 && Number(rate) < 2 ? 1 / Number(rate) : 1;
+  const clave = modelo + ritmo.toFixed(3) + texto;
+  const guardado = _ttsCache.get(clave);
+  if (guardado) return guardado;
+  let audio;
+  try {
+    audio = await piperVivo(texto, modelo, ritmo);
+    _caminoTts = 'vivo';
+  } catch (e) {
+    audio = await piperSuelto(texto, modelo, ritmo);
+    _caminoTts = 'suelto';
+  }
+  if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value);
+  _ttsCache.set(clave, audio);
+  return audio;
+}
+async function piperSuelto(texto, modelo, ritmo) {
+  const { spawn } = await import('node:child_process');
   const clave = modelo + '|' + ritmo.toFixed(3) + '|' + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
@@ -342,6 +363,8 @@ async function piperTts(texto, voz, rate) {
 
 
 // ------------------------------------------------------------------- server
+piperDespertar().catch(() => {});
+
 const handler = async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
@@ -370,6 +393,7 @@ const handler = async (req, res) => {
           'content-type': 'audio/wav',
           'content-length': String(audio.length),
           'cache-control': 'no-store',
+          'x-aegis-tts-path': _caminoTts,
           'x-aegis-tts-engine': 'piper',
         });
         res.end(audio);
