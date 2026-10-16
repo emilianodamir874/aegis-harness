@@ -681,7 +681,13 @@ impl Provider for AntigravityProvider {
                     e.downcast::<ProviderError>()
                         .unwrap_or_else(|e| ProviderError::stream_decode_error_with_causes(&e))
                 })?;
-                let tiene = par.0.is_some() || par.1.is_some();
+                // OJO: el tuple es (mensaje, uso). Contar el USO como "contenido" era el bug que
+                // anulaba el reintento: el proveedor cierra el stream con un evento que trae solo
+                // usage, esta condicion lo daba por contenido y el turno se guardaba vacio ("[]").
+                // Medido en vivo: 20261012_5, 16/10 13:34:13, pasada=1 http=200 lineas=2
+                // items_sin_contenido=1 hubo_contenido=true -> mensaje vacio en la base. Ahora cuenta
+                // como contenido solo un mensaje CON partes (texto, pensamiento, herramienta).
+                let tiene = par.0.as_ref().map(|m| !m.content.is_empty()).unwrap_or(false);
                 previos.push(par);
                 if tiene {
                     hubo_contenido = true;
@@ -694,7 +700,17 @@ impl Provider for AntigravityProvider {
                 pasada,
                 estado_http,
                 lineas,
-                items_sin_contenido = previos.len(),
+                items = previos.len(),
+                mensajes = previos.iter().filter(|p| p.0.is_some()).count(),
+                partes = previos
+                    .iter()
+                    .filter_map(|p| p.0.as_ref())
+                    .map(|m| m.content.len())
+                    .sum::<usize>(),
+                solo_uso = previos
+                    .iter()
+                    .filter(|p| p.0.is_none() && p.1.is_some())
+                    .count(),
                 hubo_contenido,
                 "pasada de stream terminada"
             );
