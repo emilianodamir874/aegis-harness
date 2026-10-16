@@ -712,6 +712,38 @@
     }
     return w;
   }
+  // ---------- modelo por defecto de los chats nuevos ----------
+  // Los selectores de modelo viven en la sesion (configOptions): antes de crear un chat no existen.
+  // Lo que si se puede mostrar es con que modelo va a arrancar, que lo define el servidor.
+  function pintaModeloPorDefecto() {
+    const el = document.getElementById('default-model-chip');
+    if (!el) return;
+    const hayChat = !!(state.current && state.current.id);
+    const modelo = String((CFG && CFG.defaultModel) || '');
+    // Si ya hay chips elegibles (cache), el chip informativo sobra.
+    const hayChips = document.querySelectorAll('#chips .chip').length > 0;
+    if (hayChat || !modelo || hayChips) {
+      if (!el.hidden) { el.hidden = true; el.textContent = ''; }
+      return;
+    }
+    if (el.hidden || el.textContent !== modelo) {
+      el.hidden = false;
+      el.textContent = modelo;
+      el.title = 'Modelo por defecto de los chats nuevos (lo define el servidor). Al abrir un chat se cambia con los selectores de la barra.';
+    }
+  }
+
+  (function wireModeloPorDefecto() {
+    const arrancar = () => {
+      state.pendingConfig = leerPendientes();
+      pintaModeloPorDefecto();
+      // Barato y sin acoplarse a los muchos lugares que cambian de sesion: solo lee el estado.
+      setInterval(pintaModeloPorDefecto, 3000);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar, { once: true });
+    else arrancar();
+  })();
+
   function showWelcome(mode, title) {
     const w = $('#welcome');
     if (!w) return;
@@ -1891,6 +1923,8 @@
     try {
       const res = await rpc.request('session/new', { cwd: CFG.cwd || undefined, mcpServers: [] });
       state.current = { id: res.sessionId, title: 'Nuevo chat', cwd: CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
+      // Si el usuario eligio modelo/esfuerzo antes de crear el chat, se aplica ahora.
+      await aplicarPendientes(res.sessionId);
       resetTransient();
       clearMessages();
       showWelcome('new');
@@ -3209,11 +3243,47 @@
   }
 
   // ---------- chips (config options) ----------
+  // Los chips (modelo, esfuerzo) vienen de la sesion. Para poder elegir ANTES del primer mensaje se
+  // guarda una cache de las ultimas opciones vistas y la eleccion pendiente, que se aplica con
+  // session/set_config_option apenas se crea el chat.
+  function leerCacheChips() {
+    try { const j = JSON.parse(localStorage.getItem('aegis.chipCache') || '[]'); return Array.isArray(j) ? j : []; } catch (e) { return []; }
+  }
+  function guardarCacheChips(opts) {
+    try { localStorage.setItem('aegis.chipCache', JSON.stringify((opts || []).slice(0, 8))); } catch (e) {}
+  }
+  function leerPendientes() {
+    try { const j = JSON.parse(localStorage.getItem('aegis.pendingConfig') || '{}'); return j && typeof j === 'object' ? j : {}; } catch (e) { return {}; }
+  }
+  function guardarPendientes() {
+    try { localStorage.setItem('aegis.pendingConfig', JSON.stringify(state.pendingConfig || {})); } catch (e) {}
+  }
+  async function aplicarPendientes(sessionId) {
+    const pend = state.pendingConfig || {};
+    const ids = Object.keys(pend);
+    if (!ids.length) return;
+    for (const configId of ids) {
+      try {
+        const res = await rpc.request('session/set_config_option', { sessionId, configId, value: pend[configId] });
+        if (res && Array.isArray(res.configOptions) && state.current) state.current.configOptions = res.configOptions;
+      } catch (e) {
+        // No se oculta: si el servidor rechaza la opcion (p.ej. cambiar el proveedor de una sesion
+        // recien creada) el usuario tiene que enterarse, no quedarse creyendo que se aplico.
+        systemNote('No se pudo aplicar «' + configId + '» elegido antes de crear el chat: ' + (e && e.message ? e.message : e));
+      }
+    }
+    state.pendingConfig = {};
+    guardarPendientes();
+    renderChips();
+  }
   function renderChips() {
     const wrap = $('#chips');
     wrap.innerHTML = '';
     document.querySelectorAll('body > .menu').forEach((m) => m.remove()); // limpia menús "portal" previos
-    const opts = (state.current && state.current.configOptions) || [];
+    const deLaSesion = state.current && Array.isArray(state.current.configOptions) && state.current.configOptions.length ? state.current.configOptions : null;
+    if (deLaSesion) guardarCacheChips(deLaSesion);
+    // Sin chat abierto, los chips salen de la cache: asi se puede elegir modelo antes del primer mensaje.
+    const opts = deLaSesion || leerCacheChips();
     for (const opt of opts) {
       if (opt.type !== 'select' || !Array.isArray(opt.options) || opt.options.length <= 1) continue;
       const item = document.createElement('div');
@@ -3282,7 +3352,17 @@
   );
 
   async function setConfig(configId, value) {
-    if (!state.current) return;
+    if (!state.current) {
+      // Todavia no hay chat: se recuerda la eleccion y se aplica al crear uno nuevo.
+      state.pendingConfig = state.pendingConfig || {};
+      state.pendingConfig[configId] = value;
+      guardarPendientes();
+      const cache = leerCacheChips();
+      const opt = cache.find((o) => o && o.id === configId);
+      if (opt) { opt.currentValue = value; guardarCacheChips(cache); }
+      renderChips();
+      return;
+    }
     try {
       const res = await rpc.request('session/set_config_option', { sessionId: state.current.id, configId, value });
       if (res && Array.isArray(res.configOptions)) state.current.configOptions = res.configOptions;

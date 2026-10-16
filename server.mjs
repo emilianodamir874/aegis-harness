@@ -549,6 +549,10 @@ const handler = async (req, res) => {
         version: (cfg.appConfig || {}).AEGIS_VERSION || 'web',
         tunnel: c.tunneled,
         authed: authed(req),
+        // Modelo con el que arranca un chat nuevo: lo define el servidor (appConfig). Se muestra en
+        // la pantalla de bienvenida para saber que va a usar antes de escribir el primer mensaje.
+        defaultProvider: (cfg.appConfig || {}).AEGIS_DEFAULT_PROVIDER || '',
+        defaultModel: (cfg.appConfig || {}).AEGIS_DEFAULT_MODEL || '',
       })};`;
       res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-cache', ...SEC });
       res.end(body);
