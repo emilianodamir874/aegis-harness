@@ -4210,6 +4210,22 @@
     return !!p && !p.hidden;
   }
 
+  // ---------- cerrar sesion ----------
+  // Solo tiene sentido cuando hay autenticacion de por medio (tunel) o cuando hay una cookie de
+  // sesion emitida: ahi el boton borra la cookie y el server vuelve a pedir la contrasena.
+  (function wireSalir() {
+    const arrancar = () => {
+      const btn = document.getElementById('btn-logout');
+      if (!btn) return;
+      let mostrar = false;
+      try { mostrar = !!(CFG && (CFG.tunnel || CFG.authed)); } catch (e) {}
+      btn.hidden = !mostrar;
+      btn.addEventListener('click', () => { location.href = '/logout'; });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar, { once: true });
+    else arrancar();
+  })();
+
   (function wireGoals() {
     const arrancar = () => {
       const btn = document.getElementById('btn-goals');

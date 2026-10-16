@@ -1015,3 +1015,14 @@ body { background: var(--bg); }
 .runbar-stop { min-height: 38px; padding: 8px 14px; }
 .sb-more-btn { min-height: 40px; }
 .chip { min-height: 36px; }
+
+/* ---------- Cierre de sesion + ajustes pendientes de la revision ---------- */
+.sb-logout {
+  margin-left: 6px; font-size: 11.5px; padding: 3px 9px; border-radius: 8px;
+  border: 1px solid var(--border-soft); background: transparent; color: var(--text-3); cursor: pointer;
+}
+.sb-logout:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+/* El cajon de sesiones ocupaba 316 px de 430 (73%): deja mas chat a la vista */
+@media (max-width: 880px) {
+  .sidebar { width: min(72vw, 296px) !important; }
+}

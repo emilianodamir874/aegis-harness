@@ -70,7 +70,10 @@ try {
 } catch {}
 const COOKIE = 'gw_auth';
 const COOKIE_TTL_MS = 30 * 24 * 3600 * 1000;
-const HMAC_KEY = String(cfg.secretKey || 'aegis-web');
+// La cookie se firma con el secreto + una marca de sesion. Rotar "authStamp" en config.json
+// invalida TODAS las cookies ya emitidas (es la forma de cerrar todas las sesiones sin tocar el
+// secreto que tambien viaja en el token del WebSocket del ACP).
+const HMAC_KEY = String(cfg.secretKey || 'aegis-web') + '|' + String(cfg.authStamp || 'v1');
 
 function sign(exp) {
   return crypto.createHmac('sha256', HMAC_KEY).update(`gw|${exp}`).digest('base64url');
@@ -437,6 +440,16 @@ const handler = async (req, res) => {
       return;
     }
 
+    // ---- cerrar sesion: borra la cookie firmada y manda al login
+    if (url.pathname === '/logout') {
+      logLine('auth.log', `${new Date().toISOString()} logout ip=${ip} camino=${tunneled ? 'tunel' : 'lan'}\n`);
+      const secureLogout = String(req.headers['x-forwarded-proto'] || '').includes('https') ? '; Secure' : '';
+      redirect(res, '/login', {
+        'set-cookie': `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secureLogout}`,
+      });
+      return;
+    }
+
     // ---- login (solo tiene sentido por el tunel, pero no molesta en LAN)
     if (url.pathname === '/login') {
       if (req.method === 'POST') {
@@ -535,6 +548,7 @@ const handler = async (req, res) => {
         host: c.host,
         version: (cfg.appConfig || {}).AEGIS_VERSION || 'web',
         tunnel: c.tunneled,
+        authed: authed(req),
       })};`;
       res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-cache', ...SEC });
       res.end(body);
