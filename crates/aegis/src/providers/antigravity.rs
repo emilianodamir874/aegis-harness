@@ -658,9 +658,20 @@ impl Provider for AntigravityProvider {
                 .inspect_err(|e| {
                     let _ = log.error(e);
                 })?;
+            // Instrumentacion (v38): sin esto los turnos vacios no dejaban NINGUNA huella (ni en el
+            // log del serve ni en el de pedidos), asi que no habia forma de saber si el proveedor no
+            // mando datos, si los mandamos y se perdieron, o si el pedido ni empezo.
+            let estado_http = response.status().as_u16();
+            // El contador va en un Arc: el stream que se devuelve tiene que ser 'static, asi que la
+            // closure de map_ok no puede pedir prestado un local (error E0373 en el primer intento).
+            let lineas_pasada = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let contador = std::sync::Arc::clone(&lineas_pasada);
             let bytes = response.bytes_stream().map_err(io::Error::other);
             let lines = FramedRead::new(StreamReader::new(bytes), LinesCodec::new())
-                .map_ok(|line| unwrap_sse(&line))
+                .map_ok(move |line| {
+                    contador.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    unwrap_sse(&line)
+                })
                 .map_err(anyhow::Error::from);
             let mut parseando = Box::pin(response_to_streaming_message(lines));
             let mut previos = Vec::new();
@@ -677,9 +688,35 @@ impl Provider for AntigravityProvider {
                     break;
                 }
             }
+            let lineas = lineas_pasada.load(std::sync::atomic::Ordering::Relaxed);
+            tracing::info!(
+                target: "aegis::providers::antigravity",
+                pasada,
+                estado_http,
+                lineas,
+                items_sin_contenido = previos.len(),
+                hubo_contenido,
+                "pasada de stream terminada"
+            );
+            if !hubo_contenido && pasada >= MAX_PASADAS {
+                tracing::warn!(
+                    target: "aegis::providers::antigravity",
+                    pasada,
+                    estado_http,
+                    lineas,
+                    "todas las pasadas volvieron sin contenido: el turno va a quedar vacio"
+                );
+            }
             if hubo_contenido || pasada >= MAX_PASADAS {
                 break (previos, parseando);
             }
+            tracing::warn!(
+                target: "aegis::providers::antigravity",
+                pasada,
+                estado_http,
+                lineas,
+                "pasada sin contenido: se reintenta el pedido"
+            );
         };
         Ok(Box::pin(try_stream! {
             for (message, usage) in previos {
