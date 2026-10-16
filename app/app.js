@@ -415,11 +415,12 @@
     const meta = s._meta || {};
     const active = state.current && state.current.id === s.sessionId ? ' active' : '';
     const n = meta.messageCount;
-    const running = !!state.runningIds && state.runningIds.has(s.sessionId);
+    const running = isRunning(s.sessionId);
+    const done = !running && isDoneRecently(s.sessionId);
     const sub = `${n != null ? n + ' · ' : ''}${fmtTime(s.updatedAt || meta.createdAt)}`;
     return (
       `<div class="sb-row" data-id="${esc(s.sessionId)}"${archived ? ' data-arch="1"' : ''}>` +
-      `<button class="sb-item${active}${archived ? ' arch' : ''}"><div class="sb-title">${running ? '<span class="sb-run-dot" title="en produccion ahora">&#9679;</span>' : ''}${esc(s.title || 'Sesión')}${archived ? '<span class="sb-tag">archivada</span>' : ''}</div><div class="sb-sub">${sub}</div></button>` +
+      `<button class="sb-item${active}${archived ? ' arch' : ''}"><div class="sb-title">${running ? '<span class="sb-run-dot" title="en produccion ahora">&#9679;</span>' : ''}${done ? '<span class="sb-done-dot" title="termino hace un momento">&#10004;</span>' : ''}${esc(s.title || 'Sesión')}${archived ? '<span class="sb-tag">archivada</span>' : ''}</div><div class="sb-sub">${sub}</div></button>` +
       `<button class="sb-rename" title="Renombrar" aria-label="Renombrar">✎</button>` +
       `<button class="sb-more" title="Más acciones" aria-label="Más acciones">⋮</button>` +
       `<button class="sb-del" title="Borrar sesión" aria-label="Borrar sesión">✕</button>` +
@@ -431,8 +432,12 @@
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     if (state.conn !== 'open') return;
+    // Con turnos en curso se refresca cada 4 s (para ver en vivo, desde cualquier chat, quien
+    // trabaja y quien termino); sin turnos, cada 20 s como antes.
+    if (!anyRunning() && Date.now() - lastListPoll < 20000) return;
+    lastListPoll = Date.now();
     try { Promise.resolve(loadList()).catch(() => {}); } catch (err) { /* refresco best-effort */ }
-  }, 20000);
+  }, 4000);
 
   function renderList() {
     if (state.hold) return; // no pisar un editor/confirm abierto
@@ -878,6 +883,7 @@
       rec.dirty = false;
       const _t0 = performance.now();
       rec.body.innerHTML = md(rec.text);
+      { const rd = rec.el.querySelector('.msg-read'); if (rd) rd.hidden = !readBlock(rec.text); }
       const _dt = performance.now() - _t0;
       METRICS.renders++; METRICS.renderMs += _dt; METRICS.lastRenderMs = _dt;
       if (_dt > METRICS.maxRenderMs) METRICS.maxRenderMs = _dt;
@@ -994,6 +1000,11 @@
       const cp = document.createElement('button');
       cp.className = 'msg-copy'; cp.type = 'button'; cp.textContent = 'Copiar';
       el.appendChild(cp);
+      if (!thought) {
+        const rd = document.createElement('button');
+        rd.className = 'msg-read'; rd.type = 'button'; rd.textContent = '🔊 Escuchar'; rd.hidden = true;
+        el.appendChild(rd);
+      }
       msgWrap().appendChild(el);
       rec = { el, body, text: '', dirty: false, closed: false, live: false, lastAppend: 0 };
       el.__rec = rec;
@@ -1781,6 +1792,7 @@
       resetTransient();
       clearMessages();
       showWelcome('new');
+      loadDraft();
       updateTitle(); renderChips(); markActive(res.sessionId);
       localStorage.setItem('gweb.last', res.sessionId);
       closeDrawer();
@@ -1936,7 +1948,7 @@
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
     clearMessages();
-    updateTitle(); markActive(id); closeDrawer();
+    updateTitle(); markActive(id); closeDrawer(); loadDraft();
     localStorage.setItem('gweb.last', id);
     if (!opts || !opts.quiet) setPill('Cargando conversación.');
     if (!SOFT.on) {
@@ -2348,6 +2360,7 @@
     const sid = state.current && state.current.id; // dueño del turno: si te vas a otro chat, esa vista no se toca
     state.adopted = false;
     setBusy(true, 'Aegis está trabajando.');
+    markRun(sid, true);   // marca inmediata en la lista, aunque esta vista no sea la del turno
     let label = 'Respuesta completa';
     let loMandoComoIndicacion = false;
     try {
@@ -2402,6 +2415,7 @@
         report('adopt', 'turno de ' + (sid || '?') + ' cerrado sin tocar la vista actual');
       }
       refreshSessions();
+      markRun(sid, false);   // si termino mientras mirabas otro chat, avisa
     }
   }
 
@@ -2414,7 +2428,7 @@
     if (!rpc.ready) { systemNote('Sin conexión con el backend - reintentando.'); return; }
     if (!state.current) await newSession();
     if (!state.current) return;
-    input.value = ''; autosize(); refreshSlashMenu();
+    input.value = ''; autosize(); refreshSlashMenu(); saveDraft();
     state.attachments = [];
     renderAttachments();
     await sendText(text, atts);
@@ -2431,7 +2445,7 @@
       return;
     }
     const input = $('#input');
-    input.value = ''; autosize(); refreshSlashMenu();
+    input.value = ''; autosize(); refreshSlashMenu(); saveDraft();
     state.attachments = [];
     renderAttachments();
     const el = addUser(text, false, attsText, { queued: true });
@@ -3757,7 +3771,103 @@
   }
   if (!readSyncBtn()) document.addEventListener('DOMContentLoaded', readSyncBtn, { once: true });
 
+  // --- Borrador por chat -------------------------------------------------------------------
+  // Lo que escribis y aun no mandaste queda guardado SOLO para ese chat: si cambias de chat o
+  // recargas la pagina, sigue ahi. Al enviar, se limpia.
+  var draftTimer = 0;
+  var lastListPoll = 0;
+  function draftKey(id) { return 'aegis.draft.' + (id || 'nuevo'); }
+  function saveDraft() {
+    try {
+      var el = document.getElementById('input');
+      if (!el) return;
+      var k = draftKey(state.current && state.current.id);
+      if (el.value && el.value.trim()) localStorage.setItem(k, el.value);
+      else localStorage.removeItem(k);
+    } catch (e) {}
+  }
+  function loadDraft() {
+    try {
+      var el = document.getElementById('input');
+      if (!el) return;
+      el.value = localStorage.getItem(draftKey(state.current && state.current.id)) || '';
+      autosize(); refreshSlashMenu();
+    } catch (e) {}
+  }
+  function wireDraft() {
+    var el = document.getElementById('input');
+    if (!el) return false;
+    el.addEventListener('input', function () { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 400); });
+    el.addEventListener('blur', saveDraft);
+    window.addEventListener('beforeunload', saveDraft);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') saveDraft(); });
+    window.addEventListener('focus', function () { try { document.title = String(document.title).replace(/^([\u2714\u2705]\s*)/, ''); } catch (e) {} });
+    return true;
+  }
+
+  // --- Estado en vivo de los turnos (para la lista de chats, desde cualquier vista) ----------
+  var liveRuns = new Map();   // sid -> { t0, doneT }
+  function markRun(sid, on) {
+    if (!sid) return;
+    if (on) liveRuns.set(sid, { t0: Date.now(), doneT: 0 });
+    else {
+      var prev = liveRuns.get(sid) || { t0: 0 };
+      liveRuns.set(sid, { t0: prev.t0 || 0, doneT: Date.now() });
+      var enOtraVista = !(state.current && state.current.id === sid);
+      if (enOtraVista) {
+        var s = (state.sessions || []).filter(function (x) { return x.sessionId === sid; })[0];
+        var titulo = (s && s.title) || ('chat ' + String(sid).slice(0, 8));
+        systemNote('Terminó: ' + titulo + '.');
+        try { document.title = '\u2714 ' + String(document.title).replace(/^\u2714\s*/, ''); } catch (e) {}
+      }
+    }
+    try { renderList(); } catch (e) {}
+  }
+  function isRunning(id) {
+    if (state.runningIds && state.runningIds.has(id)) return true;
+    var r = liveRuns.get(id);
+    return !!(r && !r.doneT);
+  }
+  function isDoneRecently(id) {
+    var r = liveRuns.get(id);
+    return !!(r && r.doneT && Date.now() - r.doneT < 90000);
+  }
+  function anyRunning() {
+    if (state.runningIds && state.runningIds.size) return true;
+    var hay = false;
+    liveRuns.forEach(function (v) { if (!v.doneT) hay = true; });
+    return hay;
+  }
+
+  // --- Volver a escuchar un mensaje que trae bloque "Para escuchar" -------------------------
+  // Boton "Escuchar" en cada mensaje de la IA que tenga el bloque: lo parte en frases y lo manda
+  // a la misma cola de audio (Piper). Sirve tambien para mensajes del historial.
+  document.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('.msg-read') : null;
+    if (!b) return;
+    var msg = b.closest('.msg-a');
+    var rec = msg && msg.__rec;
+    if (!rec) return;
+    var limpio = readClean(readBlock(rec.text));
+    if (!limpio) return;
+    var partes = [];
+    var re = /[^.!?\u2026]+[.!?\u2026]*/g, m;
+    while ((m = re.exec(limpio))) { var p = m[0].trim(); if (p.length > 2) partes.push(p); }
+    if (!partes.length) return;
+    if (READ.engine && READ.engine !== 'device') {
+      audStop();
+      for (var i = 0; i < partes.length; i++) AUD.q.push(partes[i]);
+      audNext();
+    } else {
+      for (var j = 0; j < partes.length; j++) readSayDevice(partes[j]);
+    }
+  });
+  if (!wireDraft()) document.addEventListener('DOMContentLoaded', wireDraft, { once: true });
+
   window.__aegisWeb = { state, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+    live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
+    append: (t) => streamAppend('test-msg', t, false, false),
+    draft: { save: saveDraft, load: loadDraft, key: draftKey },
     engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, rpc, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
 
   wire();
