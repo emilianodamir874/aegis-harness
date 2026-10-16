@@ -38,16 +38,20 @@ const logLine = (file, line) => appendFile(join(DIR, 'logs', file), line).catch(
 // El serve los guarda en extension_data de cada sesion pero no los expone por ACP, asi que se
 // indexan desde una copia de sessions.db con un proceso aparte (node --experimental-sqlite).
 // Cache de 60 s: el panel del cliente puede refrescar sin castigar el disco.
-let goalsCache = { at: 0, body: '{}' };
-async function goalsIndex() {
-  if (Date.now() - goalsCache.at < 60000) return goalsCache.body;
+let goalsCache = new Map(); // sid -> {at, body} ('' = todos los chats)
+async function goalsIndex(sid) {
+  const clave = sid || '';
+  const previo = goalsCache.get(clave);
+  if (previo && Date.now() - previo.at < 60000) return previo.body;
   let body;
   try {
     const { execFile } = await import('node:child_process');
+    const args = ['--experimental-sqlite', join(DIR, 'tools', 'goals-index.mjs')];
+    if (clave) args.push(clave);
     body = await new Promise((ok) => {
       execFile(
         process.execPath,
-        ['--experimental-sqlite', join(DIR, 'tools', 'goals-index.mjs')],
+        args,
         { timeout: 40000, maxBuffer: 8 * 1024 * 1024 },
         (err, stdout) => ok(err && !stdout ? JSON.stringify({ _error: String(err.message) }) : stdout),
       );
@@ -55,7 +59,7 @@ async function goalsIndex() {
   } catch (e) {
     body = JSON.stringify({ _error: String((e && e.message) || e) });
   }
-  goalsCache = { at: Date.now(), body };
+  goalsCache = new Map([[clave, { at: Date.now(), body }]]);
   return body;
 }
 
@@ -512,7 +516,7 @@ const handler = async (req, res) => {
     }
     // Objetivos por conversacion (panel de la barra derecha).
     if (url.pathname === '/goals.json') {
-      const body = await goalsIndex();
+      const body = await goalsIndex(url.searchParams.get('sid') || '');
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
       res.end(body);
       return;

@@ -756,6 +756,9 @@
     if (r.action === 'set') { state.goal = r.goal; state.grind = r.kind === 'grind' ? r.goal : null; }
     else if (r.action === 'clear') { state.goal = null; state.grind = null; }
     renderGoalBar();
+    // Un /goal nuevo (o su limpieza) cambia la historia del chat: si el popover esta abierto, se
+    // actualiza sin que el usuario tenga que refrescar.
+    if (r.action !== 'none' && typeof gpEstaAbierto === 'function' && gpEstaAbierto()) fetchGoals(true);
   }
 
   function renderGoalBar() {
@@ -3988,14 +3991,21 @@
   // Reanudar = abrir esa conversacion; el objetivo vive en el server, asi que volver a ella lo
   // reactiva sin crear un chat nuevo.
   async function fetchGoals(forzar) {
-    if (!forzar && state.goalsAt && Date.now() - state.goalsAt < 30000) return;
+    // Solo los objetivos del chat que se esta viendo: es lo que se quiere tener a mano, sin
+    // invade. r nada.
+    const sid = (state.current && state.current.id) || '';
+    if (!sid) { state.goals = []; state.goalsErr = ''; renderGoals(); return; }
+    if (!forzar && state.goalsSid === sid && state.goalsAt && Date.now() - state.goalsAt < 20000) return;
+    state.goalsSid = sid;
     state.goalsAt = Date.now();
     try {
-      const r = await fetch('/goals.json', { cache: 'no-store' });
+      const r = await fetch('/goals.json?sid=' + encodeURIComponent(sid), { cache: 'no-store' });
       const j = await r.json();
       state.goals = Array.isArray(j.items) ? j.items : [];
       state.goalsErr = j.error || '';
+      state.goalsNombre = j.nombre || '';
     } catch (e) {
+      state.goals = [];
       state.goalsErr = String((e && e.message) || e);
     }
     renderGoals();
@@ -4008,12 +4018,11 @@
     return p(d.getDate()) + '/' + p(d.getMonth() + 1) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  function abrirObjetivo(sid) {
-    if (!sid) return;
-    const entry = typeof findSession === 'function' ? findSession(sid) : null;
-    // Si la sesion no esta en la lista visible (archivada o fuera de pagina) se abre igual con un
-    // objeto minimo: renderSession trabaja con el id.
-    openSession(entry || { id: sid, sessionId: sid, archived: false });
+  // Reactivar un objetivo viejo de ESTE chat: se re-emite el comando, que es lo que lo vuelve a
+  // poner en extension_data. No es "abrir otro chat": el objetivo vive en este.
+  function reactivarObjetivo(it) {
+    if (!it || !it.texto) return;
+    sendText('/' + (it.tipo === 'grind' ? 'grind' : 'goal') + ' ' + it.texto);
   }
 
   function gpItem(it) {
@@ -4025,14 +4034,17 @@
     t.title = it.texto || '';
     const m = document.createElement('div');
     m.className = 'gp-meta';
-    m.textContent = (it.nombre || it.sid) + ' · ' + fechaCorta(it.actualizado) + (it.tipo === 'grind' ? ' · a fondo' : '');
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'gp-open';
-    b.textContent = it.estado === 'activo' ? 'Reanudar' : 'Abrir chat';
-    b.title = 'Abrir ' + (it.nombre || it.sid);
-    b.addEventListener('click', () => abrirObjetivo(it.sid));
-    d.append(t, m, b);
+    m.textContent = fechaCorta(it.cuando || it.actualizado) + (it.tipo === 'grind' ? ' · a fondo' : '');
+    d.append(t, m);
+    if (!it.activo) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gp-open';
+      b.textContent = 'Reactivar';
+      b.title = 'Volver a poner este objetivo en el chat';
+      b.addEventListener('click', () => reactivarObjetivo(it));
+      d.append(b);
+    }
     return d;
   }
 
@@ -4041,6 +4053,13 @@
     if (!body) return;
     const items = Array.isArray(state.goals) ? state.goals : [];
     body.innerHTML = '';
+    if (!(state.current && state.current.id)) {
+      const v = document.createElement('div');
+      v.className = 'gp-empty';
+      v.textContent = 'Abri un chat para ver sus objetivos.';
+      body.append(v);
+      return;
+    }
     if (state.goalsErr) {
       const e = document.createElement('div');
       e.className = 'gp-empty';
@@ -4061,37 +4080,48 @@
       }
       for (const it of lista) body.append(gpItem(it));
     };
-    seccion('Pendientes', items.filter((i) => i.estado === 'activo'));
-    seccion('Cerrados', items.filter((i) => i.estado !== 'activo'));
+    const activo = items.filter((i) => i.activo);
+    const viejos = items.filter((i) => !i.activo);
+    if (activo.length) seccion('En curso', activo);
+    if (viejos.length) seccion(activo.length ? 'Anteriores' : 'Anteriores (ninguno activo)', viejos);
     if (!items.length && !state.goalsErr) {
       const v = document.createElement('div');
       v.className = 'gp-empty';
-      v.textContent = 'Todavia no usaste /goal en ningun chat.';
+      v.textContent = 'Este chat todavia no tiene /goal.';
       body.append(v);
     }
   }
 
+  // Popover: no ocupa ancho ni reacomoda el chat (es flotante y arranca cerrado).
   function gpSetVisible(v) {
     const p = document.getElementById('goals');
-    const app = document.querySelector('.app');
-    if (!p || !app) return;
+    if (!p) return;
     p.hidden = !v;
-    app.classList.toggle('con-goals', v);
     const btn = document.getElementById('btn-goals');
     if (btn) btn.setAttribute('aria-pressed', v ? 'true' : 'false');
-    try { localStorage.setItem('aegis.goalsPanel', v ? '1' : '0'); } catch (e) {}
     if (v) fetchGoals(true);
+  }
+
+  function gpEstaAbierto() {
+    const p = document.getElementById('goals');
+    return !!p && !p.hidden;
   }
 
   (function wireGoals() {
     const arrancar = () => {
       const btn = document.getElementById('btn-goals');
-      if (btn) btn.addEventListener('click', () => gpSetVisible(document.getElementById('goals').hidden));
+      if (btn) btn.addEventListener('click', (ev) => { ev.stopPropagation(); gpSetVisible(document.getElementById('goals').hidden); });
       const ref = document.getElementById('gp-refresh');
       if (ref) ref.addEventListener('click', () => fetchGoals(true));
-      let querer = false;
-      try { querer = window.innerWidth >= 1200 && localStorage.getItem('aegis.goalsPanel') !== '0'; } catch (e) {}
-      if (querer) gpSetVisible(true);
+      // Se cierra al tocar afuera o con Escape (discreto: no queda nada ocupando la pantalla).
+      document.addEventListener('click', (ev) => {
+        const p = document.getElementById('goals');
+        if (!p || p.hidden) return;
+        if (p.contains(ev.target) || ev.target.closest('#btn-goals')) return;
+        gpSetVisible(false);
+      });
+      document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') gpSetVisible(false); });
+      // Arranca cerrado: aparece solo si lo pedis con el boton de la barra.
       setInterval(() => {
         const p = document.getElementById('goals');
         if (p && !p.hidden) fetchGoals(true);
