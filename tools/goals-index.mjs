@@ -38,6 +38,7 @@ try {
     salida.nombre = s.name || '';
     salida.actualizado = s.updated_at;
     salida.activo = activo ? activo.texto : null;
+    salida.activoTipo = activo ? activo.tipo : null;
     const vistos = [];
     for (const m of goalsDe.all(SID)) {
       const mm = RE.exec(m.t || '');

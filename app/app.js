@@ -758,7 +758,9 @@
     renderGoalBar();
     // Un /goal nuevo (o su limpieza) cambia la historia del chat: si el popover esta abierto, se
     // actualiza sin que el usuario tenga que refrescar.
-    if (r.action !== 'none' && typeof gpEstaAbierto === 'function' && gpEstaAbierto()) fetchGoals(true);
+    // Tras un /goal (o su limpieza) se re-consulta al servidor: el chip se corrige solo en un
+    // segundo si el estado real no coincide con lo que se acaba de escribir.
+    if (r.action !== 'none') fetchGoals(true);
   }
 
   function renderGoalBar() {
@@ -4004,6 +4006,14 @@
       state.goals = Array.isArray(j.items) ? j.items : [];
       state.goalsErr = j.error || '';
       state.goalsNombre = j.nombre || '';
+      // El chip del compositor se pinta con el estado REAL del servidor (extension_data "goal.v0"),
+      // no con lo deducido del texto: antes el chip mostraba un objetivo que el servidor ya habia
+      // vaciado. Si el usuario lo borro del panel, tampoco se muestra.
+      const activo = typeof j.activo === 'string' && j.activo.trim() ? j.activo : null;
+      const vigente = activo && !gpOcultoPorTexto(activo) ? activo : null;
+      state.goal = vigente;
+      state.grind = vigente && j.activoTipo === 'grind' ? vigente : null;
+      renderGoalBar();
     } catch (e) {
       state.goals = [];
       state.goalsErr = String((e && e.message) || e);
@@ -4040,6 +4050,17 @@
   }
 
   function gpOcultoEsta(it) { return gpOcultos().indexOf(gpClave(it)) !== -1; }
+
+  // Lo mismo pero por texto: el chip del compositor solo tiene el texto del objetivo, no su fecha.
+  function gpOcultoPorTexto(texto) {
+    const sid = (state.current && state.current.id) || '';
+    const buscado = String(texto || '').slice(0, 60);
+    if (!buscado) return false;
+    return gpOcultos().some((clave) => {
+      const partes = String(clave).split('|');
+      return partes[2] === buscado && (!sid || !partes[0] || partes[0] === sid);
+    });
+  }
 
   function gpOcultar(it) {
     const l = gpOcultos();
@@ -4202,7 +4223,7 @@
     else arrancar();
   })();
 
-  window.__aegisWeb = { state, goalFromText: goalFromText, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  window.__aegisWeb = { state, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
