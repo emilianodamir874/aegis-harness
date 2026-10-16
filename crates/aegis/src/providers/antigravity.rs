@@ -674,8 +674,12 @@ impl Provider for AntigravityProvider {
             let lines = FramedRead::new(StreamReader::new(bytes), LinesCodec::new())
                 .map_ok(move |line| {
                     contador.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if let Ok(mut guardada) = guardando_linea.lock() {
-                        *guardada = line.chars().take(400).collect();
+                    // Solo se guarda si trae algo: el stream cierra con una linea vacia que pisaba el
+                    // buffer y el campo salia "" justo cuando mas lo necesitabamos.
+                    if !line.trim().is_empty() {
+                        if let Ok(mut guardada) = guardando_linea.lock() {
+                            *guardada = line.chars().take(400).collect();
+                        }
                     }
                     unwrap_sse(&line)
                 })
