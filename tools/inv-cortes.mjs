@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+const sid = '20261012_5';
+const orig = 'C:/Aegis-Proyects/state/data/sessions/sessions.db';
+const copia = 'C:/Aegis-Proyects/tmp/sessions-inv2.db';
+fs.copyFileSync(orig, copia);
+const db = new DatabaseSync(copia, { readOnly: true });
+console.log('== cortes (assistant vacio) por hora, ultimas 12 h ==');
+const filas = db.prepare("select substr(timestamp,1,13) as h, count(*) as total, sum(case when trim(cast(content_json as text))='[]' then 1 else 0 end) as vacios from messages where session_id=? and role='assistant' and timestamp > datetime('now','-12 hours') group by h order by h").all(sid);
+for (const r of filas) console.log('  ' + r.h + 'h UTC: ' + r.vacios + ' vacios de ' + r.total);
+const tot = db.prepare("select count(*) as n from messages where session_id=? and role='assistant' and trim(cast(content_json as text))='[]'").get(sid).n;
+console.log('  TOTAL historico de vacios: ' + tot);
+console.log('== ultimas 6 horas de otra sesion que tambien corta? (top 5 sesiones con vacios) ==');
+for (const r of db.prepare("select session_id, count(*) as n from messages where role='assistant' and trim(cast(content_json as text))='[]' and timestamp > datetime('now','-12 hours') group by session_id order by n desc limit 5").all()) console.log('  ' + r.session_id + ': ' + r.n + ' vacios');
+db.close();
