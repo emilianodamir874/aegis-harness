@@ -52,6 +52,9 @@
         </button>
         <div id="chat-title" class="chat-title">Nuevo chat</div>
         <div id="chips" class="chips"></div>
+        <button id="btn-goals" class="icon-btn" aria-label="Objetivos (/goal)" title="Objetivos de los chats (/goal y /grind)" aria-pressed="false">
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="6.6" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.4" fill="currentColor"/></svg>
+        </button>
       </header>
 
       <div id="messages" class="messages">
@@ -102,6 +105,14 @@
         </div>
       </footer>
     </main>
+
+    <aside id="goals" class="goals-panel" hidden aria-label="Objetivos de los chats">
+      <div class="gp-head">
+        <span class="gp-title">Objetivos</span>
+        <button id="gp-refresh" class="icon-btn gp-refresh" aria-label="Actualizar objetivos" title="Actualizar">↻</button>
+      </div>
+      <div id="gp-body" class="gp-body"></div>
+    </aside>
   </div>
 
   <div id="dropzone" class="dropzone" hidden>

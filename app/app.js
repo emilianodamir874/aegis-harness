@@ -3982,7 +3982,126 @@
   });
   if (!wireDraft()) document.addEventListener('DOMContentLoaded', wireDraft, { once: true });
 
-  window.__aegisWeb = { state, goalFromText: goalFromText, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  // ---------- panel de objetivos (/goal y /grind, barra derecha) ----------
+  // Los datos salen de /goals.json: el server web indexa una copia de sessions.db (el
+  // extension_data "goal.v0" de cada sesion, completado con el ultimo /goal del historial).
+  // Reanudar = abrir esa conversacion; el objetivo vive en el server, asi que volver a ella lo
+  // reactiva sin crear un chat nuevo.
+  async function fetchGoals(forzar) {
+    if (!forzar && state.goalsAt && Date.now() - state.goalsAt < 30000) return;
+    state.goalsAt = Date.now();
+    try {
+      const r = await fetch('/goals.json', { cache: 'no-store' });
+      const j = await r.json();
+      state.goals = Array.isArray(j.items) ? j.items : [];
+      state.goalsErr = j.error || '';
+    } catch (e) {
+      state.goalsErr = String((e && e.message) || e);
+    }
+    renderGoals();
+  }
+
+  function fechaCorta(valor) {
+    const d = new Date(String(valor || '').replace(' ', 'T') + 'Z');
+    if (isNaN(d)) return String(valor || '');
+    const p = (n) => String(n).padStart(2, '0');
+    return p(d.getDate()) + '/' + p(d.getMonth() + 1) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function abrirObjetivo(sid) {
+    if (!sid) return;
+    const entry = typeof findSession === 'function' ? findSession(sid) : null;
+    // Si la sesion no esta en la lista visible (archivada o fuera de pagina) se abre igual con un
+    // objeto minimo: renderSession trabaja con el id.
+    openSession(entry || { id: sid, sessionId: sid, archived: false });
+  }
+
+  function gpItem(it) {
+    const d = document.createElement('div');
+    d.className = 'gp-item' + (it.estado === 'activo' ? ' activo' : '');
+    const t = document.createElement('div');
+    t.className = 'gp-text';
+    t.textContent = it.texto || '(sin texto)';
+    t.title = it.texto || '';
+    const m = document.createElement('div');
+    m.className = 'gp-meta';
+    m.textContent = (it.nombre || it.sid) + ' · ' + fechaCorta(it.actualizado) + (it.tipo === 'grind' ? ' · a fondo' : '');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'gp-open';
+    b.textContent = it.estado === 'activo' ? 'Reanudar' : 'Abrir chat';
+    b.title = 'Abrir ' + (it.nombre || it.sid);
+    b.addEventListener('click', () => abrirObjetivo(it.sid));
+    d.append(t, m, b);
+    return d;
+  }
+
+  function renderGoals() {
+    const body = document.getElementById('gp-body');
+    if (!body) return;
+    const items = Array.isArray(state.goals) ? state.goals : [];
+    body.innerHTML = '';
+    if (state.goalsErr) {
+      const e = document.createElement('div');
+      e.className = 'gp-empty';
+      e.textContent = 'No pude leer los objetivos: ' + state.goalsErr;
+      body.append(e);
+    }
+    const seccion = (titulo, lista) => {
+      const h = document.createElement('div');
+      h.className = 'gp-sec';
+      h.textContent = titulo + ' (' + lista.length + ')';
+      body.append(h);
+      if (!lista.length) {
+        const v = document.createElement('div');
+        v.className = 'gp-empty';
+        v.textContent = 'Ninguno.';
+        body.append(v);
+        return;
+      }
+      for (const it of lista) body.append(gpItem(it));
+    };
+    seccion('Pendientes', items.filter((i) => i.estado === 'activo'));
+    seccion('Cerrados', items.filter((i) => i.estado !== 'activo'));
+    if (!items.length && !state.goalsErr) {
+      const v = document.createElement('div');
+      v.className = 'gp-empty';
+      v.textContent = 'Todavia no usaste /goal en ningun chat.';
+      body.append(v);
+    }
+  }
+
+  function gpSetVisible(v) {
+    const p = document.getElementById('goals');
+    const app = document.querySelector('.app');
+    if (!p || !app) return;
+    p.hidden = !v;
+    app.classList.toggle('con-goals', v);
+    const btn = document.getElementById('btn-goals');
+    if (btn) btn.setAttribute('aria-pressed', v ? 'true' : 'false');
+    try { localStorage.setItem('aegis.goalsPanel', v ? '1' : '0'); } catch (e) {}
+    if (v) fetchGoals(true);
+  }
+
+  (function wireGoals() {
+    const arrancar = () => {
+      const btn = document.getElementById('btn-goals');
+      if (btn) btn.addEventListener('click', () => gpSetVisible(document.getElementById('goals').hidden));
+      const ref = document.getElementById('gp-refresh');
+      if (ref) ref.addEventListener('click', () => fetchGoals(true));
+      let querer = false;
+      try { querer = window.innerWidth >= 1200 && localStorage.getItem('aegis.goalsPanel') !== '0'; } catch (e) {}
+      if (querer) gpSetVisible(true);
+      setInterval(() => {
+        const p = document.getElementById('goals');
+        if (p && !p.hidden) fetchGoals(true);
+      }, 60000);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar, { once: true });
+    else arrancar();
+  })();
+
+  window.__aegisWeb = { state, goalFromText: goalFromText, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),

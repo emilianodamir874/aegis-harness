@@ -926,3 +926,23 @@ body { background: var(--bg); }
 .goalbar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .goalbar-x { flex: 0 0 auto; border: 0; background: transparent; color: inherit; opacity: 0.6; font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
 .goalbar-x:hover { opacity: 1; }
+
+/* ---------- panel de objetivos (/goal y /grind) ---------- */
+.goals-panel { background: var(--bg-sidebar); border-left: 1px solid var(--border-soft); overflow-y: auto; min-width: 0; display: flex; flex-direction: column; }
+.goals-panel[hidden] { display: none !important; }
+.app.con-goals { grid-template-columns: 284px 1fr 272px; }
+.gp-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 6px; position: sticky; top: 0; background: var(--bg-sidebar); z-index: 1; }
+.gp-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; }
+.gp-refresh { font-size: 15px; line-height: 1; }
+.gp-sec { padding: 10px 12px 4px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+.gp-empty { padding: 2px 12px 8px; font-size: 12px; opacity: 0.55; }
+.gp-item { margin: 0 10px 8px; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: 10px; }
+.gp-item.activo { border-color: rgba(122, 162, 255, 0.45); background: rgba(122, 162, 255, 0.10); }
+.gp-text { font-size: 12.5px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+.gp-meta { font-size: 11px; opacity: 0.62; margin-top: 5px; }
+.gp-open { margin-top: 7px; font-size: 11.5px; padding: 3px 9px; border-radius: 8px; border: 1px solid var(--border-soft); background: transparent; color: inherit; cursor: pointer; }
+.gp-open:hover { background: rgba(255, 255, 255, 0.07); }
+@media (max-width: 1200px) {
+  .app.con-goals { grid-template-columns: 284px 1fr; }
+  .goals-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 282px; z-index: 45; box-shadow: -14px 0 34px rgba(0, 0, 0, 0.4); }
+}

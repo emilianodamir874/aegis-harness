@@ -34,6 +34,31 @@ await mkdir(join(DIR, 'logs'), { recursive: true }).catch(() => {});
 const logLine = (file, line) => appendFile(join(DIR, 'logs', file), line).catch(() => {});
 
 // ---------------------------------------------------------------- auth (tunel)
+// ---------------------------------------------------------------- objetivos (/goal y /grind)
+// El serve los guarda en extension_data de cada sesion pero no los expone por ACP, asi que se
+// indexan desde una copia de sessions.db con un proceso aparte (node --experimental-sqlite).
+// Cache de 60 s: el panel del cliente puede refrescar sin castigar el disco.
+let goalsCache = { at: 0, body: '{}' };
+async function goalsIndex() {
+  if (Date.now() - goalsCache.at < 60000) return goalsCache.body;
+  let body;
+  try {
+    const { execFile } = await import('node:child_process');
+    body = await new Promise((ok) => {
+      execFile(
+        process.execPath,
+        ['--experimental-sqlite', join(DIR, 'tools', 'goals-index.mjs')],
+        { timeout: 40000, maxBuffer: 8 * 1024 * 1024 },
+        (err, stdout) => ok(err && !stdout ? JSON.stringify({ _error: String(err.message) }) : stdout),
+      );
+    });
+  } catch (e) {
+    body = JSON.stringify({ _error: String((e && e.message) || e) });
+  }
+  goalsCache = { at: Date.now(), body };
+  return body;
+}
+
 const AUTH_FILE = join(DIR, 'auth.json');
 let auth = null;
 try {
@@ -481,6 +506,13 @@ const handler = async (req, res) => {
     if (url.pathname === '/prices.json') {
       let body = '{}';
       try { body = await readFile(join(DIR, 'prices.json'), 'utf8'); } catch (e) { body = JSON.stringify({ _error: String((e && e.message) || e) }); }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
+      res.end(body);
+      return;
+    }
+    // Objetivos por conversacion (panel de la barra derecha).
+    if (url.pathname === '/goals.json') {
+      const body = await goalsIndex();
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
       res.end(body);
       return;
