@@ -7,7 +7,9 @@ pub(super) async fn recent_start(
     messages: &[Message],
     context_limit: usize,
 ) -> Result<Option<usize>> {
-    let budget = (context_limit / 8).min(32_000);
+    // Proportional to the window: a flat 32k cap threw away verbatim turns a large
+    // window can afford to keep, and the prompt cache already paid for them.
+    let budget = (context_limit / 8).min(128_000);
     if budget == 0 {
         return Ok(None);
     }
