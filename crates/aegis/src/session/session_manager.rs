@@ -915,7 +915,17 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
         use sqlx::Row;
 
         let recipe_json: Option<String> = row.try_get("recipe_json")?;
-        let recipe = recipe_json.and_then(|json| serde_json::from_str(&json).ok());
+        let recipe = recipe_json.and_then(|json| {
+            match serde_json::from_str::<Recipe>(&json) {
+                Ok(recipe) => Some(recipe),
+                Err(error) => {
+                    // Silently dropping the recipe leaves the session advertised with
+                    // recipe__final_output but unable to claim it (aegis.unclaimed_tool).
+                    tracing::warn!(%error, "Saved recipe JSON did not deserialize; this session runs without its recipe");
+                    None
+                }
+            }
+        });
 
         let user_recipe_values_json: Option<String> = row.try_get("user_recipe_values_json")?;
         let user_recipe_values =
