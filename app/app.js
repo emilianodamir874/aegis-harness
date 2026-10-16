@@ -3278,7 +3278,14 @@
     for (const o of (state.current && state.current.configOptions) || []) {
       if (o && o.id) quedo[o.id] = o.currentValue;
     }
-    const sinAplicar = ids.filter((id) => quedo[id] !== undefined && quedo[id] !== pend[id]);
+    const sinAplicar = ids.filter((id) => {
+      if (quedo[id] === undefined || quedo[id] === pend[id]) return false;
+      // El valor "por defecto" (el chip "Aegis (Default)") no se refleja como tal: el servidor
+      // resuelve el default real (hoy open_design), asi que un valor distinto es lo esperado.
+      const opcion = ((state.current && state.current.configOptions) || []).find((o) => o && o.id === id);
+      const etiqueta = opcion && Array.isArray(opcion.options) ? ((opcion.options.find((o) => o.value === pend[id]) || {}).name || '') : '';
+      return !/default/i.test(etiqueta);
+    });
     if (sinAplicar.length) {
       systemNote(
         'Ojo: la elección hecha antes de crear el chat no quedó aplicada (' + sinAplicar.join(', ') +
@@ -4350,7 +4357,7 @@
     else arrancar();
   })();
 
-  window.__aegisWeb = { state, setConfig: setConfig, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  window.__aegisWeb = { state, setConfig: setConfig, rpc: rpc, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
