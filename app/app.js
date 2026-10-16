@@ -723,20 +723,30 @@
   // al pie con explicacion: el mensaje guardado esta completo, lo que se recorta es el envio.
   (function wireRecortes() {
     const RE = /…?\s*\[recortado: \d+ bytes omitidos del replay\]/;
+    // OJO: el chat escribe parrafo por parrafo, asi que el aviso puede llegar como nodo suelto
+    // (no como un contenedor .content nuevo). Se recorren los nodos de TEXTO de lo que se agrego,
+    // sin depender de la etiqueta, con una poda barata por texto.
     const marcar = (raiz) => {
-      const raices = [];
-      if (raiz && raiz.nodeType === 1) {
-        const propio = raiz.matches && raiz.matches('#messages .msg-a .content') ? raiz : null;
-        if (propio) raices.push(propio);
-        if (raiz.querySelectorAll) for (const c of raiz.querySelectorAll('#messages .msg-a .content')) raices.push(c);
+      const caja = document.getElementById('messages');
+      if (!caja || !raiz) return;
+      const objetivos = [];
+      if (raiz.nodeType === 1) {
+        if (raiz === caja || caja.contains(raiz)) objetivos.push(raiz);
+        if (raiz.querySelectorAll) objetivos.push(...raiz.querySelectorAll('*'));
       }
-      for (const c of raices) {
-        if (c.querySelector('.replay-cut')) continue;
-        for (const nodo of c.querySelectorAll('p, li, div, td')) {
-          for (const tn of [...nodo.childNodes]) {
-            if (tn.nodeType !== 3) continue;
-            const m = RE.exec(tn.nodeValue || '');
-            if (!m) continue;
+      if (raiz === caja) objetivos.splice(0, Math.max(0, objetivos.length - 400)); // arranque: solo lo ultimo
+      const textos = [];
+      for (const o of objetivos) {
+        if (!o.textContent || o.textContent.indexOf('[recortado:') === -1) continue;
+        if (o.closest && o.closest('.replay-cut')) continue;
+        const w = document.createTreeWalker(o, NodeFilter.SHOW_TEXT);
+        let t;
+        while ((t = w.nextNode())) textos.push(t);
+      }
+      {
+        for (const tn of textos) {
+          const m = RE.exec(tn.nodeValue || '');
+          if (!m) continue;
             const span = document.createElement('span');
             span.className = 'replay-cut';
             span.textContent = m[0].trim();
@@ -746,9 +756,8 @@
             const frag = document.createDocumentFragment();
             if (antes.trim()) frag.appendChild(document.createTextNode(antes.trim() + ' '));
             frag.appendChild(span);
-            if (despues.trim()) frag.appendChild(document.createTextNode(' ' + despues.trim()));
-            tn.parentNode.replaceChild(frag, tn);
-          }
+          if (despues.trim()) frag.appendChild(document.createTextNode(' ' + despues.trim()));
+          tn.parentNode.replaceChild(frag, tn);
         }
       }
     };
