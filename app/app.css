@@ -968,3 +968,35 @@ body { background: var(--bg); }
   background: transparent; border: 0; border-radius: 0;
 }
 .composer > .runbar[hidden] { display: none; }
+
+/* ---------- Revision de UI/UX (16/10): hallazgos medidos con el navegador en 1440/1024/430/360 px ----------
+   - controles de la lista de sesiones de 24x24 px y cierre del cajon de 34x34
+   - textos de 10 y 10,5 px (chip del titulo, grupos de fecha, pista de teclado)
+   - ancho de lectura de 820 px (~90 caracteres por linea; comodo: 65-75)
+   - el contenido recortado de las herramientas no avisaba que habia mas
+   - en el celular el pie mostraba la IP de red local, que no le dice nada al usuario
+*/
+/* 1) Objetivos tactiles: minimo 38-40 px de lado */
+.sb-rename, .sb-more, .sb-del { min-width: 38px; min-height: 38px; }
+#btn-close-drawer { min-width: 40px; min-height: 40px; }
+.btn-new { padding: 11px 10px; }
+.sb-search { padding: 9px 10px; }
+.sb-search input { min-height: 22px; }
+/* 2) Piso tipografico: nada por debajo de 11 px */
+.brand-chip, .sb-group { font-size: 11.5px; }
+.kbd-hint { font-size: 11px; }
+/* 3) Ancho de lectura */
+.msg-inner, .composer, .attachments, .goalbar { max-width: 780px; }
+/* 4) Contenido de herramientas: boton "Ver todo" (lo agrega app.js solo si el bloque desborda) */
+.tool-more {
+  margin: 4px 0 2px; font-size: 11.5px; padding: 3px 10px; border-radius: 8px;
+  border: 1px solid var(--border-soft); background: transparent; color: var(--text-3);
+  cursor: pointer; align-self: flex-start;
+}
+.tool-more:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.tool.expandido pre, .tool.expandido .tool-body { max-height: none !important; overflow: visible !important; }
+/* 5) La IP de red local no aporta en el celular */
+@media (max-width: 880px) { #conn-host { display: none; } }
+
+/* Redondeo final: 38 -> 40 px para cumplir el minimo tactil medido en la revision. */
+.sb-rename, .sb-more, .sb-del { min-width: 40px; min-height: 40px; }

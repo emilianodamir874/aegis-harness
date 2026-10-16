@@ -41,7 +41,8 @@
   };
   const greeting = () => {
     const h = new Date().getHours();
-    return h >= 6 && h < 13 ? 'Buenos días' : h >= 13 && h < 20 ? 'Buenas tardes' : 'Buenas noches';
+    // El corte estaba en las 13: a las 12:35 todavia decia "Buenos dias". Desde el mediodia, tardes.
+    return h >= 6 && h < 12 ? 'Buenos días' : h >= 12 && h < 20 ? 'Buenas tardes' : 'Buenas noches';
   };
   const sameDay = (a, b) => a.toDateString() === b.toDateString();
   const dayLabel = (iso) => {
@@ -1184,6 +1185,23 @@
       const all = texts.join('\n');
       pre.textContent = all.length > 6000 ? all.slice(0, 6000) + '\n…' : all;
       el.classList.add('has-content');
+      // El contenido de la herramienta se recorta a cierta altura y no habia forma de ver el resto:
+      // si el bloque desborda, se agrega un boton para expandirlo (y volver a plegarlo).
+      requestAnimationFrame(() => {
+        if (!el.isConnected || el.querySelector('.tool-more')) return;
+        if (pre.scrollHeight <= pre.clientHeight + 8) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'tool-more';
+        btn.textContent = 'Ver todo';
+        btn.title = 'Mostrar el contenido completo de esta herramienta';
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const abierto = el.classList.toggle('expandido');
+          btn.textContent = abierto ? 'Ver menos' : 'Ver todo';
+        });
+        el.querySelector('.tool-body').appendChild(btn);
+      });
     }
     if (!quiet) scrollBottom();
   }
