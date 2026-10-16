@@ -90,9 +90,16 @@
     // aplasta la columna y parte las palabras letra por letra.
     const plain = (s) => String(s == null ? '' : s).replace(/[*`_]/g, '').trim();
     const cell = (tag, txt, i, label) => { const a = aligns[i]; return `<${tag}${a ? ` style="text-align:${a}"` : ''}${label ? ` data-label="${esc(label)}"` : ''}>${inline(txt)}</${tag}>`; };
-    // data-cols: en pantalla angosta, las de 2 columnas se muestran como tabla (etiqueta/valor) y
-    // solo las de 3+ se rearman como tarjetas (una fila = una tarjeta).
-    return '<div class="tbl-wrap"><table' + (head.length === 2 ? ' data-cols="2"' : '') + '><thead><tr>' + head.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>'
+    // data-cols: en pantalla angosta las tablas se rearman como tarjetas (una fila = una tarjeta).
+    // Excepcion: una tabla de 2 columnas con celdas CORTAS (etiqueta + valor) se muestra como tabla
+    // real, que se lee mejor. Si alguna celda tiene texto largo se dejan las tarjetas: si no, la
+    // primera columna queda aplastada palabra por palabra y la otra se corta.
+    const corta = (s, max) => plain(s).length <= max;
+    const compacta =
+      head.length === 2 &&
+      rows.length > 0 &&
+      rows.every((r) => corta(head[0], 48) && corta(r[0] == null ? '' : r[0], 48) && corta(r[1] == null ? '' : r[1], 72));
+    return '<div class="tbl-wrap"><table' + (compacta ? ' data-cols="2"' : '') + '><thead><tr>' + head.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>'
       + (rows.length ? '<tbody>' + rows.map((r) => '<tr>' + head.map((_, i) => cell('td', r[i] == null ? '' : r[i], i, plain(head[i]))).join('') + '</tr>').join('') + '</tbody>' : '')
       + '</table></div>';
   };
@@ -735,16 +742,20 @@
         if (raiz.querySelectorAll) objetivos.push(...raiz.querySelectorAll('*'));
       }
       if (raiz === caja) objetivos.splice(0, Math.max(0, objetivos.length - 400)); // arranque: solo lo ultimo
-      const textos = [];
+      // Set: el mismo nodo de texto puede entrar dos veces (su contenedor y el propio padre en el
+      // mismo lote). Sin deduplicar, el segundo intento reemplazaba un nodo ya reemplazado y tiraba
+      // "Cannot read properties of null (reading 'replaceChild')".
+      const textos = new Set();
       for (const o of objetivos) {
         if (!o.textContent || o.textContent.indexOf('[recortado:') === -1) continue;
         if (o.closest && o.closest('.replay-cut')) continue;
         const w = document.createTreeWalker(o, NodeFilter.SHOW_TEXT);
         let t;
-        while ((t = w.nextNode())) textos.push(t);
+        while ((t = w.nextNode())) textos.add(t);
       }
       {
         for (const tn of textos) {
+          if (!tn.parentNode) continue; // ya reemplazado en esta misma pasada
           const m = RE.exec(tn.nodeValue || '');
           if (!m) continue;
             const span = document.createElement('span');

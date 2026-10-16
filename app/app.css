@@ -1071,3 +1071,8 @@ body { background: var(--bg); }
   border-left: 2px solid var(--border-soft);
   font-size: 11.5px; font-style: italic; color: var(--text-4);
 }
+
+/* La ultima celda de una tabla de 2 columnas puede envolver: con nowrap se salia del ancho. */
+@media (max-width: 640px) {
+  .msg-a table[data-cols="2"] td:last-child { white-space: normal; }
+}
