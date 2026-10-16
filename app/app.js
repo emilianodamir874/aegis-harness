@@ -3296,6 +3296,14 @@
     guardarPendientes();
     renderChips();
   }
+  // El servidor manda algunas opciones sin nombre (modos: auto, approve, smart_approve, chat):
+  // mostrarlas crudas con guion bajo queda feo. Se separan las palabras y se capitaliza.
+  function etiquetaOpcion(o) {
+    const bruto = String((o && (o.name || o.value)) || '');
+    if (!bruto || bruto.indexOf('_') === -1) return bruto;
+    return bruto.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  }
+
   function renderChips() {
     const wrap = $('#chips');
     wrap.innerHTML = '';
@@ -3320,7 +3328,7 @@
       for (const o of opt.options) {
         const row = document.createElement('button');
         row.className = 'menu-row' + (o.value === opt.currentValue ? ' sel' : '');
-        row.innerHTML = `<span>${esc(o.name || o.value)}</span>`;
+        row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
         row.addEventListener('click', async (e) => {
           e.stopPropagation();
           menu.hidden = true;
