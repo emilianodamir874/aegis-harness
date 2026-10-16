@@ -227,6 +227,11 @@ input, textarea { font-family: inherit; color: inherit; }
   border-left: 2px solid var(--border); padding: 1px 0 1px 12px;
   color: var(--text-2); margin: 8px 0;
 }
+/* reintentar un turno que volvio vacio (el proveedor corto el stream) */
+.retry-row { display: flex; justify-content: center; margin: 6px 0 10px; }
+.retry-btn { font-size: 12.5px; padding: 5px 14px; color: #dbe6ff; background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: 8px; cursor: pointer; }
+.retry-btn:hover { filter: brightness(1.15); }
+
 /* volver a escuchar el bloque "Para escuchar" de un mensaje */
 .msg-read { align-self: flex-start; margin: 4px 0 0 2px; font-size: 11.5px; padding: 2px 8px; color: var(--text-2); background: transparent; border: 1px solid var(--border); border-radius: 7px; cursor: pointer; flex: none; }
 .msg-read:hover { color: #dbe6ff; background: var(--accent-soft); border-color: var(--accent-border); }

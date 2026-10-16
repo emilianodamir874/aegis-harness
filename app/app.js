@@ -349,6 +349,7 @@
       }
       case 'agent_message_chunk':
         if (u.content && u.content.type === 'text') {
+          chunksTurn++;
           streamAppend(u.messageId || 'a', u.content.text, false, aegisMeta(u).agentVisible === false);
           speedChunk(u.content.text);
         }
@@ -2379,7 +2380,27 @@
     if (btn) btn.addEventListener('click', function () { micStart(); });
   })();
 
+  // Cuantos chunks de contenido trajo el turno en curso. Si termina en 0 y no fue cancelado, el
+  // proveedor corto el stream sin mandar nada (caso real: gemini/antigravity cortando a mitad).
+  let chunksTurn = 0;
+
+  // Aviso de turno vacio + boton para reintentar el mismo mensaje.
+  function avisoTurnoVacio(texto, atts) {
+    systemNote('El turno volvió vacío: el proveedor cortó la respuesta y no llegó contenido. Podés reintentar.');
+    const row = document.createElement('div');
+    row.className = 'retry-row';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'retry-btn';
+    b.textContent = 'Reintentar';
+    b.addEventListener('click', function () { row.remove(); sendText(texto, atts); });
+    row.appendChild(b);
+    msgWrap().appendChild(row);
+    scrollBottom();
+  }
+
   async function sendText(text, atts, bubble) {
+    chunksTurn = 0;
     const el = bubble || addUser(text, false, atts);
     const sid = state.current && state.current.id; // dueño del turno: si te vas a otro chat, esa vista no se toca
     state.adopted = false;
@@ -2393,6 +2414,7 @@
       if (res && res.usage && res.usage.totalTokens != null) setUsage({ used: res.usage.totalTokens });
       stopNote(res && res.stopReason);
       const sr = res && res.stopReason;
+      if (chunksTurn === 0 && sr !== 'cancelled') avisoTurnoVacio(text, atts);
       if (sr === 'cancelled') label = 'Turno detenido';
       else if (sr && sr !== 'end_turn') label = 'Turno interrumpido (' + sr + ')';
     } catch (e) {
@@ -3906,7 +3928,7 @@
   });
   if (!wireDraft()) document.addEventListener('DOMContentLoaded', wireDraft, { once: true });
 
-  window.__aegisWeb = { state, copyId: copySessionId, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  window.__aegisWeb = { state, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
