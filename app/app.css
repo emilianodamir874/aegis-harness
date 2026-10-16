@@ -944,3 +944,10 @@ body { background: var(--bg); }
 .gp-open { margin-top: 6px; font-size: 11px; padding: 2px 8px; border-radius: 7px; border: 1px solid var(--border-soft); background: transparent; color: inherit; opacity: 0.85; cursor: pointer; }
 .gp-open:hover { background: rgba(255, 255, 255, 0.07); opacity: 1; }
 @media (max-width: 560px) { .goals-pop { left: 12px; right: 12px; width: auto; } }
+
+.gp-botones { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.gp-del { margin-left: auto; border: 0; background: transparent; color: inherit; opacity: 0.5; font-size: 15px; line-height: 1; cursor: pointer; padding: 0 4px; }
+.gp-del:hover { opacity: 1; }
+.gp-pie { padding: 2px 12px 10px; }
+.gp-restaurar { border: 0; background: transparent; color: inherit; opacity: 0.6; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
+.gp-restaurar:hover { opacity: 1; }

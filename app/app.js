@@ -4025,9 +4025,42 @@
     sendText('/' + (it.tipo === 'grind' ? 'grind' : 'goal') + ' ' + it.texto);
   }
 
+  // "Borrar" en el panel = ocultarlo de la lista, reversible y sin tocar la conversacion (el
+  // historial y el estado del serve quedan intactos). Para el objetivo ACTIVO, borrar de verdad es
+  // otro boton: Quitar, que manda /goal off y lo saca del extension_data.
+  function gpClave(it) {
+    return [it.sid || '', it.cuando || it.actualizado || '', String(it.texto || '').slice(0, 60)].join('|');
+  }
+
+  function gpOcultos() {
+    try {
+      const j = JSON.parse(localStorage.getItem('aegis.goalsOcultos') || '[]');
+      return Array.isArray(j) ? j : [];
+    } catch (e) { return []; }
+  }
+
+  function gpOcultoEsta(it) { return gpOcultos().indexOf(gpClave(it)) !== -1; }
+
+  function gpOcultar(it) {
+    const l = gpOcultos();
+    const k = gpClave(it);
+    if (l.indexOf(k) === -1) l.push(k);
+    try { localStorage.setItem('aegis.goalsOcultos', JSON.stringify(l.slice(-400))); } catch (e) {}
+    renderGoals();
+  }
+
+  function gpRestaurar() {
+    const l = gpOcultos();
+    const items = Array.isArray(state.goals) ? state.goals : [];
+    const claves = items.map(gpClave);
+    const quedan = l.filter((k) => claves.indexOf(k) === -1);
+    try { localStorage.setItem('aegis.goalsOcultos', JSON.stringify(quedan)); } catch (e) {}
+    renderGoals();
+  }
+
   function gpItem(it) {
     const d = document.createElement('div');
-    d.className = 'gp-item' + (it.estado === 'activo' ? ' activo' : '');
+    d.className = 'gp-item' + (it.activo ? ' activo' : '');
     const t = document.createElement('div');
     t.className = 'gp-text';
     t.textContent = it.texto || '(sin texto)';
@@ -4035,23 +4068,42 @@
     const m = document.createElement('div');
     m.className = 'gp-meta';
     m.textContent = fechaCorta(it.cuando || it.actualizado) + (it.tipo === 'grind' ? ' · a fondo' : '');
-    d.append(t, m);
-    if (!it.activo) {
+    const fila = document.createElement('div');
+    fila.className = 'gp-botones';
+    if (it.activo) {
+      const q = document.createElement('button');
+      q.type = 'button';
+      q.className = 'gp-open';
+      q.textContent = 'Quitar';
+      q.title = 'Quitar el objetivo del chat (/goal off)';
+      q.addEventListener('click', () => sendText('/goal off'));
+      fila.append(q);
+    } else {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'gp-open';
       b.textContent = 'Reactivar';
       b.title = 'Volver a poner este objetivo en el chat';
       b.addEventListener('click', () => reactivarObjetivo(it));
-      d.append(b);
+      fila.append(b);
     }
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'gp-del';
+    x.textContent = '×';
+    x.title = it.activo ? 'Ocultar del panel (el objetivo sigue activo en el chat)' : 'Borrar del panel (no toca la conversacion)';
+    x.setAttribute('aria-label', 'Borrar del panel');
+    x.addEventListener('click', () => gpOcultar(it));
+    fila.append(x);
+    d.append(t, m, fila);
     return d;
   }
 
   function renderGoals() {
     const body = document.getElementById('gp-body');
     if (!body) return;
-    const items = Array.isArray(state.goals) ? state.goals : [];
+    const todos = Array.isArray(state.goals) ? state.goals : [];
+    const items = todos.filter((i) => !gpOcultoEsta(i));
     body.innerHTML = '';
     if (!(state.current && state.current.id)) {
       const v = document.createElement('div');
@@ -4087,8 +4139,20 @@
     if (!items.length && !state.goalsErr) {
       const v = document.createElement('div');
       v.className = 'gp-empty';
-      v.textContent = 'Este chat todavia no tiene /goal.';
+      v.textContent = todos.length ? 'Todos los objetivos de este chat estan borrados del panel.' : 'Este chat todavia no tiene /goal.';
       body.append(v);
+    }
+    const ocultos = todos.length - items.length;
+    if (ocultos > 0) {
+      const pie = document.createElement('div');
+      pie.className = 'gp-pie';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gp-restaurar';
+      b.textContent = ocultos === 1 ? 'Mostrar el borrado' : 'Mostrar los ' + ocultos + ' borrados';
+      b.addEventListener('click', () => gpRestaurar());
+      pie.append(b);
+      body.append(pie);
     }
   }
 
@@ -4117,7 +4181,14 @@
       document.addEventListener('click', (ev) => {
         const p = document.getElementById('goals');
         if (!p || p.hidden) return;
-        if (p.contains(ev.target) || ev.target.closest('#btn-goals')) return;
+        // OJO: los botones del panel re-renderizan la lista, asi que para cuando este manejador
+        // corre el nodo clickeado ya esta desprendido y p.contains() da false: el popover se cerraba
+        // solo al borrar o reactivar. El camino del evento (composedPath) se calcula al despachar y
+        // sobrevive al re-render.
+        const camino = typeof ev.composedPath === 'function' ? ev.composedPath() : [];
+        const dentro = camino.some((n) => n && n.id && (n.id === 'goals' || n.id === 'btn-goals'));
+        if (dentro) return;
+        if (ev.target && (p.contains(ev.target) || (ev.target.closest && ev.target.closest('#btn-goals')))) return;
         gpSetVisible(false);
       });
       document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') gpSetVisible(false); });
