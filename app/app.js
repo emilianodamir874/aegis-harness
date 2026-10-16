@@ -2108,9 +2108,15 @@
   // por meta: manda solo la cola, alineada a un mensaje de usuario, y el resto queda a un
   // click. replayMaxBlockBytes recorta bloques enormes (la UI ya corta la vista a 6000).
   const REPLAY_TAIL = 400;
-  const REPLAY_MAX_BLOCK = 8192;
+  // 8 KB dejaba cortadas las respuestas largas (una de 18 KB se veia cortada al reabrir el chat,
+  // y al pedir "explicame de nuevo" la nueva tambien). 64 KB cubre cualquier respuesta normal y
+  // sigue evitando mandar bloques enormes; el recorte solo aparece en casos patologicos.
+  const REPLAY_MAX_BLOCK = 65536;
   const replayMeta = (full) => ({
-    _meta: { replayTail: full ? 1000000000 : REPLAY_TAIL, replayMaxBlockBytes: REPLAY_MAX_BLOCK },
+    // `full` (cargar todo): sin tope de bloque, para que el historial completo llegue entero.
+    _meta: full
+      ? { replayTail: 1000000000 }
+      : { replayTail: REPLAY_TAIL, replayMaxBlockBytes: REPLAY_MAX_BLOCK },
   });
 
   function tailPill(show) {

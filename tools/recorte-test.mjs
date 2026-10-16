@@ -9,13 +9,14 @@ await p.waitForTimeout(2500);
 await p.click('#btn-menu').catch(() => {});
 await p.waitForTimeout(700);
 await p.click('[data-id="20261016_9"]');
-await p.waitForTimeout(13000);
-const real = await p.evaluate(() => {
-  const marcas = [...document.querySelectorAll('.replay-cut')];
-  const cs = marcas.length ? getComputedStyle(marcas[0]) : null;
-  const parrafo = marcas.length ? marcas[0].closest('p') : null;
-  return { marcas: marcas.length, texto: marcas.length ? marcas[0].textContent.slice(0, 60) : null, estilo: cs ? { fontSize: cs.fontSize, fontStyle: cs.fontStyle, color: cs.color, borde: cs.borderLeftWidth } : null, parrafoTieneElResto: parrafo ? parrafo.textContent.trim().slice(0, 40) : null, tablas2: document.querySelectorAll('#messages table[data-cols="2"]').length, tablas: document.querySelectorAll('#messages table').length };
+await p.waitForTimeout(14000);
+const info = await p.evaluate(() => {
+  const marcas = document.querySelectorAll('.replay-cut').length;
+  const textos = [...document.querySelectorAll('#messages .msg-a .content')].map((c) => c.textContent || '');
+  const largoMax = textos.reduce((a, t) => Math.max(a, t.length), 0);
+  const ultimo = textos.length ? textos[textos.length - 1] : '';
+  return { marcas, mensajes: textos.length, textoMasLargo: largoMax, ultimoEmpieza: ultimo.slice(0, 60), ultimoTieneMarca: /omitidos del replay/.test(ultimo) };
 });
-await p.screenshot({ path: 'C:/Users/Emiliano/tmp/inv/recorte-final.png' });
-console.log(JSON.stringify({ real, errs }, null, 1));
+await p.screenshot({ path: 'C:/Users/Emiliano/tmp/inv/sin-recorte.png' });
+console.log(JSON.stringify({ info, errs }, null, 1));
 await b.close();
