@@ -1,0 +1,23 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+const errs = [];
+p.on('pageerror', (e) => errs.push(String(e.message).slice(0, 110)));
+await p.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded' });
+await p.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state, null, { timeout: 20000 });
+const r = await p.evaluate(() => {
+  const bar = document.getElementById('runbar');
+  const comp = document.querySelector('.composer');
+  const dentro = comp.contains(bar);
+  const altoSin = Math.round(comp.getBoundingClientRect().height);
+  bar.hidden = false;
+  const cb = comp.getBoundingClientRect(), bb = bar.getBoundingClientRect();
+  const dentroCaja = bb.top >= cb.top - 1 && bb.right <= cb.right + 1 && bb.left >= cb.left - 1;
+  const anchoOk = bb.width <= cb.width + 1;
+  const altoCon = Math.round(cb.height);
+  const fondo = getComputedStyle(bar).backgroundColor;
+  bar.hidden = true;
+  return { dentroDelCompositor: dentro, padreEsComposer: bar.parentElement.className, ocultoAlInicio: bar.hidden, altoSin, altoCon, crece: altoCon > altoSin, dentroCaja, anchoOk, fondoTransparente: fondo === 'rgba(0, 0, 0, 0)' || fondo === 'transparent', anchoBarra: Math.round(bb.width), anchoComposer: Math.round(cb.width), stop: !!document.getElementById('runbar-stop') };
+});
+console.log(JSON.stringify({ ...r, errs }, null, 1));
+await b.close();

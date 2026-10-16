@@ -958,3 +958,13 @@ body { background: var(--bg); }
 .gp-pie { padding: 2px 12px 10px; }
 .gp-restaurar { border: 0; background: transparent; color: inherit; opacity: 0.6; font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
 .gp-restaurar:hover { opacity: 1; }
+
+/* La barra de estado ("Aegis esta trabajando" + tiempo + tok/s + Detener) ya no es una franja
+   aparte arriba del compositor: vive DENTRO de la misma caja, como primera fila, asi hay una sola
+   barra abajo del chat. */
+.composer { flex-wrap: wrap; }
+.composer > .runbar {
+  flex: 1 0 100%; max-width: none; margin: 4px 2px 0; padding: 0 4px 2px;
+  background: transparent; border: 0; border-radius: 0;
+}
+.composer > .runbar[hidden] { display: none; }
