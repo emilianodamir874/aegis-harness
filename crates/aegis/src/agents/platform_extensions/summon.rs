@@ -875,7 +875,15 @@ impl SummonClient {
                 max_turns: None,
             })
             .max_turns = Some(max_turns);
-        if recipe
+        // En modo codigo la superficie del modelo son los callbacks del sandbox: la receta
+        // puede declarar `response`, pero el subagente nunca podra llamar
+        // recipe__final_output. Pedirlo igual lo hacia quemar todos sus turnos.
+        let child_code_mode = subagent_config
+            .extensions
+            .iter()
+            .any(|extension| extension.name() == "code_execution");
+        if !child_code_mode
+            && recipe
             .response
             .as_ref()
             .and_then(|response| response.json_schema.as_ref())
@@ -889,8 +897,12 @@ impl SummonClient {
                 })),
             });
         }
-        FinalOutputTool::try_new(recipe.response.as_ref().unwrap().clone())
-            .map_err(|e| format!("Invalid delegate response schema: {e}"))?;
+        // Sin response no hay final_output: el subagente contesta en prosa y el runner
+        // la acepta como entrega (ver final_answer en subagent_handler.rs).
+        if let Some(response) = recipe.response.as_ref() {
+            FinalOutputTool::try_new(response.clone())
+                .map_err(|e| format!("Invalid delegate response schema: {e}"))?;
+        }
 
         let mut extension_data = ExtensionData::default();
         EnabledExtensionsState::new(subagent_config.extensions)

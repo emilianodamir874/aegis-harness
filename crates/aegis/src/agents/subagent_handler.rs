@@ -190,6 +190,9 @@ impl ForegroundSubagentRunner {
         if let Some(error) = subagent.conversation.as_ref().and_then(trailing_error) {
             return SubagentOutcome::Failed(format!("{error:?}"));
         }
+        if let Some(answer) = messages.map(Vec::as_slice).and_then(final_answer) {
+            return SubagentOutcome::Completed(answer);
+        }
         SubagentOutcome::Failed(failure_reason(
             messages.map(Vec::as_slice).unwrap_or_default(),
         ))
@@ -218,6 +221,19 @@ fn failure_reason(messages: &[Message]) -> String {
     } else {
         last_text
     }
+}
+
+/// The subagent's prose answer, when it stopped without a collected final output.
+fn final_answer(messages: &[Message]) -> Option<String> {
+    let last = messages.last()?;
+    if last.role != Role::Assistant || last.is_tool_call() {
+        return None;
+    }
+    let text = last.as_concat_text();
+    if text.is_empty() || text == MAX_TURNS_MESSAGE {
+        return None;
+    }
+    Some(text)
 }
 
 pub const SUBAGENT_TOOL_REQUEST_TYPE: &str = "subagent_tool_request";
