@@ -1,5 +1,5 @@
 $ErrorActionPreference='SilentlyContinue'
-$db = "$env:APPDATA\Aegis\aegis\data\sessions\sessions.db"
+$db = 'C:\Aegis-Proyects\state\data\sessions\sessions.db'
 $rows = sqlite3 $db "select strftime('%H:%M', datetime(created_timestamp,'unixepoch','localtime')) || '|' || session_id || '|' || model from usage_ledger where created_timestamp > strftime('%s','now') - 6*3600 order by created_timestamp;"
 $map = @{}
 foreach ($r in $rows) { $p = $r -split '\|'; $k = $p[0]; if (-not $map.ContainsKey($k)) { $map[$k] = 0 }; $map[$k]++ }

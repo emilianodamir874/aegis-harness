@@ -1,5 +1,5 @@
 $ErrorActionPreference='SilentlyContinue'
-$base = "$env:APPDATA\Aegis\aegis\data\logs"
+$base = 'C:\Aegis-Proyects\state\state\logs'
 $l = Get-Content "$base\llm_request.0.jsonl"
 Write-Output '--- line1 (first 700 chars)'
 Write-Output ($l[0].Substring(0,[Math]::Min(700,$l[0].Length)))

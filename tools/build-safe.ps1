@@ -19,9 +19,15 @@ $cfg = 'C:\Users\Emiliano\.cargo\config.toml'
 $targetDir = 'C:\Aegis-Proyects\target\debug'
 $out = "$targetDir\aegis-$Version.exe"
 function Last-ModelWrite {
-  $f = Get-ChildItem "$env:APPDATA\Aegis\aegis\data\logs\llm_request.*.jsonl" -ErrorAction SilentlyContinue |
+  $root = if ($env:AEGIS_PATH_ROOT) { $env:AEGIS_PATH_ROOT } else { 'C:\Aegis-Proyects\state' }
+  $stamps = @()
+  $f = Get-ChildItem -Path (Join-Path $root 'state\logs\llm_request.*.jsonl') -ErrorAction SilentlyContinue |
        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if ($f) { $f.LastWriteTime } else { (Get-Date).AddDays(-1) }
+  if ($f) { $stamps += $f.LastWriteTime }
+  $wal = Get-Item (Join-Path $root 'data\sessions\sessions.db-wal') -ErrorAction SilentlyContinue
+  if ($wal) { $stamps += $wal.LastWriteTime }
+  if ($stamps.Count -eq 0) { return (Get-Date).AddDays(-1) }
+  return ($stamps | Sort-Object -Descending | Select-Object -First 1)
 }
 if (-not $SkipIdleGate) {
   $deadline = (Get-Date).AddMinutes(20)

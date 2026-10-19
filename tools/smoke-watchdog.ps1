@@ -6,7 +6,8 @@ $env:AEGIS_SERVER__SECRET_KEY = $cfg.secretKey
 $env:AEGIS_RUN_STALL_TIMEOUT_SECS = '3'
 $env:AEGIS_RUN_WATCHDOG_POLL_SECS = '5'
 $port = 3392
-$exe = 'C:\Aegis-Proyects\src\target\debug\goose-serve-v3.exe'
+$ptr = Get-Content 'C:\Aegis-Proyects\core\state\current-version.json' -Raw | ConvertFrom-Json
+$exe = $ptr.exe
 $origins = @("--allowed-origin=http://$($cfg.publicHost):$($cfg.webPort)", '--allowed-origin=http://127.0.0.1:3788')
 $args = @('serve', '--host', '0.0.0.0', '--port', "$port", '--platform', 'desktop', '--enable-scheduler', '--with-builtin', 'developer') + $origins
 $p = Start-Process -FilePath $exe -ArgumentList $args -WorkingDirectory $root -PassThru -WindowStyle Hidden -RedirectStandardOutput "$root\logs\serve-v3wd.out.log" -RedirectStandardError "$root\logs\serve-v3wd.err.log"

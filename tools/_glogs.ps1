@@ -1,5 +1,5 @@
 $ErrorActionPreference='SilentlyContinue'
-$base = "$env:APPDATA\Aegis\aegis\data\logs"
+$base = 'C:\Aegis-Proyects\state\state\logs'
 Write-Output '== server dir =='
 Get-ChildItem "$base\server" -Recurse -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | ForEach-Object { $_.FullName + '  ' + [int]($_.Length/1KB) + 'KB  ' + $_.LastWriteTime }
 Write-Output '== debug dir =='

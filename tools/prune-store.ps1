@@ -8,7 +8,8 @@
 # el VACUUM): exige parar aegis-web primero.
 param([switch]$Apply, [int]$Days = 7, [switch]$IncludeAcpHidden)
 $ErrorActionPreference = 'Stop'
-$data = "$env:APPDATA\Aegis\aegis\data\sessions"
+$root = if ($env:AEGIS_PATH_ROOT) { $env:AEGIS_PATH_ROOT } else { 'C:\Aegis-Proyects\state' }
+$data = Join-Path $root 'data\sessions'
 $db = "$data\sessions.db"
 $sqlite = (Get-Command sqlite3 -ErrorAction SilentlyContinue).Source
 if (-not $sqlite) { throw 'sqlite3 no esta en el PATH' }

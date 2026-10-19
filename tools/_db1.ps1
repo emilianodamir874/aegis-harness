@@ -1,5 +1,5 @@
 $ErrorActionPreference='SilentlyContinue'
-$db = "$env:APPDATA\Aegis\aegis\data\sessions\sessions.db"
+$db = 'C:\Aegis-Proyects\state\data\sessions\sessions.db'
 Write-Output '== schema usage_ledger =='
 sqlite3 $db ".schema usage_ledger"
 Write-Output '== schema messages =='
