@@ -1,18 +1,29 @@
-This is a rust project with crates in the crates dir:
-aegis: the main code for aegis, contains all the core logic
-aegis-bench: bench marking
-aegis-cli: the command line interface, use aegis crate
-aegis-mcp: the mcp servers that ship with aegis. the developer sub system is of special interest
-aegis-server: the server that supports the desktop (electron) app. also known as aegisd
+This is a Rust workspace. Crates live in crates/; ui/ has the TypeScript/Electron UI.
 
+crates (real list as of 2026-10-19):
+- aegis: core logic (agents, providers, config, prompts, hints, session, checks)
+- aegis-cli: the `aegis` binary and the terminal session UI
+- aegis-agent: agent runtime pieces shared by the CLI and the server path
+- aegis-providers + aegis-provider-types: provider implementations and wire types
+- aegis-context-management: compaction, context window and tool-pair summarization
+- aegis-mcp: bundled MCP servers; the developer subsystem lives here
+- aegis-acp-macros, aegis-roaming, aegis-download-manager, aegis-local-inference,
+  aegis-sdk, aegis-sdk-types, aegis-test, aegis-test-support
+ui/: aegis-acp, aegis-acp-client, aegis-binary, desktop (Electron), text
 
-ui/desktop has an electron app in typescript. 
+There is NO aegis-server and NO aegis-bench crate in this fork. The HTTP/ACP server is the
+`serve` subcommand of the `aegis` binary (crates/aegis-cli), not a separate crate; the
+`aegisd` that runs on port 8765 belongs to the *bridge* project (C:\Aegis-Proyects\bridge).
 
-non trivial features should be implemented in the aegis crate and then be called from the aegis-cli crate for the cli. for the desktop, you want to add routes to 
-aegis-server/src/routes. you can then run `just generate-openapi` to generate the openapi spec which will modify the ui/desktop/src/api files. once you have
-that you can call the functionality from the server from the typescript.
+Non-trivial features go in the aegis crate and are called from aegis-cli.
 
-tips: 
-- can look at unstaged changes for what is being worked on if starting
-- always check rust compiles, cargo fmt etc and `cargo clippy --all-targets -- -D warnings` (as well as run tests in files you are working on)
-- in ui/desktop, look at how you can run lint checks and if other tests can run
+Builds on this machine:
+- CARGO_TARGET_DIR=C:\Aegis-Proyects\target. src/target is NOT used anymore (fossil, removed 2026-10-19).
+- Deploy: core/ops/build-and-swap.ps1 -Version vNN (build-safe + copy to core/bin + swap.ps1).
+- Do not hardcode `-o src/target/...`; cargo already writes into C:\Aegis-Proyects\target.
+
+tips:
+- always check it compiles: cargo fmt, cargo clippy --all-targets -- -D warnings, and the tests of the files you touched
+- reduced CLI feature set: rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
+- CI feature set for the aegis lib suite: rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
+- unstaged changes are a good signal of what is being worked on
