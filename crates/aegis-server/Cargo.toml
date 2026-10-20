@@ -1,0 +1,57 @@
+[package]
+name = "aegis-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Aegis harness backend: ACP over HTTP and WebSocket"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "aegis-serve"
+path = "src/main.rs"
+
+[features]
+# Mismo conjunto que usa core/ops/build.ps1 para el binario desplegado.
+default = [
+    "rustls-tls",
+    "scheduler",
+    "bundled-mcp",
+    "chat-recall",
+    "acp-http",
+    "code-mode",
+]
+code-mode = ["aegis/code-mode"]
+tree-sitter = ["aegis/tree-sitter"]
+bundled-mcp = ["dep:aegis-mcp", "aegis-mcp/bundled-mcp"]
+scheduler = ["aegis/scheduler"]
+platform-apps = ["aegis/platform-apps"]
+chat-recall = ["aegis/chat-recall"]
+acp-http = ["aegis/acp-http"]
+online-model-meta = ["aegis/online-model-meta"]
+rustls-tls = [
+    "dep:axum-server",
+    "aegis/rustls-tls",
+    "axum-server/tls-rustls",
+]
+native-tls = [
+    "dep:axum-server",
+    "aegis/native-tls",
+    "axum-server/tls-openssl",
+]
+
+[dependencies]
+aegis = { path = "../aegis", default-features = false }
+aegis-mcp = { path = "../aegis-mcp", default-features = false, optional = true }
+anyhow = { workspace = true }
+axum = { workspace = true }
+axum-server = { workspace = true, optional = true }
+clap = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["std"] }

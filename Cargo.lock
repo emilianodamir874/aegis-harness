@@ -470,6 +470,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "aegis-server"
+version = "1.54.0"
+dependencies = [
+ "aegis",
+ "aegis-mcp",
+ "anyhow",
+ "axum",
+ "axum-server",
+ "clap",
+ "rand 0.10.2",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "aegis-test"
 version = "1.54.0"
 dependencies = [
