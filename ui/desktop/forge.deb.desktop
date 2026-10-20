@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Aegis
-Exec=/usr/lib/aegis/Aegis %U
-Icon=/usr/share/pixmaps/aegis.png
-Terminal=false
-Type=Application
-Categories=Development;
-MimeType=x-scheme-handler/aegis;

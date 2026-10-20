@@ -1,4 +1,0 @@
-provider: github
-owner: aaif-goose
-repo: aegis
-updaterCacheDirName: aegis-updater
