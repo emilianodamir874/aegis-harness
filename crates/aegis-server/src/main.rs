@@ -16,7 +16,7 @@ use aegis::config::paths::Paths;
 use aegis::config::Config;
 use aegis::source_roots::SourceRoot;
 use anyhow::Result;
-use clap::{Parser, ValueEnum};
+use clap::{CommandFactory, Parser, ValueEnum};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -330,6 +330,14 @@ fn init_logging() -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Sin argumentos no arrancamos el servidor: el alias del PATH mostraria la ayuda en vez
+    // de intentar escuchar en el 3284 y chocar con el serve vivo.
+    if std::env::args_os().len() == 1 {
+        Args::command().print_help()?;
+        println!();
+        return Ok(());
+    }
+
     let args = Args::parse();
 
     if args.print_paths {
