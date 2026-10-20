@@ -11,9 +11,9 @@ use tokio::sync::Mutex;
 use tokio_cron_scheduler::{job::JobId, Job, JobScheduler as TokioJobScheduler};
 use tokio_util::sync::CancellationToken;
 
-use crate::agents::{Agent, AgentConfig, AgentEvent, AegisPlatform, SessionConfig};
+use crate::agents::{AegisPlatform, Agent, AgentConfig, AgentEvent, SessionConfig};
 use crate::config::permission::PermissionManager;
-use crate::config::{resolve_extensions_for_new_session, Config, AegisMode};
+use crate::config::{resolve_extensions_for_new_session, AegisMode, Config};
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 #[cfg(feature = "telemetry")]

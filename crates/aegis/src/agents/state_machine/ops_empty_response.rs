@@ -1,8 +1,8 @@
 //! Reveals the empty-response fallback when nothing else took over the turn.
 
+use aegis_agent::inference::is_empty_response_marker;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use aegis_agent::inference::is_empty_response_marker;
 
 use crate::agents::state_machine::effects::AegisEffect;
 use crate::agents::state_machine::{

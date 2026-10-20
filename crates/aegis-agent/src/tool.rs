@@ -3,12 +3,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Result;
-use async_trait::async_trait;
 use aegis_provider_types::conversation::{
     message::{Message, MessageContent, ToolRequest},
     Conversation,
 };
+use anyhow::Result;
+use async_trait::async_trait;
 use rmcp::{
     handler::server::router::tool::{AsyncTool, SyncTool, ToolBase},
     model::{CallToolRequestParams, CallToolResult, ErrorData, JsonObject, Tool},

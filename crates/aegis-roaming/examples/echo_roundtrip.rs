@@ -18,10 +18,10 @@
 
 use std::sync::Arc;
 
-use futures::io::{AsyncReadExt, AsyncWriteExt};
 use aegis_roaming::{
     AcpStreamServer, EndpointId, RelaySettings, RoamingConfig, RoamingIdentity, RoamingNode,
 };
+use futures::io::{AsyncReadExt, AsyncWriteExt};
 
 const MSG: &[u8] = b"hello from the client";
 

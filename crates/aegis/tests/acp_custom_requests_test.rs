@@ -3,6 +3,11 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 
+use aegis::acp::server::AcpProviderFactory;
+use aegis::providers::base::{MessageStream, Provider};
+use aegis_providers::errors::ProviderError;
+use aegis_providers::model::ModelConfig;
+use aegis_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
 use agent_client_protocol::schema::v1::{
     ContentBlock, McpServer, McpServerHttp, PromptRequest, SessionUpdate, StopReason, TextContent,
 };
@@ -11,11 +16,6 @@ use common_tests::fixtures::{
     run_test, send_custom, Connection, PermissionDecision, Session, SessionData,
     TestConnectionConfig,
 };
-use aegis::acp::server::AcpProviderFactory;
-use aegis::providers::base::{MessageStream, Provider};
-use aegis_providers::errors::ProviderError;
-use aegis_providers::model::ModelConfig;
-use aegis_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, FAKE_CODE};
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};

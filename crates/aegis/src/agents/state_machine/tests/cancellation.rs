@@ -1,7 +1,5 @@
 use std::{sync::Arc, time::Duration};
 
-use anyhow::Result;
-use async_trait::async_trait;
 use aegis_agent::{inference::InferenceRunner, tool::ToolOperation};
 use aegis_providers::{
     base::{MessageStream, Provider},
@@ -9,6 +7,8 @@ use aegis_providers::{
     errors::ProviderError,
     model::ModelConfig,
 };
+use anyhow::Result;
+use async_trait::async_trait;
 use rmcp::model::{CallToolRequestParams, Tool};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -16,7 +16,7 @@ use tracing::Instrument;
 
 use super::test_pipeline;
 use crate::agents::gen_ai_telemetry::test_support::SpanFieldCapture;
-use crate::agents::state_machine::{Emitter, AegisEffect, StateMachine, Step};
+use crate::agents::state_machine::{AegisEffect, Emitter, StateMachine, Step};
 use crate::agents::AgentEvent;
 use crate::conversation::message::Message;
 use crate::session::Session;

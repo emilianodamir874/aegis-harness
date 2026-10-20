@@ -16,11 +16,11 @@ use super::utils::filter_extensions_from_system_prompt;
 use crate::config::search_path::SearchPaths;
 use crate::conversation::message::{Message, MessageContent};
 use crate::subprocess::configure_subprocess;
-use futures::future::BoxFuture;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
 use aegis_providers::request_log::{start_log, LoggerHandleExt};
+use futures::future::BoxFuture;
 use rmcp::model::Tool;
 
 const CURSOR_AGENT_PROVIDER_NAME: &str = "cursor-agent";

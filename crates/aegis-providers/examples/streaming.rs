@@ -1,7 +1,5 @@
 use std::env;
 
-use anyhow::Result;
-use futures::StreamExt;
 use aegis_providers::{
     api_client::{ApiClient, AuthMethod},
     base::Provider,
@@ -9,6 +7,8 @@ use aegis_providers::{
     model::ModelConfig,
     openai::OpenAiProvider,
 };
+use anyhow::Result;
+use futures::StreamExt;
 
 async fn stream(provider: impl Provider, model: ModelConfig) -> Result<()> {
     let system = "You are a knowledgable geography expert";

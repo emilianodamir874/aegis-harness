@@ -1,7 +1,7 @@
 //! OpenAI Live low-level API examples.
 
-use anyhow::Result;
 use aegis_providers::openai_live::{OpenAiLiveClient, OpenAiLiveSessionConfig};
+use anyhow::Result;
 
 fn config() -> OpenAiLiveSessionConfig {
     OpenAiLiveSessionConfig {

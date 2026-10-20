@@ -1,7 +1,7 @@
-use anyhow::Result;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage as TokenUsage};
+use anyhow::Result;
 
-use crate::agents::state_machine::{ConversationEffect, AegisEffect};
+use crate::agents::state_machine::{AegisEffect, ConversationEffect};
 use crate::conversation::message::MessageUsage;
 use crate::conversation::Conversation;
 use crate::providers::canonical_cost::resolve_usage_cost;

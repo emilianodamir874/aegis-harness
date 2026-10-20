@@ -1,6 +1,6 @@
+use aegis_providers::base::ProviderDescriptor;
 use anyhow::Result;
 use futures::future::BoxFuture;
-use aegis_providers::base::ProviderDescriptor;
 use std::collections::HashMap;
 
 use crate::config::declarative_providers::DeclarativeProviderConfig;

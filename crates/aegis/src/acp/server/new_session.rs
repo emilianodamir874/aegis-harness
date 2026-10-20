@@ -1,15 +1,15 @@
 use crate::acp::custom_requests::AegisExtension;
 use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
 use crate::agents::ExtensionLoadResult;
-use crate::config::{Config, AegisMode};
+use crate::config::{AegisMode, Config};
 use crate::recipe::{Recipe, Settings};
 use crate::session::{ExtensionData, Session, SessionType};
 
 use super::AegisAcpAgent;
-use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
-use agent_client_protocol::{Client, ConnectionTo};
 use aegis_providers::model::ModelConfig;
 use aegis_providers::thinking::ThinkingEffortSupport;
+use agent_client_protocol::schema::v1::{Meta, NewSessionRequest, NewSessionResponse, SessionId};
+use agent_client_protocol::{Client, ConnectionTo};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::warn;

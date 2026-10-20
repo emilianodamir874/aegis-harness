@@ -12,10 +12,10 @@ use crate::conversation::message::Message;
 use crate::session_context::{
     session_id_request_builder, session_id_request_builder_with_header_override,
 };
-use anyhow::{anyhow, Result};
-use futures::future::BoxFuture;
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
+use anyhow::{anyhow, Result};
+use futures::future::BoxFuture;
 use rmcp::model::Tool;
 
 pub const HUGGINGFACE_API_HOST: &str = "https://router.huggingface.co/v1";

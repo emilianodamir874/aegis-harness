@@ -7,8 +7,6 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Result;
-use async_trait::async_trait;
 use aegis_agent::{
     machine::{EffectHandler, MachineSession, SessionLoader, StateMachine, Step},
     operation::{applied, not_applicable, ConversationEffect, Emitter, Operation, OperationResult},
@@ -18,6 +16,8 @@ use aegis_provider_types::conversation::{
     message::{Message, MessageContent},
     Conversation,
 };
+use anyhow::Result;
+use async_trait::async_trait;
 use rmcp::{
     handler::server::router::tool::{SyncTool, ToolBase},
     model::{CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, Tool},

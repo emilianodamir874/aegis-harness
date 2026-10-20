@@ -1,11 +1,11 @@
-use dotenvy::dotenv;
-use futures::StreamExt;
 use aegis::agents::{Agent, AgentEvent, ExtensionConfig, SessionConfig};
 use aegis::config::{AegisMode, DEFAULT_EXTENSION_DESCRIPTION, DEFAULT_EXTENSION_TIMEOUT};
 use aegis::conversation::message::Message;
 use aegis::providers::create;
 use aegis::session::session_manager::SessionType;
 use aegis_providers::databricks::DATABRICKS_DEFAULT_MODEL;
+use dotenvy::dotenv;
+use futures::StreamExt;
 use std::path::PathBuf;
 
 #[tokio::main]

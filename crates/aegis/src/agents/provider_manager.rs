@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use anyhow::{anyhow, Result};
 use aegis_providers::model::ModelConfig;
+use anyhow::{anyhow, Result};
 use tracing::warn;
 
 use crate::config::Config;

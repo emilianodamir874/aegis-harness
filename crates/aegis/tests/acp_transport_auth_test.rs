@@ -1,13 +1,13 @@
 #![recursion_limit = "256"]
 use std::sync::Arc;
 
-use axum::body::Body;
-use axum::http::{HeaderValue, Method, Request, Response, StatusCode};
-use axum::Router;
 use aegis::acp::server::AcpBuiltinSelection;
 use aegis::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
 use aegis::acp::transport::{create_acp_router, create_router};
 use aegis::agents::AegisPlatform;
+use axum::body::Body;
+use axum::http::{HeaderValue, Method, Request, Response, StatusCode};
+use axum::Router;
 use tower::ServiceExt;
 
 const SECRET: &str = "test-secret-token";

@@ -12,10 +12,10 @@ use super::base::stream_from_single_message;
 use super::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
 use crate::conversation::message::{Message, ToolResponse};
 use crate::utils::bytes_to_hex;
-use futures::future::BoxFuture;
 use aegis_providers::conversation::token_usage::ProviderUsage;
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
+use futures::future::BoxFuture;
 use rmcp::model::{CallToolResult, Tool};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,8 +222,8 @@ impl Provider for TestProvider {
 mod tests {
     use super::*;
     use crate::conversation::message::{Message, MessageContent};
-    use chrono::Utc;
     use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
+    use chrono::Utc;
     use rmcp::model::{Role, TextContent};
     use std::env;
 

@@ -4,6 +4,11 @@
 
 #[path = "../acp_fixtures/mod.rs"]
 pub mod fixtures;
+use aegis::acp::server::AcpProviderFactory;
+use aegis::config::base::CONFIG_YAML_NAME;
+use aegis::config::AegisMode;
+use aegis::session::{EnabledExtensionsState, SessionManager};
+use aegis_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
 use agent_client_protocol::schema::v1::{
     ContentBlock, ListSessionsResponse, McpServer, McpServerHttp, SessionInfo, SessionModeId,
     SessionUpdate, ToolCallStatus, ToolKind,
@@ -13,11 +18,6 @@ use fixtures::{
     Session, SessionData, TerminalCall, TerminalFixture, TestConnectionConfig,
 };
 use fs_err as fs;
-use aegis::acp::server::AcpProviderFactory;
-use aegis::config::base::CONFIG_YAML_NAME;
-use aegis::config::AegisMode;
-use aegis::session::{EnabledExtensionsState, SessionManager};
-use aegis_test_support::{McpFixture, FAKE_CODE, TEST_IMAGE_B64, TEST_MODEL};
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 use std::time::Duration;

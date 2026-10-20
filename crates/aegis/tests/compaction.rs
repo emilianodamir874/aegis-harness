@@ -1,6 +1,3 @@
-use anyhow::Result;
-use async_trait::async_trait;
-use futures::StreamExt;
 use aegis::agents::{Agent, AgentEvent, SessionConfig};
 use aegis::config::AegisMode;
 use aegis::conversation::message::{Message, MessageContent};
@@ -13,6 +10,9 @@ use aegis::session::Session;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
+use anyhow::Result;
+use async_trait::async_trait;
+use futures::StreamExt;
 use rmcp::model::Tool;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

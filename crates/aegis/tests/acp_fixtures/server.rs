@@ -2,6 +2,8 @@ use super::{
     map_permission_response, spawn_acp_server_in_process, Connection, ModelStateFixture,
     PermissionDecision, Session, SessionData, TestConnectionConfig, TestOutput,
 };
+use aegis::config::PermissionManager;
+use aegis_test_support::{ExpectedSessionId, IgnoreSessionId};
 use agent_client_protocol::schema::v1::{
     ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
     DeleteSessionRequest, FileSystemCapabilities, ImageContent, InitializeRequest,
@@ -17,8 +19,6 @@ use agent_client_protocol::{Agent, Client, ConnectionTo};
 use async_trait::async_trait;
 use futures::io::BufReader;
 use futures::{AsyncBufReadExt, AsyncWriteExt, StreamExt};
-use aegis::config::PermissionManager;
-use aegis_test_support::{ExpectedSessionId, IgnoreSessionId};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::Notify;

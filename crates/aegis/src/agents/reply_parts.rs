@@ -1,5 +1,5 @@
-use anyhow::Result;
 use aegis_providers::errors::ProviderError;
+use anyhow::Result;
 use regex::Regex;
 use std::sync::Arc;
 
@@ -570,9 +570,9 @@ mod tests {
     use crate::agents::gen_ai_telemetry::{self, test_support::SpanFieldCapture};
     use crate::conversation::message::{Message, SystemNotificationType};
     use crate::providers::base::Provider;
-    use async_trait::async_trait;
     use aegis_providers::conversation::token_usage::{ProviderStats, ProviderUsage, Usage};
     use aegis_providers::model::ModelConfig;
+    use async_trait::async_trait;
     use rmcp::model::{Annotations, Role, TextContent};
     use rmcp::object;
     use std::sync::Mutex;
@@ -632,8 +632,8 @@ mod tests {
 
     #[tokio::test]
     async fn provider_stream_records_gen_ai_span_attributes() {
-        use futures::StreamExt;
         use aegis_test_support::otel::clear_otel_env;
+        use futures::StreamExt;
 
         let _env = clear_otel_env(&[(gen_ai_telemetry::CAPTURE_MESSAGE_CONTENT_ENV, "true")]);
         let capture = SpanFieldCapture::new("stream_response_from_provider");

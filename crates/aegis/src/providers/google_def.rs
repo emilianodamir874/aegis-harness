@@ -1,8 +1,8 @@
-use anyhow::Result;
-use futures::future::BoxFuture;
 use aegis_providers::api_client::TlsConfig;
 use aegis_providers::base::{ProviderDescriptor, ProviderMetadata};
 use aegis_providers::google::{GoogleProvider, GOOGLE_API_HOST};
+use anyhow::Result;
+use futures::future::BoxFuture;
 
 use crate::config::{Config, ExtensionConfig};
 use crate::providers::base::ProviderDef;

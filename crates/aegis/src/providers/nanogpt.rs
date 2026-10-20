@@ -3,14 +3,14 @@ use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetad
 use super::openai_compatible::{handle_status, stream_openai_compat};
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
-use anyhow::Result;
-use async_trait::async_trait;
-use futures::future::BoxFuture;
 use aegis_providers::errors::ProviderError;
 use aegis_providers::formats::openai::create_request;
 use aegis_providers::images::ImageFormat;
 use aegis_providers::model::ModelConfig;
 use aegis_providers::request_log::{start_log, LoggerHandleExt};
+use anyhow::Result;
+use async_trait::async_trait;
+use futures::future::BoxFuture;
 use rmcp::model::Tool;
 
 pub const NANOGPT_PROVIDER_NAME: &str = "nano-gpt";

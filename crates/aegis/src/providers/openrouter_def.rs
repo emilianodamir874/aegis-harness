@@ -1,10 +1,10 @@
-use anyhow::{bail, Result};
-use futures::future::BoxFuture;
 use aegis_providers::{
     api_client::{ApiClient, AuthMethod, TlsConfig},
     base::{ProviderDescriptor, ProviderMetadata},
     openrouter::OpenRouterProvider,
 };
+use anyhow::{bail, Result};
+use futures::future::BoxFuture;
 use serde_json::Value;
 use std::collections::HashMap;
 

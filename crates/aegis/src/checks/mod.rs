@@ -6,8 +6,8 @@
 //! projects; `aegis review` consumes [`Check`] and [`discover`] directly.
 
 use crate::sources::parse_frontmatter;
-use anyhow::{anyhow, bail, Context, Result};
 use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

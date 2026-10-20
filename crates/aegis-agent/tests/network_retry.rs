@@ -13,8 +13,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use futures::stream;
 use aegis_agent::inference::{InferenceEffect, InferenceRunner};
 use aegis_agent::operation::{Emitter, Inference, InferenceInput, OperationResult};
 use aegis_provider_types::base::{MessageStream, Provider};
@@ -24,6 +22,8 @@ use aegis_provider_types::conversation::Conversation;
 use aegis_provider_types::errors::ProviderError;
 use aegis_provider_types::model::ModelConfig;
 use aegis_provider_types::retry::RetryConfig;
+use async_trait::async_trait;
+use futures::stream;
 use rmcp::model::Tool;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;

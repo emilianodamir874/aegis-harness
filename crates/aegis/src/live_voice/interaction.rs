@@ -3,10 +3,10 @@ use super::service::{
 };
 use super::transcript::{DelegationContext, LiveTranscript};
 use crate::{conversation::message::Message, session::SessionManager, token_counter::TokenCounter};
-use futures::future::BoxFuture;
 use aegis_providers::live_voice_provider::{
     DelegationUpdate, DelegationUpdateDelivery, ProviderConnection, ProviderConnectionEvent,
 };
+use futures::future::BoxFuture;
 use rmcp::model::Role;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::time::timeout;

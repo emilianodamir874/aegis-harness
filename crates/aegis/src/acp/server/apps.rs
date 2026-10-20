@@ -1,6 +1,6 @@
 use super::*;
-use crate::config::paths::Paths;
 use crate::aegis_apps::{fetch_mcp_apps, mark_deletable_apps, AegisApp, McpAppCache};
+use crate::config::paths::Paths;
 
 const APPS_EXTENSION_NAME: &str = "apps";
 

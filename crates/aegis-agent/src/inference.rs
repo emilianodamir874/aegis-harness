@@ -2,9 +2,6 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use anyhow::Result;
-use async_trait::async_trait;
-use futures::StreamExt;
 use aegis_provider_types::base::Provider;
 use aegis_provider_types::conversation::message::{InferenceMetadata, Message, MessageContent};
 use aegis_provider_types::conversation::token_usage::ProviderUsage;
@@ -15,6 +12,9 @@ use aegis_provider_types::conversation::{
 use aegis_provider_types::errors::ProviderError;
 use aegis_provider_types::model::ModelConfig;
 use aegis_provider_types::retry::{backoff_sleep, should_retry, RetryConfig};
+use anyhow::Result;
+use async_trait::async_trait;
+use futures::StreamExt;
 use tracing_futures::Instrument;
 
 use crate::operation::{

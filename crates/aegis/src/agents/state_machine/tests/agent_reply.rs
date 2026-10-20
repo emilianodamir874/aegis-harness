@@ -21,7 +21,7 @@ use crate::acp::server::AegisAcpAgent;
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::ops_toolcalling::EXPIRED_APPROVAL_RESPONSE;
-use crate::agents::{Agent, AgentConfig, AgentEvent, AegisPlatform, SessionConfig};
+use crate::agents::{AegisPlatform, Agent, AgentConfig, AgentEvent, SessionConfig};
 use crate::config::permission::PermissionManager;
 use crate::config::AegisMode;
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};

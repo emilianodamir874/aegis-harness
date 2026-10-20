@@ -1,8 +1,8 @@
 #![cfg(feature = "live-websocket")]
 
+use aegis_providers::openai_live::{OpenAiLiveClient, OpenAiLiveSessionConfig};
 use anyhow::Result;
 use futures::{SinkExt, StreamExt};
-use aegis_providers::openai_live::{OpenAiLiveClient, OpenAiLiveSessionConfig};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio_tungstenite::{accept_hdr_async, tungstenite::Message};

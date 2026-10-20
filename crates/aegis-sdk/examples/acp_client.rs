@@ -19,13 +19,13 @@
 //! cargo run -p aegis-sdk --example acp_client -- --aegis-bin ./target/debug/aegis "Explain Rust's ownership model in one sentence"
 //! ```
 
+use aegis_sdk::custom_requests::GetExtensionsRequest;
 use agent_client_protocol::schema::v1::{
     ContentBlock, InitializeRequest, RequestPermissionOutcome, RequestPermissionRequest,
     RequestPermissionResponse, SelectedPermissionOutcome, SessionNotification, SessionUpdate,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Client, ConnectionTo};
-use aegis_sdk::custom_requests::GetExtensionsRequest;
 use std::path::PathBuf;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 

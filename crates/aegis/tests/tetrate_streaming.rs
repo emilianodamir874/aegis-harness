@@ -1,9 +1,9 @@
-use anyhow::Result;
-use futures::StreamExt;
 use aegis::conversation::message::{Message, MessageContent};
 use aegis::providers::base::Provider;
 use aegis::providers::tetrate::TetrateProvider;
 use aegis_providers::model::ModelConfig;
+use anyhow::Result;
+use futures::StreamExt;
 use rmcp::model::Tool;
 use rmcp::object;
 use serial_test::serial;

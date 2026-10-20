@@ -16,11 +16,11 @@ use crate::conversation::message::{Message, MessageContent};
 use crate::session_context::SESSION_ID_HEADER;
 use aegis_providers::errors::ProviderError;
 
-use chrono::Utc;
-use futures::future::BoxFuture;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use aegis_providers::model::ModelConfig;
 use aegis_providers::request_log::{start_log, LoggerHandleExt};
+use chrono::Utc;
+use futures::future::BoxFuture;
 use rmcp::model::Role;
 
 const SAGEMAKER_TGI_PROVIDER_NAME: &str = "sagemaker_tgi";

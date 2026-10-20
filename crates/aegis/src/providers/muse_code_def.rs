@@ -1,7 +1,3 @@
-use anyhow::Result;
-use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
-use futures::future::BoxFuture;
 use aegis_providers::anthropic::{
     AnthropicFormatOptions, AnthropicProvider, AnthropicProviderBuilder, ANTHROPIC_API_VERSION,
 };
@@ -12,6 +8,10 @@ use aegis_providers::base::{
 };
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
+use anyhow::Result;
+use async_trait::async_trait;
+use chrono::{DateTime, Duration, Utc};
+use futures::future::BoxFuture;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use reqwest::Client;
 use rmcp::model::Tool;

@@ -652,8 +652,8 @@ pub fn from_bedrock_json(document: &Document) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Result;
     use aegis_test_support::TEST_IMAGE_B64;
+    use anyhow::Result;
     use rmcp::model::ImageContent;
     use serde_json::json;
 

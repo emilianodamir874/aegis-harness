@@ -5,13 +5,13 @@ use crate::providers::openai_compatible::{
     handle_status, stream_openai_compat, stream_responses_compat,
 };
 use crate::providers::private_file::write_private_file;
+use aegis_providers::errors::ProviderError;
+use aegis_providers::formats::openai::is_openai_responses_model;
+use aegis_providers::images::ImageFormat;
 use anyhow::Result;
 use async_trait::async_trait;
 use axum::http;
 use chrono::{DateTime, Utc};
-use aegis_providers::errors::ProviderError;
-use aegis_providers::formats::openai::is_openai_responses_model;
-use aegis_providers::images::ImageFormat;
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -40,10 +40,10 @@ use crate::config::{Config, ConfigError};
 use crate::conversation::message::{Message, MessageContent};
 
 use crate::providers::base::{ConfigKey, MessageStream};
-use futures::future::BoxFuture;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use aegis_providers::model::ModelConfig;
 use aegis_providers::request_log::{start_log, LoggerHandleExt};
+use futures::future::BoxFuture;
 use rmcp::model::{ContentBlock, Tool};
 
 const GITHUB_COPILOT_PROVIDER_NAME: &str = "github_copilot";

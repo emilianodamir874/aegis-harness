@@ -1,8 +1,8 @@
-use futures::StreamExt;
 use aegis_provider_types::conversation::token_usage::Usage;
 use aegis_provider_types::formats::openai_responses::{
     get_responses_usage, responses_api_to_streaming_message, ResponsesApiResponse,
 };
+use futures::StreamExt;
 use serde_json::json;
 
 async fn final_stream_usage(lines: Vec<String>) -> Usage {

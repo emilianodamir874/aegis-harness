@@ -19,10 +19,10 @@ use crate::plugins::{
     installed_plugin_skill_dirs,
 };
 use crate::sources::parse_frontmatter;
+use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
 use agent_client_protocol::Error;
 use anyhow::Result;
 use arguments::apply_skill_arguments;
-use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};

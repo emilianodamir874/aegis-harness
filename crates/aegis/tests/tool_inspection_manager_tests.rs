@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use aegis::config::AegisMode;
 use aegis::conversation::message::{Message, ToolRequest};
 use aegis::tool_inspection::{
     InspectionAction, InspectionResult, ToolInspectionManager, ToolInspector,
 };
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 
 struct MockInspectorOk {
     name: &'static str,

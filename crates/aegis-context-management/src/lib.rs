@@ -19,9 +19,9 @@ pub mod structured;
 pub mod summarize;
 pub mod templates;
 
-use anyhow::Result;
 use aegis_provider_types::conversation::message::Message;
 use aegis_provider_types::conversation::token_usage::ProviderUsage;
+use anyhow::Result;
 
 pub use chunked::summarize_in_chunks;
 pub use format::format_message_for_compacting;

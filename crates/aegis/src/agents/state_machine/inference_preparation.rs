@@ -6,12 +6,12 @@ use crate::agents::PromptManager;
 use crate::config::AegisMode;
 use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
-use anyhow::Result;
-use async_trait::async_trait;
 use aegis_agent::inference::{InferenceRequestPreparer, PreparedInferenceRequest};
 use aegis_agent::operation::{messages_since_kickoff, InferenceInput};
 use aegis_providers::conversation::message::Message;
 use aegis_providers::conversation::Conversation;
+use anyhow::Result;
+use async_trait::async_trait;
 use std::sync::{Arc, Mutex as StdMutex};
 
 pub struct AegisInferenceRequestPreparer<'a> {

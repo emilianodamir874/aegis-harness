@@ -22,10 +22,6 @@ pub(crate) mod thinking_output;
 mod tool_emulation;
 mod tool_parsing;
 
-use anyhow::{bail, Result};
-use async_stream::try_stream;
-use async_trait::async_trait;
-use backend::{BackendLoadedModel, LocalInferenceBackend};
 use aegis_provider_types::base::{MessageStream, Provider, ProviderDescriptor, ProviderMetadata};
 use aegis_provider_types::conversation::message::{
     Message, MessageContent, SystemNotificationType,
@@ -35,6 +31,10 @@ use aegis_provider_types::errors::ProviderError;
 use aegis_provider_types::images::ImageFormat;
 use aegis_provider_types::model::ModelConfig;
 use aegis_provider_types::request_log::{start_log, LoggerHandleExt, RequestLogHandle};
+use anyhow::{bail, Result};
+use async_stream::try_stream;
+use async_trait::async_trait;
+use backend::{BackendLoadedModel, LocalInferenceBackend};
 use llamacpp::{LlamaCppBackend, LLAMACPP_BACKEND_ID};
 use mlx::{MlxBackend, MLX_BACKEND_ID};
 use model::ChatTemplate;

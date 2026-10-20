@@ -8,7 +8,6 @@ use super::{
     InferenceRuntime,
 };
 use crate::download_manager::{get_download_manager, DownloadProgress, DownloadStatus};
-use anyhow::{anyhow, Result};
 use aegis_sdk_types::custom_requests::{
     LocalInferenceBuiltinChatTemplatesListResponse, LocalInferenceChatTemplate,
     LocalInferenceDownloadProgressDto, LocalInferenceDownloadState, LocalInferenceHfGgufFileDto,
@@ -19,6 +18,7 @@ use aegis_sdk_types::custom_requests::{
     LocalInferenceModelSettingsReadResponse, LocalInferenceModelSettingsUpdateResponse,
     LocalInferenceModelsListResponse, LocalInferenceSamplingConfig, LocalInferenceToolCallingMode,
 };
+use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::watch;

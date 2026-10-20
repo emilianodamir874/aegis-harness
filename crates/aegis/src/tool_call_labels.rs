@@ -227,12 +227,12 @@ async fn complete_label(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::{AgentConfig, AegisPlatform};
+    use crate::agents::{AegisPlatform, AgentConfig};
     use crate::config::{AegisMode, PermissionManager};
     use crate::providers::base::{MessageStream, ProviderUsage, Usage};
     use crate::session::{SessionManager, SessionType};
-    use async_trait::async_trait;
     use aegis_providers::errors::ProviderError;
+    use async_trait::async_trait;
     use rmcp::model::{CallToolRequestParams, ErrorData, Tool};
     use serde_json::json;
     use std::collections::VecDeque;

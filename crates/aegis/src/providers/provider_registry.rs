@@ -5,9 +5,9 @@ use super::base::{
 };
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
+use aegis_providers::model::ModelConfig;
 use anyhow::Result;
 use futures::future::BoxFuture;
-use aegis_providers::model::ModelConfig;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;

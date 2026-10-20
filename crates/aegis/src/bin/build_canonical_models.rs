@@ -1,3 +1,5 @@
+use aegis::providers::create;
+use aegis_providers::canonical::ModelMapping;
 /// Build canonical models from models.dev API
 ///
 /// This script fetches models from models.dev and converts them to canonical format.
@@ -9,8 +11,6 @@
 ///
 use anyhow::{Context, Result};
 use clap::Parser;
-use aegis::providers::create;
-use aegis_providers::canonical::ModelMapping;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};

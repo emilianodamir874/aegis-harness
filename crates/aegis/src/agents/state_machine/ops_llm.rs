@@ -2,8 +2,6 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use futures::StreamExt;
 use aegis_agent::inference::InferenceEffect;
 pub use aegis_agent::inference::InferenceRunner;
 use aegis_providers::base::{MessageStream, ModelInfo, Provider};
@@ -11,6 +9,8 @@ use aegis_providers::conversation::message::Message;
 use aegis_providers::conversation::token_usage::ProviderUsage;
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
+use async_trait::async_trait;
+use futures::StreamExt;
 
 use crate::agents::extension_manager::{get_tool_owner, recover_mangled_tool_name};
 use crate::agents::state_machine::AegisEffect;

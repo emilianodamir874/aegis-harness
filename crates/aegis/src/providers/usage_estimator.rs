@@ -1,7 +1,7 @@
 use crate::conversation::message::Message;
 use crate::token_counter::create_token_counter;
-use anyhow::Result;
 use aegis_providers::conversation::token_usage::ProviderUsage;
+use anyhow::Result;
 use rmcp::model::Tool;
 
 /// Ensures that ProviderUsage has token counts, estimating them if necessary.

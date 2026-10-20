@@ -1,8 +1,8 @@
-use anyhow::Result;
-use dotenvy::dotenv;
 use aegis::conversation::message::Message;
 use aegis::providers::create;
 use aegis_providers::databricks::DATABRICKS_DEFAULT_MODEL;
+use anyhow::Result;
+use dotenvy::dotenv;
 
 #[tokio::main]
 async fn main() -> Result<()> {

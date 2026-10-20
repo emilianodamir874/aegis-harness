@@ -3,8 +3,8 @@ use super::loaded_skill_context_with_args;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use crate::config::Config;
-use async_trait::async_trait;
 use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
+use async_trait::async_trait;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
     ServerCapabilities, ServerNotification, Tool,

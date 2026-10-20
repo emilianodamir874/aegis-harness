@@ -1,5 +1,5 @@
 use crate::agents::mcp_client::AegisMcpHostInfo;
-use crate::agents::{Agent, AgentConfig, AegisPlatform};
+use crate::agents::{AegisPlatform, Agent, AgentConfig};
 use crate::config::permission::PermissionManager;
 use crate::config::Config;
 use crate::scheduler_trait::SchedulerTrait;
@@ -330,7 +330,7 @@ mod tests {
     use tokio::sync::Barrier;
 
     use crate::agents::extension::ExtensionConfig;
-    use crate::agents::{AgentConfig, AegisPlatform};
+    use crate::agents::{AegisPlatform, AgentConfig};
     use crate::config::permission::PermissionManager;
     use crate::config::AegisMode;
     use crate::session::{EnabledExtensionsState, ExtensionState, SessionManager, SessionType};

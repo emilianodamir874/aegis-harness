@@ -15,11 +15,11 @@ use crate::config::Config;
 use crate::conversation::message::{Message, MessageContent};
 use crate::providers::base::ConfigKey;
 use crate::subprocess::configure_subprocess;
-use async_stream::try_stream;
-use futures::future::BoxFuture;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
+use async_stream::try_stream;
+use futures::future::BoxFuture;
 use rmcp::model::Role;
 use rmcp::model::Tool;
 

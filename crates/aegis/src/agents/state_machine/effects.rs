@@ -3,8 +3,8 @@ use crate::conversation::Conversation;
 use crate::providers::base::ProviderUsage;
 use crate::recipe::Recipe;
 use crate::session::ExtensionState;
-use anyhow::Result;
 use aegis_agent::operation::{ConversationEffect, MachineEffect};
+use anyhow::Result;
 
 pub enum AegisEffect {
     Conversation(ConversationEffect),

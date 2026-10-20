@@ -3,12 +3,12 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use aegis_provider_types::base::{MessageStream, Provider};
 use aegis_provider_types::conversation::message::Message;
 use aegis_provider_types::conversation::token_usage::ProviderUsage;
 use aegis_provider_types::errors::ProviderError;
 use aegis_provider_types::model::ModelConfig;
+use async_trait::async_trait;
 
 use crate::model::ProviderModel;
 use crate::templates::Templates;

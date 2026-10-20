@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use anyhow::Result;
-use async_trait::async_trait;
-use futures::future::BoxFuture;
 use aegis_providers::api_client::{AuthMethod, AuthProvider, TlsConfig};
 use aegis_providers::azure_foundry::{endpoint_kind, AzureFoundryProvider, EndpointKind};
 use aegis_providers::base::{ProviderDescriptor, ProviderMetadata};
+use anyhow::Result;
+use async_trait::async_trait;
+use futures::future::BoxFuture;
 
 use crate::config::{Config, ExtensionConfig};
 use crate::providers::azureauth::{AzureAuth, AzureCredentials};

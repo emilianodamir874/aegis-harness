@@ -3,8 +3,6 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 
-use common_tests::fixtures::server::AcpServerConnection;
-use common_tests::fixtures::{run_test, send_custom, Connection, TestConnectionConfig};
 use aegis::config::paths::Paths;
 use aegis::config::{Config, ConfigError};
 use aegis::providers::base::{MessageStream, Provider};
@@ -13,6 +11,8 @@ use aegis::session::session_manager::SessionStorage;
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
 use aegis_test_support::EnforceSessionId;
+use common_tests::fixtures::server::AcpServerConnection;
+use common_tests::fixtures::{run_test, send_custom, Connection, TestConnectionConfig};
 use serial_test::serial;
 use std::sync::Arc;
 

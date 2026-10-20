@@ -1,3 +1,4 @@
+use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use agent_client_protocol::schema::v1::{
     Annotations as AcpAnnotations, ClientCapabilities, CloseSessionRequest, ContentBlock,
     ContentChunk, EnvVariable, HttpHeader, ImageContent, InitializeRequest, InitializeResponse,
@@ -16,7 +17,6 @@ use agent_client_protocol_schema::v1::AGENT_METHOD_NAMES;
 use anyhow::{Context, Result};
 use async_stream::try_stream;
 use futures::future::BoxFuture;
-use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock as RmcpContent, Role, Tool};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -34,7 +34,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt 
 
 use crate::acp::handoff::{build_handoff_context_memo, memo_token_budget, prompt_token_cost};
 use crate::acp::{map_permission_response, PermissionDecision};
-use crate::config::{Config, ExtensionConfig, AegisMode};
+use crate::config::{AegisMode, Config, ExtensionConfig};
 use crate::conversation::message::{Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};

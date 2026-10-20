@@ -1,9 +1,9 @@
+use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
+use aegis_providers::errors::ProviderError;
 use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
-use aegis_providers::errors::ProviderError;
 use rmcp::model::{Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -23,7 +23,7 @@ use super::base::{
 use super::utils::filter_extensions_from_system_prompt;
 use crate::config::paths::Paths;
 use crate::config::search_path::SearchPaths;
-use crate::config::{Config, ExtensionConfig, AegisMode};
+use crate::config::{AegisMode, Config, ExtensionConfig};
 use crate::conversation::message::{Message, MessageContent};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -1038,8 +1038,8 @@ impl Provider for ClaudeCodeProvider {
 mod tests {
     use super::*;
     use crate::agents::extension::Envs;
-    use chrono::Utc;
     use aegis_test_support::session::TEST_SESSION_ID;
+    use chrono::Utc;
     use serde_json::json;
     use std::collections::HashMap;
     use std::fs;

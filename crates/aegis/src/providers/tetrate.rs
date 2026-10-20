@@ -7,11 +7,11 @@ use super::openai_compatible::{
 use super::retry::ProviderRetry;
 use crate::config::signup_tetrate::TETRATE_DEFAULT_MODEL;
 use crate::conversation::message::Message;
+use aegis_providers::errors::ProviderError;
+use aegis_providers::images::ImageFormat;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
-use aegis_providers::errors::ProviderError;
-use aegis_providers::images::ImageFormat;
 
 use aegis_providers::formats::openai::create_request;
 use aegis_providers::model::ModelConfig;

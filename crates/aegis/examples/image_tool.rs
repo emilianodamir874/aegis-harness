@@ -1,11 +1,11 @@
-use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use dotenvy::dotenv;
 use aegis::conversation::message::Message;
 use aegis::providers::anthropic::ANTHROPIC_DEFAULT_MODEL;
 use aegis::providers::create;
 use aegis::providers::openai::OPEN_AI_DEFAULT_MODEL;
 use aegis_providers::databricks::DATABRICKS_DEFAULT_MODEL;
+use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use dotenvy::dotenv;
 use rmcp::model::{CallToolRequestParams, ContentBlock, Tool};
 use rmcp::object;
 use std::fs;

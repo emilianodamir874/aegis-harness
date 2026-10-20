@@ -1,7 +1,7 @@
-use anyhow::Result;
-use futures::future::BoxFuture;
 use aegis_providers::base::ProviderDescriptor;
 use aegis_providers::snowflake::SnowflakeProvider;
+use anyhow::Result;
+use futures::future::BoxFuture;
 
 use crate::config::{Config, ConfigError, ExtensionConfig};
 use crate::providers::api_client::TlsConfig;

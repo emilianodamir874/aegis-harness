@@ -1,4 +1,3 @@
-use futures::StreamExt;
 use aegis_providers::{
     base::Provider,
     conversation::message::{Message, MessageContentBlock},
@@ -7,6 +6,7 @@ use aegis_providers::{
     openai::from_declarative_config,
     zai_coding_plan,
 };
+use futures::StreamExt;
 use rmcp::model::{CallToolResult, ContentBlock, Tool};
 use serde_json::{json, Value};
 use std::{convert::Infallible, sync::Arc, time::Duration};

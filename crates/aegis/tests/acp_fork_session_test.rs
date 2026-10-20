@@ -3,6 +3,9 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 
+use aegis::config::AegisMode;
+use aegis::conversation::message::{Message, MessageContent};
+use aegis::session::{SessionManager, SessionType};
 use agent_client_protocol::schema::v1::{ForkSessionRequest, ForkSessionResponse, SessionId};
 use common_tests::fixtures::server::{
     assert_session_response_precedes_available_commands, AcpServerConnection,
@@ -10,9 +13,6 @@ use common_tests::fixtures::server::{
 use common_tests::fixtures::{
     run_test, spawn_acp_server_in_process, Connection, OpenAiFixture, TestConnectionConfig,
 };
-use aegis::config::AegisMode;
-use aegis::conversation::message::{Message, MessageContent};
-use aegis::session::{SessionManager, SessionType};
 use std::path::Path;
 
 async fn new_connection(data_root: &Path) -> AcpServerConnection {

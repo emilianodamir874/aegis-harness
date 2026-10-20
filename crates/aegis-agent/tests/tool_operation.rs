@@ -6,8 +6,6 @@ use std::{
     },
 };
 
-use anyhow::Result;
-use async_trait::async_trait;
 use aegis_agent::{
     machine::{MachineSession, StateMachine, Step},
     operation::{
@@ -20,6 +18,8 @@ use aegis_provider_types::conversation::{
     message::{Message, MessageContent},
     Conversation,
 };
+use anyhow::Result;
+use async_trait::async_trait;
 use rmcp::{
     handler::server::router::tool::{AsyncTool, SyncTool, ToolBase},
     model::{CallToolRequestParams, CallToolResult, ErrorData, Tool},

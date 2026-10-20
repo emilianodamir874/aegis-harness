@@ -1,8 +1,8 @@
-use anyhow::Result;
-use futures::StreamExt;
 use aegis_providers::{
     base::Provider, conversation::message::Message, declarative::EnvKeyResolver, model::ModelConfig,
 };
+use anyhow::Result;
+use futures::StreamExt;
 
 async fn complete(provider: &dyn Provider, model: ModelConfig) -> Result<()> {
     let system = "You are a knowledgable geography expert";

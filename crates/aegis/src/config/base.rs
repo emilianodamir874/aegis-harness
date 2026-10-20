@@ -1,8 +1,8 @@
 use crate::config::paths::Paths;
 use crate::config::AegisMode;
 use crate::providers::private_file::{private_file_target_path, write_private_file};
-use fs2::FileExt;
 use aegis_providers::thinking::ThinkingEffort;
+use fs2::FileExt;
 #[cfg(feature = "system-keyring")]
 use keyring::Entry;
 use once_cell::sync::OnceCell;

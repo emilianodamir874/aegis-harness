@@ -1,5 +1,3 @@
-use anyhow::Result;
-use futures::future::BoxFuture;
 use aegis_providers::api_client::TlsConfig;
 use aegis_providers::base::ProviderDescriptor;
 use aegis_providers::databricks::DatabricksProvider;
@@ -7,6 +5,8 @@ use aegis_providers::databricks_auth::{
     DatabricksAuth, DatabricksOauthTokenProvider, DatabricksRefreshHook,
     DatabricksSessionIdProvider, DatabricksTokenResolver,
 };
+use anyhow::Result;
+use futures::future::BoxFuture;
 use std::sync::Arc;
 
 use crate::config::{Config, ConfigError, ExtensionConfig};

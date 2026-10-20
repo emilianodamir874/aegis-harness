@@ -1,10 +1,7 @@
-use anyhow::Result;
-use dotenvy::dotenv;
-use futures::StreamExt;
 use aegis::acp::ACP_CURRENT_MODEL;
 use aegis::agents::extension_manager::CallRequest;
-use aegis::agents::{Agent, AgentConfig, AgentEvent, AegisPlatform, PromptManager, SessionConfig};
-use aegis::config::{ExtensionConfig, AegisMode, PermissionManager};
+use aegis::agents::{AegisPlatform, Agent, AgentConfig, AgentEvent, PromptManager, SessionConfig};
+use aegis::config::{AegisMode, ExtensionConfig, PermissionManager};
 use aegis::conversation::message::{ActionRequiredData, Message, MessageContent};
 use aegis::permission::Permission;
 use aegis::providers::anthropic::ANTHROPIC_DEFAULT_MODEL;
@@ -29,6 +26,9 @@ use aegis_providers::thinking::ThinkingEffortSupport;
 use aegis_test_support::{
     EnforceSessionId, ExpectedSessionId, IgnoreSessionId, McpFixture, FAKE_CODE,
 };
+use anyhow::Result;
+use dotenvy::dotenv;
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;

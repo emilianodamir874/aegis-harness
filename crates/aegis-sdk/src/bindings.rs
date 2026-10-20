@@ -6,8 +6,6 @@
 
 use std::{collections::HashMap, future::Future, sync::Arc, sync::OnceLock, time::Duration};
 
-use base64::Engine as _;
-use futures::StreamExt;
 use aegis_providers::{
     anthropic::AnthropicProviderBuilder,
     api_client::{ApiClient, AuthMethod},
@@ -33,6 +31,8 @@ use aegis_providers::{
     },
     utils::sanitize_unicode_tags,
 };
+use base64::Engine as _;
+use futures::StreamExt;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, ContentBlock, ErrorCode, ErrorData, Role, Tool,
 };

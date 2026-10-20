@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use aegis::agents::{AegisPlatform, Agent, AgentEvent};
+use aegis::config::extensions::{set_extension, ExtensionEntry};
 use anyhow::Result;
 use futures::StreamExt;
-use aegis::agents::{Agent, AgentEvent, AegisPlatform};
-use aegis::config::extensions::{set_extension, ExtensionEntry};
 
 #[cfg(test)]
 mod tests {
@@ -12,14 +12,14 @@ mod tests {
     #[cfg(test)]
     mod schedule_tool_tests {
         use super::*;
-        use async_trait::async_trait;
-        use chrono::{DateTime, Utc};
         use aegis::agents::platform_extensions::scheduler::{
             EXTENSION_NAME as SCHEDULER_EXTENSION_NAME, MANAGE_SCHEDULE_TOOL_NAME_COMPLETE,
         };
         use aegis::agents::ExtensionConfig;
         use aegis::agents::{AgentConfig, ScheduleTool};
         use aegis::config::permission::PermissionManager;
+        use async_trait::async_trait;
+        use chrono::{DateTime, Utc};
 
         use aegis::scheduler::{ScheduledJob, SchedulerError, ValidatedScheduleRecipe};
         use aegis::scheduler_trait::SchedulerTrait;
@@ -460,7 +460,6 @@ mod tests {
     #[cfg(test)]
     mod max_turns_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::SessionConfig;
         use aegis::config::AegisMode;
         use aegis::conversation::message::{Message, MessageContent};
@@ -471,6 +470,7 @@ mod tests {
         use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
+        use async_trait::async_trait;
         use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
@@ -622,7 +622,6 @@ mod tests {
     #[cfg(test)]
     mod tool_pair_summarization_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::{AgentConfig, SessionConfig};
         use aegis::config::permission::PermissionManager;
         use aegis::config::AegisMode;
@@ -634,6 +633,7 @@ mod tests {
         use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
+        use async_trait::async_trait;
         use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock, Tool};
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -975,7 +975,6 @@ mod tests {
     #[cfg(test)]
     mod streaming_persistence_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::{AgentConfig, SessionConfig};
         use aegis::config::permission::PermissionManager;
         use aegis::config::AegisMode;
@@ -986,6 +985,7 @@ mod tests {
         use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
+        use async_trait::async_trait;
         use rmcp::model::{CallToolRequestParams, Role, Tool};
         use rmcp::object;
         use std::path::PathBuf;
@@ -1249,7 +1249,6 @@ mod tests {
     #[cfg(test)]
     mod thinking_preservation_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::{AgentConfig, SessionConfig};
         use aegis::config::permission::PermissionManager;
         use aegis::config::AegisMode;
@@ -1260,6 +1259,7 @@ mod tests {
         use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
+        use async_trait::async_trait;
         use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
@@ -1615,7 +1615,6 @@ mod tests {
     #[cfg(test)]
     mod goal_checking_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::AgentConfig;
         use aegis::agents::SessionConfig;
         use aegis::config::permission::PermissionManager;
@@ -1629,6 +1628,7 @@ mod tests {
         use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
+        use async_trait::async_trait;
         use rmcp::model::Tool;
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicU32, Ordering};
@@ -2010,7 +2010,6 @@ mod tests {
 
     mod cumulative_token_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::{AgentConfig, SessionConfig};
         use aegis::config::permission::PermissionManager;
         use aegis::config::AegisMode;
@@ -2021,6 +2020,7 @@ mod tests {
         use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
+        use async_trait::async_trait;
         use rmcp::model::Tool;
         use std::path::PathBuf;
         use std::sync::Arc;
@@ -2123,9 +2123,8 @@ mod tests {
 
     mod audience_tool_result_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::{AgentConfig, SessionConfig};
-        use aegis::config::{ExtensionConfig, AegisMode, PermissionManager};
+        use aegis::config::{AegisMode, ExtensionConfig, PermissionManager};
         use aegis::conversation::message::{Message, MessageContent};
         use aegis::providers::base::{stream_from_single_message, MessageStream, Provider};
         use aegis::session::{SessionManager, SessionType};
@@ -2133,6 +2132,7 @@ mod tests {
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
         use aegis_test_support::McpFixture;
+        use async_trait::async_trait;
         use rmcp::model::{CallToolRequestParams, Tool};
         use std::path::PathBuf;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2278,9 +2278,8 @@ mod tests {
 
     mod empty_turn_tests {
         use super::*;
-        use async_trait::async_trait;
         use aegis::agents::final_output_tool::FINAL_OUTPUT_TOOL_NAME;
-        use aegis::agents::{AgentConfig, AgentEvent, AegisPlatform, SessionConfig};
+        use aegis::agents::{AegisPlatform, AgentConfig, AgentEvent, SessionConfig};
         use aegis::config::permission::PermissionManager;
         use aegis::config::AegisMode;
         use aegis::conversation::message::{Message, MessageContent};
@@ -2292,6 +2291,7 @@ mod tests {
         use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
         use aegis_providers::errors::ProviderError;
         use aegis_providers::model::ModelConfig;
+        use async_trait::async_trait;
         use rmcp::model::{CallToolRequestParams, Tool};
         use rmcp::object;
         use std::path::PathBuf;
