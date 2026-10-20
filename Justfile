@@ -149,7 +149,7 @@ run-docs:
 # Run server
 run-server:
     @echo "Running external ACP backend..."
-    AEGIS_SERVER__SECRET_KEY="${AEGIS_SERVER__SECRET_KEY:-test}" cargo run -p aegis-cli --bin aegis -- serve --platform desktop --enable-scheduler --host 127.0.0.1 --port 3000
+    AEGIS_SERVER__SECRET_KEY="${AEGIS_SERVER__SECRET_KEY:-test}" cargo run -p aegis-server --bin aegis-serve -- --platform desktop --enable-scheduler --host 127.0.0.1 --port 3000
 
 # Check if checked-in ACP artifacts are up-to-date and the docs can be rendered
 check-acp-artifacts: generate-acp-types generate-acp-docs

@@ -95,6 +95,16 @@ struct Args {
         help = "Print the resolved store paths and exit (replaces `aegis info`)"
     )]
     print_paths: bool,
+
+    #[arg(long, help = "List installed skills and exit (replaces `aegis skills list`)")]
+    list_skills: bool,
+
+    #[arg(
+        long,
+        value_name = "N",
+        help = "List the N most recent sessions and exit (replaces `aegis session list`)"
+    )]
+    list_sessions: Option<usize>,
 }
 
 fn generate_secret_key() -> String {
@@ -116,6 +126,33 @@ fn print_paths() {
     println!("logs_dir      {}", Paths::in_state_dir("logs").display());
     println!("agents_home   {}", Paths::agents_home_dir().display());
     println!("version       {}", env!("CARGO_PKG_VERSION"));
+}
+
+fn list_skills() {
+    let cwd = std::env::current_dir().ok();
+    let mut skills = aegis::skills::list_installed_skills(cwd.as_deref());
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    for skill in &skills {
+        let description = skill.description.replace(['\n', '\r'], " ");
+        println!("{}\t{}\t{}", skill.name, description, skill.path);
+    }
+    println!("({} skills)", skills.len());
+}
+
+async fn list_sessions(limit: usize) -> Result<()> {
+    let manager = aegis::session::SessionManager::instance();
+    let mut sessions = manager.list_sessions_with_limit(limit).await?;
+    sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    for session in sessions {
+        println!(
+            "{}\t{}\t{}\t{}",
+            session.id,
+            session.updated_at.to_rfc3339(),
+            session.message_count,
+            session.name
+        );
+    }
+    Ok(())
 }
 
 async fn serve(args: Args) -> Result<()> {
@@ -268,6 +305,15 @@ async fn main() -> Result<()> {
     if args.print_paths {
         print_paths();
         return Ok(());
+    }
+
+    if args.list_skills {
+        list_skills();
+        return Ok(());
+    }
+
+    if let Some(limit) = args.list_sessions {
+        return list_sessions(limit).await;
     }
 
     if let Err(e) = init_logging() {
