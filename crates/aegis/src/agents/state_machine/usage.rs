@@ -60,6 +60,7 @@ pub(super) async fn record(
             session.schedule_id.clone(),
             usage.usage,
             &usage.model,
+            session.provider_name.as_deref(),
             &ledger,
         )
         .await?;

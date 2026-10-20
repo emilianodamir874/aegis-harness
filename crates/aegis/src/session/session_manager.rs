@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 19;
+pub const CURRENT_SCHEMA_VERSION: i32 = 20;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -569,10 +569,18 @@ impl SessionManager {
         schedule_id: Option<String>,
         current_usage: Usage,
         model: &str,
+        provider: Option<&str>,
         ledger: &MessageUsage,
     ) -> Result<()> {
         self.storage
-            .record_usage_metrics(session_id, schedule_id, current_usage, model, ledger)
+            .record_usage_metrics(
+                session_id,
+                schedule_id,
+                current_usage,
+                model,
+                provider,
+                ledger,
+            )
             .await
     }
 
@@ -1079,6 +1087,7 @@ async fn insert_usage_ledger_row(
     tx: &mut sqlx::Transaction<'_, Sqlite>,
     session_id: &str,
     model: Option<&str>,
+    provider: Option<&str>,
     usage: &MessageUsage,
 ) -> Result<()> {
     let cost_source = usage.cost_source.map(|cs| match cs {
@@ -1089,16 +1098,17 @@ async fn insert_usage_ledger_row(
     sqlx::query(
         r#"
         INSERT INTO usage_ledger (
-            session_id, created_timestamp, model,
+            session_id, created_timestamp, model, provider,
             input_tokens, output_tokens, total_tokens,
             cache_read_tokens, cache_write_tokens,
             cost, cost_source, is_compaction
         )
-        VALUES (?, strftime('%s','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, strftime('%s','now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(session_id)
     .bind(model)
+    .bind(provider)
     .bind(usage.input_tokens)
     .bind(usage.output_tokens)
     .bind(usage.total_tokens)
@@ -1266,6 +1276,7 @@ impl SessionStorage {
                 session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                 created_timestamp INTEGER NOT NULL,
                 model TEXT,
+                provider TEXT,
                 input_tokens INTEGER,
                 output_tokens INTEGER,
                 total_tokens INTEGER,
@@ -1763,6 +1774,7 @@ impl SessionStorage {
                         session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                         created_timestamp INTEGER NOT NULL,
                         model TEXT,
+                        provider TEXT,
                         input_tokens INTEGER,
                         output_tokens INTEGER,
                         total_tokens INTEGER,
@@ -1846,6 +1858,18 @@ impl SessionStorage {
                     > 0;
                 if has_legacy && !has_current {
                     sqlx::query("ALTER TABLE sessions RENAME COLUMN goose_mode TO aegis_mode")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+            }
+            20 => {
+                let has_provider = sqlx::query_scalar::<_, i32>(
+                    "SELECT COUNT(*) FROM pragma_table_info('usage_ledger') WHERE name = 'provider'",
+                )
+                .fetch_one(&mut **tx)
+                .await? > 0;
+                if !has_provider {
+                    sqlx::query("ALTER TABLE usage_ledger ADD COLUMN provider TEXT")
                         .execute(&mut **tx)
                         .await?;
                 }
@@ -2674,6 +2698,7 @@ impl SessionStorage {
         schedule_id: Option<String>,
         current_usage: Usage,
         model: &str,
+        provider: Option<&str>,
         ledger: &MessageUsage,
     ) -> Result<()> {
         let pool = self.pool().await?;
@@ -2710,6 +2735,8 @@ impl SessionStorage {
               AND (COALESCE(s.accumulated_input_tokens, 0) > l.input_sum
                    OR COALESCE(s.accumulated_output_tokens, 0) > l.output_sum
                    OR COALESCE(s.accumulated_total_tokens, 0) > l.total_sum
+                   OR COALESCE(s.accumulated_cache_read_tokens, 0) > l.cache_read_sum
+                   OR COALESCE(s.accumulated_cache_write_tokens, 0) > l.cache_write_sum
                    OR COALESCE(s.accumulated_cost, 0.0) > l.cost_sum + 1e-9)
             "#,
         )
@@ -2754,7 +2781,7 @@ impl SessionStorage {
         .execute(&mut *tx)
         .await?;
 
-        insert_usage_ledger_row(&mut tx, session_id, Some(model), ledger).await?;
+        insert_usage_ledger_row(&mut tx, session_id, Some(model), provider, ledger).await?;
 
         tx.commit().await?;
         Ok(())
@@ -5222,7 +5249,7 @@ mod tests {
     ) -> Result<()> {
         let pool = sm.storage().pool().await?;
         let mut tx = pool.begin().await?;
-        insert_usage_ledger_row(&mut tx, session_id, None, usage).await?;
+        insert_usage_ledger_row(&mut tx, session_id, None, None, usage).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -5273,6 +5300,7 @@ mod tests {
             None,
             Usage::new(Some(100), Some(20), Some(120)),
             "test-model",
+            Some("test-provider"),
             &message_usage(100, 20, 0.01, false),
         )
         .await
@@ -5297,6 +5325,7 @@ mod tests {
             None,
             Usage::new(Some(30), Some(5), Some(35)),
             "test-model",
+            Some("test-provider"),
             &message_usage(30, 5, 0.03, false),
         )
         .await
@@ -5314,6 +5343,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cache_only_legacy_usage_is_carried_forward_and_provider_attributed() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+        let pool = sm.storage().pool().await.unwrap();
+        sqlx::query(
+            "UPDATE sessions SET accumulated_cache_read_tokens = 80, accumulated_cache_write_tokens = 12 WHERE id = ?",
+        )
+        .bind(&id)
+        .execute(pool)
+        .await
+        .unwrap();
+
+        sm.record_usage_metrics(
+            &id,
+            None,
+            Usage::new(Some(10), Some(2), Some(12)),
+            "model-a",
+            Some("provider-a"),
+            &message_usage(10, 2, 0.02, false),
+        )
+        .await
+        .unwrap();
+        let carried: (i64, i64) = sqlx::query_as(
+            "SELECT cache_read_tokens, cache_write_tokens FROM usage_ledger WHERE session_id = ? AND cost_source = 'carried_forward'",
+        )
+        .bind(&id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(carried, (80, 12));
+        let attributed: (Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT provider, model FROM usage_ledger WHERE session_id = ? AND cost_source != 'carried_forward'",
+        )
+        .bind(&id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            attributed,
+            (Some("provider-a".into()), Some("model-a".into()))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_v19_ledger_provider_migration_preserves_rows() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+        let pool = sm.storage().pool().await.unwrap();
+        sqlx::query("INSERT INTO usage_ledger (session_id, created_timestamp, model, input_tokens) VALUES (?, 1, 'old-model', 7)")
+            .bind(&id).execute(pool).await.unwrap();
+        sqlx::query("ALTER TABLE usage_ledger DROP COLUMN provider")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 19 WHERE version = 20")
+            .execute(pool)
+            .await
+            .unwrap();
+        let reopened = SessionManager::new(temp_dir.path().to_path_buf());
+        let new_pool = reopened.storage().pool().await.unwrap();
+        let row: (Option<String>, i64) =
+            sqlx::query_as("SELECT provider, input_tokens FROM usage_ledger WHERE session_id = ?")
+                .bind(&id)
+                .fetch_one(new_pool)
+                .await
+                .unwrap();
+        assert_eq!(row, (None, 7));
+    }
+
+    #[tokio::test]
     async fn test_usage_totals_read_through_unreconciled_drift() {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
@@ -5324,6 +5425,7 @@ mod tests {
             None,
             Usage::new(Some(100), Some(20), Some(120)),
             "test-model",
+            Some("test-provider"),
             &message_usage(100, 20, 0.10, false),
         )
         .await

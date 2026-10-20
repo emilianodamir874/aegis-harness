@@ -16,9 +16,9 @@
 //! higher negotiated rate than the inferred catalog row). Demoting inferred
 //! matches belongs in the canonical mapping layer, not here.
 //!
-//! Canonical cache rates are kept whenever the winning source does not declare
-//! cache pricing, so cached tokens are not overestimated at the full input
-//! rate. Config files are read live (price edits take effect immediately);
+//! Base cache rates only survive when declared input and output match the base tariff.
+//! Otherwise cached tokens use the declared input rate. Non-USD declared prices
+//! cannot be estimated in USD without FX. Config files are read live;
 //! bundled definitions are immutable and cached for the process.
 
 use crate::config::declarative_providers::{
@@ -58,9 +58,16 @@ pub(crate) fn resolve_usage_cost(
 /// Resolve the pricing for a provider/model honoring the precedence described
 /// in this module's documentation.
 pub(crate) fn resolve_pricing(provider: &str, model: &str) -> Option<Pricing> {
+    let custom_info = custom_file_model_info(provider, model);
+    if custom_info.as_ref().is_some_and(|info| !is_usd(info)) {
+        return None;
+    }
+    let bundled_info = bundled_model_info(provider, model);
+    if custom_info.is_none() && bundled_info.as_ref().is_some_and(|info| !is_usd(info)) {
+        return None;
+    }
     let canonical = maybe_get_canonical_model(provider, model).map(|c| c.cost);
-    let bundled =
-        bundled_model_info(provider, model).and_then(|info| pricing_from_model_info(&info));
+    let bundled = bundled_info.as_ref().and_then(pricing_from_model_info);
     let base = match (canonical, bundled) {
         (Some(mut canonical), Some(bundled)) => {
             if is_price_gap(canonical.input) {
@@ -75,8 +82,7 @@ pub(crate) fn resolve_pricing(provider: &str, model: &str) -> Option<Pricing> {
         (None, bundled) => bundled,
     };
 
-    let declared =
-        custom_file_model_info(provider, model).and_then(|info| pricing_from_model_info(&info));
+    let declared = custom_info.as_ref().and_then(pricing_from_model_info);
     match (declared, base) {
         (Some(declared), Some(base)) => Some(merge_pricing(declared, &base)),
         (Some(declared), None) => Some(declared),
@@ -114,12 +120,10 @@ fn currency_symbol(declared: &str) -> String {
 }
 
 /// Merge user-declared pricing with registry/bundled pricing: declared
-/// input/output prices win; canonical cache rates fill the gaps so cached
-/// tokens are not overestimated at the full input rate.
+/// input/output prices win; base cache rates apply only to the same tariff.
+/// Otherwise cache usage falls back to the declared input price.
 fn merge_pricing(mut declared: Pricing, base: &Pricing) -> Pricing {
-    // A declared zero price means "free here": registry cache rates must not
-    // reintroduce cost for cached tokens.
-    if matches!(declared.input, Some(0.0)) && matches!(declared.output, Some(0.0)) {
+    if declared.input != base.input || declared.output != base.output {
         return declared;
     }
     if declared.cache_read.is_none() {
@@ -134,12 +138,23 @@ fn merge_pricing(mut declared: Pricing, base: &Pricing) -> Pricing {
 /// Convert a declarative [`ModelInfo`]'s per-token USD costs into canonical
 /// [`Pricing`] (per-million-token USD).
 fn pricing_from_model_info(info: &ModelInfo) -> Option<Pricing> {
+    if !is_usd(info) {
+        return None;
+    }
     Some(Pricing {
         input: Some(info.input_token_cost.map(|c| c * 1_000_000.0)?),
         output: Some(info.output_token_cost.map(|c| c * 1_000_000.0)?),
         cache_read: None,
         cache_write: None,
         tiers: Vec::new(),
+    })
+}
+
+fn is_usd(info: &ModelInfo) -> bool {
+    info.currency.as_deref().is_none_or(|currency| {
+        currency.trim().is_empty()
+            || currency.trim() == "$"
+            || currency.trim().eq_ignore_ascii_case("USD")
     })
 }
 
@@ -278,6 +293,19 @@ mod tests {
     }
 
     #[test]
+    fn non_usd_pricing_is_not_converted_without_fx() {
+        let mut info = ModelInfo::with_cost("m", 1_000, 0.000002, 0.000006);
+        info.currency = Some("EUR".to_string());
+        assert!(pricing_from_model_info(&info).is_none());
+        info.currency = Some("eur".to_string());
+        assert!(pricing_from_model_info(&info).is_none());
+        info.currency = Some("$".to_string());
+        assert!(pricing_from_model_info(&info).is_some());
+        info.currency = Some(" usd ".to_string());
+        assert!(pricing_from_model_info(&info).is_some());
+    }
+
+    #[test]
     fn pricing_from_model_info_returns_none_without_prices() {
         let info = ModelInfo::new("m").with_context_limit(1_000);
         assert!(pricing_from_model_info(&info).is_none());
@@ -291,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn declared_input_output_win_and_canonical_cache_rates_fill_the_gap() {
+    fn different_declared_tariff_does_not_inherit_base_cache_rates() {
         let merged = merge_pricing(
             Pricing {
                 input: Some(2.0),
@@ -308,10 +336,12 @@ mod tests {
                 ..Default::default()
             },
         );
+        let used = usage(Some(1_000_000), Some(0), Some(1_000_000));
+        assert_eq!(merged.estimate_cost(&used), Some(2.0));
         assert_eq!(merged.input, Some(2.0));
         assert_eq!(merged.output, Some(6.0));
-        assert_eq!(merged.cache_read, Some(0.3));
-        assert_eq!(merged.cache_write, Some(3.75));
+        assert_eq!(merged.cache_read, None);
+        assert_eq!(merged.cache_write, None);
     }
 
     #[test]
@@ -341,9 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_tokens_price_at_cache_rate_not_full_input_rate() {
-        // A canonical model proxied through a gateway with declared
-        // input/output prices but no cache prices.
+    fn matching_declared_tariff_keeps_base_cache_rate() {
         let merged = merge_pricing(
             Pricing {
                 input: Some(3.0),
@@ -407,6 +435,44 @@ mod tests {
         let cost = estimate_model_cost("priced_gateway", "claude-sonnet-4-5", &used).unwrap();
         let expected = (10_000.0 * 1.0 + 100.0 * 4.0) / 1_000_000.0;
         assert!((cost - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn non_usd_custom_tariff_does_not_fall_back_to_registry() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_root = temp_dir.path().display().to_string();
+        let _guard = env_lock::lock_env([("AEGIS_PATH_ROOT", Some(temp_root.as_str()))]);
+        let dir = custom_providers_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("priced_gateway.json"),
+            r#"{
+            "name": "priced_gateway",
+            "engine": "openai",
+            "display_name": "Gateway",
+            "description": null,
+            "api_key_env": "",
+            "base_url": "https://example.invalid/v1",
+            "models": [{
+                "name": "claude-sonnet-4-5",
+                "context_limit": 200000,
+                "input_token_cost": 0.000001,
+                "output_token_cost": 0.000004,
+                "currency": "EUR"
+            }],
+            "requires_auth": false
+        }"#,
+        )
+        .unwrap();
+        let used = usage(Some(1_000), Some(100), None);
+        assert!(resolve_pricing("priced_gateway", "claude-sonnet-4-5").is_none());
+        assert!(estimate_model_cost("priced_gateway", "claude-sonnet-4-5", &used).is_none());
+        let reported = ProviderUsage::new("claude-sonnet-4-5".to_string(), used)
+            .with_cost(0.07, CostSource::ProviderReported);
+        assert_eq!(
+            resolve_usage_cost(Some("priced_gateway"), &reported),
+            (Some(0.07), Some(CostSource::ProviderReported))
+        );
     }
 
     #[test]

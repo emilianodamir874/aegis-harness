@@ -89,7 +89,10 @@ impl Pricing {
     }
 
     pub fn estimate_cost(&self, usage: &Usage) -> Option<f64> {
-        let prompt_tokens = usage.input_tokens.unwrap_or(0).max(0) as u64;
+        // A missing counter is unknown, not an observed zero (total alone cannot
+        // distinguish input from output for pricing). Explicit zero remains valid.
+        let prompt_tokens = usage.input_tokens?.max(0) as u64;
+        let output_tokens = usage.output_tokens?.max(0) as f64;
         let tier = self
             .tiers
             .iter()
@@ -107,7 +110,6 @@ impl Pricing {
             .unwrap_or(input_price);
 
         let input_tokens = prompt_tokens as f64;
-        let output_tokens = usage.output_tokens.unwrap_or(0).max(0) as f64;
         let cache_read_tokens = usage.cache_read_input_tokens.unwrap_or(0).max(0) as f64;
         let cache_write_tokens = usage.cache_write_input_tokens.unwrap_or(0).max(0) as f64;
         let uncached_input_tokens =
@@ -269,6 +271,24 @@ mod tests {
         assert!(!pricing(Some(1.25), Some(10.0), None, None).has_no_usable_rate());
         // Zero cache rates are legitimate: free cache reads on a paid model.
         assert!(!pricing(Some(1.25), Some(10.0), Some(0.0), Some(0.0)).has_no_usable_rate());
+    }
+
+    #[test]
+    fn missing_usage_counters_do_not_look_like_free_usage() {
+        let rates = pricing(Some(2.0), Some(10.0), None, None);
+        for usage in [
+            Usage::default(),
+            Usage::new(None, Some(100), Some(100)),
+            Usage::new(Some(100), None, Some(100)),
+            Usage::new(None, None, Some(200)),
+            Usage::new(None, Some(0), None).with_cache_tokens(Some(5), None),
+        ] {
+            assert_eq!(rates.estimate_cost(&usage), None);
+        }
+        assert_eq!(
+            rates.estimate_cost(&Usage::new(Some(0), Some(0), None)),
+            Some(0.0)
+        );
     }
 
     #[test]
