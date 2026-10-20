@@ -2,6 +2,7 @@
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
 import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, tpsOf, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
 import { toolIconSvg } from './app/icons';
+import { sessionListHtml } from './app/sessions';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 (() => {
   'use strict';
@@ -427,22 +428,6 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   // ---------- render: sesiones ----------
-  const rowHtml = (s, archived) => {
-    const meta = s._meta || {};
-    const active = state.current && state.current.id === s.sessionId ? ' active' : '';
-    const n = meta.messageCount;
-    const running = isRunning(s.sessionId);
-    const done = !running && isDoneRecently(s.sessionId);
-    const sub = `${n != null ? n + ' · ' : ''}${fmtTime(s.updatedAt || meta.createdAt)}`;
-    return (
-      `<div class="sb-row" data-id="${esc(s.sessionId)}"${archived ? ' data-arch="1"' : ''}>` +
-      `<button class="sb-item${active}${archived ? ' arch' : ''}"><div class="sb-title">${running ? '<span class="sb-run-dot" title="en produccion ahora">&#9679;</span>' : ''}${done ? '<span class="sb-done-dot" title="termino hace un momento">&#10004;</span>' : ''}${esc(s.title || 'Sesión')}${archived ? '<span class="sb-tag">archivada</span>' : ''}</div><div class="sb-sub">${sub}</div></button>` +
-      `<button class="sb-rename" title="Renombrar" aria-label="Renombrar">✎</button>` +
-      `<button class="sb-more" title="Más acciones" aria-label="Más acciones">⋮</button>` +
-      `<button class="sb-del" title="Borrar sesión" aria-label="Borrar sesión">✕</button>` +
-      `</div>`
-    );
-  };
 
     // Refresca el estado 'en produccion' de la lista mientras la pestana este visible.
   setInterval(() => {
@@ -458,40 +443,18 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   function renderList() {
     if (state.hold) return; // no pisar un editor/confirm abierto
     const list = $('#session-list');
-    const q = state.filter.trim().toLowerCase();
-    const match = (s) => !q || String(s.title || '').toLowerCase().includes(q);
-    // Orden por recencia en el cliente: el server a veces intercala por la clave de
-    // paginación y quedaban grupos "Hoy/Ayer" desordenados.
-    const ts = (s) => Date.parse(s.updatedAt || (s._meta && s._meta.createdAt) || '') || 0;
-    const byRecency = (a, b) => ts(b) - ts(a);
-    const items = state.sessions.filter(match).sort(byRecency);
-    const arch = state.archived.filter(match).sort(byRecency);
-    let html = '';
-    if (!items.length && !arch.length) {
-      list.innerHTML = `<div class="sb-empty">${state.sessions.length || state.archived.length ? 'Sin resultados' : 'Sin sesiones todavía'}</div>`;
-      return;
-    }
-    let lastGroup = null;
-    for (const s of items) {
-      const group = dayLabel(s.updatedAt || (s._meta && s._meta.createdAt));
-      if (group !== lastGroup) { html += `<div class="sb-group">${group}</div>`; lastGroup = group; }
-      html += rowHtml(s, false);
-    }
-    if (state.cursor) {
-      const more = state.pages > 1 ? `Cargar más (${state.pages} páginas)` : 'Cargar más sesiones';
-      html += `<button class="sb-more-btn" type="button">${more}</button>`;
-    }
-    if (arch.length || state.archived.length) {
-      if (state.showArchived) {
-        html += `<div class="sb-group">Archivadas</div>`;
-        html += arch.length ? arch.map((s) => rowHtml(s, true)).join('') : `<div class="sb-empty">Ninguna coincide con la búsqueda.</div>`;
-        html += `<button class="sb-arch-toggle open" type="button"><span class="caret">▶</span> Ocultar archivadas</button>`;
-      } else {
-        const total = state.archived.length;
-        html += `<button class="sb-arch-toggle" type="button"><span class="caret">▶</span> Ver archivadas (${total})</button>`;
-      }
-    }
-    list.innerHTML = html;
+    if (!list) return;
+    list.innerHTML = sessionListHtml({
+      sessions: state.sessions,
+      archived: state.archived,
+      filter: state.filter,
+      cursor: state.cursor,
+      pages: state.pages,
+      showArchived: state.showArchived,
+      activeId: (state.current && state.current.id) || null,
+      isRunning,
+      isDoneRecently,
+    });
   }
 
   // ---------- acciones por sesión (menú de fila, archivar, exportar) ----------
