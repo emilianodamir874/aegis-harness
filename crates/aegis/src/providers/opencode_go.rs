@@ -34,6 +34,17 @@ const CONSOLE_URL: &str = "https://opencode.ai/console";
 const REFRESH_SKEW_MS: u64 = 120_000;
 const DEEPSEEK_FLASH_CONTEXT_LIMIT: usize = 1_000_000;
 const DEFAULT_CONTEXT_LIMIT: usize = 200_000;
+/// Modelos de OpenCode Go que aceptan imagenes. **Vacio a proposito**: probado el
+/// 2026-10-20 contra https://opencode.ai/inference/go/openai/v1 con deepseek-v4.1-flash,
+/// el pedido sale con `image_url` (verificado en llm_request.*.jsonl) y el gateway
+/// responde 422 "Upstream request failed: Endpoint is unavailable". Con la lista vacia
+/// la imagen se descarta como antes en vez de romper el turno. Si algun modelo del
+/// catalogo la acepta, agregarlo aca y listo: el resto del camino ya esta cableado.
+const VISION_MODELS: &[&str] = &[];
+
+fn model_supports_vision(model: &str) -> bool {
+    VISION_MODELS.contains(&model)
+}
 
 fn context_limit_for(model: &str) -> usize {
     if model == MODEL {
@@ -71,7 +82,11 @@ impl ProviderDescriptor for OpenCodeGoProvider {
     fn metadata() -> ProviderMetadata {
         let models = CHAT_MODELS
             .iter()
-            .map(|name| ModelInfo::new(*name).with_context_limit(context_limit_for(name)))
+            .map(|name| {
+                ModelInfo::new(*name)
+                    .with_context_limit(context_limit_for(name))
+                    .with_vision_support(model_supports_vision(name))
+            })
             .collect();
         ProviderMetadata::with_models(
             PROVIDER_NAME,
@@ -328,6 +343,7 @@ impl Provider for OpenCodeGoProvider {
             true,
             OpenAiFormatOptions {
                 preserve_thinking_context: true,
+                supports_vision: model_supports_vision(&model_config.model_name),
                 ..Default::default()
             },
         )?;
@@ -363,6 +379,19 @@ mod tests {
     use futures::StreamExt;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn vision_flag_follows_the_allow_list() {
+        let metadata = OpenCodeGoProvider::metadata();
+        for model in metadata.known_models.iter() {
+            assert_eq!(
+                model.supports_vision,
+                Some(model_supports_vision(&model.name)),
+                "{} tiene que seguir a VISION_MODELS",
+                model.name
+            );
+        }
+    }
 
     #[test]
     fn only_chat_completions_models_are_listed() {
