@@ -15,9 +15,9 @@ use crate::agents::extension_manager::{
 };
 use crate::agents::mcp_client::McpClientTrait;
 use crate::agents::state_machine::{
-    BangShellOperation, CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
-    ForegroundSubagentOperation, AegisEffect, AegisInferenceProvider,
-    AegisInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
+    AegisEffect, AegisInferenceProvider, AegisInferenceRequestPreparer, BangShellOperation,
+    CompactionOperation, DoctorOperation, Emitter, ExitOnErrorOperation,
+    ForegroundSubagentOperation, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
     RecipeOperation, RetryOperation, RunStatus, SkillOperation, SlashCommandOperation,
     StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
     ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
@@ -102,6 +102,8 @@ pub(super) struct TestPipeline {
     working_dir: std::path::PathBuf,
     steer_queue: SteerQueue,
     max_turns: u32,
+    tool_pair_compactions:
+        crate::agents::state_machine::ops_tool_pair_compaction::PendingToolPairCompactions,
     scheduler: Option<Arc<crate::scheduler::Scheduler>>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
@@ -140,6 +142,7 @@ impl TestPipeline {
                 !self.provider_features.manages_own_context,
                 // Harness: 0 = compactar siempre, comportamiento previo al ratio.
                 0,
+                Arc::clone(&self.tool_pair_compactions),
             )),
             Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.session_manager.clone())),
@@ -210,6 +213,21 @@ impl TestPipeline {
             .await
             .unwrap();
         self
+    }
+
+    pub(super) fn has_pending_pair_compaction(&self) -> bool {
+        self.tool_pair_compactions
+            .lock()
+            .unwrap()
+            .contains_key(&self.session_id)
+    }
+
+    pub(super) async fn wait_for_pair_compaction(&self) -> Result<()> {
+        crate::agents::state_machine::ops_tool_pair_compaction::wait_for_pending_compaction(
+            &self.tool_pair_compactions,
+            &self.session_id,
+        )
+        .await
     }
 
     pub(super) fn context_limit(&self) -> usize {
@@ -361,6 +379,7 @@ impl TestPipeline {
         .with_max_turns(self.max_turns)
         .with_stop_hook_block_cap(self.stop_hook_block_cap);
         pipeline.extension_lease = Arc::clone(&self.extension_lease);
+        pipeline.tool_pair_compactions = Arc::clone(&self.tool_pair_compactions);
         Ok(pipeline)
     }
 
@@ -385,7 +404,7 @@ impl TestPipeline {
             .model_config(self.model_config.clone())
             .apply()
             .await?;
-        build_test_pipeline(
+        let mut pipeline = build_test_pipeline(
             self.session_manager.clone(),
             self.api.clone(),
             self.provider_features,
@@ -393,7 +412,9 @@ impl TestPipeline {
             self.session_manager.get_session(&session.id, true).await?,
             self._temp_dir.clone(),
         )
-        .await
+        .await?;
+        pipeline.tool_pair_compactions = Arc::clone(&self.tool_pair_compactions);
+        Ok(pipeline)
     }
 
     pub(super) fn synchronize_calculator(&self, calls: usize) {
@@ -845,6 +866,7 @@ async fn build_test_pipeline(
         working_dir: session.working_dir.clone(),
         steer_queue: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
         max_turns: MAX_TURNS,
+        tool_pair_compactions: Arc::default(),
         scheduler,
         _temp_dir: temp_dir,
     };

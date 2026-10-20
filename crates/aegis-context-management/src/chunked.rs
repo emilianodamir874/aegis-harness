@@ -1,6 +1,6 @@
-use anyhow::{bail, Result};
 use aegis_provider_types::conversation::message::Message;
 use aegis_provider_types::conversation::token_usage::ProviderUsage;
+use anyhow::{bail, Result};
 use serde::Serialize;
 use std::collections::VecDeque;
 
@@ -249,9 +249,9 @@ pub async fn summarize_in_chunks(
 mod tests {
     use super::*;
     use crate::model::CompactionModel;
-    use async_trait::async_trait;
     use aegis_provider_types::conversation::token_usage::Usage;
     use aegis_provider_types::errors::ProviderError;
+    use async_trait::async_trait;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct FakeEstimator;
@@ -507,8 +507,11 @@ mod tests {
                     .to_string();
                 return Ok((
                     Message::assistant().with_text(output),
-                    ProviderUsage::new("fake".into(), Usage::new(Some(100), Some(8192), Some(8292)))
-                        .with_finish_reasons(vec!["length".to_string()]),
+                    ProviderUsage::new(
+                        "fake".into(),
+                        Usage::new(Some(100), Some(8192), Some(8292)),
+                    )
+                    .with_finish_reasons(vec!["length".to_string()]),
                 ));
             }
             let output = serde_json::json!({

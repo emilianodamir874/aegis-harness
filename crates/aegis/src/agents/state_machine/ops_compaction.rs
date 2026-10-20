@@ -10,7 +10,7 @@ use crate::agents::final_output_tool::FinalOutputTool;
 use crate::agents::state_machine::ops_llm::{chat_span, record_chat_usage};
 use crate::agents::state_machine::{
     applied, awaits_tool_responses, last_effective_role, messages_since_kickoff, not_applicable,
-    trailing_error, yielded, yielded_with, ConversationEffect, Emitter, AegisEffect, Operation,
+    trailing_error, yielded, yielded_with, AegisEffect, ConversationEffect, Emitter, Operation,
     OperationResult, SlashCommand,
 };
 use crate::context_mgmt::{compact_messages, count_context_tokens};

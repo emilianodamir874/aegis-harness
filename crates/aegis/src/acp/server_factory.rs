@@ -2,11 +2,10 @@ use crate::acp::server::{
     AcpBuiltinSelection, AcpProviderFactory, ActiveRunRegistry, AegisAcpAgent,
     AegisAcpAgentOptions, LiveVoiceService, SessionHub,
 };
-use crate::agents::{AgentConfig, AegisPlatform};
+use crate::agents::{AegisPlatform, AgentConfig};
 use crate::config::paths::Paths;
 use crate::config::permission::PermissionManager;
 use crate::execution::manager::AgentManager;
-#[cfg(feature = "scheduler")]
 use crate::scheduler_trait::SchedulerTrait;
 use crate::session::SessionManager;
 use crate::source_roots::SourceRoot;

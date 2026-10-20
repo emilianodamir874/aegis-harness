@@ -207,6 +207,46 @@ describe('acpChatSessionStore', () => {
     expect(snapshot.sessionLoadError).toBeUndefined();
   });
 
+  it('keeps published snapshots stable while sharing unchanged messages', () => {
+    const id = sessionId('snapshot-sharing');
+    const source = message('user-1', 'original');
+    const initial = acpChatSessionActions.setMessages(id, [source]);
+    source.content[0] = { type: 'text', text: 'mutated source' };
+    expect(initial.messages[0].content[0]).toEqual({ type: 'text', text: 'original' });
+
+    const first = acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(id, 'assistant-1', 'Hello')
+    );
+    const second = acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(id, 'assistant-1', ' world')
+    );
+    expect(first.messages[1].content[0]).toEqual({ type: 'text', text: 'Hello' });
+    expect(second.messages[1].content[0]).toEqual({ type: 'text', text: 'Hello world' });
+    expect(first.messages[0]).toBe(second.messages[0]);
+    expect(first.messages[1]).not.toBe(second.messages[1]);
+    expect(acpChatSessionStore.getSnapshot(id)).toBe(second);
+    const metadata = acpChatSessionActions.setChatState(id, ChatState.Idle);
+    expect(metadata.messages).toBe(second.messages);
+    expect(first.messages[1].content[0]).toEqual({ type: 'text', text: 'Hello' });
+  });
+
+  it('keeps completed replay snapshots independent of later live chunks', () => {
+    const id = sessionId('replay-sharing');
+    acpChatSessionActions.startSessionLoad(id);
+    for (let index = 0; index < 100; index++) {
+      acpChatSessionActions.applyAcpSessionNotification(
+        agentMessageChunkNotification(id, `assistant-${index}`, `chunk-${index}`)
+      );
+    }
+    const finished = acpChatSessionActions.finishSessionLoad(id, session(id));
+    expect(finished.messages).toHaveLength(100);
+    const next = acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(id, 'assistant-99', ' appended')
+    );
+    expect(finished.messages[99].content[0]).toEqual({ type: 'text', text: 'chunk-99' });
+    expect(next.messages[99].content[0]).toEqual({ type: 'text', text: 'chunk-99 appended' });
+    expect(next.messages[0]).toBe(finished.messages[0]);
+  });
   it('keeps multiple session snapshots isolated', () => {
     const firstSessionId = sessionId('session-1');
     const secondSessionId = sessionId('session-2');

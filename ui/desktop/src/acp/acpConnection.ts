@@ -3,11 +3,7 @@ import { methods, PROTOCOL_VERSION, type InitializeResponse } from '@agentclient
 import { createWebSocketStream } from '@agentclientprotocol/sdk/experimental/ws-client';
 import packageJson from '../../package.json';
 import { AEGIS_SERVE_EXITED_USER_MESSAGE } from '../aegisServeLeaseRegistry';
-import {
-  handleAcpAegisSessionNotification,
-  handleAcpProviderDeviceCodeNotification,
-  handleAcpSessionNotification,
-} from './chatNotifications';
+import { handleAcpProviderDeviceCodeNotification } from './chatNotifications';
 import { requestAcpElicitation } from './elicitationRequests';
 import {
   connectAegisAcpClient,
@@ -16,6 +12,7 @@ import {
 } from './aegisAcpClient';
 import { requestAcpPermission } from './permissionRequests';
 import { requestAcpRecipeParams } from './recipeParamRequests';
+import { handleAcpWatchedNotification, recoverAcpWatches } from './sessions';
 
 type AcpConnection = {
   client: AegisAcpClient;
@@ -37,6 +34,10 @@ const recoveryListeners = new Set<AcpRecoveryListener>();
 
 export async function getAcpClient(): Promise<AegisAcpClient> {
   return (await getConnection()).client;
+}
+
+export function isCurrentAcpClient(client: AegisAcpClient): boolean {
+  return currentConnection?.client === client;
 }
 
 export async function getAcpInitializeResponse(): Promise<InitializeResponse> {
@@ -136,7 +137,11 @@ async function openConnection(generation: number): Promise<AcpConnection> {
 
   // Electron treats an explicitly passed undefined protocol as a subprotocol.
   const stream = createWebSocketStream(wsUrl, { protocols: [] });
-  const client = connectAegisAcpClient(stream, createClientCallbacks());
+  let client: AegisAcpClient;
+  client = connectAegisAcpClient(
+    stream,
+    createClientCallbacks(() => client)
+  );
 
   try {
     const initializeResponse = await withTimeout(
@@ -170,6 +175,7 @@ async function openConnection(generation: number): Promise<AcpConnection> {
 
     const connection = { client, initializeResponse };
     currentConnection = connection;
+    void recoverAcpWatches();
     const handleClose = () => {
       if (currentConnection === connection) {
         recoverConnection(false);
@@ -215,13 +221,21 @@ function delay(delayMs: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
-function createClientCallbacks(): AegisAcpCallbacks {
+function createClientCallbacks(getClient: () => AegisAcpClient): AegisAcpCallbacks {
   return {
     requestPermission: requestAcpPermission,
     createElicitation: requestAcpElicitation,
     unstable_sessionRecipeRequestParams: requestAcpRecipeParams,
-    sessionUpdate: handleAcpSessionNotification,
-    unstable_sessionUpdate: handleAcpAegisSessionNotification,
+    sessionUpdate: async (notification) => {
+      const client = getClient();
+      if (isCurrentAcpClient(client))
+        handleAcpWatchedNotification(client, 'session/update', notification);
+    },
+    unstable_sessionUpdate: async (notification) => {
+      const client = getClient();
+      if (isCurrentAcpClient(client))
+        handleAcpWatchedNotification(client, '_aegis/unstable/session/update', notification);
+    },
     unstable_providerDeviceCode: handleAcpProviderDeviceCodeNotification,
   };
 }

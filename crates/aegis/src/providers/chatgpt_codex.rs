@@ -8,6 +8,9 @@ use crate::providers::base::{
 use crate::providers::openai_compatible::handle_status;
 use crate::providers::private_file::write_private_file;
 use crate::providers::retry::ProviderRetry;
+use aegis_providers::errors::ProviderError;
+use aegis_providers::formats::openai_responses::responses_api_to_streaming_message;
+use aegis_providers::model::ModelConfig;
 use anyhow::{anyhow, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -16,9 +19,6 @@ use base64::Engine;
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use futures::{StreamExt, TryStreamExt};
-use aegis_providers::errors::ProviderError;
-use aegis_providers::formats::openai_responses::responses_api_to_streaming_message;
-use aegis_providers::model::ModelConfig;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
 use rmcp::model::{ContentBlock, Role, Tool};
@@ -994,7 +994,9 @@ impl ChatGptCodexProvider {
 
         let client = reqwest::Client::builder()
             .connect_timeout(std::time::Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
-            .read_timeout(std::time::Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS))
+            .read_timeout(std::time::Duration::from_secs(
+                DEFAULT_PROVIDER_TIMEOUT_SECS,
+            ))
             .build()
             .map_err(|e| ProviderError::ExecutionError(e.to_string()))?;
 
@@ -1153,7 +1155,6 @@ impl Provider for ChatGptCodexProvider {
             Err(_) => Ok(known_model_names().into_iter().map(String::from).collect()),
         }
     }
-
 }
 
 #[cfg(test)]

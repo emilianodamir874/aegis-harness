@@ -2,7 +2,7 @@ use crate::{
     agents::{
         final_output_tool::FinalOutputTool,
         state_machine::{trailing_error, MAX_TURNS_MESSAGE},
-        Agent, AgentConfig, AegisPlatform, SessionConfig,
+        AegisPlatform, Agent, AgentConfig, SessionConfig,
     },
     config::permission::PermissionManager,
     conversation::{message::Message, Conversation},

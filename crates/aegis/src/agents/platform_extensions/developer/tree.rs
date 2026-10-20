@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Component, Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -205,9 +206,20 @@ fn relative_components(path: &Path) -> Option<Vec<String>> {
 }
 
 fn count_file_lines(path: &Path) -> usize {
-    match fs::read_to_string(path) {
-        Ok(content) => content.lines().count(),
-        Err(_) => 0,
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return 0,
+    };
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut count = 0;
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) => return count,
+            Ok(_) => count += 1,
+            Err(_) => return 0,
+        }
     }
 }
 
@@ -256,6 +268,17 @@ mod tests {
         assert!(text.contains("src/"));
         assert!(text.contains("tests/"));
         assert!(text.contains("main.rs"));
+    }
+
+    #[test]
+    fn tree_counts_lines_without_loading_entire_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("sample.rs"), "one\ntwo\nlast").unwrap();
+        let result = TreeTool::new().tree(TreeParams {
+            path: dir.path().display().to_string(),
+            depth: 1,
+        });
+        assert!(extract_text(&result).contains("sample.rs  [3]"));
     }
 
     #[test]

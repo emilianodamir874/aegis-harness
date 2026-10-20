@@ -16,13 +16,13 @@ pub mod conversation {
     pub use aegis_providers::conversation::*;
     pub mod rewind;
 }
+pub mod aegis_apps;
 pub mod dictation;
 pub mod doctor;
 pub mod download_manager;
 pub mod elicitation;
 pub mod execution;
 pub mod gateway;
-pub mod aegis_apps;
 pub mod hints;
 pub mod hooks;
 pub mod instance_id;

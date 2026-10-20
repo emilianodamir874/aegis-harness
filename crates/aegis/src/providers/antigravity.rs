@@ -3,14 +3,14 @@ use crate::providers::base::{
     ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata,
 };
 use crate::providers::formats::google::{create_request, response_to_streaming_message};
+use aegis_providers::errors::ProviderError;
+use aegis_providers::model::ModelConfig;
+use aegis_providers::request_log::{start_log, LoggerHandleExt};
 use anyhow::{anyhow, Result};
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::future::BoxFuture;
 use futures::TryStreamExt;
-use aegis_providers::errors::ProviderError;
-use aegis_providers::model::ModelConfig;
-use aegis_providers::request_log::{start_log, LoggerHandleExt};
 use rmcp::model::Tool;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -29,14 +29,11 @@ const DEFAULT_MODEL: &str = "gemini-3.8-flash-medium";
 const GEMINI_38_CONTEXT_LIMIT: usize = 1_048_576;
 
 fn advertised_context_limit(model: &str) -> Option<usize> {
-    matches!(
-        model,
-        "gemini-3.8-flash"
-            | "gemini-3.8-flash-high"
-            | "gemini-3.8-flash-medium"
-            | "gemini-3.8-flash-low"
-    )
-    .then_some(GEMINI_38_CONTEXT_LIMIT)
+    // El endpoint declara 1M para la familia 3.8; el prefijo cubre tambien los ids con
+    // sufijo de esfuerzo que una sesion vieja todavia pueda tener guardados.
+    model
+        .starts_with("gemini-3.8-flash")
+        .then_some(GEMINI_38_CONTEXT_LIMIT)
 }
 
 const ENDPOINTS: &[&str] = &[
@@ -54,14 +51,26 @@ const USER_AGENT: &str = "antigravity/cli/1.2.4 (aidev_client; os_type=windows; 
 /// (measured 2026-10-13: gemini-3.6-flash, gemini-3.7-flash and gemini-3.1-pro
 /// were gone from both daily catalogs while `cloudcode-pa` still listed them).
 const MODELS: &[&str] = &[
+    // One id per family: the effort comes from the session `thinking_effort` option and
+    // `runtime_model` turns it into the endpoint tier. Ids with an effort suffix keep working
+    // for sessions that still have one saved, but they are no longer advertised (v52).
     "gemini-3.8-flash",
-    "gemini-3.8-flash-high",
-    "gemini-3.8-flash-medium",
-    "gemini-3.8-flash-low",
     "claude-opus-4-6",
     "claude-sonnet-4-6",
-    "claude-opus-4-6-thinking",
     "gpt-oss-120b-medium",
+    // Added 2026-10-18 from the live catalog (v1internal:fetchAvailableModels on the daily
+    // endpoint). Internal-only ids that also appear there are deliberately left out:
+    // chat_20706/chat_23310 and tab_* are not chat surfaces, gemini-3.8-flash-tiered is an
+    // internal routing variant, and the image/agent ids do not take the chat envelope.
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash-low",
+    "gemini-3.5-flash-extra-low",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash-thinking",
+    "gemini-2.5-pro",
 ];
 
 fn runtime_model(model: &str, effort: Option<aegis_providers::thinking::ThinkingEffort>) -> &str {
@@ -698,7 +707,11 @@ impl Provider for AntigravityProvider {
                 // Medido en vivo: 20261012_5, 16/10 13:34:13, pasada=1 http=200 lineas=2
                 // items_sin_contenido=1 hubo_contenido=true -> mensaje vacio en la base. Ahora cuenta
                 // como contenido solo un mensaje CON partes (texto, pensamiento, herramienta).
-                let tiene = par.0.as_ref().map(|m| !m.content.is_empty()).unwrap_or(false);
+                let tiene = par
+                    .0
+                    .as_ref()
+                    .map(|m| !m.content.is_empty())
+                    .unwrap_or(false);
                 previos.push(par);
                 if tiene {
                     hubo_contenido = true;
@@ -795,13 +808,13 @@ mod tests {
                 provider.get_context_limit(alias, Some(64_000)).await,
                 64_000
             );
-            let info = AntigravityProvider::metadata()
-                .known_models
-                .into_iter()
-                .find(|info| info.name == alias)
-                .unwrap();
-            assert_eq!(info.context_limit, Some(1_048_576));
         }
+        let info = AntigravityProvider::metadata()
+            .known_models
+            .into_iter()
+            .find(|info| info.name == "gemini-3.8-flash")
+            .unwrap();
+        assert_eq!(info.context_limit, Some(1_048_576));
         assert_eq!(
             provider
                 .get_context_limit("unknown-antigravity-alias", None)
@@ -925,14 +938,24 @@ mod tests {
         // Live ids the account is entitled to, kept in the advertised list.
         for model in [
             "gemini-3.8-flash",
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "gpt-oss-120b-medium",
+            "gemini-2.5-pro",
+        ] {
+            assert!(MODELS.contains(&model), "{model} must stay advertised");
+        }
+        // El esfuerzo ya no es un modelo aparte: el chip `thinking_effort` lo define.
+        for suffixed in [
             "gemini-3.8-flash-high",
             "gemini-3.8-flash-medium",
             "gemini-3.8-flash-low",
-            "claude-sonnet-4-6",
             "claude-opus-4-6-thinking",
-            "gpt-oss-120b-medium",
         ] {
-            assert!(MODELS.contains(&model), "{model} must stay advertised");
+            assert!(
+                !MODELS.contains(&suffixed),
+                "{suffixed} is an effort tier, not a selectable model"
+            );
         }
     }
 
@@ -1033,7 +1056,11 @@ mod tests {
         let primary = format!("{base}/primary");
         let secondary = format!("{base}/secondary");
         let response = mock_provider()
-            .send_with_fallback("dummy", &json!({"model":"gemini-3.8-flash-low"}), &[&primary, &secondary])
+            .send_with_fallback(
+                "dummy",
+                &json!({"model":"gemini-3.8-flash-low"}),
+                &[&primary, &secondary],
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
@@ -1060,7 +1087,11 @@ mod tests {
         let primary = format!("{base}/primary");
         let secondary = format!("{base}/secondary");
         let error = mock_provider()
-            .send_with_fallback("dummy", &json!({"model":"gemini-3.8-flash-low"}), &[&primary, &secondary])
+            .send_with_fallback(
+                "dummy",
+                &json!({"model":"gemini-3.8-flash-low"}),
+                &[&primary, &secondary],
+            )
             .await
             .unwrap_err();
         match error {

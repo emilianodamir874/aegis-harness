@@ -91,6 +91,7 @@ export interface AcpChatSessionActions {
   setMessages(sessionId: string, messages: Message[]): AcpChatSessionSnapshot;
   addPendingLocalSteerMessage(sessionId: string, message: Message): AcpChatSessionSnapshot;
   setChatState(sessionId: string, chatState: ChatState): AcpChatSessionSnapshot;
+  setActiveWatchedRun(sessionId: string, activeRunId: string | null): AcpChatSessionSnapshot;
   resolveUserInputRequest(
     sessionId: string,
     userInputRequestId: string
@@ -134,7 +135,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     if (entry.chatState === ChatState.LoadingConversation && entry.lastSnapshot) {
       return entry.lastSnapshot;
     }
-    return snapshotFromEntry(entry);
+    return entry.lastSnapshot ?? snapshotFromEntry(entry);
   };
 
   const subscribe: AcpChatSessionStoreInternal['subscribe'] = (sessionId, listener) => {
@@ -226,7 +227,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     entry.progressMessage = undefined;
     // Materialize the replayed conversation in one pass (the per-notification
     // fast path above skips message copies while loading).
-    entry.messages = entry.adapter.getMessages();
+    entry.messages = entry.adapter.getMessagesSnapshot();
     retainPendingLocalSteerMessageIds(entry);
     entry.chatState = entry.activePromptAttemptId ? ChatState.Streaming : ChatState.Idle;
     return notify(sessionId, entry);
@@ -274,6 +275,23 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       entry.progressMessage = undefined;
     }
     entry.chatState = chatState;
+    return notify(sessionId, entry);
+  };
+
+  const setActiveWatchedRun: AcpChatSessionActions['setActiveWatchedRun'] = (
+    sessionId,
+    activeRunId
+  ) => {
+    const entry = getOrCreateEntry(sessionId);
+    entry.activeRunId = activeRunId;
+    if (
+      !entry.activePromptAttemptId &&
+      !entry.pendingCancelPromptAttemptId &&
+      entry.chatState !== ChatState.LoadingConversation &&
+      entry.chatState !== ChatState.WaitingForUserInput
+    ) {
+      entry.chatState = activeRunId ? ChatState.Streaming : ChatState.Idle;
+    }
     return notify(sessionId, entry);
   };
 
@@ -555,6 +573,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     setMessages,
     addPendingLocalSteerMessage,
     setChatState,
+    setActiveWatchedRun,
     resolveUserInputRequest,
     startPromptAttempt,
     startPromptCancellation,
@@ -635,6 +654,7 @@ function actionsFromStore(store: AcpChatSessionStoreInternal): AcpChatSessionAct
     setMessages: store.setMessages,
     addPendingLocalSteerMessage: store.addPendingLocalSteerMessage,
     setChatState: store.setChatState,
+    setActiveWatchedRun: store.setActiveWatchedRun,
     resolveUserInputRequest: store.resolveUserInputRequest,
     startPromptAttempt: store.startPromptAttempt,
     startPromptCancellation: store.startPromptCancellation,
@@ -651,7 +671,7 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
   for (const change of changes) {
     switch (change.type) {
       case 'messages':
-        entry.messages = cloneMessages(change.messages);
+        entry.messages = change.messages;
         retainPendingLocalSteerMessageIds(entry);
         break;
       case 'tokenState':
@@ -666,6 +686,14 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
         }
         if (change.activeRunId !== undefined) {
           entry.activeRunId = change.activeRunId;
+          if (
+            !entry.activePromptAttemptId &&
+            !entry.pendingCancelPromptAttemptId &&
+            entry.chatState !== ChatState.LoadingConversation &&
+            entry.chatState !== ChatState.WaitingForUserInput
+          ) {
+            entry.chatState = change.activeRunId ? ChatState.Streaming : ChatState.Idle;
+          }
         }
         break;
       case 'localSteerConfirmed':
@@ -767,7 +795,7 @@ function confirmedLocalSteerTextByMessageId(entry: StoreEntry): Map<string, stri
 function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
   return {
     session: entry.session,
-    messages: cloneMessages(entry.messages),
+    messages: entry.messages,
     tokenState: { ...entry.tokenState },
     notifications: [...entry.notifications],
     progressMessage: entry.progressMessage,

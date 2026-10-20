@@ -78,6 +78,7 @@ describe('Aegis ACP client composition', () => {
       method: '_aegis/unstable/session/update',
       params: {
         sessionId: 'session-1',
+        _meta: { aegis: { cursor: 7 } },
         update: {
           sessionUpdate: 'status_message',
           status: { type: 'notice', message: 'ready' },
@@ -87,6 +88,9 @@ describe('Aegis ACP client composition', () => {
 
     await vi.waitFor(() => {
       expect(handlers.unstable_sessionUpdate).toHaveBeenCalledOnce();
+      expect(handlers.unstable_sessionUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ _meta: { aegis: { cursor: 7 } } })
+      );
     });
 
     stream.push({

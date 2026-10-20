@@ -29,6 +29,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
+use uuid::Uuid;
 
 use crate::execution::ActiveRunRegistry;
 
@@ -58,38 +59,80 @@ struct RingEntry {
     json: Arc<String>,
 }
 
-#[derive(Default)]
 struct SessionLog {
+    epoch: String,
     entries: VecDeque<RingEntry>,
     bytes: usize,
     next_cursor: u64,
     /// Cursor a `since: null` watcher should start from (the current or last
     /// run boundary); `None` means "from now".
     replay_from: Option<u64>,
+    active_run_id: Option<String>,
+}
+
+impl Default for SessionLog {
+    fn default() -> Self {
+        Self {
+            epoch: Uuid::new_v4().to_string(),
+            entries: VecDeque::new(),
+            bytes: 0,
+            next_cursor: 0,
+            replay_from: None,
+            active_run_id: None,
+        }
+    }
 }
 
 impl SessionLog {
     fn current_cursor(&self) -> u64 {
-        self.next_cursor.saturating_sub(1)
+        self.next_cursor
     }
 
     fn oldest_cursor(&self) -> u64 {
         self.entries
             .front()
             .map(|entry| entry.cursor)
-            .unwrap_or(self.next_cursor)
+            .unwrap_or_else(|| self.next_cursor.saturating_add(1))
     }
 
-    fn push(&mut self, json: String, kind: EventKind) -> u64 {
-        self.next_cursor += 1;
-        let cursor = self.next_cursor;
+    fn push(&mut self, method: &str, mut params: Value, kind: EventKind) -> Option<String> {
+        let run_id = if kind == EventKind::RunStart {
+            params
+                .pointer("/update/_meta/aegis/activeRunId")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        } else {
+            None
+        };
+        let cursor = self.next_cursor.checked_add(1)?;
+        let aegis = params
+            .as_object_mut()
+            .and_then(|params| {
+                params
+                    .entry("_meta")
+                    .or_insert_with(|| json!({}))
+                    .as_object_mut()
+            })
+            .and_then(|meta| {
+                meta.entry("aegis")
+                    .or_insert_with(|| json!({}))
+                    .as_object_mut()
+            });
+        if let Some(aegis) = aegis {
+            aegis.insert("cursor".into(), json!(cursor));
+        }
+        let json = serde_json::to_string(&UntypedMessage::new(method, params).ok()?).ok()?;
+        self.next_cursor = cursor;
         self.bytes += json.len();
         self.entries.push_back(RingEntry {
             cursor,
-            json: Arc::new(json),
+            json: Arc::new(json.clone()),
         });
         match kind {
-            EventKind::RunStart | EventKind::RunEnd => self.replay_from = Some(cursor),
+            EventKind::RunStart | EventKind::RunEnd => {
+                self.replay_from = Some(cursor);
+                self.active_run_id = run_id;
+            }
             EventKind::Normal => {}
         }
         while self.entries.len() > MAX_EVENTS || self.bytes > MAX_BYTES {
@@ -98,7 +141,7 @@ impl SessionLog {
             };
             self.bytes = self.bytes.saturating_sub(dropped.json.len());
         }
-        cursor
+        Some(json)
     }
 
     /// Returns the replay payload (`{"method":..,"params":..}` notifications)
@@ -112,14 +155,13 @@ impl SessionLog {
                 .map(|cursor| cursor.saturating_sub(1))
                 .unwrap_or(current),
         };
-        let gap = from + 1 < self.oldest_cursor();
+        let gap = since.is_some_and(|since| since > current)
+            || from.saturating_add(1) < self.oldest_cursor();
         let items = self
             .entries
             .iter()
             .filter(|entry| entry.cursor > from)
-            .map(|entry| {
-                serde_json::from_str::<Value>(&entry.json).unwrap_or(Value::Null)
-            })
+            .map(|entry| serde_json::from_str::<Value>(&entry.json).unwrap_or(Value::Null))
             .collect();
         (items, gap)
     }
@@ -150,7 +192,7 @@ impl Default for SessionState {
 
 impl SessionState {
     /// Drops watchers whose connection is gone (their forwarder task ended, so
-    /// the receiver — and with it the channel — is dropped).
+    /// the receiver â€” and with it the channel â€” is dropped).
     fn prune_closed(&mut self) {
         self.watchers.retain(|_, watcher| !watcher.tx.is_closed());
     }
@@ -160,6 +202,8 @@ impl SessionState {
 pub(crate) struct WatchSnapshot {
     pub(crate) watcher_id: u64,
     pub(crate) cursor: u64,
+    pub(crate) epoch: String,
+    pub(crate) active_run_id: Option<String>,
     /// JSON-RPC notifications (`{"method":..,"params":..}`) the watcher needs
     /// to be up to date, oldest first. A leading `replay_gap` means the ring
     /// truncated and the client must `session/load`.
@@ -225,30 +269,25 @@ impl SessionHub {
         connection_key: u64,
         session_id: &str,
         since: Option<u64>,
+        epoch: Option<&str>,
     ) -> (WatchSnapshot, Result<(), agent_client_protocol::Error>) {
         let (tx, mut rx) = mpsc::unbounded_channel::<String>();
         let snapshot = {
             let mut state_map = self.state.lock().expect("hub lock poisoned");
-            let state = state_map
-                .entry(session_id.to_string())
-                .or_insert_with(SessionState::default);
+            let state = state_map.entry(session_id.to_string()).or_default();
             state.prune_closed();
             state
                 .watchers
                 .retain(|_, watcher| watcher.connection_key != connection_key);
             state.next_watcher_id += 1;
             let watcher_id = state.next_watcher_id;
-            state.watchers.insert(
-                watcher_id,
-                Watcher {
-                    connection_key,
-                    tx,
-                },
-            );
+            state
+                .watchers
+                .insert(watcher_id, Watcher { connection_key, tx });
             state.last_touched = Instant::now();
 
             let (mut replay, gap) = state.log.replay(since);
-            if gap {
+            if gap || (since.is_some() && epoch != Some(state.log.epoch.as_str())) {
                 replay.insert(
                     0,
                     json!({
@@ -260,6 +299,8 @@ impl SessionHub {
             WatchSnapshot {
                 watcher_id,
                 cursor: state.log.current_cursor(),
+                epoch: state.log.epoch.clone(),
+                active_run_id: state.log.active_run_id.clone(),
                 replay,
             }
         };
@@ -284,6 +325,33 @@ impl SessionHub {
         (snapshot, spawned)
     }
 
+    pub(crate) fn finish_abandoned_run(&self, session_id: &str, run_id: &str) {
+        let mut state_map = self.state.lock().expect("hub lock poisoned");
+        let Some(state) = state_map.get_mut(session_id) else {
+            return;
+        };
+        if state.log.active_run_id.as_deref() != Some(run_id) {
+            return;
+        }
+        let params =
+            serde_json::to_value(agent_client_protocol::schema::v1::SessionNotification::new(
+                agent_client_protocol::schema::v1::SessionId::new(session_id.to_string()),
+                agent_client_protocol::schema::v1::SessionUpdate::SessionInfoUpdate(
+                    agent_client_protocol::schema::v1::SessionInfoUpdate::new()
+                        .meta(active_run_meta(None)),
+                ),
+            ));
+        let Ok(params) = params else {
+            return;
+        };
+        let Some(json) = state.log.push("session/update", params, EventKind::RunEnd) else {
+            return;
+        };
+        state.last_touched = Instant::now();
+        state
+            .watchers
+            .retain(|_, watcher| watcher.tx.send(json.clone()).is_ok());
+    }
 
     /// Removes every watcher belonging to `connection_key` (used when a
     /// connection closes a session). Returns how many were removed.
@@ -313,7 +381,6 @@ impl SessionHub {
         }
     }
 
-
     /// Frees the ring when the session has no watchers and no active run.
     pub(crate) fn release_if_idle(&self, session_id: &str, registry: &ActiveRunRegistry) {
         let mut state_map = self.state.lock().expect("hub lock poisoned");
@@ -341,23 +408,16 @@ impl SessionHub {
         kind: EventKind,
         owner_key: Option<u64>,
     ) -> Option<String> {
-        let json = match serde_json::to_string(&UntypedMessage {
-            method: method.to_string(),
-            params: params.clone(),
-        }) {
-            Ok(json) => json,
-            Err(error) => {
-                warn!(session_id, %error, "failed to serialize session fan-out frame");
-                return None;
-            }
-        };
-
         let mut owner_seen = false;
         let mut state_map = self.state.lock().expect("hub lock poisoned");
-        let state = state_map
-            .entry(session_id.to_string())
-            .or_insert_with(SessionState::default);
-        state.log.push(json.clone(), kind);
+        let state = state_map.entry(session_id.to_string()).or_default();
+        let Some(json) = state.log.push(method, params.clone(), kind) else {
+            warn!(
+                session_id,
+                "failed to serialize or number session fan-out frame"
+            );
+            return None;
+        };
         state.last_touched = Instant::now();
 
         let mut dead = Vec::new();
@@ -378,7 +438,146 @@ impl SessionHub {
             None
         }
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::{EventKind, SessionLog, MAX_EVENTS};
+    use serde_json::json;
+
+    #[test]
+    fn abandoned_run_emits_one_terminal_marker_and_never_clears_replacement() {
+        let hub = super::SessionHub::new();
+        let start = json!({"sessionId":"s","update":{"sessionUpdate":"session_info_update","_meta":{"aegis":{"activeRunId":"run-1"}}}});
+        hub.publish("s", "session/update", &start, EventKind::RunStart, None);
+        hub.finish_abandoned_run("s", "run-1");
+        hub.finish_abandoned_run("s", "run-1");
+        let state = hub.state.lock().unwrap();
+        let log = &state.get("s").unwrap().log;
+        assert!(log.active_run_id.is_none());
+        assert_eq!(log.current_cursor(), 2);
+        assert_eq!(
+            log.replay(Some(1)).0[0].pointer("/params/update/_meta/aegis/activeRunId"),
+            Some(&serde_json::Value::Null)
+        );
+        drop(state);
+        hub.publish("s", "session/update", &json!({"sessionId":"s","update":{"sessionUpdate":"session_info_update","_meta":{"aegis":{"activeRunId":"run-2"}}}}), EventKind::RunStart, None);
+        hub.finish_abandoned_run("s", "run-1");
+        assert_eq!(
+            hub.state
+                .lock()
+                .unwrap()
+                .get("s")
+                .unwrap()
+                .log
+                .active_run_id
+                .as_deref(),
+            Some("run-2")
+        );
+    }
+
+    #[test]
+    fn cursor_identifies_last_published_event_and_replay_excludes_applied_event() {
+        let mut log = SessionLog::default();
+        assert_eq!(log.current_cursor(), 0);
+        assert!(log
+            .push("session/update", json!({"event": 1}), EventKind::Normal)
+            .is_some());
+        assert_eq!(log.current_cursor(), 1);
+        assert_eq!(
+            log.replay(Some(0)),
+            (
+                vec![
+                    json!({"method":"session/update", "params":{"event":1,"_meta":{"aegis":{"cursor":1}}}})
+                ],
+                false
+            )
+        );
+        assert_eq!(log.replay(Some(1)), (vec![], false));
+        assert!(log
+            .push("session/update", json!({"event": 2}), EventKind::Normal)
+            .is_some());
+        assert_eq!(
+            log.replay(Some(1)),
+            (
+                vec![
+                    json!({"method":"session/update", "params":{"event":2,"_meta":{"aegis":{"cursor":2}}}})
+                ],
+                false
+            )
+        );
+        assert_eq!(log.replay(None), (vec![], false));
+    }
+
+    #[test]
+    fn evicted_cursor_reports_gap_but_last_retained_cursor_does_not() {
+        let mut log = SessionLog::default();
+        for cursor in 1..=(MAX_EVENTS as u64 + 1) {
+            assert!(log
+                .push("session/update", json!({"event":cursor}), EventKind::Normal)
+                .is_some());
+        }
+        assert_eq!(log.current_cursor(), MAX_EVENTS as u64 + 1);
+        let (replay, gap) = log.replay(Some(0));
+        assert!(gap);
+        assert_eq!(
+            replay.first(),
+            Some(
+                &json!({"method":"session/update", "params":{"event":2,"_meta":{"aegis":{"cursor":2}}}})
+            )
+        );
+        assert!(!log.replay(Some(1)).1);
+    }
+    #[test]
+    fn run_marker_and_cursor_share_snapshot_boundary() {
+        let mut log = SessionLog::default();
+        let start = json!({"sessionId":"s","update":{"sessionUpdate":"session_info_update","_meta":{"aegis":{"activeRunId":"run-1"}}}});
+        let live = log
+            .push("session/update", start, EventKind::RunStart)
+            .unwrap();
+        assert_eq!(log.active_run_id.as_deref(), Some("run-1"));
+        assert_eq!(log.current_cursor(), 1);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&live)
+                .unwrap()
+                .pointer("/params/_meta/aegis/cursor"),
+            Some(&json!(1))
+        );
+        assert_eq!(
+            log.replay(None).0[0].pointer("/params/_meta/aegis/cursor"),
+            Some(&json!(1))
+        );
+        log.push(
+            "session/update",
+            json!({"update":{"sessionUpdate":"session_info_update"}}),
+            EventKind::RunEnd,
+        );
+        assert!(log.active_run_id.is_none());
+        assert_eq!(
+            log.replay(None).0[0].pointer("/params/_meta/aegis/cursor"),
+            Some(&json!(2))
+        );
+    }
+
+    #[test]
+    fn ring_epoch_changes_when_a_session_log_is_recreated() {
+        let original = SessionLog::default();
+        let replacement = SessionLog::default();
+        assert_eq!(original.current_cursor(), replacement.current_cursor());
+        assert_ne!(original.epoch, replacement.epoch);
+    }
+
+    #[test]
+    fn future_cursor_and_oversized_event_report_gap() {
+        let mut log = SessionLog::default();
+        log.push(
+            "session/update",
+            json!({"data":"x".repeat(super::MAX_BYTES)}),
+            EventKind::Normal,
+        );
+        assert!(log.replay(Some(0)).1);
+        assert!(log.replay(Some(100)).1);
+    }
 }
 
 /// Session-scoped emitter handed to the code paths that stream a turn.
@@ -415,7 +614,11 @@ impl SessionBus {
     /// Fans a session notification out to every watcher of the session. A
     /// delivery failure on the owning connection is logged, never propagated:
     /// losing a socket must not abort the turn.
-    pub(crate) fn emit<N: JsonRpcNotification + Serialize>(&self, session_id: &str, notification: N) {
+    pub(crate) fn emit<N: JsonRpcNotification + Serialize>(
+        &self,
+        session_id: &str,
+        notification: N,
+    ) {
         self.emit_kind(session_id, notification, EventKind::Normal);
     }
 
@@ -440,8 +643,10 @@ impl SessionBus {
             kind,
             Some(self.connection_key),
         );
-        if direct.is_some() {
-            if let Err(error) = self.connection.send_notification(notification) {
+        if let Some(json) = direct {
+            let message =
+                serde_json::from_str::<UntypedMessage>(&json).expect("published notification");
+            if let Err(error) = self.connection.send_notification(message) {
                 debug!(session_id, %error, "session update dropped: owner connection is gone");
             }
         }
@@ -467,7 +672,9 @@ impl SessionBus {
 }
 
 /// `_meta.aegis.activeRunId` payload used by run start/stop notifications.
-pub(crate) fn active_run_meta(active_run_id: Option<&str>) -> agent_client_protocol::schema::v1::Meta {
+pub(crate) fn active_run_meta(
+    active_run_id: Option<&str>,
+) -> agent_client_protocol::schema::v1::Meta {
     let mut aegis = serde_json::Map::new();
     aegis.insert(
         "activeRunId".to_string(),

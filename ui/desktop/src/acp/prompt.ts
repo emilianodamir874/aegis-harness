@@ -8,12 +8,14 @@ import { getAcpClient } from './acpConnection';
 
 export async function acpPromptSession(
   sessionId: string,
-  message: Message
+  message: Message,
+  promptId?: string
 ): Promise<PromptResponse> {
   const client = await getAcpClient();
   return client.connection.agent.request(methods.agent.session.prompt, {
     sessionId,
     prompt: messageToAcpPromptContent(message),
+    ...(promptId ? { _meta: { aegis: { promptId } } } : {}),
   });
 }
 

@@ -7,8 +7,8 @@ use async_trait::async_trait;
 use rmcp::model::Role;
 
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    AegisEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, yielded_with, AegisEffect, ConversationEffect,
+    Emitter, Operation, OperationResult, SlashCommand,
 };
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;

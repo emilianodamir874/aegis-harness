@@ -1,5 +1,5 @@
-use anyhow::Result;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage as ProviderTokenUsage};
+use anyhow::Result;
 use rmcp::model::{CallToolRequestParams, CallToolResult, ContentBlock};
 
 use super::calculator_extension::{value, ADD};
@@ -12,12 +12,11 @@ use crate::conversation::message::{Message, MessageErrorKind};
 use crate::conversation::Conversation;
 
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
-const SUMMARIZE_TOOL_PAIR: &str = "summarize a tool call & response pair";
+const SUMMARIZE_TOOL_PAIR: &str = "Your task is to summarize 10 tool call & response pairs";
 
 /// The compaction engine only accepts the structured JSON summary the
 /// compaction prompt asks for, so the mock must answer with a real document.
-const SUMMARY_REPLY: &str =
-    r#"{"user_intent": ["the conversation was summarized and older turns were collapsed into this structured briefing so the run could continue"]}"#;
+const SUMMARY_REPLY: &str = r#"{"user_intent": ["the conversation was summarized and older turns were collapsed into this structured briefing so the run could continue"]}"#;
 
 #[tokio::test]
 async fn proactive_and_manual_compaction_continue_with_replaced_usage() -> Result<()> {
@@ -263,7 +262,10 @@ async fn context_errors_compact_and_retry() -> Result<()> {
     assert_eq!(
         recovered.session.accumulated_usage.total_tokens,
         Some(
-            summary.input_tokens() + SUMMARY_REPLY.len() as i32 + retry.input_tokens() + output_tokens
+            summary.input_tokens()
+                + SUMMARY_REPLY.len() as i32
+                + retry.input_tokens()
+                + output_tokens
         )
     );
 
@@ -312,12 +314,18 @@ async fn repeated_context_errors_stop_compacting() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+fn numbered_summaries(count: usize, label: &str) -> String {
+    (1..=count)
+        .map(|n| format!("{n}. {label}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn tool_pairs_are_compacted_only_after_the_current_turn() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let cutoff = compute_tool_call_cutoff(pipeline.context_limit(), pipeline::COMPACTION_THRESHOLD);
     let boundary = cutoff + TOOLCALL_SUMMARIZATION_BATCH_SIZE;
-
     api.on("do a lot of work").call(ADD, value(1));
     api.on("result:").call(ADD, value(1));
     api.on(format!("result: {}", boundary - 1))
@@ -328,86 +336,97 @@ async fn tool_pairs_are_compacted_only_after_the_current_turn() -> Result<()> {
     api.on("cross the boundary").call(ADD, value(1));
     api.on(format!("result: {}", boundary + 1))
         .reply("all work done");
-    api.on_system(SUMMARIZE_TOOL_PAIR)
-        .reply("summary of the pair");
     api.on("carry on").reply("carried on");
+    api.on("after summary").reply("summary collected");
+    api.on_system(SUMMARIZE_TOOL_PAIR).reply(numbered_summaries(
+        TOOLCALL_SUMMARIZATION_BATCH_SIZE,
+        "summary of the pair",
+    ));
+    api.on_system("Your task is to summarize 1 tool call & response pairs")
+        .reply("1. summary of the pair");
 
-    let current_turn = pipeline
+    let current = pipeline
         .run([
             "do a lot of work",
             "reach the boundary",
             "cross the boundary",
         ])
         .await?;
-    current_turn.assert_message(-1, Agent, "all work done");
+    current.assert_message(-1, Agent, "all work done");
     assert_eq!(
-        current_turn
+        current
             .conversation()
             .messages()
             .iter()
-            .filter(|message| message.is_agent_visible() && message.is_tool_call())
+            .filter(|m| m.is_agent_visible() && m.is_tool_call())
             .count(),
         boundary + 1
     );
-    assert!(!current_turn
-        .conversation()
-        .messages()
-        .iter()
-        .any(|message| message.as_concat_text() == "summary of the pair"));
-
-    let calls_before = api.call_count();
-    let next_turn = pipeline.run(["carry on"]).await?;
-    next_turn.assert_message(-1, Agent, "carried on");
-
-    // The batch is one provider call per pair plus the turn's own inference. A
-    // pair whose summary call fails is left alone, so check that every call was
-    // made before reading the counts it produced.
+    let before = api.call_count();
+    let next = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        pipeline.run(["carry on"]),
+    )
+    .await??;
+    next.assert_message(-1, Agent, "carried on");
     assert_eq!(
-        api.call_count() - calls_before,
-        TOOLCALL_SUMMARIZATION_BATCH_SIZE + 1,
-        "expected a summary request per pair"
+        api.call_count() - before,
+        3,
+        "two background batches and turn inference"
     );
-    let summaries = next_turn
-        .conversation()
-        .messages()
-        .iter()
-        .filter(|message| {
-            message.as_concat_text() == "summary of the pair"
-                && message.is_agent_visible()
-                && !message.is_user_visible()
-        })
-        .count();
-    let visible_tool_calls = next_turn
-        .conversation()
-        .messages()
-        .iter()
-        .filter(|message| message.is_agent_visible() && message.is_tool_call())
-        .count();
     assert_eq!(
-        (summaries, visible_tool_calls),
-        (
-            TOOLCALL_SUMMARIZATION_BATCH_SIZE,
-            boundary + 1 - TOOLCALL_SUMMARIZATION_BATCH_SIZE
-        ),
-        "summaries and the tool calls they replaced disagree"
+        next.conversation()
+            .messages()
+            .iter()
+            .filter(|m| m.is_agent_visible() && m.is_tool_call())
+            .count(),
+        boundary + 1
     );
-
+    pipeline.wait_for_pair_compaction().await?;
+    let collected = pipeline.run(["after summary"]).await?;
+    collected.assert_message(-1, Agent, "summary collected");
+    assert_eq!(
+        collected
+            .conversation()
+            .messages()
+            .iter()
+            .filter(|m| m.as_concat_text() == "summary of the pair"
+                && m.is_agent_visible()
+                && !m.is_user_visible())
+            .count(),
+        TOOLCALL_SUMMARIZATION_BATCH_SIZE + 1
+    );
+    assert_eq!(
+        collected
+            .conversation()
+            .messages()
+            .iter()
+            .filter(|m| m.is_agent_visible() && m.is_tool_call())
+            .count(),
+        boundary - TOOLCALL_SUMMARIZATION_BATCH_SIZE
+    );
+    assert_eq!(api.call_count() - before, 4);
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn parallel_and_failed_tool_pairs_are_compacted_as_complete_messages() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let cutoff = compute_tool_call_cutoff(pipeline.context_limit(), pipeline::COMPACTION_THRESHOLD);
     let calls_per_message = 2;
     let batches = 2;
-    let summarized_messages = batches * TOOLCALL_SUMMARIZATION_BATCH_SIZE / calls_per_message;
+    let summarized_messages = batches * TOOLCALL_SUMMARIZATION_BATCH_SIZE / calls_per_message + 2;
     let pairs =
         (cutoff + batches * TOOLCALL_SUMMARIZATION_BATCH_SIZE).div_ceil(calls_per_message) + 1;
-
-    api.on_system(SUMMARIZE_TOOL_PAIR).reply("pair summary");
     api.on("carry on").reply("done");
-
+    api.on("collect summaries").reply("collected");
+    api.on_system("Your task is to summarize 10 tool call & response pairs")
+        .reply(numbered_summaries(
+            TOOLCALL_SUMMARIZATION_BATCH_SIZE,
+            "pair summary",
+        ));
+    api.on_system("Your task is to summarize 2 tool call & response pairs")
+        .reply(numbered_summaries(2, "pair summary"));
     pipeline
         .seed([Message::user().with_text("old work")])
         .await?;
@@ -429,41 +448,47 @@ async fn parallel_and_failed_tool_pairs_are_compacted_as_complete_messages() -> 
         }
         pipeline.seed([request, response]).await?;
     }
-
+    let before = api.call_count();
     let result = pipeline.run(["carry on"]).await?;
     result.assert_message(-1, Agent, "done");
-    assert_eq!(api.call_count(), summarized_messages + 1);
-
-    let persisted = result.conversation();
+    assert_eq!(api.call_count() - before, batches + 1);
+    assert_eq!(
+        result
+            .conversation()
+            .messages()
+            .iter()
+            .filter(|m| m.is_agent_visible() && m.is_tool_call())
+            .count(),
+        pairs
+    );
+    pipeline.wait_for_pair_compaction().await?;
+    let collected = pipeline.run(["collect summaries"]).await?;
+    collected.assert_message(-1, Agent, "collected");
+    assert_eq!(api.call_count() - before, batches + 2);
+    let persisted = collected.conversation();
     assert_eq!(
         persisted
             .messages()
             .iter()
-            .filter(|message| {
-                message.as_concat_text() == "pair summary"
-                    && message.is_agent_visible()
-                    && !message.is_user_visible()
-            })
+            .filter(|m| m.as_concat_text() == "pair summary"
+                && m.is_agent_visible()
+                && !m.is_user_visible())
             .count(),
         summarized_messages
     );
     let failed_pair = persisted
         .messages()
         .iter()
-        .filter(|message| {
-            message.get_tool_request_ids().contains("call_0a")
-                || message.get_tool_response_ids().contains("call_0a")
+        .filter(|m| {
+            m.get_tool_request_ids().contains("call_0a")
+                || m.get_tool_response_ids().contains("call_0a")
         })
         .collect::<Vec<_>>();
     assert_eq!(failed_pair.len(), 2);
     assert!(failed_pair
         .iter()
-        .all(|message| message.is_user_visible() && !message.is_agent_visible()));
-    for message in persisted
-        .messages()
-        .iter()
-        .filter(|message| message.is_tool_response())
-    {
+        .all(|m| m.is_user_visible() && !m.is_agent_visible()));
+    for message in persisted.messages().iter().filter(|m| m.is_tool_response()) {
         let response_ids = message.get_tool_response_ids();
         let paired_visibility = persisted
             .messages()
@@ -478,7 +503,57 @@ async fn parallel_and_failed_tool_pairs_are_compacted_as_complete_messages() -> 
             .map(Message::is_agent_visible);
         assert_eq!(paired_visibility, Some(message.is_agent_visible()));
     }
+    Ok(())
+}
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pending_pair_compaction_isolated_by_session_and_model() -> Result<()> {
+    let (pipeline, api) = test_pipeline().await?;
+    let cutoff = compute_tool_call_cutoff(pipeline.context_limit(), pipeline::COMPACTION_THRESHOLD);
+    api.on("unrelated turn").reply("unrelated done");
+    api.on("original turn").reply("original done");
+    api.on("switch model").reply("switched");
+    api.on_system(SUMMARIZE_TOOL_PAIR).reply(numbered_summaries(
+        TOOLCALL_SUMMARIZATION_BATCH_SIZE,
+        "old summary",
+    ));
+    api.on_system("Your task is to summarize 1 tool call & response pairs")
+        .reply("1. old summary");
+    pipeline
+        .seed([Message::user().with_text("old work")])
+        .await?;
+    for n in 0..cutoff + TOOLCALL_SUMMARIZATION_BATCH_SIZE + 1 {
+        let id = format!("old_{n}");
+        let request = Message::assistant().with_tool_request(
+            id.clone(),
+            Ok(CallToolRequestParams::new(ADD).with_arguments(serde_json::Map::new())),
+        );
+        let response = Message::user().with_tool_response(
+            id,
+            Ok(CallToolResult::success(vec![ContentBlock::text("result")])),
+        );
+        pipeline.seed([request, response]).await?;
+    }
+    let original = pipeline.run(["original turn"]).await?;
+    original.assert_message(-1, Agent, "original done");
+    assert!(pipeline.has_pending_pair_compaction());
+
+    let other = pipeline
+        .new_session(pipeline.working_dir().to_path_buf())
+        .await?;
+    let unrelated = other.run(["unrelated turn"]).await?;
+    unrelated.assert_message(-1, Agent, "unrelated done");
+    assert!(!other.has_pending_pair_compaction());
+    assert!(pipeline.has_pending_pair_compaction());
+
+    let switched = pipeline.with_model("gpt-3.5-turbo").await;
+    let changed = switched.run(["switch model"]).await?;
+    changed.assert_message(-1, Agent, "switched");
+    assert!(!changed
+        .conversation()
+        .messages()
+        .iter()
+        .any(|message| message.as_concat_text() == "old summary"));
     Ok(())
 }
 

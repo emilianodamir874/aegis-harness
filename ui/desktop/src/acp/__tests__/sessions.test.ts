@@ -1,16 +1,21 @@
 import { methods, type SessionInfo } from '@agentclientprotocol/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
+import { handleAcpWatchedNotification, beginAcpWatchLoad, endAcpWatchLoad } from '../sessions';
 import {
   acpGetSessionListItem,
   acpListSessions,
   acpLoadSession,
   acpNewSession,
+  acpWatchSession,
+  acpUnwatchSession,
+  markAcpWatchLoadBoundary,
   sessionInfoToSession,
 } from '../sessions';
 
 vi.mock('../acpConnection', () => ({
   getAcpClient: vi.fn(),
+  isCurrentAcpClient: vi.fn().mockReturnValue(true),
 }));
 
 function sessionInfo(overrides: Partial<SessionInfo> = {}): SessionInfo {
@@ -44,6 +49,402 @@ function newSessionClient() {
   );
   return client;
 }
+
+describe('ACP watch continuity', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('registers once per connection and applies replay in order with run status', async () => {
+    const request = vi.fn().mockResolvedValue({
+      cursor: 2,
+      epoch: 'epoch-test',
+      activeRunId: 'run-1',
+      replay: [
+        {
+          method: 'session/update',
+          params: {
+            sessionId: 'watch-test',
+            _meta: { aegis: { cursor: 1 } },
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'Hello' },
+            },
+          },
+        },
+        {
+          method: 'session/update',
+          params: {
+            sessionId: 'watch-test',
+            _meta: { aegis: { cursor: 2 } },
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: ' world' },
+            },
+          },
+        },
+      ],
+    });
+    const client = { connection: { agent: { request } } };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    const { acpChatSessionStore, acpChatSessionActions } = await import('../chatSessionStore');
+    await acpWatchSession('watch-test');
+    await acpWatchSession('watch-test');
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith('_aegis/unstable/session/watch', {
+      sessionId: 'watch-test',
+      since: null,
+      epoch: null,
+    });
+    expect(acpChatSessionStore.getSnapshot('watch-test')).toMatchObject({
+      activeRunId: 'run-1',
+      messages: [{ content: [{ text: 'Hello world' }] }],
+    });
+    await acpUnwatchSession('watch-test');
+    expect(request).toHaveBeenLastCalledWith('_aegis/unstable/session/unwatch', {
+      sessionId: 'watch-test',
+    });
+    acpChatSessionActions.deleteSnapshot('watch-test');
+  });
+
+  it('holds live events during watch, merges replay once, and applies after the snapshot cutoff', async () => {
+    let resolveWatch!: (value: unknown) => void;
+    const request = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveWatch = resolve;
+          })
+      )
+      .mockResolvedValue({});
+    const client = { connection: { agent: { request } } };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    const id = 'race-watch';
+    const event = (cursor: number, text: string) => ({
+      sessionId: id,
+      _meta: { aegis: { cursor } },
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
+    });
+    const watch = acpWatchSession(id);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    handleAcpWatchedNotification(client as never, 'session/update', event(3, 'C'));
+    handleAcpWatchedNotification(client as never, 'session/update', event(2, 'B'));
+    resolveWatch({
+      cursor: 2,
+      epoch: 'epoch-test',
+      activeRunId: null,
+      replay: [
+        { method: 'session/update', params: event(1, 'A') },
+        { method: 'session/update', params: event(2, 'B') },
+      ],
+    });
+    await watch;
+    const { acpChatSessionStore, acpChatSessionActions } = await import('../chatSessionStore');
+    expect(acpChatSessionStore.getSnapshot(id)?.messages).toMatchObject([
+      { content: [{ text: 'ABC' }] },
+    ]);
+    await acpUnwatchSession(id);
+    acpChatSessionActions.deleteSnapshot(id);
+  });
+
+  it('reconnects from the last applied cursor without replaying old chunks', async () => {
+    const id = 'reconnect-cursor';
+    const event = (cursor: number, text: string) => ({
+      sessionId: id,
+      _meta: { aegis: { cursor } },
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
+    });
+    const oldClient = {
+      connection: {
+        agent: {
+          request: vi.fn().mockResolvedValue({
+            cursor: 1,
+            epoch: 'epoch-one',
+            activeRunId: 'run-1',
+            replay: [{ method: 'session/update', params: event(1, 'A') }],
+          }),
+        },
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(oldClient as never);
+    await acpWatchSession(id);
+    const freshRequest = vi.fn().mockResolvedValue({
+      cursor: 2,
+      epoch: 'epoch-one',
+      activeRunId: 'run-1',
+      replay: [{ method: 'session/update', params: event(2, 'B') }],
+    });
+    const freshClient = { connection: { agent: { request: freshRequest } } };
+    vi.mocked(getAcpClient).mockResolvedValue(freshClient as never);
+    await acpWatchSession(id);
+    expect(freshRequest).toHaveBeenCalledWith('_aegis/unstable/session/watch', {
+      sessionId: id,
+      since: 1,
+      epoch: 'epoch-one',
+    });
+    handleAcpWatchedNotification(oldClient as never, 'session/update', event(3, 'stale'));
+    const { acpChatSessionStore, acpChatSessionActions } = await import('../chatSessionStore');
+    expect(acpChatSessionStore.getSnapshot(id)?.messages).toMatchObject([
+      { content: [{ text: 'AB' }] },
+    ]);
+    await acpUnwatchSession(id);
+    acpChatSessionActions.deleteSnapshot(id);
+  });
+  it('detects a new ring epoch even when the numeric cursor repeats', async () => {
+    const id = 'epoch-reset';
+    const event = (text: string) => ({
+      sessionId: id,
+      _meta: { aegis: { cursor: 1 } },
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
+    });
+    const oldClient = {
+      connection: {
+        agent: {
+          request: vi.fn().mockResolvedValue({
+            cursor: 1,
+            epoch: 'old-epoch',
+            activeRunId: null,
+            replay: [{ method: 'session/update', params: event('original') }],
+          }),
+        },
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(oldClient as never);
+    await acpWatchSession(id);
+    const freshRequest = vi.fn().mockResolvedValue({
+      cursor: 1,
+      epoch: 'new-epoch',
+      activeRunId: null,
+      replay: [{ method: '_aegis/unstable/session/replay_gap', params: { sessionId: id } }],
+    });
+    vi.mocked(getAcpClient).mockResolvedValue({
+      connection: { agent: { request: freshRequest } },
+    } as never);
+    await expect(acpWatchSession(id)).rejects.toThrow('replay gap');
+    expect(freshRequest).toHaveBeenCalledWith('_aegis/unstable/session/watch', {
+      sessionId: id,
+      since: 1,
+      epoch: 'old-epoch',
+    });
+    const { acpChatSessionStore, acpChatSessionActions } = await import('../chatSessionStore');
+    expect(acpChatSessionStore.getSnapshot(id)?.messages).toMatchObject([
+      { content: [{ text: 'original' }] },
+    ]);
+    await acpUnwatchSession(id);
+    acpChatSessionActions.deleteSnapshot(id);
+  });
+  it('ignores a late watch response from a replaced connection', async () => {
+    const id = 'stale-watch';
+    let resolveOld!: (value: unknown) => void;
+    const oldRequest = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        })
+    );
+    const oldClient = { connection: { agent: { request: oldRequest } } };
+    vi.mocked(getAcpClient).mockResolvedValue(oldClient as never);
+    const oldWatch = acpWatchSession(id);
+    await vi.waitFor(() => expect(oldRequest).toHaveBeenCalledTimes(1));
+    const freshClient = {
+      connection: {
+        agent: {
+          request: vi.fn().mockResolvedValue({
+            cursor: 0,
+            epoch: 'epoch-test',
+            activeRunId: null,
+            replay: [],
+          }),
+        },
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(freshClient as never);
+    await acpWatchSession(id);
+    resolveOld({ cursor: 0, activeRunId: 'stale-run', replay: [] });
+    await expect(oldWatch).rejects.toThrow('no longer current');
+    const { acpChatSessionStore, acpChatSessionActions } = await import('../chatSessionStore');
+    expect(acpChatSessionStore.getSnapshot(id)?.activeRunId).toBeNull();
+    await acpUnwatchSession(id);
+    acpChatSessionActions.deleteSnapshot(id);
+  });
+  it('loads against a backend without watch without blocking session/load', async () => {
+    const id = 'legacy-load';
+    const request = vi.fn().mockImplementation((method: string) => {
+      if (method === '_aegis/unstable/session/watch') throw new Error('Method not found (-32601)');
+      return Promise.resolve({});
+    });
+    const client = {
+      connection: { agent: { request } },
+      aegis: {
+        sessionInfo_unstable: vi
+          .fn()
+          .mockResolvedValue({ session: sessionInfo({ sessionId: id }) }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    beginAcpWatchLoad(id);
+    await acpLoadSession(id);
+    await acpWatchSession(id, false);
+    endAcpWatchLoad(id);
+    expect(request.mock.calls.map(([method]) => method)).toEqual([
+      '_aegis/unstable/session/watch',
+      methods.agent.session.load,
+    ]);
+    await acpUnwatchSession(id).catch(() => {});
+  });
+
+  it('checks the post-load boundary independently of a pending watch', async () => {
+    const id = 'overlap-watch';
+    let resolveWatch!: (value: unknown) => void;
+    const request = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveWatch = resolve;
+          })
+      )
+      .mockResolvedValue({ cursor: 2, epoch: 'epoch-1', activeRunId: null, replay: [] });
+    const client = { connection: { agent: { request } } };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    beginAcpWatchLoad(id);
+    markAcpWatchLoadBoundary(id, client as never, 1, 'epoch-1');
+    const pending = acpWatchSession(id);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    const postLoad = acpWatchSession(id, false);
+    resolveWatch({ cursor: 1, epoch: 'epoch-1', activeRunId: null, replay: [] });
+    await pending;
+    await expect(postLoad).rejects.toThrow('replay gap');
+    expect(request).toHaveBeenCalledTimes(2);
+    endAcpWatchLoad(id);
+    await acpUnwatchSession(id);
+  });
+  it('shares an in-flight post-load watch without issuing another snapshot', async () => {
+    const id = 'post-load-pending';
+    let resolveWatch!: (value: unknown) => void;
+    const request = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveWatch = resolve;
+        })
+    );
+    const client = { connection: { agent: { request } } };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    beginAcpWatchLoad(id);
+    markAcpWatchLoadBoundary(id, client as never, 1, 'epoch-1');
+    const first = acpWatchSession(id, false);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    const second = acpWatchSession(id);
+    resolveWatch({ cursor: 1, epoch: 'epoch-1', activeRunId: null, replay: [] });
+    await Promise.all([first, second]);
+    expect(request).toHaveBeenCalledTimes(1);
+    endAcpWatchLoad(id);
+    request.mockResolvedValue({});
+    await acpUnwatchSession(id);
+  });
+  it('rejects a post-load epoch change even at the same cursor', async () => {
+    const id = 'load-epoch-change';
+    const client = {
+      connection: {
+        agent: {
+          request: vi
+            .fn()
+            .mockResolvedValue({ cursor: 2, epoch: 'new-epoch', activeRunId: null, replay: [] }),
+        },
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    beginAcpWatchLoad(id);
+    markAcpWatchLoadBoundary(id, client as never, 2, 'old-epoch');
+    await expect(acpWatchSession(id, false)).rejects.toThrow('replay gap');
+    endAcpWatchLoad(id);
+    await acpUnwatchSession(id);
+  });
+  it('accepts a loaded history only when no hub event occurred during load', async () => {
+    const id = 'load-idle';
+    const client = {
+      connection: {
+        agent: {
+          request: vi.fn().mockResolvedValue({
+            cursor: 2,
+            epoch: 'epoch-test',
+            activeRunId: null,
+            replay: [],
+          }),
+        },
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    beginAcpWatchLoad(id);
+    markAcpWatchLoadBoundary(id, client as never, 2, 'epoch-test');
+    await acpWatchSession(id, false);
+    endAcpWatchLoad(id);
+    await acpUnwatchSession(id);
+  });
+
+  it('rejects an ambiguous load/watch interval rather than duplicating a chunk', async () => {
+    const id = 'load-race';
+    const client = {
+      connection: {
+        agent: {
+          request: vi.fn().mockResolvedValue({
+            cursor: 3,
+            epoch: 'epoch-test',
+            activeRunId: null,
+            replay: [],
+          }),
+        },
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(client as never);
+    const { acpChatSessionStore, acpChatSessionActions } = await import('../chatSessionStore');
+    beginAcpWatchLoad(id);
+    markAcpWatchLoadBoundary(id, client as never, 2, 'epoch-test');
+    acpChatSessionActions.startSessionLoad(id);
+    handleAcpWatchedNotification(client as never, 'session/update', {
+      sessionId: id,
+      _meta: { aegis: { cursor: 3 } },
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'ambiguous' },
+      },
+    });
+    await expect(acpWatchSession(id, false)).rejects.toThrow('replay gap');
+    acpChatSessionActions.finishSessionLoad(
+      id,
+      sessionInfoToSession(sessionInfo({ sessionId: id }))
+    );
+    endAcpWatchLoad(id);
+    expect(acpChatSessionStore.getSnapshot(id)?.messages).toEqual([]);
+    await acpUnwatchSession(id);
+    acpChatSessionActions.deleteSnapshot(id);
+  });
+  it('clears stale active-run state when the watch snapshot has no active run', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValue({ cursor: 3, epoch: 'epoch-test', activeRunId: null, replay: [] });
+    vi.mocked(getAcpClient).mockResolvedValue({ connection: { agent: { request } } } as never);
+    const { acpChatSessionStore, acpChatSessionActions } = await import('../chatSessionStore');
+    acpChatSessionActions.setActiveWatchedRun('ended-test', 'run-before-disconnect');
+    await acpWatchSession('ended-test');
+    expect(acpChatSessionStore.getSnapshot('ended-test')?.activeRunId).toBeNull();
+    await acpUnwatchSession('ended-test');
+    acpChatSessionActions.deleteSnapshot('ended-test');
+  });
+
+  it('blocks a replay gap until the session is reloaded', async () => {
+    const request = vi.fn().mockResolvedValueOnce({
+      cursor: 2,
+      epoch: 'epoch-test',
+      activeRunId: null,
+      replay: [{ method: '_aegis/unstable/session/replay_gap', params: { sessionId: 'gap-test' } }],
+    });
+    vi.mocked(getAcpClient).mockResolvedValue({ connection: { agent: { request } } } as never);
+    await expect(acpWatchSession('gap-test')).rejects.toThrow('replay gap');
+    await expect(acpWatchSession('gap-test')).rejects.toThrow('replay gap');
+    expect(request).toHaveBeenCalledTimes(1);
+    await acpUnwatchSession('gap-test');
+  });
+});
 
 describe('ACP sessions', () => {
   beforeEach(() => {

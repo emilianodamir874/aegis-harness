@@ -221,7 +221,10 @@ mod tests {
             )])))
             .unwrap();
         assert_eq!(processed.content.len(), 1);
-        assert_eq!(text_of(&processed.content[0]), "This is a small text response");
+        assert_eq!(
+            text_of(&processed.content[0]),
+            "This is a small text response"
+        );
     }
 
     #[test]
@@ -243,8 +246,7 @@ mod tests {
     #[test]
     fn small_image_passes_through() {
         let image = ContentBlock::image("aGVsbG8=".to_string(), "image/png".to_string());
-        let processed =
-            process_tool_response(Ok(CallToolResult::success(vec![image]))).unwrap();
+        let processed = process_tool_response(Ok(CallToolResult::success(vec![image]))).unwrap();
         assert_eq!(processed.content.len(), 1);
         let kept = processed.content[0].as_image().expect("image kept");
         assert_eq!(kept.mime_type, "image/png");
@@ -255,13 +257,11 @@ mod tests {
         // 1.2 MB of decoded bytes encodes to ~1.6 MB of base64, over the
         // default image threshold.
         let decoded = vec![7u8; 1_200_000];
-        let base64_data =
-            base64::engine::general_purpose::STANDARD.encode(&decoded);
+        let base64_data = base64::engine::general_purpose::STANDARD.encode(&decoded);
         assert!(base64_data.len() > DEFAULT_LARGE_IMAGE_THRESHOLD);
 
         let image = ContentBlock::image(base64_data.clone(), "image/png".to_string());
-        let processed =
-            process_tool_response(Ok(CallToolResult::success(vec![image]))).unwrap();
+        let processed = process_tool_response(Ok(CallToolResult::success(vec![image]))).unwrap();
 
         assert_eq!(processed.content.len(), 1);
         let pointer = text_of(&processed.content[0]);
@@ -270,7 +270,10 @@ mod tests {
             "unexpected pointer: {pointer}"
         );
         let path = spill_path(&pointer);
-        assert!(path.ends_with(".png"), "path should keep the image extension: {path}");
+        assert!(
+            path.ends_with(".png"),
+            "path should keep the image extension: {path}"
+        );
         let bytes = fs::read(Path::new(&path)).unwrap();
         assert_eq!(bytes.len(), 1_200_000);
         assert!(bytes.iter().all(|b| *b == 7));
@@ -280,8 +283,7 @@ mod tests {
     #[test]
     fn text_and_image_mix_is_handled_independently() {
         let large_text = "a".repeat(DEFAULT_LARGE_TEXT_THRESHOLD + 1000);
-        let base64_data = base64::engine::general_purpose::STANDARD
-            .encode(vec![3u8; 1_200_000]);
+        let base64_data = base64::engine::general_purpose::STANDARD.encode(vec![3u8; 1_200_000]);
         let processed = process_tool_response(Ok(CallToolResult::success(vec![
             ContentBlock::text("Small text"),
             ContentBlock::text(large_text),

@@ -29,6 +29,7 @@ use super::{
     litellm::LiteLLMProvider,
     nanogpt::NanoGptProvider,
     open_design::OpenDesignProvider,
+    opencode_go::OpenCodeGoProvider,
     pi_acp::PiAcpProvider,
     provider_registry::ProviderRegistry,
     snowflake_def::SnowflakeProviderDef,
@@ -170,6 +171,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register_with_inventory::<OpenDesignProvider>(
             false,
             Some(registrations::open_design_inventory()),
+        );
+        registry.register_with_inventory::<OpenCodeGoProvider>(
+            false,
+            Some(registrations::opencode_go_inventory()),
         );
         registry.register_with_inventory::<OpenRouterProviderDef>(
             true,
@@ -346,6 +351,18 @@ mod tests {
             .config_keys
             .iter()
             .any(|key| key.name == "AIMLAPI_API_KEY" && key.secret));
+    }
+
+    #[tokio::test]
+    async fn test_opencode_go_registry_keeps_native_oauth_provider() {
+        let entry = get_from_registry("opencode_go").await.unwrap();
+        assert_eq!(entry.provider_type(), ProviderType::Builtin);
+        assert_eq!(entry.metadata().default_model, "deepseek-v4.1-flash");
+        assert!(entry
+            .metadata()
+            .config_keys
+            .iter()
+            .any(|key| key.name == "OPENCODE_GO_API_KEY"));
     }
 
     #[tokio::test]

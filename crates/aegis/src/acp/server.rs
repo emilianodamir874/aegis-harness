@@ -39,7 +39,8 @@ use crate::providers::inventory::{
 use crate::scheduler_trait::SchedulerTrait;
 use crate::session::session_manager::SessionUsageTotals;
 use crate::session::{
-    EnabledExtensionsState, ExtensionData, ExtensionState, Session, SessionManager, SessionType,
+    EnabledExtensionsState, ExtensionData, ExtensionState, FrameProfileState, Session,
+    SessionManager, SessionType,
 };
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
@@ -259,8 +260,17 @@ struct AgentStreamOutcome {
 ///
 /// The explicit clear still runs on normal paths; this drop is then a no-op
 /// because the entry (matched by run id) is already gone.
+/// Prepends the turn framing text to a user message, in place.
+fn apply_frame_profile(message: &mut Message, phrase: Option<&'static str>) {
+    if let Some(phrase) = phrase {
+        let prefix = Message::user().with_text(phrase);
+        message.content.splice(0..0, prefix.content);
+    }
+}
+
 struct ActiveRunDropGuard {
     registry: Arc<ActiveRunRegistry>,
+    hub: Arc<SessionHub>,
     session_id: String,
     run_id: String,
 }
@@ -276,6 +286,7 @@ impl Drop for ActiveRunDropGuard {
         // El run termina solo y persiste; el cliente lo recupera refrescando la sesion.
         let session_id = std::mem::take(&mut self.session_id);
         let run_id = std::mem::take(&mut self.run_id);
+        self.hub.finish_abandoned_run(&session_id, &run_id);
         let agent = self.registry.remove_agent_run(&session_id, &run_id);
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             if let Some(agent) = agent {
@@ -1234,6 +1245,7 @@ impl AegisAcpAgent {
     pub(crate) fn test_drop_active_run_guard(&self, session_id: &str, run_id: &str) {
         drop(ActiveRunDropGuard {
             registry: self.active_runs.clone(),
+            hub: self.hub.clone(),
             session_id: session_id.to_string(),
             run_id: run_id.to_string(),
         });
@@ -2709,6 +2721,19 @@ impl AegisAcpAgent {
         }
     }
 
+    /// Turn framing profile for a session: session state first, then the environment.
+    ///
+    /// `work` and unknown values resolve to `None`, so the default adds nothing.
+    async fn frame_profile_phrase(&self, session_id: &str) -> Option<&'static str> {
+        let from_session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .ok()
+            .and_then(|session| FrameProfileState::of(&session).phrase());
+        from_session.or_else(|| FrameProfileState::from_env().phrase())
+    }
+
     async fn run_prompt_turn(
         self: Arc<Self>,
         cx: ConnectionTo<Client>,
@@ -2738,6 +2763,7 @@ impl AegisAcpAgent {
         // explicit clear wins and makes the guard's cleanup a no-op.
         let _run_guard = ActiveRunDropGuard {
             registry: self.active_runs.clone(),
+            hub: self.hub.clone(),
             session_id: session_id.clone(),
             run_id: run_id.clone(),
         };
@@ -2773,7 +2799,9 @@ impl AegisAcpAgent {
             return Err(error);
         }
 
-        let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+        let mut user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+        // Turn framing: prepended to every user turn of a session that selected a profile.
+        apply_frame_profile(&mut user_message, self.frame_profile_phrase(&session_id).await);
         let session_config = SessionConfig {
             id: session_id.clone(),
             schedule_id: None,
@@ -2901,7 +2929,7 @@ impl AegisAcpAgent {
             .map(|(run_id, _)| run_id);
         let (snapshot, spawned) = self
             .hub
-            .watch(cx, self.connection_key, &session_id, req.since);
+            .watch(cx, self.connection_key, &session_id, req.since, req.epoch.as_deref());
         spawned?;
         debug!(
             session_id = %session_id,
@@ -2912,6 +2940,7 @@ impl AegisAcpAgent {
         Ok(SessionWatchResponse {
             active_run_id,
             cursor: snapshot.cursor,
+            epoch: snapshot.epoch,
             replay: snapshot.replay,
         })
     }
@@ -4523,5 +4552,37 @@ print(\"hello, world\")
             .await
             .unwrap();
         client.await.unwrap().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod frame_profile_prepend_tests {
+    use super::*;
+    use crate::session::phrase_for;
+
+    #[test]
+    fn no_profile_leaves_the_message_untouched() {
+        let mut message = Message::user().with_text("hola");
+        let before = message.content.len();
+        apply_frame_profile(&mut message, None);
+        assert_eq!(message.content.len(), before);
+    }
+
+    #[test]
+    fn profile_prefix_lands_first() {
+        let mut message = Message::user().with_text("dame el archivo");
+        apply_frame_profile(&mut message, phrase_for("fiction"));
+        assert_eq!(message.content.len(), 2);
+        let first = format!("{:?}", message.content[0]);
+        assert!(first.contains("novela"), "unexpected first block: {first}");
+        let second = format!("{:?}", message.content[1]);
+        assert!(second.contains("dame el archivo"));
+    }
+
+    #[test]
+    fn work_profile_adds_nothing() {
+        let mut message = Message::user().with_text("hola");
+        apply_frame_profile(&mut message, phrase_for("work"));
+        assert_eq!(message.content.len(), 1);
     }
 }

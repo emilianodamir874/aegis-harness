@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use anyhow::Result;
-use async_trait::async_trait;
 use aegis::agents::state_machine::{
-    yielded_with, Emitter, AegisEffect, Inference, InferenceInput, Operation, OperationResult,
+    yielded_with, AegisEffect, Emitter, Inference, InferenceInput, Operation, OperationResult,
     RunStatus, StateMachine, Step,
 };
 use aegis::agents::AgentEvent;
@@ -15,6 +13,8 @@ use aegis::session::session_manager::token_state_from_session_and_totals;
 use aegis::session::{Session, SessionManager, SessionType};
 use aegis_providers::conversation::token_usage::Usage;
 use aegis_providers::model::ModelConfig;
+use anyhow::Result;
+use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 

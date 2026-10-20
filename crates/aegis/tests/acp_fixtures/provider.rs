@@ -2,12 +2,6 @@ use super::{
     spawn_acp_server_in_process, Connection, ModelStateFixture, OpenAiFixture, PermissionDecision,
     Session, SessionData, TestConnectionConfig, TestOutput,
 };
-use agent_client_protocol::schema::v1::{
-    ListSessionsResponse, McpServer, SessionUpdate, ToolCallStatus,
-};
-use agent_client_protocol::{Client, DynConnectTo};
-use async_trait::async_trait;
-use futures::StreamExt;
 use aegis::acp::{AcpProvider, AcpProviderConfig};
 use aegis::config::{AegisMode, PermissionManager};
 use aegis::conversation::message::{ActionRequiredData, Message, MessageContent};
@@ -16,6 +10,12 @@ use aegis::permission::{Permission, PermissionConfirmation};
 use aegis::providers::base::Provider;
 use aegis_providers::model::ModelConfig;
 use aegis_test_support::{ExpectedSessionId, IgnoreSessionId, TEST_MODEL};
+use agent_client_protocol::schema::v1::{
+    ListSessionsResponse, McpServer, SessionUpdate, ToolCallStatus,
+};
+use agent_client_protocol::{Client, DynConnectTo};
+use async_trait::async_trait;
+use futures::StreamExt;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;

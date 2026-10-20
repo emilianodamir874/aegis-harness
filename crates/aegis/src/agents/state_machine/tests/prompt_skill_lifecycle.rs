@@ -15,8 +15,7 @@ use crate::config::AegisMode;
 use crate::conversation::message::MessageContent;
 
 /// The compaction engine only accepts structured summary JSON; keep the mock valid.
-const SUMMARY_REPLY: &str =
-    r#"{"user_intent": ["the conversation was summarized so the compacted session could continue"]}"#;
+const SUMMARY_REPLY: &str = r#"{"user_intent": ["the conversation was summarized so the compacted session could continue"]}"#;
 
 #[tokio::test]
 async fn prompt_and_skill_lifecycle() -> Result<()> {

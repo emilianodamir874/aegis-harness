@@ -86,6 +86,7 @@ mod retry {
 }
 pub mod open_design;
 pub mod openai_def;
+pub mod opencode_go;
 #[cfg(feature = "aws-providers")]
 pub mod sagemaker_tgi;
 pub mod snowflake {

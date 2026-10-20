@@ -4,7 +4,7 @@ use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::subagent_task_config::DEFAULT_SUBAGENT_MAX_TURNS;
 use crate::agents::tool_execution::ToolCallContext;
 use crate::config::paths::Paths;
-use crate::config::{Config, AegisMode};
+use crate::config::{AegisMode, Config};
 use crate::conversation::message::Message;
 use crate::providers;
 use crate::recipe::build_recipe::build_recipe_from_template;
@@ -14,9 +14,9 @@ use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, Exte
 use crate::session::{Session, SessionType};
 use crate::sources::parse_frontmatter;
 use crate::utils::safe_truncate;
+use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
 use anyhow::Result;
 use async_trait::async_trait;
-use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject, ListToolsResult,
     MetaObject, ServerCapabilities, Tool,
@@ -884,10 +884,10 @@ impl SummonClient {
             .any(|extension| extension.name() == "code_execution");
         if !child_code_mode
             && recipe
-            .response
-            .as_ref()
-            .and_then(|response| response.json_schema.as_ref())
-            .is_none()
+                .response
+                .as_ref()
+                .and_then(|response| response.json_schema.as_ref())
+                .is_none()
         {
             recipe.response = Some(Response {
                 json_schema: Some(serde_json::json!({

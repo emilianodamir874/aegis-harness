@@ -55,8 +55,10 @@ export function connectAegisAcpClient(
     .onRequest(aegisRecipeParamsRequest.method, zRequestRecipeParams_unstable, (context) =>
       callbacks.unstable_sessionRecipeRequestParams(context.params)
     )
-    .onNotification(aegisSessionUpdate.method, zAegisSessionNotification_unstable, (context) =>
-      callbacks.unstable_sessionUpdate(context.params)
+    .onNotification(
+      aegisSessionUpdate.method,
+      zAegisSessionNotification_unstable.passthrough(),
+      (context) => callbacks.unstable_sessionUpdate(context.params)
     )
     .onNotification(
       providerDeviceCode.method,

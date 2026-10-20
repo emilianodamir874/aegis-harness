@@ -1,16 +1,6 @@
 #![recursion_limit = "256"]
 #![allow(unused_attributes)]
 
-use agent_client_protocol::schema::v1::{
-    CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
-    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalResponse, SessionModeState,
-    SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputResponse, ToolCallContent,
-    ToolCallStatus, ToolKind, WaitForTerminalExitResponse, WriteTextFileRequest,
-    WriteTextFileResponse,
-};
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use fs_err as fs;
 use aegis::acp::server::{serve, AcpProviderFactory, AegisAcpAgent, AegisAcpAgentOptions};
 pub use aegis::acp::{map_permission_response, PermissionDecision};
 use aegis::agents::AegisPlatform;
@@ -25,6 +15,16 @@ use aegis::scheduler_trait::SchedulerTrait;
 use aegis::session::Session as AegisSession;
 use aegis::session_context::SESSION_ID_HEADER;
 use aegis_test_support::{ExpectedSessionId, TEST_MODEL};
+use agent_client_protocol::schema::v1::{
+    CreateTerminalResponse, KillTerminalResponse, ListSessionsResponse, McpServer,
+    ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalResponse, SessionModeState,
+    SessionUpdate, TerminalExitStatus, TerminalId, TerminalOutputResponse, ToolCallContent,
+    ToolCallStatus, ToolKind, WaitForTerminalExitResponse, WriteTextFileRequest,
+    WriteTextFileResponse,
+};
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use fs_err as fs;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::path::{Path, PathBuf};

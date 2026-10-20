@@ -1,17 +1,17 @@
 use crate::agents::{Agent, ExtensionLoadResult};
-use crate::config::{Config, AegisMode};
+use crate::config::{AegisMode, Config};
 use crate::providers::inventory::{ProviderInventoryEntry, ProviderInventoryService};
 use crate::session::session_manager::SessionUsageTotals;
 use crate::session::Session;
 use crate::slash_commands::types::{SlashCommandEntry, SlashCommandSource};
+use aegis_providers::model::ModelConfig;
+use aegis_providers::thinking::{ThinkingEffort, ThinkingEffortCapability, ThinkingEffortSupport};
 use agent_client_protocol::schema::v1::{
     AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate, SessionConfigOption,
     SessionConfigOptionCategory, SessionConfigSelectOption, SessionId, SessionInfo, SessionMode,
     SessionModeId, SessionModeState, SessionNotification, SessionUpdate, UnstructuredCommandInput,
 };
 use agent_client_protocol::{Client, ConnectionTo};
-use aegis_providers::model::ModelConfig;
-use aegis_providers::thinking::{ThinkingEffort, ThinkingEffortCapability, ThinkingEffortSupport};
 use serde::Serialize;
 use strum::{EnumMessage, VariantNames};
 
@@ -411,8 +411,16 @@ fn capability_thinking_effort_value(
 fn thinking_effort_values(model_config: &ModelConfig) -> &'static [ThinkingEffort] {
     if !model_config.is_reasoning_model() {
         &[ThinkingEffort::Off]
-    } else if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model()
-    {
+    } else if model_config.is_glm_5_3_reasoning_model() {
+        // GLM 5.3 puede apagar el pensamiento (v52): el chip es la unica fuente del esfuerzo,
+        // asi que `off` tiene que existir como opcion y no solo como alias `-none`.
+        &[
+            ThinkingEffort::Off,
+            ThinkingEffort::Low,
+            ThinkingEffort::High,
+            ThinkingEffort::Max,
+        ]
+    } else if model_config.is_kimi_k3_reasoning_model() {
         &[
             ThinkingEffort::Low,
             ThinkingEffort::High,
@@ -437,7 +445,16 @@ fn current_thinking_effort_value(model_config: &ModelConfig) -> String {
     let configured = model_config
         .thinking_effort()
         .or_else(|| Config::global().get_aegis_thinking_effort());
-    if model_config.is_glm_5_3_reasoning_model() || model_config.is_kimi_k3_reasoning_model() {
+    if model_config.is_glm_5_3_reasoning_model() {
+        return match configured {
+            Some(ThinkingEffort::Off) => ThinkingEffort::Off,
+            Some(ThinkingEffort::Low) => ThinkingEffort::Low,
+            Some(ThinkingEffort::Medium | ThinkingEffort::High) => ThinkingEffort::High,
+            Some(ThinkingEffort::Max) | None => ThinkingEffort::Max,
+        }
+        .to_string();
+    }
+    if model_config.is_kimi_k3_reasoning_model() {
         return match configured {
             Some(ThinkingEffort::Off | ThinkingEffort::Low) => ThinkingEffort::Low,
             Some(ThinkingEffort::Medium | ThinkingEffort::High) => ThinkingEffort::High,
@@ -531,9 +548,21 @@ pub(super) fn send_session_setup_notifications(
 mod tests {
     use super::super::provider::THINKING_EFFORT_PARAM;
     use super::*;
-    use agent_client_protocol::schema::v1::SessionConfigKind;
     use aegis_providers::thinking::ThinkingEffortOption;
+    use agent_client_protocol::schema::v1::SessionConfigKind;
     use test_case::test_case;
+
+    #[tokio::test]
+    async fn opencode_go_is_offered_to_web_acp_provider_picker() {
+        let _guard = env_lock::lock_env([(
+            "AEGIS_VISIBLE_PROVIDERS",
+            Some("aegis,open_design,opencode_go"),
+        )]);
+        let options = build_provider_options(Some("open_design")).await;
+        let offered = serde_json::to_value(&options).unwrap();
+        assert!(offered.to_string().contains("opencode_go"));
+        assert!(offered.to_string().contains("OpenCode Go"));
+    }
 
     fn model_selection(current: &str, models: &[&str]) -> ModelSelection {
         ModelSelection {
@@ -863,13 +892,17 @@ mod tests {
         };
 
         assert_eq!(select.current_value.0.as_ref(), "max");
+        // GLM 5.3 puede apagar el pensamiento desde v52; Kimi K3 sigue sin `off`.
+        let mut esperado = Vec::new();
+        if model_name.ends_with("glm-5-3") {
+            esperado.push(SessionConfigSelectOption::new("off", "off"));
+        }
+        esperado.push(SessionConfigSelectOption::new("low", "low"));
+        esperado.push(SessionConfigSelectOption::new("high", "high"));
+        esperado.push(SessionConfigSelectOption::new("max", "max"));
         assert_eq!(
             select.options,
-            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(vec![
-                SessionConfigSelectOption::new("low", "low"),
-                SessionConfigSelectOption::new("high", "high"),
-                SessionConfigSelectOption::new("max", "max"),
-            ])
+            agent_client_protocol::schema::v1::SessionConfigSelectOptions::Ungrouped(esperado)
         );
     }
 

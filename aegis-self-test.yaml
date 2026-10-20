@@ -17,6 +17,7 @@ activities:
   - Test delegate tool for task delegation
   - Test multi-turn thinking preservation for providers that reject replayed reasoning_content
   - Test Z.AI Coding Plan streamed tool calls and interruption recovery
+  - Test OpenCode Go OAuth login, streamed tool calls, and credential isolation
   - Validate ACP thinking-effort discovery, forwarding, and provider switching
   - Validate GDK observability hook lifecycle events and payload opt-in
   - Validate capped and uncapped auto-compaction thresholds and Desktop editing
@@ -28,7 +29,7 @@ parameters:
     input_type: string
     requirement: optional
     default: "all"
-    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, acp-effort, compaction, advanced"
+    description: "Which test phases to run: all, basic, extensions, delegation, declared-vision, reasoning, zai-coding-plan, opencode-go, acp-effort, compaction, advanced"
 
   - key: test_depth
     input_type: string
@@ -440,6 +441,24 @@ prompt: |
      `reasoning_content` on subsequent tool-result turns. Never log API keys.
 
   Log results to: {{ workspace_dir }}/zai_coding_plan.md
+  {% endif %}
+
+  {% if test_phases == "all" or "opencode-go" in test_phases %}
+  ## OpenCode Go provider
+
+  Prerequisites: active provider `opencode_go`, valid OpenCode CLI Console OAuth login
+  or `OPENCODE_GO_API_KEY`, and developer extension enabled. Otherwise mark SKIPPED.
+  Never print or copy access/refresh tokens.
+
+  1. Ask DeepSeek V4.1 Flash and GLM-5.3 Flash for a short response. Verify both work.
+  2. Ask DeepSeek to call the developer shell and incorporate its result. Follow with a
+     second tool turn and verify continuation and stable session ID.
+  3. Verify the CLI auth file retains its other provider entries and credentials never
+     appear in generated reports or tool output.
+  4. Verify the bare `/model` picker exposes OpenCode Go alongside Open Design and
+     Antigravity. In headless mode mark this interactive check SKIPPED.
+
+  Log results to: {{ workspace_dir }}/opencode_go.md
   {% endif %}
 
   {% if test_phases == "all" or "acp-effort" in test_phases %}

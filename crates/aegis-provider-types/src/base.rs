@@ -8,6 +8,7 @@ use std::pin::Pin;
 use tokio::sync::watch;
 
 use crate::{
+    aegis_mode::AegisMode,
     canonical::{
         catalog::ProviderSetupMetadata, map_to_canonical_model, recommended_models_from_registry,
         CanonicalModelRegistry,
@@ -17,7 +18,6 @@ use crate::{
         token_usage::{ProviderUsage, Usage},
     },
     errors::ProviderError,
-    aegis_mode::AegisMode,
     maybe_send::{MaybeSend, MaybeSync},
     model::ModelConfig,
     permission::PermissionConfirmation,

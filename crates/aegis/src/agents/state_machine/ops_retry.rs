@@ -8,8 +8,8 @@ use crate::agents::retry::{
     execute_on_failure_command_with_timeout, execute_success_checks_with_timeout,
 };
 use crate::agents::state_machine::{
-    applied, ends_turn, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect,
-    Emitter, AegisEffect, Operation, OperationResult, SlashCommand,
+    applied, ends_turn, messages_since_kickoff, not_applicable, yielded_with, AegisEffect,
+    ConversationEffect, Emitter, Operation, OperationResult, SlashCommand,
 };
 use crate::agents::types::RetryConfig;
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};

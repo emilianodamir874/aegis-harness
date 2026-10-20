@@ -310,9 +310,19 @@ impl ModelConfig {
         self.is_openai_reasoning_model()
             || self.model_name.to_lowercase().contains("claude")
             || Self::is_gemini3_reasoning_model_name(&self.model_name)
+            || Self::is_deepseek_reasoning_model_name(&self.model_name)
             || self.is_glm_5_3_reasoning_model()
             || self.is_kimi_k3_reasoning_model()
             || is_xai_reasoning_model(&self.model_name)
+    }
+
+    /// DeepSeek V4 expone pensamiento con `thinking` + `reasoning_effort` (lo usa el
+    /// provider Open Design). Antes eso se resolvia con un alias por esfuerzo en el nombre
+    /// del modelo; desde v52 el esfuerzo es una opcion de sesion, asi que el chip tiene que
+    /// ofrecer niveles y no solo `off`.
+    pub fn is_deepseek_reasoning_model_name(model_name: &str) -> bool {
+        let lower = model_name.to_lowercase();
+        lower.contains("deepseek-v4") || lower.contains("deepseek-v5")
     }
 
     pub fn is_glm_5_3_reasoning_model(&self) -> bool {
@@ -1017,6 +1027,7 @@ mod tests {
             assert!(ModelConfig::new("claude-sonnet-4").is_reasoning_model());
             assert!(ModelConfig::new("gemini-3-pro").is_reasoning_model());
             assert!(ModelConfig::new("glm-5.3").is_reasoning_model());
+            assert!(ModelConfig::new("deepseek-v4.1-flash").is_reasoning_model());
             assert!(
                 ModelConfig::new("data_workflow_tools.aegis.aegis-glm-5-3").is_reasoning_model()
             );

@@ -24,7 +24,7 @@ mod ops_status;
 mod ops_steer;
 mod ops_stop_hook;
 mod ops_tool_approval;
-mod ops_tool_pair_compaction;
+pub(crate) mod ops_tool_pair_compaction;
 mod ops_toolcalling;
 mod ops_unknown_tool;
 mod session;
@@ -56,7 +56,6 @@ pub(super) fn awaits_tool_responses(messages: &[Message]) -> bool {
 #[cfg(test)]
 mod tests;
 
-pub use effects::AegisEffect;
 pub use aegis_agent::machine::{
     EffectHandler, EffectUsage, MachineSession, SessionLoader, StateMachine, Step,
 };
@@ -65,6 +64,7 @@ pub use aegis_agent::operation::{
     not_applicable, trailing_error, yielded, yielded_with, ConversationEffect, Emitter, Inference,
     InferenceInput, MachineEffect, Operation, OperationResult, RunStatus, SlashCommand, StepResult,
 };
+pub use effects::AegisEffect;
 pub(crate) use tool_confirmation::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
     persist_tool_confirmation_decision,

@@ -544,6 +544,21 @@ impl SessionManager {
             .await
     }
 
+    /// Set the turn framing profile for a session: work, fiction, synthetic or stacked.
+    ///
+    /// Stored as extension state so no schema migration is needed and other extensions keep theirs.
+    pub async fn set_frame_profile(&self, session_id: &str, profile: &str) -> Result<()> {
+        let mut session = self.get_session(session_id, false).await?;
+        crate::session::extension_data::FrameProfileState {
+            profile: profile.trim().to_string(),
+        }
+        .to_extension_data(&mut session.extension_data)?;
+        self.update(session_id)
+            .extension_data(session.extension_data)
+            .apply()
+            .await
+    }
+
     pub async fn get_session_usage_totals(&self, id: &str) -> Result<SessionUsageTotals> {
         self.storage.get_session_usage_totals(id).await
     }

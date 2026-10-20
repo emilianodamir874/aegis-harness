@@ -35,19 +35,19 @@ fn cap_replayed_blocks(message: &mut Message, cap: usize) {
     message.content = message
         .content
         .drain(..)
-        .filter_map(|block| match block {
+        .map(|block| match block {
             MessageContent::Text(mut text) => {
                 text.text = cap_replayed_text(&text.text, cap);
-                Some(MessageContent::Text(text))
+                MessageContent::Text(text)
             }
-            MessageContent::Image(image) if image.data.len() > cap => Some(MessageContent::Text(
+            MessageContent::Image(image) if image.data.len() > cap => MessageContent::Text(
                 // Ojo: el TextContent del mensaje es el de rmcp, no el de ACP.
                 rmcp::model::TextContent::new(format!(
                     "[imagen de {} bytes omitida en el replay]",
                     image.data.len()
                 )),
-            )),
-            other => Some(other),
+            ),
+            other => other,
         })
         .collect();
 }
@@ -64,7 +64,7 @@ fn cap_replayed_text(text: &str, cap: usize) -> String {
         .unwrap_or(0);
     format!(
         "{}\n… [recortado: {} bytes omitidos del replay]",
-        &text[..cut],
+        text.get(..cut).unwrap_or(""),
         text.len() - cut
     )
 }
@@ -92,7 +92,6 @@ fn messages_for_acp_replay(
         .filter(|message| !message.content.is_empty())
         .collect()
 }
-
 
 fn send_replay_content_chunk(
     cx: &ConnectionTo<Client>,
@@ -371,6 +370,7 @@ impl AegisAcpAgent {
         if let Err(error) = cx.spawn(async move {
             let _run_guard = ActiveRunDropGuard {
                 registry: server.active_runs.clone(),
+                hub: server.hub.clone(),
                 session_id: task_session_id.clone(),
                 run_id: task_run_id.clone(),
             };
@@ -405,7 +405,8 @@ impl AegisAcpAgent {
             server
                 .clear_active_run(&task_session_id, &task_run_id)
                 .await;
-            if let Err(error) = server.send_active_run_update(&task_cx, &task_acp_session_id, None) {
+            if let Err(error) = server.send_active_run_update(&task_cx, &task_acp_session_id, None)
+            {
                 warn!(
                     session_id = task_session_id,
                     ?error,

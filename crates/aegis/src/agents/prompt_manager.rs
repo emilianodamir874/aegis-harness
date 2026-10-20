@@ -9,7 +9,7 @@ use crate::hints::load_hints::build_gitignore;
 use crate::hints::{get_context_filenames, load_hint_files};
 use crate::session::Session;
 use crate::{
-    config::{Config, AegisMode},
+    config::{AegisMode, Config},
     prompt_template,
     utils::sanitize_unicode_tags,
 };

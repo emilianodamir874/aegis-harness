@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use crate::agents::state_machine::ops_toolcalling::request_was_advertised;
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, ConversationEffect, Emitter, AegisEffect,
+    applied, messages_since_kickoff, not_applicable, AegisEffect, ConversationEffect, Emitter,
     Operation, OperationResult,
 };
 use crate::config::permission::PermissionLevel;

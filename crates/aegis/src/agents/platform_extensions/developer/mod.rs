@@ -12,8 +12,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use edit::{EditTools, FileEditParams, FileWriteParams};
 use image::{ImageReadParams, ImageTool};
-use read::{GrepParams, ReadFileParams, ReadTool};
 use indoc::indoc;
+use read::{GrepParams, ReadFileParams, ReadTool};
 use rmcp::model::{
     Annotations, CallToolResult, ContentBlock, Implementation, InitializeResult, JsonObject,
     ListToolsResult, ServerCapabilities, TextContent, Tool, ToolAnnotations,
@@ -320,7 +320,18 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
 
-        assert_eq!(names, vec!["write", "edit", "shell", "tree", "read_image"]);
+        assert_eq!(
+            names,
+            vec![
+                "write",
+                "edit",
+                "shell",
+                "tree",
+                "read_image",
+                "read_file",
+                "grep"
+            ]
+        );
     }
 
     #[test]

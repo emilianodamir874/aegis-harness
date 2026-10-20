@@ -237,6 +237,23 @@ pub fn open_design_inventory() -> InventoryRegistration {
     })
 }
 
+pub fn opencode_go_inventory() -> InventoryRegistration {
+    InventoryRegistration::new(false, || {
+        let mut identity = InventoryIdentityInput::new("opencode_go", "opencode_go")
+            .with_public("host", "https://opencode.ai/inference/go/openai/v1");
+        if let Some(key) = config_secret_value(Config::global(), "OPENCODE_GO_API_KEY") {
+            identity = identity.with_secret("api_key", key);
+        }
+        Ok(identity)
+    })
+    .with_configured(|| {
+        Config::global()
+            .get_secret::<String>("OPENCODE_GO_API_KEY")
+            .is_ok_and(|key| !key.trim().is_empty())
+            || crate::providers::opencode_go::cli_login_available()
+    })
+}
+
 pub fn gemini_oauth_inventory() -> InventoryRegistration {
     InventoryRegistration {
         supports_refresh: false,

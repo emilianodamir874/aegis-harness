@@ -118,6 +118,30 @@ impl AegisAcpAgent {
         self.on_update_working_dir(req).await
     }
 
+    #[custom_method(RetryLastTurnRequest)]
+    async fn dispatch_retry_last_turn(
+        &self,
+        req: RetryLastTurnRequest,
+    ) -> Result<RetryLastTurnResponse, agent_client_protocol::Error> {
+        self.on_retry_last_turn(req).await
+    }
+
+    #[custom_method(UnrewindSessionRequest)]
+    async fn dispatch_unrewind_session(
+        &self,
+        req: UnrewindSessionRequest,
+    ) -> Result<UnrewindSessionResponse, agent_client_protocol::Error> {
+        self.on_unrewind_session(req).await
+    }
+
+    #[custom_method(SetFrameProfileRequest)]
+    async fn dispatch_set_frame_profile(
+        &self,
+        req: SetFrameProfileRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_set_frame_profile(req).await
+    }
+
     #[custom_method(SetSessionSystemPromptRequest)]
     async fn dispatch_set_session_system_prompt(
         &self,

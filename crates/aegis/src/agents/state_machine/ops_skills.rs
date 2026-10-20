@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
+use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
-use aegis_sdk_types::custom_requests::{SourceEntry, SourceType};
 use rmcp::model::{CallToolResult, ContentBlock, ErrorData, JsonObject, Tool};
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
@@ -18,8 +18,8 @@ use crate::agents::state_machine::ops_toolcalling::{
     ToolDisposition, EXPIRED_APPROVAL_RESPONSE,
 };
 use crate::agents::state_machine::{
-    applied, messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter,
-    AegisEffect, Operation, OperationResult, SlashCommand,
+    applied, messages_since_kickoff, not_applicable, yielded_with, AegisEffect, ConversationEffect,
+    Emitter, Operation, OperationResult, SlashCommand,
 };
 use crate::agents::tool_execution::{CHAT_MODE_TOOL_SKIPPED_RESPONSE, DECLINED_RESPONSE};
 use crate::config::AegisMode;

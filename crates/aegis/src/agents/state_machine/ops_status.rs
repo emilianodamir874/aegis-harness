@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, Result};
-use async_trait::async_trait;
 use aegis_providers::base::Provider;
 use aegis_providers::model::ModelConfig;
+use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 
 use crate::agents::state_machine::{
-    messages_since_kickoff, not_applicable, yielded_with, ConversationEffect, Emitter, AegisEffect,
+    messages_since_kickoff, not_applicable, yielded_with, AegisEffect, ConversationEffect, Emitter,
     Operation, OperationResult, SlashCommand,
 };
 use crate::conversation::message::Message;

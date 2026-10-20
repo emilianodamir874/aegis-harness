@@ -19,12 +19,12 @@ use crate::agents::provider_manager::ProviderManager;
 use crate::agents::state_machine::ops_recipe;
 use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
-    persist_tool_confirmation_decision, run_aegis, BangShellOperation, CompactionOperation,
-    DoctorOperation, Emitter, EmptyResponseOperation, ExitOnErrorOperation,
-    ForegroundSubagentOperation, AegisEffect, AegisInferenceProvider,
-    AegisInferenceRequestPreparer, InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation,
-    RecipeOperation, RetryOperation, SkillOperation, SlashCommandOperation, StateMachine,
-    StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
+    persist_tool_confirmation_decision, run_aegis, AegisEffect, AegisInferenceProvider,
+    AegisInferenceRequestPreparer, BangShellOperation, CompactionOperation, DoctorOperation,
+    Emitter, EmptyResponseOperation, ExitOnErrorOperation, ForegroundSubagentOperation,
+    InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
+    RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
+    SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
     ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
@@ -34,7 +34,7 @@ use crate::agents::types::{
 use crate::agents::AgentEvent;
 use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
-use crate::config::{Config, AegisMode};
+use crate::config::{AegisMode, Config};
 use crate::conversation::message::{ActionRequiredData, Message, MessageContent};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::{Permission, PermissionConfirmation};
@@ -177,6 +177,8 @@ pub struct Agent {
     #[cfg(test)]
     pub(super) stop_hook_block_cap_override: Option<u32>,
     steer_queues: Mutex<HashMap<String, SteerQueue>>,
+    tool_pair_compactions:
+        crate::agents::state_machine::ops_tool_pair_compaction::PendingToolPairCompactions,
 }
 
 fn user_event(event: AgentEvent) -> Option<AgentEvent> {
@@ -271,6 +273,7 @@ impl Agent {
             #[cfg(test)]
             stop_hook_block_cap_override: None,
             steer_queues: Mutex::new(HashMap::new()),
+            tool_pair_compactions: Arc::default(),
         }
     }
 
@@ -636,6 +639,7 @@ impl Agent {
                 tool_call_cutoff,
                 tool_pair_compaction_enabled,
                 pair_compaction_min_tokens,
+                Arc::clone(&self.tool_pair_compactions),
             )),
             Arc::new(ToolApprovalOperation::new(&self.tool_inspection_manager)),
             Arc::new(DoctorOperation::new(self.config.session_manager.clone())),
@@ -1169,7 +1173,12 @@ impl Agent {
             .model_config(model_config)
             .apply()
             .await
-            .context("Failed to persist provider config to session")
+            .context("Failed to persist provider config to session")?;
+        crate::agents::state_machine::ops_tool_pair_compaction::cancel_pending_compaction(
+            &self.tool_pair_compactions,
+            session_id,
+        );
+        Ok(())
     }
 
     pub async fn update_aegis_mode(&self, mode: AegisMode, session_id: &str) -> Result<()> {

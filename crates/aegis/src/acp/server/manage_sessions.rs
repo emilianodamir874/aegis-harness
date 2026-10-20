@@ -45,6 +45,25 @@ impl AegisAcpAgent {
         Ok(EmptyResponse {})
     }
 
+    pub(super) async fn on_set_frame_profile(
+        &self,
+        req: SetFrameProfileRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+
+        self.session_manager
+            .set_frame_profile(session_id, &req.profile)
+            .await
+            .internal_err()?;
+
+        Ok(EmptyResponse {})
+    }
+
     pub(super) async fn on_set_session_system_prompt(
         &self,
         req: SetSessionSystemPromptRequest,

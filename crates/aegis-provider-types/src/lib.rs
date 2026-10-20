@@ -1,3 +1,4 @@
+pub mod aegis_mode;
 pub mod base;
 pub mod cache_semantics;
 pub mod canonical;
@@ -6,7 +7,6 @@ pub mod conversation;
 pub mod documents;
 pub mod errors;
 pub mod formats;
-pub mod aegis_mode;
 pub mod images;
 pub mod json;
 pub mod maybe_send;

@@ -8,6 +8,11 @@ import {
 } from '@agentclientprotocol/sdk';
 import type { AegisExtension, SessionExportFormat } from '@aaif/goose-acp-client';
 import { getAcpClient } from './acpConnection';
+import {
+  handleAcpAegisSessionNotification,
+  handleAcpSessionNotification,
+} from './chatNotifications';
+import { acpChatSessionActions, acpChatSessionStore } from './chatSessionStore';
 import type { ExtensionLoadResult } from '../types/extensions';
 import type { Session } from '../types/session';
 import type { Recipe } from '../recipe';
@@ -62,6 +67,364 @@ export interface AcpLoadSessionResult {
 }
 
 const inFlightSessionLoads = new Map<string, Promise<AcpLoadSessionResult>>();
+
+const WATCH_METHOD = '_aegis/unstable/session/watch';
+const UNWATCH_METHOD = '_aegis/unstable/session/unwatch';
+const REPLAY_GAP_METHOD = '_aegis/unstable/session/replay_gap';
+
+type WatchResponse = {
+  activeRunId: string | null;
+  cursor: number;
+  epoch?: string;
+  replay: Array<{ method: string; params: unknown }>;
+};
+
+// The custom watch method is not yet part of the generated extension client.
+function customRequest(client: Awaited<ReturnType<typeof getAcpClient>>) {
+  return client.connection.agent as unknown as {
+    request(method: string, params: unknown): Promise<unknown>;
+  };
+}
+
+type AcpClient = Awaited<ReturnType<typeof getAcpClient>>;
+type WatchEvent = WatchResponse['replay'][number];
+type WatchState = {
+  client: AcpClient;
+  cursor: number | null;
+  epoch: string | null;
+  response?: WatchResponse;
+  pending?: Promise<WatchResponse>;
+  pendingApplyReplay?: boolean;
+  buffered: Map<number, WatchEvent>;
+  loading: boolean;
+  failed: boolean;
+  loadCursor?: number;
+  loadEpoch?: string;
+  requiresLoad: boolean;
+};
+const watchedSessions = new Map<string, WatchState>();
+const loadIntervals = new Set<string>();
+const unsupportedWatchClients = new WeakSet<AcpClient>();
+
+function isWatchUnsupported(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (/method not found/i.test(error.message) || /-32601/.test(error.message))
+  );
+}
+export const ACP_WATCH_REPLAY_GAP_ERROR = 'ACP watch replay gap; session must be reloaded';
+const GAP_ERROR = ACP_WATCH_REPLAY_GAP_ERROR;
+
+function eventCursor(params: unknown): number | null {
+  const cursor = (params as { _meta?: { aegis?: { cursor?: unknown } } })?._meta?.aegis?.cursor;
+  return typeof cursor === 'number' && Number.isSafeInteger(cursor) && cursor > 0 ? cursor : null;
+}
+
+function applyWatchEvent(event: WatchEvent): void {
+  if (event.method === 'session/update') {
+    void handleAcpSessionNotification(
+      event.params as Parameters<typeof handleAcpSessionNotification>[0]
+    );
+  } else if (event.method === '_aegis/unstable/session/update') {
+    void handleAcpAegisSessionNotification(
+      event.params as Parameters<typeof handleAcpAegisSessionNotification>[0]
+    );
+  }
+}
+
+function drainBuffered(sessionId: string, state: WatchState): void {
+  if (state.loading || state.pending || !state.response || state.failed) return;
+  for (const cursor of [...state.buffered.keys()].sort((a, b) => a - b)) {
+    if (cursor <= (state.cursor ?? 0)) state.buffered.delete(cursor);
+  }
+  while (state.buffered.has((state.cursor ?? 0) + 1)) {
+    const cursor = (state.cursor ?? 0) + 1;
+    const event = state.buffered.get(cursor)!;
+    state.buffered.delete(cursor);
+    applyWatchEvent(event);
+    state.cursor = cursor;
+  }
+  if (state.buffered.size) {
+    // Request the missing interval rather than applying later chunks out of order.
+    state.response = undefined;
+    void acpWatchSession(sessionId, true, true).catch(() => {
+      if (watchedSessions.get(sessionId) !== state) return;
+      state.failed = true;
+      state.requiresLoad = true;
+      state.buffered.clear();
+      acpChatSessionActions.setSessionLoadError(sessionId, GAP_ERROR);
+    });
+  }
+}
+
+export function beginAcpWatchLoad(sessionId: string): void {
+  loadIntervals.add(sessionId);
+  const state = watchedSessions.get(sessionId);
+  if (state) {
+    state.loading = true;
+    state.loadCursor = undefined;
+    state.loadEpoch = undefined;
+    state.response = undefined;
+    state.cursor = null;
+    state.epoch = null;
+    state.failed = false;
+    state.requiresLoad = false;
+    state.buffered.clear();
+  }
+}
+
+export function markAcpWatchLoadBoundary(
+  sessionId: string,
+  client: AcpClient,
+  cursor: number,
+  epoch?: string
+): void {
+  let state = watchedSessions.get(sessionId);
+  if (!state || state.client !== client) {
+    state = {
+      client,
+      cursor: null,
+      epoch: null,
+      buffered: new Map(),
+      loading: true,
+      failed: false,
+      requiresLoad: false,
+    };
+    watchedSessions.set(sessionId, state);
+  }
+  if (state.loading && Number.isSafeInteger(cursor) && cursor >= 0) {
+    state.loadCursor = cursor;
+    state.loadEpoch = epoch;
+  }
+}
+
+export function endAcpWatchLoad(sessionId: string): void {
+  loadIntervals.delete(sessionId);
+  const state = watchedSessions.get(sessionId);
+  if (state) {
+    state.loading = false;
+    state.loadCursor = undefined;
+    state.loadEpoch = undefined;
+    drainBuffered(sessionId, state);
+  }
+}
+
+export function handleAcpWatchedNotification(
+  client: AcpClient,
+  method: string,
+  params: { sessionId: string; _meta?: unknown; update?: unknown }
+): void {
+  const cursor = eventCursor(params);
+  const state = watchedSessions.get(params.sessionId);
+  if (cursor === null) {
+    if (state?.client && state.client !== client) return;
+    applyWatchEvent({ method, params });
+    return;
+  }
+  // A new connection may deliver events before its watch response. Never let
+  // notifications from a retired socket mutate the current session.
+  if (state && state.client !== client) return;
+  const current = state ?? {
+    client,
+    cursor: null,
+    epoch: null,
+    buffered: new Map<number, WatchEvent>(),
+    loading: loadIntervals.has(params.sessionId),
+    failed: false,
+    requiresLoad: false,
+  };
+  if (!state) watchedSessions.set(params.sessionId, current);
+  if (current.failed) return;
+  if (cursor > (current.cursor ?? 0)) current.buffered.set(cursor, { method, params });
+  drainBuffered(params.sessionId, current);
+}
+
+export async function acpWatchSession(
+  sessionId: string,
+  applyReplay = true,
+  force = false
+): Promise<WatchResponse> {
+  const client = await getAcpClient();
+  let state = watchedSessions.get(sessionId);
+  if (!state || state.client !== client) {
+    state = {
+      client,
+      cursor: state?.cursor ?? null,
+      epoch: state?.epoch ?? null,
+      buffered: new Map(),
+      loading: loadIntervals.has(sessionId),
+      failed: false,
+      requiresLoad: false,
+    };
+    watchedSessions.set(sessionId, state);
+  }
+  if (unsupportedWatchClients.has(client)) return { activeRunId: null, cursor: 0, replay: [] };
+  if (state.pending) {
+    if (state.pendingApplyReplay === false) return state.pending;
+    if (!applyReplay) {
+      try {
+        await state.pending;
+      } catch {
+        // Even a failed in-flight watch cannot replace the post-load snapshot.
+      }
+      return acpWatchSession(sessionId, false, true);
+    }
+    return state.pending;
+  }
+  if (state.failed && !state.loading) {
+    acpChatSessionActions.setSessionLoadError(sessionId, GAP_ERROR);
+    throw new Error(GAP_ERROR);
+  }
+  if (state.requiresLoad) throw new Error(GAP_ERROR);
+  if (state.response && !force && applyReplay) return state.response;
+  const current = state;
+  const since = applyReplay ? current.cursor : null;
+  if (
+    applyReplay &&
+    since === null &&
+    !loadIntervals.has(sessionId) &&
+    acpChatSessionStore.getSnapshot(sessionId)?.messages.length
+  ) {
+    current.failed = true;
+    current.requiresLoad = true;
+    acpChatSessionActions.setSessionLoadError(sessionId, GAP_ERROR);
+    throw new Error(GAP_ERROR);
+  }
+  const request = async (): Promise<WatchResponse> => {
+    try {
+      const result = (await customRequest(client).request(WATCH_METHOD, {
+        sessionId,
+        since,
+        epoch: since === null ? null : current.epoch,
+      })) as WatchResponse;
+      if (watchedSessions.get(sessionId) !== current || (await getAcpClient()) !== client) {
+        throw new Error('ACP watch connection is no longer current');
+      }
+      if (
+        !Array.isArray(result.replay) ||
+        result.replay.some((event) => event.method === REPLAY_GAP_METHOD)
+      ) {
+        throw new Error(GAP_ERROR);
+      }
+      if (!Number.isSafeInteger(result.cursor) || result.cursor < 0) throw new Error(GAP_ERROR);
+      if (!result.epoch) throw new Error(GAP_ERROR);
+      if (since !== null && current.epoch && result.epoch !== current.epoch) {
+        throw new Error(GAP_ERROR);
+      }
+      if (applyReplay) {
+        for (const event of result.replay) {
+          const cursor = eventCursor(event.params);
+          if (cursor === null || cursor > result.cursor || (since !== null && cursor <= since)) {
+            throw new Error(GAP_ERROR);
+          }
+          if (!current.buffered.has(cursor)) current.buffered.set(cursor, event);
+        }
+        const cursors = [...current.buffered.keys()]
+          .filter((cursor) => cursor <= result.cursor)
+          .sort((a, b) => a - b);
+        let verifiedCursor = since ?? (cursors.length ? cursors[0] - 1 : result.cursor);
+        for (const cursor of cursors) {
+          if (cursor <= verifiedCursor) continue;
+          if (cursor !== verifiedCursor + 1) throw new Error(GAP_ERROR);
+          verifiedCursor = cursor;
+        }
+        if (verifiedCursor !== result.cursor) throw new Error(GAP_ERROR);
+        for (const cursor of cursors) {
+          if (cursor <= (current.cursor ?? 0)) {
+            current.buffered.delete(cursor);
+            continue;
+          }
+          applyWatchEvent(current.buffered.get(cursor)!);
+          current.buffered.delete(cursor);
+          current.cursor = cursor;
+        }
+        current.cursor = result.cursor;
+      } else {
+        // session/load replays persisted history but has no atomic cursor of
+        // that history. A concurrent publish may already be in the load replay;
+        // applying it again would duplicate a chunk. Retry if the hub moved.
+        if (
+          current.loadCursor === undefined ||
+          current.loadCursor !== result.cursor ||
+          current.loadEpoch !== result.epoch
+        ) {
+          throw new Error(GAP_ERROR);
+        }
+        current.cursor = result.cursor;
+        for (const cursor of current.buffered.keys()) {
+          if (cursor <= result.cursor) current.buffered.delete(cursor);
+        }
+      }
+      acpChatSessionActions.setActiveWatchedRun(sessionId, result.activeRunId);
+      current.failed = false;
+      current.requiresLoad = false;
+      current.epoch = result.epoch ?? null;
+      current.response = result;
+      return result;
+    } catch (error) {
+      if (
+        isWatchUnsupported(error) &&
+        watchedSessions.get(sessionId) === current &&
+        (await getAcpClient()) === client
+      ) {
+        // Older backends still send uncursored updates on the owning connection.
+        unsupportedWatchClients.add(client);
+        current.buffered.clear();
+        return { activeRunId: null, cursor: 0, replay: [] };
+      }
+      if (
+        watchedSessions.get(sessionId) === current &&
+        error instanceof Error &&
+        error.message === GAP_ERROR
+      ) {
+        current.failed = true;
+        current.requiresLoad = applyReplay || !current.loading;
+        current.response = undefined;
+        current.buffered.clear();
+        acpChatSessionActions.setSessionLoadError(sessionId, GAP_ERROR);
+      }
+      throw error;
+    }
+  };
+  const promise = request();
+  current.pending = promise;
+  current.pendingApplyReplay = applyReplay;
+  try {
+    return await promise;
+  } finally {
+    if (current.pending === promise) {
+      current.pending = undefined;
+      current.pendingApplyReplay = undefined;
+      if (current.response && watchedSessions.get(sessionId) === current)
+        drainBuffered(sessionId, current);
+    }
+  }
+}
+
+export async function recoverAcpWatches(): Promise<void> {
+  const sessions = [...watchedSessions.entries()]
+    .filter(
+      ([sessionId, state]) =>
+        !state.loading &&
+        !loadIntervals.has(sessionId) &&
+        acpChatSessionStore.getSnapshot(sessionId)?.session
+    )
+    .map(([sessionId]) => sessionId);
+  for (const sessionId of sessions) {
+    try {
+      await acpWatchSession(sessionId);
+    } catch {
+      acpChatSessionActions.setSessionLoadError(sessionId, GAP_ERROR);
+    }
+  }
+}
+
+export async function acpUnwatchSession(sessionId: string): Promise<void> {
+  const watched = watchedSessions.get(sessionId);
+  watchedSessions.delete(sessionId);
+  loadIntervals.delete(sessionId);
+  if (watched) await customRequest(watched.client).request(UNWATCH_METHOD, { sessionId });
+}
 
 function parseSessionResponseMeta(rawMeta: unknown): LoadSessionMeta {
   const meta = (rawMeta ?? {}) as LoadSessionMeta;
@@ -208,6 +571,40 @@ async function loadAcpSession(sessionId: string): Promise<AcpLoadSessionResult> 
   const client = await getAcpClient();
   const initialSessionInfoResponse = await client.aegis.sessionInfo_unstable({ sessionId });
   const initialSessionInfo = initialSessionInfoResponse.session;
+  if (
+    loadIntervals.has(sessionId) &&
+    (watchedSessions.get(sessionId)?.client !== client ||
+      watchedSessions.get(sessionId)?.loadCursor === undefined)
+  ) {
+    let boundary: WatchResponse | undefined;
+    try {
+      boundary = (await customRequest(client).request(WATCH_METHOD, {
+        sessionId,
+        since: null,
+        epoch: null,
+      })) as WatchResponse;
+    } catch (error) {
+      if (!isWatchUnsupported(error)) throw error;
+      if ((await getAcpClient()) !== client) throw new Error(GAP_ERROR, { cause: error });
+      unsupportedWatchClients.add(client);
+      const state = watchedSessions.get(sessionId);
+      if (state?.client === client) {
+        state.buffered.clear();
+        watchedSessions.delete(sessionId);
+      }
+    }
+    if (
+      boundary &&
+      (!Number.isSafeInteger(boundary.cursor) ||
+        boundary.cursor < 0 ||
+        !boundary.epoch ||
+        boundary.replay.some((event) => event.method === REPLAY_GAP_METHOD))
+    ) {
+      throw new Error(GAP_ERROR);
+    }
+    if ((await getAcpClient()) !== client) throw new Error(GAP_ERROR);
+    if (boundary) markAcpWatchLoadBoundary(sessionId, client, boundary.cursor, boundary.epoch);
+  }
   const response = await client.connection.agent.request(methods.agent.session.load, {
     sessionId,
     cwd: initialSessionInfo.cwd,

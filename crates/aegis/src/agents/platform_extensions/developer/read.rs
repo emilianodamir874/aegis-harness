@@ -5,6 +5,7 @@
 //! and they are also exposed as callbacks inside code execution.
 
 use std::fs;
+use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -57,6 +58,12 @@ pub struct GrepParams {
 
 pub struct ReadTool;
 
+impl Default for ReadTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ReadTool {
     pub fn new() -> Self {
         Self
@@ -77,47 +84,70 @@ impl ReadTool {
                 path.display()
             ));
         }
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
+        let mut file = match fs::File::open(&path) {
+            Ok(file) => file,
             Err(err) => return error(format!("Could not read {}: {err}", path.display())),
         };
-        if bytes.iter().take(8_192).any(|b| *b == 0) {
+        let mut prefix = Vec::with_capacity(8_192);
+        if let Err(err) = (&mut file).take(8_192).read_to_end(&mut prefix) {
+            return error(format!("Could not read {}: {err}", path.display()));
+        }
+        if prefix.contains(&0) {
             return error(format!(
                 "{} looks binary; refusing to read it as text",
                 path.display()
             ));
         }
-        let text = String::from_utf8_lossy(&bytes);
-        let lines: Vec<&str> = text.lines().collect();
-        let total = lines.len();
+        if let Err(err) = file.rewind() {
+            return error(format!("Could not read {}: {err}", path.display()));
+        }
+
         let start = params.offset.unwrap_or(1).max(1) - 1;
+        let take = params
+            .limit
+            .unwrap_or(READ_MAX_LINES)
+            .clamp(1, READ_MAX_LINES);
+        let mut reader = BufReader::new(file);
+        let mut line = Vec::new();
+        let mut out = String::new();
+        let mut bytes_used = 0usize;
+        let mut shown = 0usize;
+        let mut total = 0usize;
+        loop {
+            line.clear();
+            let read = match reader.read_until(b'\n', &mut line) {
+                Ok(read) => read,
+                Err(err) => return error(format!("Could not read {}: {err}", path.display())),
+            };
+            if read == 0 {
+                break;
+            }
+            total += 1;
+            if total <= start || total > start.saturating_add(take) || bytes_used >= READ_MAX_BYTES
+            {
+                continue;
+            }
+            let had_newline = line.last() == Some(&b'\n');
+            if had_newline {
+                line.pop();
+            }
+            if had_newline && line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            let rendered = format!("{total:>6} | {}\n", String::from_utf8_lossy(&line));
+            if bytes_used + rendered.len() > READ_MAX_BYTES {
+                bytes_used = READ_MAX_BYTES;
+                continue;
+            }
+            bytes_used += rendered.len();
+            out.push_str(&rendered);
+            shown += 1;
+        }
         if start >= total && total > 0 {
             return error(format!(
                 "offset {start} is past the end of {} ({total} lines)",
                 path.display()
             ));
-        }
-        let requested = params.limit.unwrap_or(READ_MAX_LINES).max(1);
-        let take = requested.min(READ_MAX_LINES);
-        let slice: Vec<(usize, &str)> = lines
-            .iter()
-            .enumerate()
-            .skip(start)
-            .take(take)
-            .map(|(i, line)| (i + 1, *line))
-            .collect();
-
-        let mut out = String::new();
-        let mut bytes_used = 0usize;
-        let mut shown = 0usize;
-        for (number, line) in &slice {
-            let rendered = format!("{number:>6} | {line}\n");
-            if bytes_used + rendered.len() > READ_MAX_BYTES {
-                break;
-            }
-            bytes_used += rendered.len();
-            out.push_str(&rendered);
-            shown += 1;
         }
         let last = start + shown;
         if last < total {
@@ -166,16 +196,17 @@ impl ReadTool {
         let mut scanned = 0usize;
         let mut truncated = false;
 
-        let files: Vec<PathBuf> = if root.is_file() {
-            vec![root.clone()]
+        let files: Box<dyn Iterator<Item = PathBuf>> = if root.is_file() {
+            Box::new(std::iter::once(root.clone()))
         } else {
-            WalkBuilder::new(&root)
-                .hidden(false)
-                .build()
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
-                .map(|entry| entry.into_path())
-                .collect()
+            Box::new(
+                WalkBuilder::new(&root)
+                    .hidden(false)
+                    .build()
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
+                    .map(|entry| entry.into_path()),
+            )
         };
 
         'files: for file in files {
@@ -185,7 +216,10 @@ impl ReadTool {
                     continue;
                 }
             }
-            if fs::metadata(&file).map(|m| m.len() > GREP_MAX_FILE_BYTES).unwrap_or(true) {
+            if fs::metadata(&file)
+                .map(|m| m.len() > GREP_MAX_FILE_BYTES)
+                .unwrap_or(true)
+            {
                 continue;
             }
             let bytes = match fs::read(&file) {
@@ -203,10 +237,6 @@ impl ReadTool {
                 if !regex.is_match(line) {
                     continue;
                 }
-                if hits >= max_results {
-                    truncated = true;
-                    break 'files;
-                }
                 if context > 0 {
                     let from = index.saturating_sub(context);
                     let to = (index + context + 1).min(lines.len());
@@ -220,6 +250,10 @@ impl ReadTool {
                     out.push_str(&format!("{display}:{}: {}\n", index + 1, line.trim_end()));
                 }
                 hits += 1;
+                if hits >= max_results {
+                    truncated = true;
+                    break 'files;
+                }
             }
         }
 
@@ -232,12 +266,10 @@ impl ReadTool {
         }
         if truncated {
             out.push_str(&format!(
-                "[cortado en {max_results} coincidencias; acota el patron o usa glob]\n"
+                "[limite de {max_results} coincidencias alcanzado; acota el patron o usa glob]\n"
             ));
         }
-        out.push_str(&format!(
-            "[{hits} coincidencias en {scanned} archivos]\n"
-        ));
+        out.push_str(&format!("[{hits} coincidencias en {scanned} archivos]\n"));
         CallToolResult::success(vec![ContentBlock::text(out)])
     }
 }
@@ -288,7 +320,8 @@ mod tests {
     use std::io::Write;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("aegis-read-tool-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("aegis-read-tool-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("temp dir");
         dir
@@ -346,6 +379,69 @@ mod tests {
     }
 
     #[test]
+    fn read_file_streams_pages_and_handles_crlf_and_lossy_utf8() {
+        let dir = temp_dir("stream-pages");
+        fs::write(dir.join("sample.txt"), b"one\r\ntwo\n\xff\nlast").expect("write");
+        let tool = ReadTool::new();
+        let page = tool.read_file_with_cwd(
+            ReadFileParams {
+                path: "sample.txt".to_string(),
+                offset: Some(2),
+                limit: Some(2),
+            },
+            Some(&dir),
+        );
+        let text = text_of(&page);
+        assert!(text.contains("     2 | two\n"));
+        assert!(text.contains("     3 | �\n"));
+        assert!(text.contains("2 de 4 lineas mostradas; segui con offset=4"));
+
+        let last = tool.read_file_with_cwd(
+            ReadFileParams {
+                path: "sample.txt".to_string(),
+                offset: Some(4),
+                limit: None,
+            },
+            Some(&dir),
+        );
+        assert!(text_of(&last).contains("     4 | last\n"));
+        assert!(!text_of(&last).contains("segui con offset="));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_file_preserves_bare_carriage_return_and_final_newline() {
+        let dir = temp_dir("line-endings");
+        fs::write(dir.join("sample.txt"), b"one\rtwo\n").expect("write");
+        let page = ReadTool::new().read_file_with_cwd(
+            ReadFileParams {
+                path: "sample.txt".to_string(),
+                offset: None,
+                limit: None,
+            },
+            Some(&dir),
+        );
+        assert_eq!(text_of(&page), "     1 | one\rtwo\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_file_does_not_strip_bare_carriage_return_at_eof() {
+        let dir = temp_dir("bare-cr");
+        fs::write(dir.join("sample.txt"), b"one\r").expect("write");
+        let page = ReadTool::new().read_file_with_cwd(
+            ReadFileParams {
+                path: "sample.txt".to_string(),
+                offset: None,
+                limit: None,
+            },
+            Some(&dir),
+        );
+        assert_eq!(text_of(&page), "     1 | one\r\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn read_file_rejects_directories_and_binaries() {
         let dir = temp_dir("rejects");
         let binary = dir.join("blob.bin");
@@ -353,12 +449,20 @@ mod tests {
 
         let tool = ReadTool::new();
         let dir_result = tool.read_file_with_cwd(
-            ReadFileParams { path: ".".to_string(), offset: None, limit: None },
+            ReadFileParams {
+                path: ".".to_string(),
+                offset: None,
+                limit: None,
+            },
             Some(&dir),
         );
         assert!(dir_result.is_error.unwrap_or(false));
         let binary_result = tool.read_file_with_cwd(
-            ReadFileParams { path: "blob.bin".to_string(), offset: None, limit: None },
+            ReadFileParams {
+                path: "blob.bin".to_string(),
+                offset: None,
+                limit: None,
+            },
             Some(&dir),
         );
         assert!(binary_result.is_error.unwrap_or(false));
@@ -402,6 +506,30 @@ mod tests {
         let text = text_of(&only_rust);
         assert!(text.contains("a.rs:2"));
         assert!(!text.contains("b.txt"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn grep_stops_at_result_cap() {
+        let dir = temp_dir("grep-cap");
+        fs::write(dir.join("a.rs"), "hit\nhit\nhit\n").expect("write");
+        let tool = ReadTool::new();
+        let result = tool.grep_with_cwd(
+            GrepParams {
+                pattern: "hit".to_string(),
+                path: Some("a.rs".to_string()),
+                glob: None,
+                ignore_case: None,
+                max_results: Some(1),
+                context: None,
+            },
+            Some(&dir),
+        );
+        let text = text_of(&result);
+        assert!(text.contains(":1: hit"));
+        assert!(!text.contains(":2: hit"));
+        assert!(text.contains("limite de 1 coincidencias alcanzado"));
+        assert!(text.contains("[1 coincidencias en 1 archivos]"));
         let _ = fs::remove_dir_all(&dir);
     }
 

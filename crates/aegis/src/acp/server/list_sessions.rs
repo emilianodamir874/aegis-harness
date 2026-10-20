@@ -222,7 +222,7 @@ impl AegisAcpAgent {
             .filter(|session| registry.agent_run(&session.id).is_some())
             .map(|session| serde_json::Value::String(session.id.clone()))
             .collect();
-        let session_infos: Vec<SessionInfo> =
+        let session_infos: Vec<SessionInfo> =
             page.sessions.into_iter().map(build_session_info).collect();
         let next_cursor = page
             .next_cursor

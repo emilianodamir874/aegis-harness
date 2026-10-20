@@ -220,6 +220,7 @@ impl AegisAcpAgent {
         }
         let run_guard = ActiveRunDropGuard {
             registry: self.active_runs.clone(),
+            hub: self.hub.clone(),
             session_id: session_id.clone(),
             run_id: run_id.clone(),
         };

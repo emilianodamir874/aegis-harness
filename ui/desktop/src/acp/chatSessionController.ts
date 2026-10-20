@@ -28,6 +28,10 @@ import {
   acpLoadSession,
   acpNewSession,
   acpTruncateSessionConversation,
+  acpWatchSession,
+  ACP_WATCH_REPLAY_GAP_ERROR,
+  beginAcpWatchLoad,
+  endAcpWatchLoad,
   isAcpSessionLoadInFlight,
   sessionInfoToSession,
   type AcpRecipeOptions,
@@ -125,18 +129,26 @@ async function createSession(
     new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
   );
   acpChatSessionActions.finishSessionLoad(sessionId, session);
+  await acpWatchSession(sessionId);
 
   return session;
 }
 
+const pendingSessionRestores = new Map<string, Promise<void>>();
+
 async function loadSession(sessionId: string, options: AcpLoadSessionOptions = {}): Promise<void> {
   const cached = acpChatSessionStore.getSnapshot(sessionId);
-  if (cached?.session && !cached.sessionLoadError) {
+  if (cached?.session && !cached.sessionLoadError && !pendingSessionRestores.has(sessionId)) {
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
-    options.onSessionLoaded?.();
-    return;
+    try {
+      await acpWatchSession(sessionId);
+      options.onSessionLoaded?.();
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== ACP_WATCH_REPLAY_GAP_ERROR) throw error;
+    }
   }
 
   await loadSessionFromServer(sessionId, options);
@@ -150,6 +162,25 @@ async function loadSessionFromServer(
   sessionId: string,
   options: AcpLoadSessionOptions = {}
 ): Promise<void> {
+  const existing = pendingSessionRestores.get(sessionId);
+  if (existing) {
+    await existing;
+    options.onSessionLoaded?.();
+    return;
+  }
+  const restoration = restoreWithWatch(sessionId);
+  pendingSessionRestores.set(sessionId, restoration);
+  try {
+    await restoration;
+    options.onSessionLoaded?.();
+  } finally {
+    if (pendingSessionRestores.get(sessionId) === restoration)
+      pendingSessionRestores.delete(sessionId);
+  }
+}
+
+async function restoreWithWatch(sessionId: string): Promise<void> {
+  beginAcpWatchLoad(sessionId);
   if (!isAcpSessionLoadInFlight(sessionId)) {
     acpChatSessionActions.startSessionLoad(sessionId);
   }
@@ -162,10 +193,24 @@ async function loadSessionFromServer(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
     acpChatSessionActions.finishSessionLoad(sessionId, sessionInfoToSession(sessionInfo, meta));
-    options.onSessionLoaded?.();
+    try {
+      await acpWatchSession(sessionId, false);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== ACP_WATCH_REPLAY_GAP_ERROR) throw error;
+      beginAcpWatchLoad(sessionId);
+      acpChatSessionActions.startSessionLoad(sessionId);
+      const retry = await acpLoadSession(sessionId);
+      acpChatSessionActions.finishSessionLoad(
+        sessionId,
+        sessionInfoToSession(retry.sessionInfo, retry.meta)
+      );
+      await acpWatchSession(sessionId, false);
+    }
   } catch (error) {
     console.error('Failed to load ACP session:', error);
     acpChatSessionActions.failSessionLoad(sessionId, formatAcpError(error));
+  } finally {
+    endAcpWatchLoad(sessionId);
   }
 }
 
@@ -185,7 +230,8 @@ async function submitMessage(
   acpChatSessionActions.startPromptAttempt(sessionId, promptAttemptId);
 
   try {
-    await acpPromptSession(sessionId, userMessage);
+    await acpWatchSession(sessionId);
+    await acpPromptSession(sessionId, userMessage, promptAttemptId);
     if (acpChatSessionActions.clearPromptCancellation(sessionId, promptAttemptId)) {
       return;
     }

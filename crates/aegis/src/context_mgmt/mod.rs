@@ -2,17 +2,17 @@ mod recent;
 
 pub use aegis_context_management::structured;
 
-use crate::conversation::message::{MessageMetadata, MessageUsage};
 use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::{MessageMetadata, MessageUsage};
 use crate::conversation::{merge_consecutive_messages, Conversation};
 use crate::providers::base::Provider;
 #[cfg(test)]
 use crate::providers::base::{stream_from_single_message, MessageStream};
 use crate::{config::Config, token_counter::create_token_counter};
-use anyhow::Result;
 use aegis_providers::conversation::token_usage::ProviderUsage;
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
+use anyhow::Result;
 use indoc::indoc;
 use rmcp::model::Role;
 #[cfg(test)]
@@ -423,7 +423,12 @@ pub fn tool_ids_to_summarize(
     cutoff: usize,
     protect_last_n: usize,
 ) -> Vec<String> {
-    tool_ids_to_summarize_limited(conversation, cutoff, protect_last_n, TOOLCALL_SUMMARIZATION_BATCH_SIZE)
+    tool_ids_to_summarize_limited(
+        conversation,
+        cutoff,
+        protect_last_n,
+        TOOLCALL_SUMMARIZATION_BATCH_SIZE,
+    )
 }
 
 /// Same as [`tool_ids_to_summarize`] but with an explicit cap, so a caller can pull
@@ -452,11 +457,14 @@ pub fn tool_ids_to_summarize_limited(
 
     // Never summarize the last N tool calls (current turn)
     let eligible = tool_call_ids.len().saturating_sub(protect_last_n);
-    if eligible <= cutoff + limit {
+    if eligible <= cutoff + TOOLCALL_SUMMARIZATION_BATCH_SIZE {
         return Vec::new();
     }
 
-    tool_call_ids.into_iter().take(limit).collect()
+    tool_call_ids
+        .into_iter()
+        .take(limit.min(eligible - cutoff))
+        .collect()
 }
 
 fn agent_visible_tool_pair(conversation: &Conversation, tool_id: &str) -> Result<Vec<Message>> {
@@ -614,9 +622,10 @@ pub async fn summarize_tool_call_groups(
     )
     .await?;
 
-    let summaries = parse_numbered_summaries(&response.as_concat_text(), count).ok_or_else(|| {
-        anyhow::anyhow!("Batched summarization reply did not map to {count} tool pairs")
-    })?;
+    let summaries =
+        parse_numbered_summaries(&response.as_concat_text(), count).ok_or_else(|| {
+            anyhow::anyhow!("Batched summarization reply did not map to {count} tool pairs")
+        })?;
 
     Ok(summaries
         .into_iter()
@@ -859,8 +868,8 @@ pub fn maybe_summarize_tool_pairs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
     use aegis_providers::conversation::token_usage::Usage;
+    use async_trait::async_trait;
     use rmcp::model::{CallToolRequestParams, Tool};
 
     fn create_tool_pair(

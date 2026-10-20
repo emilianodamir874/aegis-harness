@@ -35,6 +35,93 @@ fn resolve_target(turns: &[Turn], message_id: Option<&str>, back: Option<u32>) -
 }
 
 impl AegisAcpAgent {
+    /// `_aegis/unstable/session/retry` — rewind the last turn and set the profile atomically.
+    pub(super) async fn on_retry_last_turn(
+        &self,
+        req: RetryLastTurnRequest,
+    ) -> Result<RetryLastTurnResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim().to_string();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+
+        let rewound = self
+            .on_rewind_session(RewindSessionRequest {
+                session_id: session_id.clone(),
+                message_id: None,
+                back: Some(1),
+            })
+            .await?;
+
+        let profile = match req.profile.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+            Some(profile) => {
+                self.session_manager
+                    .set_frame_profile(&session_id, profile)
+                    .await
+                    .internal_err_ctx("Failed to set the frame profile")?;
+                profile.to_string()
+            }
+            None => FrameProfileState::of(
+                &self
+                    .session_manager
+                    .get_session(&session_id, false)
+                    .await
+                    .internal_err_ctx("Failed to read the session")?,
+            )
+            .profile,
+        };
+
+        Ok(RetryLastTurnResponse {
+            text: rewound.text,
+            preview: rewound.preview,
+            hidden: rewound.hidden,
+            profile,
+        })
+    }
+
+
+    /// `_aegis/unstable/session/unrewind` — undo the most recent rewind.
+    pub(super) async fn on_unrewind_session(
+        &self,
+        req: UnrewindSessionRequest,
+    ) -> Result<UnrewindSessionResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        if self.active_runs.agent_run(session_id).is_some() {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("cannot unrewind while a run is active for this session"));
+        }
+
+        let session = self
+            .session_manager
+            .get_session(session_id, true)
+            .await
+            .map_err(|_| {
+                agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                    .data(format!("Session not found: {session_id}"))
+            })?;
+        let conversation = session.conversation.unwrap_or_else(Conversation::empty);
+
+        let restored = rewind::show_tail_after_last_visible(
+            &self.session_manager,
+            session_id,
+            &conversation,
+        )
+        .await
+        .internal_err_ctx("Failed to restore the rewound tail")?;
+
+        Ok(UnrewindSessionResponse {
+            restored: restored as u32,
+        })
+    }
+
+
     /// `_aegis/unstable/session/rewind` — stop sending everything from an
     /// earlier user turn on, and hand that turn's text back for editing.
     ///
@@ -50,6 +137,10 @@ impl AegisAcpAgent {
             return Err(
                 agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
             );
+        }
+        if self.active_runs.agent_run(session_id).is_some() {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("cannot rewind while a run is active for this session"));
         }
         if req.message_id.is_none() && req.back.is_none() {
             return Err(agent_client_protocol::Error::invalid_params()
@@ -78,10 +169,8 @@ impl AegisAcpAgent {
                     .data("messageId is not a user turn the model can currently see"))
             }
             Target::BackOutOfRange => {
-                return Err(agent_client_protocol::Error::invalid_params().data(format!(
-                    "only {} rewindable turn(s) available",
-                    turns.len()
-                )))
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data(format!("only {} rewindable turn(s) available", turns.len())))
             }
         };
         let turn = &turns[position];
@@ -142,8 +231,14 @@ mod tests {
         assert_eq!(resolve_target(&turns, None, Some(1)), Target::Position(2));
         assert_eq!(resolve_target(&turns, None, Some(3)), Target::Position(0));
         assert_eq!(resolve_target(&turns, None, None), Target::Position(2));
-        assert_eq!(resolve_target(&turns, None, Some(0)), Target::BackOutOfRange);
-        assert_eq!(resolve_target(&turns, None, Some(4)), Target::BackOutOfRange);
+        assert_eq!(
+            resolve_target(&turns, None, Some(0)),
+            Target::BackOutOfRange
+        );
+        assert_eq!(
+            resolve_target(&turns, None, Some(4)),
+            Target::BackOutOfRange
+        );
     }
 
     #[test]

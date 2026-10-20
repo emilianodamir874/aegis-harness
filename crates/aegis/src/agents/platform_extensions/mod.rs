@@ -186,7 +186,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
             },
         );
 
-                map.insert(
+        map.insert(
             websearch::EXTENSION_NAME,
             PlatformExtensionDef {
                 name: websearch::EXTENSION_NAME,
@@ -199,7 +199,7 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 client_factory: |ctx| Some(Box::new(websearch::WebSearchClient::new(ctx).unwrap())),
             },
         );
-map.insert(
+        map.insert(
             tom::EXTENSION_NAME,
             PlatformExtensionDef {
                 name: tom::EXTENSION_NAME,

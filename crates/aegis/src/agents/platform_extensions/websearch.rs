@@ -94,12 +94,7 @@ impl WebSearchClient {
     }
 
     fn tools() -> Vec<Tool> {
-        let schema = |value: serde_json::Value| {
-            value
-                .as_object()
-                .cloned()
-                .unwrap_or_default()
-        };
+        let schema = |value: serde_json::Value| value.as_object().cloned().unwrap_or_default();
         vec![
             Tool::new(
                 "web_search".to_string(),
@@ -137,7 +132,11 @@ impl WebSearchClient {
             .filter(|value| !value.is_empty())
     }
 
-    async fn search(&self, query: &str, count: usize) -> std::result::Result<(String, Vec<SearchHit>), String> {
+    async fn search(
+        &self,
+        query: &str,
+        count: usize,
+    ) -> std::result::Result<(String, Vec<SearchHit>), String> {
         let mut engines: Vec<(&str, EngineKind)> = Vec::new();
         if self.configured("TAVILY_API_KEY").is_some() {
             engines.push(("tavily", EngineKind::Tavily));
@@ -196,7 +195,9 @@ impl WebSearchClient {
     ) -> std::result::Result<Vec<SearchHit>, String> {
         match kind {
             EngineKind::Tavily => {
-                let key = self.configured("TAVILY_API_KEY").ok_or("sin TAVILY_API_KEY")?;
+                let key = self
+                    .configured("TAVILY_API_KEY")
+                    .ok_or("sin TAVILY_API_KEY")?;
                 let body = json!({ "query": query, "max_results": count });
                 let payload: serde_json::Value = self
                     .http
@@ -213,7 +214,11 @@ impl WebSearchClient {
             }
             EngineKind::Searxng => {
                 let base = self.configured("SEARXNG_URL").ok_or("sin SEARXNG_URL")?;
-                let url = format!("{}/search?q={}&format=json", base.trim_end_matches('/'), encode(query));
+                let url = format!(
+                    "{}/search?q={}&format=json",
+                    base.trim_end_matches('/'),
+                    encode(query)
+                );
                 let payload: serde_json::Value = self
                     .http
                     .get(url)
@@ -227,7 +232,10 @@ impl WebSearchClient {
             }
             EngineKind::Mojeek => {
                 let markup = self
-                    .get_text(&format!("https://www.mojeek.com/search?q={}", encode(query)))
+                    .get_text(&format!(
+                        "https://www.mojeek.com/search?q={}",
+                        encode(query)
+                    ))
                     .await?;
                 Ok(parse_mojeek(&markup, count))
             }
@@ -244,7 +252,10 @@ impl WebSearchClient {
             }
             EngineKind::DuckDuckGoLite => {
                 let markup = self
-                    .get_text(&format!("https://lite.duckduckgo.com/lite/?q={}", encode(query)))
+                    .get_text(&format!(
+                        "https://lite.duckduckgo.com/lite/?q={}",
+                        encode(query)
+                    ))
                     .await?;
                 Ok(parse_duckduckgo_lite(&markup, count))
             }
@@ -280,7 +291,12 @@ impl WebSearchClient {
         if let Some(cached) = self.cache_get(url) {
             return Ok(cached);
         }
-        let response = self.http.get(url).send().await.map_err(|error| error.to_string())?;
+        let response = self
+            .http
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.to_string())?;
         let status = response.status();
         if !status.is_success() {
             return Err(format!("HTTP {status}"));
@@ -346,21 +362,34 @@ fn cortar_chars(texto: &str, max_chars: usize) -> String {
 
 /// Strips scripts, styles and tags, then collapses whitespace and entities.
 pub fn html_to_text(markup: &str, max_chars: usize) -> String {
-    let lower = markup.to_lowercase();
     let mut text = String::with_capacity(markup.len() / 2);
     let mut index = 0usize;
-    while let Some(offset) = lower[index..].find('<') {
+    while let Some(offset) = markup[index..].find('<') {
         let start = index + offset;
         text.push_str(&markup[index..start]);
-        let Some(close) = lower[start..].find('>').map(|end| start + end + 1) else {
+        let Some(close) = markup[start..].find('>').map(|end| start + end + 1) else {
             text.push_str(&markup[start..]);
             index = markup.len();
             break;
         };
-        let tag = &lower[start..close];
+        let tag = markup[start..close].to_ascii_lowercase();
         if tag.starts_with("<script") || tag.starts_with("<style") {
-            let closing = if tag.starts_with("<script") { "</script" } else { "</style" };
-            index = lower[close..].find(closing).map(|end| close + end).unwrap_or(close);
+            let closing = if tag.starts_with("<script") {
+                "</script"
+            } else {
+                "</style"
+            };
+            index = markup[close..]
+                .bytes()
+                .enumerate()
+                .filter(|(_, byte)| *byte == b'<')
+                .map(|(offset, _)| close + offset)
+                .find(|&start| {
+                    markup[start..]
+                        .get(..closing.len())
+                        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(closing))
+                })
+                .unwrap_or(close);
         } else {
             text.push(' ');
             index = close;
@@ -429,7 +458,10 @@ fn desenvolver_enlace_bing(href: &str) -> String {
     let resto = &limpio[posicion + 2..];
     let fin = resto.find('&').unwrap_or(resto.len());
     let crudo = percent_decode(&resto[..fin]);
-    let sin_prefijo = crudo.strip_prefix("a1").unwrap_or(&crudo).trim_end_matches('=');
+    let sin_prefijo = crudo
+        .strip_prefix("a1")
+        .unwrap_or(&crudo)
+        .trim_end_matches('=');
     use base64::Engine as _;
     let Ok(bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(sin_prefijo) else {
         return limpio;
@@ -465,15 +497,15 @@ fn percent_decode(value: &str) -> String {
 fn unescape_entities(value: &str) -> String {
     decode_numeric_entities(
         &value
-        .replace("&nbsp;", " ")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
-        .replace("&mdash;", "-")
-        .replace("&ndash;", "-")
-        .replace("&amp;", "&"),
+            .replace("&nbsp;", " ")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&apos;", "'")
+            .replace("&mdash;", "-")
+            .replace("&ndash;", "-")
+            .replace("&amp;", "&"),
     )
 }
 
@@ -497,7 +529,9 @@ fn parse_anchors(markup: &str, class: &str, count: usize) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let mut rest = markup;
     while hits.len() < count {
-        let Some(class_at) = rest.find(&needle) else { break };
+        let Some(class_at) = rest.find(&needle) else {
+            break;
+        };
         let Some(anchor_at) = rest[..class_at].rfind("<a ") else {
             rest = &rest[class_at + needle.len()..];
             continue;
@@ -531,12 +565,18 @@ fn fill_snippets(markup: &str, hits: &mut [SearchHit], snippet_class: &str) {
             continue;
         };
         let window = &markup[at..(at + 6_000).min(markup.len())];
-        let Some(class_at) = window.find(&needle) else { continue };
+        let Some(class_at) = window.find(&needle) else {
+            continue;
+        };
         let Some(text_at) = window[class_at..].find('>').map(|end| class_at + end + 1) else {
             continue;
         };
         let rest = &window[text_at..];
-        let stop = rest.find("</p>").or_else(|| rest.find("</a>")).or_else(|| rest.find("</td>")).unwrap_or(rest.len());
+        let stop = rest
+            .find("</p>")
+            .or_else(|| rest.find("</a>"))
+            .or_else(|| rest.find("</td>"))
+            .unwrap_or(rest.len());
         hit.snippet = html_to_text(&rest[..stop], 300);
     }
 }
@@ -554,7 +594,10 @@ pub fn parse_bing(markup: &str, count: usize) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let mut search_from = 0usize;
     while hits.len() < count {
-        let Some(at) = markup[search_from..].find(marker).map(|offset| search_from + offset) else {
+        let Some(at) = markup[search_from..]
+            .find(marker)
+            .map(|offset| search_from + offset)
+        else {
             break;
         };
         let next = markup[at + marker.len()..]
@@ -578,7 +621,9 @@ pub fn parse_bing(markup: &str, count: usize) -> Vec<SearchHit> {
 /// texto</p>. Antes se buscaba por clase en todo el documento y ya no encontraba nada.
 fn snippet_del_bloque(block: &str) -> String {
     for marca in ["b_caption", "b_lineclamp"] {
-        let Some(at) = block.find(marca) else { continue };
+        let Some(at) = block.find(marca) else {
+            continue;
+        };
         let Some(inicio) = block[at..].find('>').map(|fin| at + fin + 1) else {
             continue;
         };
@@ -620,8 +665,12 @@ fn parse_h2_anchors(markup: &str, count: usize) -> Vec<SearchHit> {
     let mut rest = markup;
     while hits.len() < count {
         let Some(h2) = rest.find("<h2") else { break };
-        let Some(head_at) = rest[h2..].find('>').map(|end| h2 + end) else { break };
-        let Some(close) = rest[head_at..].find("</h2>").map(|end| head_at + end) else { break };
+        let Some(head_at) = rest[h2..].find('>').map(|end| h2 + end) else {
+            break;
+        };
+        let Some(close) = rest[head_at..].find("</h2>").map(|end| head_at + end) else {
+            break;
+        };
         let block = &rest[head_at + 1..close];
         if let Some(anchor) = block.find("<a ") {
             if let Some(open_end) = block[anchor..].find('>').map(|end| anchor + end) {
@@ -716,12 +765,9 @@ impl McpClientTrait for WebSearchClient {
                         extracted.push((hit.url.clone(), text));
                     }
                 }
-                Ok(CallToolResult::success(vec![ContentBlock::text(render_search(
-                    &engine,
-                    &params.query,
-                    &hits,
-                    &extracted,
-                ))]))
+                Ok(CallToolResult::success(vec![ContentBlock::text(
+                    render_search(&engine, &params.query, &hits, &extracted),
+                )]))
             }
             "web_fetch" => {
                 let params: WebFetchParams = match parse(arguments) {
@@ -729,7 +775,9 @@ impl McpClientTrait for WebSearchClient {
                     Err(message) => return Ok(failure(message)),
                 };
                 if !params.url.starts_with("http") {
-                    return Ok(failure("Error: url must start with http:// or https://".to_string()));
+                    return Ok(failure(
+                        "Error: url must start with http:// or https://".to_string(),
+                    ));
                 }
                 let max_chars = params.max_chars.unwrap_or(4_000).min(FETCH_MAX_CHARS);
                 match self.fetch_text(&params.url, max_chars).await {
@@ -751,7 +799,9 @@ impl McpClientTrait for WebSearchClient {
     }
 }
 
-fn parse<T: serde::de::DeserializeOwned>(arguments: Option<JsonObject>) -> std::result::Result<T, String> {
+fn parse<T: serde::de::DeserializeOwned>(
+    arguments: Option<JsonObject>,
+) -> std::result::Result<T, String> {
     let value = match arguments {
         Some(arguments) => serde_json::Value::Object(arguments),
         None => return Err("Error: missing arguments".to_string()),
@@ -794,6 +844,17 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].url, "https://example.com/x");
         assert!(hits[0].snippet.contains("Snippet de X"));
+    }
+
+    #[test]
+    fn html_to_text_handles_unicode_lowercase_expansion_without_panic() {
+        let markup =
+            "\u{0130}<STYLE>body{display:none}</STYLE>_visible_<SCRIPT>bad()</SCRIPT> after";
+        let text = html_to_text(markup, 400);
+        assert!(text.contains("_visible_"));
+        assert!(text.contains("after"));
+        assert!(!text.contains("display:none"));
+        assert!(!text.contains("bad()"));
     }
 
     #[test]

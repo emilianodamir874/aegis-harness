@@ -2,6 +2,15 @@
 #[allow(dead_code)]
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
+use aegis::config::AegisMode;
+use aegis::conversation::message::{Message, MessageMetadata};
+use aegis::custom_requests::{
+    GetSessionInfoRequest, GetSessionInfoResponse, UpdateSessionProjectRequest,
+};
+use aegis::recipe::{Recipe, Settings};
+use aegis::recipe_deeplink;
+use aegis::session::{SessionManager, SessionType};
+use aegis_test_support::{McpFixture, FAKE_CODE};
 use agent_client_protocol::schema::v1::{
     ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
     NewSessionRequest, PromptRequest, SessionConfigKind, SessionConfigOptionCategory,
@@ -31,15 +40,6 @@ use common_tests::{
     run_shell_terminal_false, run_shell_terminal_true, GENERATED_SESSION_TITLE,
     OPENAI_SESSION_NAME_RESPONSE, TURN_CONTEXT_OPEN,
 };
-use aegis::config::AegisMode;
-use aegis::conversation::message::{Message, MessageMetadata};
-use aegis::custom_requests::{
-    GetSessionInfoRequest, GetSessionInfoResponse, UpdateSessionProjectRequest,
-};
-use aegis::recipe::{Recipe, Settings};
-use aegis::recipe_deeplink;
-use aegis::session::{SessionManager, SessionType};
-use aegis_test_support::{McpFixture, FAKE_CODE};
 use std::path::Path;
 
 tests_config_option_set_error!(AcpServerConnection);

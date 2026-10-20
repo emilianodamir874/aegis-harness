@@ -246,10 +246,13 @@ impl MemoryServer {
                     {
                         continue;
                     }
-                    let category_memories = self.retrieve(category, is_global, working_dir)?;
+                    let category_memories = self.read_entries(category, is_global, working_dir)?;
                     memories.insert(
                         category.to_string(),
-                        category_memories.into_values().flatten().collect(),
+                        category_memories
+                            .into_iter()
+                            .flat_map(|(_, lines)| lines)
+                            .collect(),
                     );
                 }
             }
@@ -284,43 +287,48 @@ impl MemoryServer {
         Ok(())
     }
 
+    fn read_entries(
+        &self,
+        category: &str,
+        is_global: bool,
+        working_dir: Option<&PathBuf>,
+    ) -> io::Result<Vec<(String, Vec<String>)>> {
+        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
+        if !memory_file_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut content = String::new();
+        fs::File::open(memory_file_path)?.read_to_string(&mut content)?;
+
+        let mut entries = Vec::new();
+        for entry in content.split("\n\n") {
+            let mut lines = entry.lines();
+            if let Some(first_line) = lines.next() {
+                if let Some(stripped) = first_line.strip_prefix('#') {
+                    let tags = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
+                    entries.push((tags, lines.map(String::from).collect()));
+                } else {
+                    let data = std::iter::once(first_line.to_string())
+                        .chain(lines.map(String::from))
+                        .collect();
+                    entries.push(("untagged".to_string(), data));
+                }
+            }
+        }
+        Ok(entries)
+    }
+
     pub fn retrieve(
         &self,
         category: &str,
         is_global: bool,
         working_dir: Option<&PathBuf>,
     ) -> io::Result<HashMap<String, Vec<String>>> {
-        let memory_file_path = self.get_memory_file(category, is_global, working_dir)?;
-        if !memory_file_path.exists() {
-            return Ok(HashMap::new());
-        }
-
-        let mut file = fs::File::open(memory_file_path)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-
         let mut memories = HashMap::new();
-        for entry in content.split("\n\n") {
-            let mut lines = entry.lines();
-            if let Some(first_line) = lines.next() {
-                if let Some(stripped) = first_line.strip_prefix('#') {
-                    let tags = stripped
-                        .split_whitespace()
-                        .map(String::from)
-                        .collect::<Vec<_>>();
-                    memories.insert(tags.join(" "), lines.map(String::from).collect());
-                } else {
-                    let entry_data: Vec<String> = std::iter::once(first_line.to_string())
-                        .chain(lines.map(String::from))
-                        .collect();
-                    memories
-                        .entry("untagged".to_string())
-                        .or_insert_with(Vec::new)
-                        .extend(entry_data);
-                }
-            }
+        for (tags, lines) in self.read_entries(category, is_global, working_dir)? {
+            memories.entry(tags).or_insert_with(Vec::new).extend(lines);
         }
-
         Ok(memories)
     }
 
@@ -343,7 +351,13 @@ impl MemoryServer {
         let memories: Vec<&str> = content.split("\n\n").collect();
         let new_content: Vec<String> = memories
             .into_iter()
-            .filter(|entry| !entry.contains(memory_content))
+            .filter(|entry| {
+                let data = match entry.split_once('\n') {
+                    Some((header, data)) if header.starts_with('#') => data,
+                    _ => entry,
+                };
+                data.trim_end_matches('\n') != memory_content
+            })
             .map(|s| s.to_string())
             .collect();
 
@@ -663,6 +677,86 @@ mod tests {
 
         assert!(local_memory_dir.exists());
         assert!(local_memory_dir.join("category.txt").exists());
+    }
+
+    #[test]
+    fn test_retrieve_preserves_repeated_tags_and_file_order() {
+        let temp_dir = tempdir().unwrap();
+        let working_dir = temp_dir.path().to_path_buf();
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: temp_dir.path().join("global"),
+        };
+
+        for (data, tags) in [
+            ("first", vec!["shared"]),
+            ("plain", vec![]),
+            ("other", vec!["different"]),
+            ("second", vec!["shared"]),
+            ("also plain", vec![]),
+        ] {
+            router
+                .remember(
+                    "context",
+                    "category",
+                    data,
+                    &tags,
+                    false,
+                    Some(&working_dir),
+                )
+                .unwrap();
+        }
+
+        let memories = router
+            .retrieve("category", false, Some(&working_dir))
+            .unwrap();
+        assert_eq!(memories["shared"], ["first", "second"]);
+        assert_eq!(memories["untagged"], ["plain", "also plain"]);
+        assert_eq!(memories["different"], ["other"]);
+
+        let all = router.retrieve_all(false, Some(&working_dir)).unwrap();
+        assert_eq!(
+            all["category"],
+            ["first", "plain", "other", "second", "also plain"]
+        );
+    }
+
+    #[test]
+    fn test_remove_specific_memory_matches_data_not_substrings_or_tags() {
+        let temp_dir = tempdir().unwrap();
+        let working_dir = temp_dir.path().to_path_buf();
+        let router = MemoryServer {
+            tool_router: ToolRouter::new(),
+            instructions: String::new(),
+            global_memory_dir: temp_dir.path().join("global"),
+        };
+        for (data, tags) in [
+            ("needle", vec!["one"]),
+            ("needle extended", vec!["one"]),
+            ("kept", vec!["needle"]),
+            ("needle", vec!["two"]),
+        ] {
+            router
+                .remember(
+                    "context",
+                    "category",
+                    data,
+                    &tags,
+                    false,
+                    Some(&working_dir),
+                )
+                .unwrap();
+        }
+        router
+            .remove_specific_memory_internal("category", "needle", false, Some(&working_dir))
+            .unwrap();
+        let memories = router
+            .retrieve("category", false, Some(&working_dir))
+            .unwrap();
+        assert_eq!(memories["one"], ["needle extended"]);
+        assert_eq!(memories["needle"], ["kept"]);
+        assert!(!memories.contains_key("two"));
     }
 
     #[test]

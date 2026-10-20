@@ -7,8 +7,7 @@ use crate::conversation::message::Message;
 const SUMMARIZE_HISTORY: &str = "Please summarize the conversation history";
 
 /// The compaction engine only accepts structured summary JSON; keep the mock valid.
-const SUMMARY_REPLY: &str =
-    r#"{"user_intent": ["the steered work was summarized and the run continued with the latest steering applied"]}"#;
+const SUMMARY_REPLY: &str = r#"{"user_intent": ["the steered work was summarized and the run continued with the latest steering applied"]}"#;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn steering_is_fifo_during_inference_and_survives_compaction() -> Result<()> {

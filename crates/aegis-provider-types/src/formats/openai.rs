@@ -603,10 +603,7 @@ fn inline_reasoning_content(messages: &mut [Value], format: ThinkingPreservation
 fn normalize_interleaved_messages(messages: &mut Vec<Value>) {
     let mut i = 0;
     while i < messages.len() {
-        let Some(calls) = messages[i]
-            .get("tool_calls")
-            .and_then(Value::as_array)
-        else {
+        let Some(calls) = messages[i].get("tool_calls").and_then(Value::as_array) else {
             i += 1;
             continue;
         };
@@ -628,10 +625,16 @@ fn normalize_interleaved_messages(messages: &mut Vec<Value>) {
         let mut deferred_count = 0usize;
         while end < messages.len() && seen.len() < expected.len() {
             let role = messages[end].get("role");
-            if role == Some(&json!("assistant")) || role == Some(&json!("system")) { break; }
+            if role == Some(&json!("assistant")) || role == Some(&json!("system")) {
+                break;
+            }
             if role == Some(&json!("tool")) {
-                let Some(id) = messages[end].get("tool_call_id").and_then(Value::as_str) else { break; };
-                if !expected.contains(id) { break; }
+                let Some(id) = messages[end].get("tool_call_id").and_then(Value::as_str) else {
+                    break;
+                };
+                if !expected.contains(id) {
+                    break;
+                }
                 seen.insert(id.to_string());
             } else {
                 deferred_count += 1;

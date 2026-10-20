@@ -1,4 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.stubGlobal('window', { dispatchEvent: vi.fn() });
+vi.stubGlobal(
+  'CustomEvent',
+  class CustomEvent {
+    constructor(
+      public type: string,
+      public options: unknown
+    ) {}
+  }
+);
 import type { Message } from '../../types/message';
 import { ChatState } from '../../types/chatState';
 import type { Session } from '../../types/session';
@@ -11,6 +22,10 @@ import {
 import { acpCancelPrompt, acpPromptSession } from '../prompt';
 import {
   acpLoadSession,
+  acpWatchSession,
+  ACP_WATCH_REPLAY_GAP_ERROR,
+  beginAcpWatchLoad,
+  endAcpWatchLoad,
   acpTruncateSessionConversation,
   isAcpSessionLoadInFlight,
   sessionInfoToSession,
@@ -50,6 +65,10 @@ vi.mock('../sessions', () => ({
   sessionInfoToSession: vi.fn(),
   acpForkSession: vi.fn(),
   acpTruncateSessionConversation: vi.fn(),
+  acpWatchSession: vi.fn(),
+  ACP_WATCH_REPLAY_GAP_ERROR: 'ACP watch replay gap; session must be reloaded',
+  beginAcpWatchLoad: vi.fn(),
+  endAcpWatchLoad: vi.fn(),
 }));
 
 vi.mock('../prompt', () => ({
@@ -138,6 +157,7 @@ function pendingToolPermissionMessage(): Message & { id: string } {
 describe('acpChatSessionController.loadSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(acpWatchSession).mockReset();
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(undefined);
     vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
     vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
@@ -167,6 +187,74 @@ describe('acpChatSessionController.loadSession', () => {
       SESSION_ID,
       loadedSession()
     );
+  });
+
+  it('joins overlapping restores without resetting the watch boundary twice', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+    let resolveLoad!: (value: ReturnType<typeof mockLoadResult>) => void;
+    vi.mocked(acpLoadSession).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLoad = resolve;
+        })
+    );
+    const first = acpChatSessionController.restoreSession(SESSION_ID);
+    const second = acpChatSessionController.restoreSession(SESSION_ID);
+    expect(beginAcpWatchLoad).toHaveBeenCalledTimes(1);
+    expect(acpLoadSession).toHaveBeenCalledTimes(1);
+    resolveLoad(mockLoadResult());
+    await Promise.all([first, second]);
+    expect(acpWatchSession).toHaveBeenCalledTimes(1);
+    expect(endAcpWatchLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads cached history after a watch gap on reconnect', async () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+    });
+    vi.mocked(acpWatchSession)
+      .mockRejectedValueOnce(new Error(ACP_WATCH_REPLAY_GAP_ERROR))
+      .mockResolvedValueOnce({ activeRunId: null, cursor: 3, replay: [] });
+    await acpChatSessionController.loadSession(SESSION_ID);
+    expect(acpLoadSession).toHaveBeenCalledTimes(1);
+    expect(acpWatchSession).toHaveBeenCalledTimes(2);
+    expect(acpChatSessionActions.failSessionLoad).not.toHaveBeenCalled();
+  });
+  it('reattaches watch for a cached session', async () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+    });
+    await acpChatSessionController.loadSession(SESSION_ID);
+    expect(acpWatchSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpLoadSession).not.toHaveBeenCalled();
+  });
+  it('retries a load once when an intervening watch event makes its history ambiguous', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+    vi.mocked(acpWatchSession)
+      .mockRejectedValueOnce(new Error(ACP_WATCH_REPLAY_GAP_ERROR))
+      .mockResolvedValueOnce({ activeRunId: null, cursor: 4, replay: [] });
+
+    await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(acpLoadSession).toHaveBeenCalledTimes(2);
+    expect(acpChatSessionActions.startSessionLoad).toHaveBeenCalledTimes(2);
+    expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalledTimes(2);
+    expect(beginAcpWatchLoad).toHaveBeenCalledTimes(2);
+    expect(endAcpWatchLoad).toHaveBeenCalledTimes(1);
+    expect(acpChatSessionActions.failSessionLoad).not.toHaveBeenCalled();
+  });
+
+  it('stops after a second ambiguous load rather than showing a successful session', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+    vi.mocked(acpWatchSession).mockRejectedValue(new Error(ACP_WATCH_REPLAY_GAP_ERROR));
+
+    await acpChatSessionController.loadSession(SESSION_ID);
+
+    expect(acpLoadSession).toHaveBeenCalledTimes(2);
+    expect(acpChatSessionActions.failSessionLoad).toHaveBeenCalledTimes(1);
+    expect(endAcpWatchLoad).toHaveBeenCalledTimes(1);
   });
 
   it('retries a failed cached session load', async () => {
@@ -225,6 +313,7 @@ describe('acpChatSessionController.stop', () => {
 describe('acpChatSessionController.submitMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(acpWatchSession).mockReset();
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(snapshotWithActivePrompt(null));
     vi.mocked(acpPromptSession).mockResolvedValue({ stopReason: 'cancelled' } as never);
     vi.mocked(acpChatSessionActions.clearPromptCancellation).mockReturnValue(undefined);
@@ -242,6 +331,7 @@ describe('acpChatSessionController.submitMessage', () => {
       onFinish,
     });
 
+    expect(acpPromptSession).toHaveBeenCalledWith(SESSION_ID, userMessage(), expect.any(String));
     expect(acpChatSessionActions.clearPromptCancellation).toHaveBeenCalledWith(
       SESSION_ID,
       expect.any(String)
@@ -266,12 +356,12 @@ describe('acpChatSessionController.submitMessage', () => {
     expect(acpChatSessionActions.startPromptAttempt).not.toHaveBeenCalled();
     expect(acpPromptSession).not.toHaveBeenCalled();
   });
-
 });
 
 describe('acpChatSessionController.updateMessage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(acpWatchSession).mockReset();
     vi.mocked(acpTruncateSessionConversation).mockResolvedValue(undefined as never);
     vi.mocked(acpPromptSession).mockResolvedValue({ stopReason: 'end_turn' } as never);
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue(snapshotWithActivePrompt(null));

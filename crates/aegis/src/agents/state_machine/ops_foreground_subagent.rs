@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::agents::state_machine::{
-    applied, awaits_tool_responses, messages_since_kickoff, not_applicable, Emitter, AegisEffect,
+    applied, awaits_tool_responses, messages_since_kickoff, not_applicable, AegisEffect, Emitter,
     Operation, OperationResult,
 };
 use crate::agents::subagent_handler::{ForegroundSubagentRunner, SubagentOutcome, SubagentStart};

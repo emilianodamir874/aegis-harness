@@ -22,7 +22,7 @@ use super::extension::{
 use super::tool_execution::ToolCallResult;
 use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::mcp_client::{
-    ConnectContext, AegisMcpClientCapabilities, AegisMcpHostInfo, McpClientTrait,
+    AegisMcpClientCapabilities, AegisMcpHostInfo, ConnectContext, McpClientTrait,
 };
 use crate::agents::provider_manager::{provider_name_for, ProviderManager};
 use crate::config::extensions::name_to_key;
@@ -1108,8 +1108,8 @@ mod tests {
     use rmcp::model::ServerNotification;
 
     use super::super::tool_execution::{ToolCallContext, ToolCallNotificationEmitter};
-    use futures::StreamExt;
     use aegis_test_support::mcp::McpFixtureServer;
+    use futures::StreamExt;
     use rmcp::model::{CallToolRequestParams, GetPromptResult, Resource};
     use rmcp::ServiceExt;
     use std::sync::atomic::AtomicUsize;

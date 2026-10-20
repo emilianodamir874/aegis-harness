@@ -13,8 +13,8 @@ pub mod databricks_v2;
 pub mod decision;
 pub mod google;
 pub use aegis_provider_types::{
-    base, cache_semantics, canonical, context_limit, conversation, documents, errors, formats,
-    aegis_mode, images, json, model, permission, request_log, retry, thinking, utils,
+    aegis_mode, base, cache_semantics, canonical, context_limit, conversation, documents, errors,
+    formats, images, json, model, permission, request_log, retry, thinking, utils,
 };
 pub mod browser_live_transport;
 pub mod declarative;

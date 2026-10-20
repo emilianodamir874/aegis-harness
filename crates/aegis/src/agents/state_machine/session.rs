@@ -423,10 +423,13 @@ mod tests {
             .unwrap();
         assert!(!kickoff.is_user_visible());
         assert!(!kickoff.is_agent_visible());
-        assert!(messages
+        let concurrent = messages
             .messages()
             .iter()
-            .any(|message| message.id.as_deref() == Some("concurrent-live")));
+            .find(|message| message.id.as_deref() == Some("concurrent-live"))
+            .unwrap();
+        assert!(concurrent.is_user_visible());
+        assert!(!concurrent.is_agent_visible());
         assert!(messages
             .messages()
             .iter()

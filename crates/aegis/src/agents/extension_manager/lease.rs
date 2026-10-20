@@ -23,8 +23,8 @@ use tracing::warn;
 
 use super::{
     get_tool_meta_value, get_tool_owner, get_tool_resource_uri, insert_trusted_tool_update_meta,
-    recover_mangled_tool_name, remove_untrusted_mcp_app_meta, ActionRequiredStream, Extension,
-    ExtensionLoadResult, ExtensionMutation, ExtensionSlot, AegisMcpAppToolAttachment,
+    recover_mangled_tool_name, remove_untrusted_mcp_app_meta, ActionRequiredStream,
+    AegisMcpAppToolAttachment, Extension, ExtensionLoadResult, ExtensionMutation, ExtensionSlot,
     TOOL_CALL_NOTIFICATION_CHANNEL_CAPACITY,
 };
 use crate::action_required_manager::ActionRequiredManager;

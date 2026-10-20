@@ -412,6 +412,11 @@ pub fn register_declarative_providers(
     let custom_providers = load_custom_providers(&dir)?;
     let fixed_providers = fixed_provider_configs()?;
     for config in fixed_providers {
+        // The native Go provider supports the OpenCode CLI OAuth session; the older bundled
+        // declarative definition requires a separate API key and must not replace it.
+        if config.name == crate::providers::opencode_go::PROVIDER_NAME {
+            continue;
+        }
         register_declarative_provider(registry, config, ProviderType::Declarative);
     }
 

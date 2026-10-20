@@ -21,6 +21,35 @@ const DEFAULT_TOOL_CALL_UPDATE = {
 const OUTPUT_TOKEN_LIMIT_FALLBACK_TEXT =
   'Response stopped because the model reached its output-token limit.';
 
+describe('published message changes', () => {
+  it('preserves earlier arrays and messages when a later chunk or usage updates one message', () => {
+    const adapter = createAcpSessionNotificationAdapter();
+    const first = expectOnlyMessagesChange(adapter.apply(userText('user')));
+    const second = expectOnlyMessagesChange(adapter.apply(agentText('Hello')));
+    const third = expectOnlyMessagesChange(adapter.apply(agentText(' world')));
+    expect(first).toHaveLength(1);
+    expect(second[1].content[0]).toEqual({ type: 'text', text: 'Hello' });
+    expect(third[1].content[0]).toEqual({ type: 'text', text: 'Hello world' });
+    expect(second[0]).toBe(third[0]);
+    expect(second[1]).not.toBe(third[1]);
+    const usage = expectOnlyMessagesChange(
+      adapter.applyAegis(
+        aegisUpdate({
+          sessionUpdate: 'message_usage',
+          messageId: 'missing',
+          usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+        } as AegisSessionNotification_unstable['update'])
+      )
+    );
+    expect(third[1].metadata.usage).toBeUndefined();
+    expect(usage[1].metadata.usage?.totalTokens).toBe(3);
+    expect(usage[0]).toBe(third[0]);
+    expect(adapter.getMessagesSnapshot()).toBe(usage);
+    const copy = adapter.getMessages();
+    expect(copy).not.toBe(usage);
+    expect(copy[0]).not.toBe(usage[0]);
+  });
+});
 function acpUpdate(update: SessionNotification['update']): SessionNotification {
   return {
     sessionId: SESSION_ID,

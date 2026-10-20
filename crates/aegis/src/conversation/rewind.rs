@@ -56,11 +56,7 @@ fn is_rewindable_turn(message: &Message) -> bool {
 fn first_text(message: &Message) -> Option<String> {
     message.content.iter().find_map(|block| match block {
         MessageContent::Text(text) => {
-            let collapsed = text
-                .text
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
+            let collapsed = text.text.split_whitespace().collect::<Vec<_>>().join(" ");
             (!collapsed.is_empty()).then_some(collapsed)
         }
         _ => None,
@@ -85,6 +81,44 @@ pub fn collect_turns(conversation: &Conversation) -> Vec<Turn> {
             })
         })
         .collect()
+}
+
+/// Flip `agent_visible` back on for every stored message after the last visible
+/// one, and return how many returned. This is the inverse of [`hide_tail_from`]:
+/// it can only restore a rewound tail, never compacted history, because
+/// compaction hides messages before the last visible message, not after it.
+///
+/// Turn-context events are skipped: they are agent-only by design and must stay
+/// out of the user's transcript.
+pub async fn show_tail_after_last_visible(
+    session_manager: &SessionManager,
+    session_id: &str,
+    conversation: &Conversation,
+) -> Result<usize> {
+    let messages = conversation.messages();
+    let Some(last_visible) = messages
+        .iter()
+        .rposition(|message| message.is_agent_visible() && !message.metadata.turn_context)
+    else {
+        return Ok(0);
+    };
+
+    let mut restored = 0usize;
+    for message in messages.iter().skip(last_visible + 1) {
+        if message.is_agent_visible() || message.metadata.turn_context {
+            continue;
+        }
+        if let Some(message_id) = message.id.as_deref() {
+            session_manager
+                .update_message_metadata(session_id, message_id, |mut metadata| {
+                    metadata.agent_visible = true;
+                    metadata
+                })
+                .await?;
+            restored += 1;
+        }
+    }
+    Ok(restored)
 }
 
 /// The stored index of the turn `back` positions from the end (1 = last).

@@ -397,7 +397,7 @@ fn create_tool_callback(
                         .result
                         .await
                     {
-                        Ok(result) => Ok(callback_result_to_value(&result)),
+                        Ok(result) => callback_result_to_value(&result),
                         Err(e) => Err(format!("Tool error: {}", e.message)),
                     },
                     Err(e) => Err(format!("Dispatch error: {e}")),
@@ -418,7 +418,7 @@ fn create_tool_callback(
     })
 }
 
-fn callback_result_to_value(result: &CallToolResult) -> Value {
+fn callback_result_to_value(result: &CallToolResult) -> Result<Value, String> {
     let text = result
         .content
         .iter()
@@ -438,7 +438,34 @@ fn callback_result_to_value(result: &CallToolResult) -> Value {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    serde_json::from_str(&text).unwrap_or(Value::String(text))
+    if result.is_error == Some(true) {
+        let mut message = if text.trim().is_empty() {
+            "Tool returned an error".to_string()
+        } else {
+            text
+        };
+        if let Some(structured) = &result.structured_content {
+            let metadata = ["exit_code", "timed_out"]
+                .iter()
+                .filter_map(|key| {
+                    structured
+                        .get(*key)
+                        .filter(|value| match *key {
+                            "exit_code" => value.as_i64().is_some(),
+                            "timed_out" => value.is_boolean(),
+                            _ => false,
+                        })
+                        .map(|value| format!("{key}: {value}"))
+                })
+                .collect::<Vec<_>>();
+            if !metadata.is_empty() {
+                message.push_str(&format!("\n{}", metadata.join(", ")));
+            }
+        }
+        return Err(message);
+    }
+
+    Ok(serde_json::from_str(&text).unwrap_or(Value::String(text)))
 }
 
 #[async_trait]
@@ -700,7 +727,7 @@ mod tests {
         ));
 
         assert_eq!(
-            callback_result_to_value(&result),
+            callback_result_to_value(&result).unwrap(),
             Value::String("visible text".to_string())
         );
     }
@@ -729,7 +756,51 @@ mod tests {
             assistant_only,
         ]);
 
-        assert_eq!(callback_result_to_value(&result), json!({"visible": true}));
+        assert_eq!(
+            callback_result_to_value(&result).unwrap(),
+            json!({"visible": true})
+        );
+    }
+
+    #[test]
+    fn callback_result_rejects_mcp_error_with_visible_text_and_exit_metadata() {
+        let hidden = ContentBlock::Text(
+            TextContent::new("private details")
+                .with_annotations(Annotations::default().with_audience(vec![Role::User])),
+        );
+        let mut result = CallToolResult::error(vec![ContentBlock::text("command failed"), hidden]);
+        result.structured_content =
+            Some(json!({"exit_code": 7, "timed_out": false, "stderr": "private stderr"}));
+        result.meta = Some(MetaObject(
+            json!({"private": "metadata"}).as_object().unwrap().clone(),
+        ));
+
+        let error = callback_result_to_value(&result).unwrap_err();
+        assert!(error.contains("command failed"));
+        assert!(error.contains("exit_code: 7"));
+        assert!(error.contains("timed_out: false"));
+        assert!(!error.contains("private"));
+    }
+
+    #[test]
+    fn callback_result_rejects_timeout_without_exposing_structured_stderr() {
+        let mut result = CallToolResult::error(vec![]);
+        result.structured_content =
+            Some(json!({"stderr": "operation timed out", "timed_out": true}));
+
+        let error = callback_result_to_value(&result).unwrap_err();
+        assert!(error.contains("Tool returned an error"));
+        assert!(!error.contains("operation timed out"));
+        assert!(error.contains("timed_out: true"));
+    }
+
+    #[test]
+    fn callback_result_error_without_visible_details_has_meaningful_fallback() {
+        let result = CallToolResult::error(vec![ContentBlock::image("secret", "image/png")]);
+        assert_eq!(
+            callback_result_to_value(&result).unwrap_err(),
+            "Tool returned an error"
+        );
     }
 
     struct VisibilityClient;

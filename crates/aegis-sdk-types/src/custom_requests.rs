@@ -6,6 +6,51 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Rewind the last turn and, optionally, switch the frame profile, in one call.
+///
+/// Returns the same shape a rewind does plus the profile that is now in effect, so the client can
+/// resend without a second round-trip in between.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_aegis/unstable/session/retry",
+    response = RetryLastTurnResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct RetryLastTurnRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+}
+
+/// The rewound turn plus the profile now in effect.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct RetryLastTurnResponse {
+    pub text: String,
+    pub preview: String,
+    pub hidden: u32,
+    pub profile: String,
+}
+
+/// Undo the most recent rewind: the model sees the tail again.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_aegis/unstable/session/unrewind",
+    response = UnrewindSessionResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct UnrewindSessionRequest {
+    pub session_id: String,
+}
+
+/// How many messages came back into the model's view.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct UnrewindSessionResponse {
+    pub restored: u32,
+}
+
+
 mod recipe;
 pub use recipe::*;
 mod schedule;
@@ -195,6 +240,22 @@ pub enum SessionSystemPromptMode {
     /// Append the provided text under Aegis's "Additional Instructions" section.
     #[default]
     Append,
+}
+
+/// Select the turn framing profile for a session.
+///
+/// `work` (the default) adds nothing. `fiction`, `synthetic` and `stacked` prepend the measured
+/// framing text to every user turn of that session. Fix the profile when the session is created:
+/// switching mid-conversation measured worse than either profile alone.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_aegis/unstable/session/frame-profile/set",
+    response = EmptyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SetFrameProfileRequest {
+    pub session_id: String,
+    pub profile: String,
 }
 
 /// Set, append, or clear system prompt text for a session.
@@ -772,6 +833,9 @@ pub struct SessionWatchRequest {
     /// start of the current run when one is active.
     #[serde(default)]
     pub since: Option<u64>,
+    /// Epoch of the ring returned by the last watch; detect a restart or eviction.
+    #[serde(default)]
+    pub epoch: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
@@ -781,6 +845,8 @@ pub struct SessionWatchResponse {
     pub active_run_id: Option<String>,
     /// Cursor to send back as `since` on the next watch/reconnect.
     pub cursor: u64,
+    /// Unique identifier of the current in-memory replay ring.
+    pub epoch: String,
     /// Complete JSON-RPC notifications the watcher missed, oldest first. A
     /// leading `_aegis/unstable/session/replay_gap` notification means the ring
     /// truncated and the client must `session/load`.
