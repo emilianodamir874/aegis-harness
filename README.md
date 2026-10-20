@@ -480,7 +480,7 @@ version JS anterior (mismo largo byte a byte para goals y stats).
 
 ```
 cd web
-npm test                        # ui-mobile + gasto contra AEGIS_WEB_URL (default http://127.0.0.1:3788)
+npm test                        # regresiones aisladas cliente/servidor + ui-mobile + gasto contra AEGIS_WEB_URL (default http://127.0.0.1:3788)
 $env:AEGIS_TEST_SMOKE='1'; npm test
 $env:AEGIS_WEB_URL='https://192.168.100.34:3789'; npm test
 ```
