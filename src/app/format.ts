@@ -59,3 +59,25 @@ export function compactTrig(st: { autoCompactAt?: number | null; autoCompactPct?
   if (st.limit) return { at: st.limit * COMPACT_RATIO, pct: COMPACT_RATIO * 100, estimated: true };
   return { at: null, pct: null, estimated: true };
 }
+
+export const sameDay = (a: Date, b: Date): boolean => a.toDateString() === b.toDateString();
+
+export const dayLabel = (iso: string | null | undefined): string => {
+  const d = new Date(iso as string);
+  if (isNaN(d.getTime())) return 'Más antiguas';
+  const now = new Date();
+  if (sameDay(d, now)) return 'Hoy';
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  if (sameDay(d, y)) return 'Ayer';
+  if (now.getTime() - d.getTime() < 7 * 864e5) return 'Esta semana';
+  if (now.getTime() - d.getTime() < 31 * 864e5) return 'Este mes';
+  return 'Más antiguas';
+};
+
+export const fmtTime = (iso: string | null | undefined): string => {
+  const d = new Date(iso as string);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  if (sameDay(d, now)) return d.toTimeString().slice(0, 5);
+  return d.getDate() + '/' + (d.getMonth() + 1);
+};

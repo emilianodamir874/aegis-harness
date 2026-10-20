@@ -41,6 +41,26 @@ function compactTrig(st) {
   if (st.limit) return { at: st.limit * COMPACT_RATIO, pct: COMPACT_RATIO * 100, estimated: true };
   return { at: null, pct: null, estimated: true };
 }
+var sameDay = (a, b) => a.toDateString() === b.toDateString();
+var dayLabel = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "Más antiguas";
+  const now = /* @__PURE__ */ new Date();
+  if (sameDay(d, now)) return "Hoy";
+  const y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  if (sameDay(d, y)) return "Ayer";
+  if (now.getTime() - d.getTime() < 7 * 864e5) return "Esta semana";
+  if (now.getTime() - d.getTime() < 31 * 864e5) return "Este mes";
+  return "Más antiguas";
+};
+var fmtTime = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const now = /* @__PURE__ */ new Date();
+  if (sameDay(d, now)) return d.toTimeString().slice(0, 5);
+  return d.getDate() + "/" + (d.getMonth() + 1);
+};
 
 // src/app/icons.ts
 var TOOL_ICON = {
@@ -105,26 +125,6 @@ function ttsUrlFor(voice, text) {
   const greeting = () => {
     const h = (/* @__PURE__ */ new Date()).getHours();
     return h >= 6 && h < 12 ? "Buenos días" : h >= 12 && h < 20 ? "Buenas tardes" : "Buenas noches";
-  };
-  const sameDay = (a, b) => a.toDateString() === b.toDateString();
-  const dayLabel = (iso) => {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "Más antiguas";
-    const now = /* @__PURE__ */ new Date();
-    if (sameDay(d, now)) return "Hoy";
-    const y = new Date(now);
-    y.setDate(now.getDate() - 1);
-    if (sameDay(d, y)) return "Ayer";
-    if (now.getTime() - d.getTime() < 7 * 864e5) return "Esta semana";
-    if (now.getTime() - d.getTime() < 31 * 864e5) return "Este mes";
-    return "Más antiguas";
-  };
-  const fmtTime = (iso) => {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    const now = /* @__PURE__ */ new Date();
-    if (sameDay(d, now)) return d.toTimeString().slice(0, 5);
-    return d.getDate() + "/" + (d.getMonth() + 1);
   };
   const inline = (t) => {
     let s = esc(t);

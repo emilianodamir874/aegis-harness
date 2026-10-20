@@ -1,6 +1,6 @@
 // aegis-web · cliente de chat ACP v3 (sin dependencias): sesiones, streaming,
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
-import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, tpsOf, COMPACT_RATIO, compactTrig } from './app/format';
+import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, tpsOf, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
 import { toolIconSvg } from './app/icons';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 (() => {
@@ -28,25 +28,6 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const h = new Date().getHours();
     // El corte estaba en las 13: a las 12:35 todavia decia "Buenos dias". Desde el mediodia, tardes.
     return h >= 6 && h < 12 ? 'Buenos días' : h >= 12 && h < 20 ? 'Buenas tardes' : 'Buenas noches';
-  };
-  const sameDay = (a, b) => a.toDateString() === b.toDateString();
-  const dayLabel = (iso) => {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return 'Más antiguas';
-    const now = new Date();
-    if (sameDay(d, now)) return 'Hoy';
-    const y = new Date(now); y.setDate(now.getDate() - 1);
-    if (sameDay(d, y)) return 'Ayer';
-    if (now.getTime() - d.getTime() < 7 * 864e5) return 'Esta semana';
-    if (now.getTime() - d.getTime() < 31 * 864e5) return 'Este mes';
-    return 'Más antiguas';
-  };
-  const fmtTime = (iso) => {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '';
-    const now = new Date();
-    if (sameDay(d, now)) return d.toTimeString().slice(0, 5);
-    return d.getDate() + '/' + (d.getMonth() + 1);
   };
 
   // ---------- markdown ----------
