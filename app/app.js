@@ -63,6 +63,27 @@ function toolIconSvg(kind, status) {
   return '<svg class="tico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + TOOL_ICON[kind] + "</svg>";
 }
 
+// src/app/read.ts
+var TICK = String.fromCharCode(96);
+function readHeading(t) {
+  const re = /^[ \t]*#{1,6}[ \t]*(?:[^\w\n]{0,4}[ \t]*)?(?:para[ \t]+(?:escuchar|leer|oir|oír)|lectura[ \t]+en[ \t]+voz)[^\n]*$/im;
+  const m = re.exec(String(t || ""));
+  return m ? { idx: m.index, len: m[0].length } : null;
+}
+function readBlock(t) {
+  const h = readHeading(t);
+  if (!h) return "";
+  const rest = String(t).slice(h.idx + h.len);
+  const end = rest.search(/^[ \t]*#{1,6}[ \t]/m);
+  return (end >= 0 ? rest.slice(0, end) : rest).trim();
+}
+function readClean(s) {
+  return String(s || "").replace(new RegExp(TICK + TICK + TICK + "[\\s\\S]*?" + TICK + TICK + TICK, "g"), " ").replace(new RegExp(TICK + "([^" + TICK + "]*)" + TICK, "g"), "$1").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, "").replace(/^[ \t]*>[ \t]?/gm, "").replace(/[#*_~|]/g, "").replace(/\s+/g, " ").trim();
+}
+function ttsUrlFor(voice, text) {
+  return "/tts?voice=" + encodeURIComponent(voice) + "&text=" + encodeURIComponent(text);
+}
+
 // src/app.ts
 (() => {
   "use strict";
@@ -4238,22 +4259,6 @@ ${a.text}
     localStorage.removeItem("aegis.ttsVoice");
   } catch (e) {
   }
-  var TICK = String.fromCharCode(96);
-  function readHeading(t) {
-    var re = /^[ \t]*#{1,6}[ \t]*(?:[^\w\n]{0,4}[ \t]*)?(?:para[ \t]+(?:escuchar|leer|oir|oír)|lectura[ \t]+en[ \t]+voz)[^\n]*$/im;
-    var m = re.exec(String(t || ""));
-    return m ? { idx: m.index, len: m[0].length } : null;
-  }
-  function readBlock(t) {
-    var h = readHeading(t);
-    if (!h) return "";
-    var rest = String(t).slice(h.idx + h.len);
-    var end = rest.search(/^[ \t]*#{1,6}[ \t]/m);
-    return (end >= 0 ? rest.slice(0, end) : rest).trim();
-  }
-  function readClean(s) {
-    return String(s || "").replace(new RegExp(TICK + TICK + TICK + "[\\s\\S]*?" + TICK + TICK + TICK, "g"), " ").replace(new RegExp(TICK + "([^" + TICK + "]*)" + TICK, "g"), "$1").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, "").replace(/^[ \t]*>[ \t]?/gm, "").replace(/[#*_~|]/g, "").replace(/\s+/g, " ").trim();
-  }
   function readVoicePick() {
     try {
       var vs = window.speechSynthesis.getVoices() || [];
@@ -4266,13 +4271,10 @@ ${a.text}
     }
   }
   var AUD = { q: [], playing: false, cur: null, pre: null };
-  function ttsUrl(t) {
-    return "/tts?voice=" + encodeURIComponent(READ.voiceName) + "&text=" + encodeURIComponent(t);
-  }
   function audPrefetch() {
     if (AUD.pre || !AUD.q.length) return;
     var t = AUD.q[0];
-    var a = new Audio(ttsUrl(t));
+    var a = new Audio(ttsUrlFor(READ.voiceName, t));
     a.preload = "auto";
     try {
       a.load();
@@ -4287,7 +4289,7 @@ ${a.text}
     AUD.pre = null;
     AUD.q.shift();
     AUD.playing = true;
-    a = a || new Audio(ttsUrl(t));
+    a = a || new Audio(ttsUrlFor(READ.voiceName, t));
     AUD.cur = a;
     var segir = function() {
       AUD.playing = false;

@@ -2,6 +2,7 @@
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
 import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, tpsOf, COMPACT_RATIO, compactTrig } from './app/format';
 import { toolIconSvg } from './app/icons';
+import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -4143,34 +4144,7 @@ import { toolIconSvg } from './app/icons';
     if (localStorage.getItem('aegis.ttsEngine') !== 'piper') localStorage.removeItem('aegis.ttsEngine');
     localStorage.removeItem('aegis.ttsVoice');
   } catch (e) {}
-  var TICK = String.fromCharCode(96); // comilla invertida (para armar los patrones de code fences)
 
-  function readHeading(t) {
-    var re = /^[ \t]*#{1,6}[ \t]*(?:[^\w\n]{0,4}[ \t]*)?(?:para[ \t]+(?:escuchar|leer|oir|oír)|lectura[ \t]+en[ \t]+voz)[^\n]*$/im;
-    var m = re.exec(String(t || ''));
-    return m ? { idx: m.index, len: m[0].length } : null;
-  }
-  // devuelve el texto crudo del bloque (sin el encabezado); termina en el proximo encabezado
-  function readBlock(t) {
-    var h = readHeading(t);
-    if (!h) return '';
-    var rest = String(t).slice(h.idx + h.len);
-    var end = rest.search(/^[ \t]*#{1,6}[ \t]/m);
-    return (end >= 0 ? rest.slice(0, end) : rest).trim();
-  }
-  // pasa markdown a texto hablable
-  function readClean(s) {
-    return String(s || '')
-      .replace(new RegExp(TICK + TICK + TICK + '[\\s\\S]*?' + TICK + TICK + TICK, 'g'), ' ')  // bloques de codigo
-      .replace(new RegExp(TICK + '([^' + TICK + ']*)' + TICK, 'g'), '$1')                          // codigo inline
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')                                                   // imagenes
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')                                                 // links -> texto
-      .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, '')                                           // vinetas
-      .replace(/^[ \t]*>[ \t]?/gm, '')                                                            // citas
-      .replace(/[#*_~|]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
   function readVoicePick() {
     try {
       var vs = window.speechSynthesis.getVoices() || [];
@@ -4182,14 +4156,13 @@ import { toolIconSvg } from './app/icons';
   // Motor del server (Piper, voces neuronales locales) con cola de audio: una frase a la vez,
   // y si algo falla cae a la voz del dispositivo en vez de quedarse mudo.
   var AUD = { q: [], playing: false, cur: null, pre: null };
-  function ttsUrl(t) { return '/tts?voice=' + encodeURIComponent(READ.voiceName) + '&text=' + encodeURIComponent(t); }
   // Se pide YA la frase siguiente mientras suena la actual: Piper tarda ~1 s por frase (casi todo es
   // arrancar el proceso) y ese tiempo queda escondido detras del audio que ya esta sonando: antes cada
   // punto y aparte se notaba como una pausa.
   function audPrefetch() {
     if (AUD.pre || !AUD.q.length) return;
     var t = AUD.q[0];
-    var a = new Audio(ttsUrl(t));
+    var a = new Audio(ttsUrlFor(READ.voiceName, t));
     a.preload = 'auto';
     try { a.load(); } catch (e) {}
     AUD.pre = { t: t, a: a };
@@ -4201,7 +4174,7 @@ import { toolIconSvg } from './app/icons';
     AUD.pre = null;
     AUD.q.shift();
     AUD.playing = true;
-    a = a || new Audio(ttsUrl(t));
+    a = a || new Audio(ttsUrlFor(READ.voiceName, t));
     AUD.cur = a;
     var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); };
     // Sin caida a la voz del dispositivo (a pedido: la del telefono suena mal). Si el server no
