@@ -91,6 +91,16 @@ try {
     marker,
     { timeout: 16000 },
   );
+  // El DOM se repinta mientras el replay del hub y el stream vivo convergen: se espera a que
+  // quede una sola copia (hasta 12 s) en vez de mirar una foto instantanea. Si despues de eso
+  // sigue duplicada, es una duplicacion real y el check falla igual.
+  try {
+    await page.waitForFunction(
+      (m: string) => [...document.querySelectorAll('#msg-inner .msg-a')].filter((el) => el.textContent?.includes(m)).length === 1,
+      marker,
+      { timeout: 12000 },
+    );
+  } catch {}
   const seen = await page.evaluate((m: string) => ({
     matches: [...document.querySelectorAll('#msg-inner .msg-a')].filter((el) => el.textContent?.includes(m)).length,
     runId: (window as any).__aegisWeb.state.runId,
