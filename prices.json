@@ -1,5 +1,5 @@
 {
-  "_comentario": "USD por 1M tokens. inputEffective = lo que te cuesta 1M tokens de ENTRADA con tu mezcla real de cache (se calcula como costo total / tokens de entrada y reproduce tu gasto con menos de 1% de error). input/output = tarifas por tramo cuando la regresion es confiable (gpt-6-sol: los numeros son exactos, 0% de error). null = el proveedor no reporta costo.",
+  "_comentario": "Estimaciones históricas por 1M tokens derivadas de una muestra de 2026-10-14, NO tarifas verificadas ni factura. inputEffective combina costo total (entrada, salida y cache) / tokens de entrada de esa muestra; NO aplicar además un cargo de salida ni asumir que reproduce otra mezcla. input/output son un ajuste estadístico, no precio contractual. null = costo no informado, NO gratis.",
   "_derivado": "2026-10-14 por el agente sobre los mensajes con usage.cost del store (no inventado)",
   "chatgpt_codex/gpt-6-sol": {
     "input": 2.0,

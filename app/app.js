@@ -1791,7 +1791,7 @@ function ttsUrlFor(voice, text) {
       if (mu.isCompaction) b.push("COMPACTACION");
       if (b.length) L.push("Ultimo paso: " + b.join("  ·  "));
     }
-    if (s.cost != null) L.push("Costo acumulado: " + fmtCost(s.cost));
+    if (s.cost != null) L.push("Costo acumulado estimado (no factura): " + fmtCost(s.cost));
     if (!L.length) L.push("Sin datos de uso todavia.");
     return L;
   }
@@ -1918,18 +1918,10 @@ function ttsUrlFor(voice, text) {
     }
     (function() {
       const mid = "  " + String.fromCharCode(183) + "  ";
-      const price = (m) => {
-        const pr = pricesCache && pricesCache[m.provider + "/" + m.model] || null;
-        if (!pr) return "";
-        const eff = pr.inputEffective != null ? pr.inputEffective : pr.input;
-        if (eff == null) return "";
-        const usd = m.inputTokens / 1e6 * eff;
-        return "  " + String.fromCharCode(183) + "  USD " + usd.toFixed(3);
-      };
       let extra = "";
       if (Array.isArray(s.modelUsage) && s.modelUsage.length) {
         extra += s.modelUsage.map(function(m) {
-          return popRow("  " + m.model, m.calls + " llam" + mid + "entrada " + niceTok(m.inputTokens) + mid + "salida " + niceTok(m.outputTokens) + price(m));
+          return popRow("  " + m.model, m.calls + " llam" + mid + "entrada " + niceTok(m.inputTokens) + mid + "salida " + niceTok(m.outputTokens));
         }).join("");
       }
       if (s.compactionCalls) {
@@ -1937,7 +1929,7 @@ function ttsUrlFor(voice, text) {
       }
       if (extra) w.querySelector(".up-rows").insertAdjacentHTML("beforeend", extra);
     })();
-    w.querySelector(".up-foot").textContent = (mp.model || "modelo ?") + (mp.effort ? "  ·  esfuerzo " + mp.effort + (mp.fromAlias ? " (alias)" : "") : "") + (s.cost != null ? "  ·  " + fmtCost(s.cost) : "");
+    w.querySelector(".up-foot").textContent = (mp.model || "modelo ?") + (mp.effort ? "  ·  esfuerzo " + mp.effort + (mp.fromAlias ? " (alias)" : "") : "") + (s.cost != null ? "  ·  costo estimado " + fmtCost(s.cost) + " (no factura)" : "");
     w.hidden = false;
     placeUsagePop();
     bar.style.transition = "none";
@@ -1991,7 +1983,7 @@ function ttsUrlFor(voice, text) {
     const parts = [];
     if (pct != null) parts.push(pct + "%");
     if (s.used != null) parts.push(fmtTok(s.used) + (s.limit ? "/" + fmtTok(s.limit) : "") + " tok");
-    if (s.cost != null) parts.push(fmtCost(s.cost));
+    if (s.cost != null) parts.push("~" + fmtCost(s.cost) + " est.");
     el.textContent = flag + parts.filter(Boolean).join("  ·  ");
     el.title = usageLines().join(String.fromCharCode(10)) + String.fromCharCode(10) + String.fromCharCode(10) + "Toque para ver el detalle en el chat.";
     el.dataset.level = pct == null ? "na" : pct >= COMPACT_RATIO * 100 ? "hot" : pct >= 50 ? "warm" : "ok";
@@ -2006,12 +1998,6 @@ function ttsUrlFor(voice, text) {
       }
     };
   }
-  let pricesCache = null;
-  fetch("./prices.json").then((r) => r.json()).then((p) => {
-    pricesCache = p || {};
-  }).catch(() => {
-    pricesCache = {};
-  });
   function setUsage(u) {
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, lastSet: null, lastMsg: null });
     dbg.setUsage++;

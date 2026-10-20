@@ -1,94 +1,196 @@
 #!/usr/bin/env python3
-"""Auditoria de costo y tokens de Aegis, read-only (A3/A6 del relevamiento).
+"""Auditoría read-only: costos estimados reportados por Aegis, no facturación.
 
-Uso: python audit-costs.py [--days 2] [--db <ruta>]
-
-Atribuye tokens por (proveedor, modelo) leyendo metadata.inference de cada mensaje,
-porque una sesion puede cambiar de modelo a mitad de camino: el modelo de la sesion no
-sirve para atribuir su costo. Muestra ademas los tokens de compactacion interna (los
-que se cobran sin dejar mensaje de assistant) y el residual no atribuible.
+Uso: python tools/audit-costs.py --days 2 [--db sessions.db]
+La ventana se aplica a cada llamada (usage_ledger.created_timestamp), no a la
+última modificación de la sesión. Los días se muestran en UTC.
 """
-import argparse, collections, datetime, io, json, sqlite3, sys
+import argparse
+import collections
+import datetime
+import json
+import pathlib
+import sqlite3
 
-DEFAULT_DB = r'C:/Aegis-Proyects/state/data/sessions/sessions.db'
-PRICES = r'C:/goose-web/prices.json'
+DEFAULT_DB = pathlib.Path('C:/Aegis-Proyects/state/data/sessions/sessions.db')
+PRICES = pathlib.Path(__file__).resolve().parent.parent / 'prices.json'
 
 
 def load_prices():
-    """USD por 1M tokens, por provider/model, desde prices.json (opcional)."""
+    """Tarifas opcionales; solo para indicar que NO sustituyen el costo registrado."""
     try:
-        data = json.load(io.open(PRICES, encoding='utf-8'))
-    except Exception:
+        return json.loads(PRICES.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
         return {}
-    out = {}
-    for k, v in data.items():
-        if k.startswith('_') or not isinstance(v, dict):
+
+
+def columns(con, table):
+    return {r[1] for r in con.execute('PRAGMA table_info(' + table + ')')}
+
+
+def model_providers(con, since):
+    """El ledger antiguo solo guarda modelo: atribuir proveedor si no hay ambigüedad."""
+    result = collections.defaultdict(set)
+    if not columns(con, 'messages'):
+        return result
+    for sid, raw in con.execute('SELECT session_id, metadata_json FROM messages WHERE metadata_json IS NOT NULL AND created_timestamp >= ?', (since,)):
+        try:
+            inf = json.loads(raw).get('inference') or {}
+            provider = inf.get('provider')
+            model = inf.get('requestedModel')
+            if provider and model:
+                result[(sid, model)].add(provider)
+        except (TypeError, ValueError, AttributeError):
             continue
-        if v.get('inputEffective') is not None or (v.get('input') is not None and v.get('output') is not None):
-            out[k] = (v.get('inputEffective'), v.get('input'), float(v['output']) if v.get('output') is not None else None)
-    return out
+    return result
 
 
-def usd_for(key, tokens_in, tokens_out, prices):
-    pr = prices.get(key)
-    if not pr:
-        return None
-    if pr[0] is not None:
-        return tokens_in / 1e6 * pr[0]
-    return tokens_in / 1e6 * pr[1] + tokens_out / 1e6 * pr[2]
+def report_ledger(con, since, out=print):
+    cols = columns(con, 'usage_ledger')
+    provider_col = 'provider' if 'provider' in cols else None
+    mappings = model_providers(con, since) if not provider_col else {}
+    where = 'WHERE l.created_timestamp >= ?'
+    # A query per call preserves nullable cost, source and session/model identity.
+    sql = ('SELECT l.session_id, l.created_timestamp, l.model, l.input_tokens, l.output_tokens, '
+           'l.cache_read_tokens, l.cache_write_tokens, l.cost, l.cost_source, l.is_compaction, '
+           + ('l.provider' if provider_col else 'NULL') + ' FROM usage_ledger l ' + where)
+    days = collections.defaultdict(lambda: [0, 0., 0, 0, 0, 0, 0, 0, set()])
+    models = collections.defaultdict(lambda: [0, 0., 0, 0, 0, 0, 0, 0])
+    sessions = collections.defaultdict(lambda: [0, 0., 0, 0, 0])
+    sess_models = collections.defaultdict(set)
+    sources = collections.defaultdict(lambda: [0, 0.])
+    comp = [0, 0, 0, 0.]
+    total = 0
+    for sid, ts, model, inp, output, cache_r, cache_w, cost, source, is_comp, provider in con.execute(sql, (since,)):
+        total += 1
+        model = model or '?'
+        if not provider:
+            known = mappings.get((sid, model), set())
+            provider = next(iter(known)) if len(known) == 1 else '?'
+        key = (provider, model)
+        i, o, cr, cw = inp or 0, output or 0, cache_r or 0, cache_w or 0
+        d = days[datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime('%Y-%m-%d')]
+        d[0] += 1; d[2] += i; d[3] += o; d[4] += cr; d[5] += cw; d[8].add(sid)
+        m = models[key]
+        m[0] += 1; m[2] += i; m[3] += o; m[4] += cr; m[5] += cw
+        s = sessions[sid]
+        s[0] += 1; s[2] += i; s[3] += o
+        sess_models[sid].add(key)
+        if cost is None:
+            d[7] += 1; m[7] += 1; s[4] += 1
+        else:
+            d[1] += cost; d[6] += 1; m[1] += cost; m[6] += 1; s[1] += cost
+        source = source or '(sin fuente)'
+        sources[source][0] += 1
+        sources[source][1] += cost or 0
+        if is_comp:
+            comp[0] += 1; comp[1] += i; comp[2] += o; comp[3] += cost or 0
+    out('fuente: usage_ledger.created_timestamp (UTC); USD = estimación del ledger, NO factura; costo ausente no equivale a $0')
+    if not provider_col:
+        out('proveedor: inferido por metadata.inference de la misma sesión/modelo; ? = no atribuible (el ledger no guarda proveedor)')
+    out('== por día (UTC, llamadas de la ventana) ==')
+    for date, (n, usd, i, o, cr, cw, priced, missing, sids) in sorted(days.items()):
+        out('  %s  %d sesiones  %d llam  USD estimado %.2f (%d sin costo)  entrada %.1fM  salida %.1fk  cache lectura %.1fM escritura %.1fk' %
+            (date, len(sids), n, usd, missing, i/1e6, o/1000, cr/1e6, cw/1000))
+    if not total:
+        out('  (sin llamadas en la ventana)')
+    out('== por (proveedor, modelo) ==')
+    for (provider, model), (n, usd, i, o, cr, cw, priced, missing) in sorted(models.items(), key=lambda x: -x[1][2]):
+        out('  %-16s %-28s %6d llam  entrada %7.1fM  salida %6.1fk  cache %.1fM  USD estimado %.2f (%d sin costo)' %
+            (provider, model, n, i/1e6, o/1000, cr/1e6, usd, missing))
+    out('  COMPACTACIÓN INTERNA: %d llam  entrada %.1fM  salida %.1fk  USD estimado %.2f (incluida arriba)' %
+        (comp[0], comp[1]/1e6, comp[2]/1000, comp[3]))
+    out('== fuente del costo ==')
+    for source, (n, usd) in sorted(sources.items()):
+        out('  %s: %d llam  USD %.2f' % (source, n, usd))
+    out('== sesiones con más de un modelo en la ventana ==')
+    for sid, mix in sorted(sess_models.items()):
+        if len(mix) > 1:
+            out('  %s: %s' % (sid, '; '.join('%s/%s' % x for x in sorted(mix))))
+    out('== top sesiones por costo estimado en la ventana ==')
+    names = {sid: name for sid, name in con.execute('SELECT id, name FROM sessions')}
+    top = sorted(sessions.items(), key=lambda x: -x[1][1])[:12]
+    hidden = {}
+    if top and columns(con, 'messages'):
+        ids = [sid for sid, _ in top]
+        marks = ','.join('?' for _ in ids)
+        for sid, count, invisible in con.execute(
+                'SELECT session_id, COUNT(*), SUM(CASE WHEN metadata_json LIKE ? THEN 1 ELSE 0 END) '
+                'FROM messages WHERE session_id IN (' + marks + ') GROUP BY session_id',
+                ['%"agentVisible":false%'] + ids):
+            hidden[sid] = (count, invisible or 0)
+    for sid, (n, usd, i, o, missing) in top:
+        msgs, invisible = hidden.get(sid, (0, 0))
+        out('  %-13s %-26s USD estimado %7.2f  %5d llam (%d sin costo) entrada %.1fM  %d msj totales (%.0f%% ocultos)' %
+            (sid, (names.get(sid) or '')[:26], usd, n, missing, i/1e6, msgs, 100*invisible/max(1, msgs)))
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--days', type=int, default=2)
-    ap.add_argument('--db', default=DEFAULT_DB)
-    a = ap.parse_args()
-    since = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(days=a.days)).strftime('%Y-%m-%d %H:%M:%S')
-    con = sqlite3.connect('file:' + a.db + '?mode=ro', uri=True)
-    cur = con.cursor()
-    print('ventana: desde', since, '(UTC)')
-    cur.execute('''SELECT substr(updated_at,1,10), COUNT(*), ROUND(SUM(COALESCE(accumulated_cost,0)),2),
-                          SUM(COALESCE(accumulated_input_tokens,0)), SUM(COALESCE(accumulated_output_tokens,0))
-                   FROM sessions WHERE updated_at >= ? GROUP BY 1 ORDER BY 1''', (since,))
-    print('\n== por dia ==')
-    for d, n, usd, i, o in cur.fetchall():
-        print('  %s  %2d sesiones  USD %8.2f  entrada %7.1fM  salida %6.1fk' % (d, n, usd or 0, (i or 0)/1e6, (o or 0)/1000))
-    cur.execute("SELECT session_id, role, metadata_json FROM messages WHERE timestamp >= ? AND metadata_json IS NOT NULL", (since,))
-    per_model = collections.defaultdict(lambda: [0, 0, 0])
-    comp = [0, 0, 0]
-    per_sess = collections.defaultdict(lambda: collections.defaultdict(lambda: [0, 0, 0]))
-    for sid, role, mj in cur.fetchall():
-        try: o = json.loads(mj)
-        except Exception: continue
-        us = o.get('usage') or {}
-        i = int(us.get('inputTokens') or 0); ou = int(us.get('outputTokens') or 0)
-        if us.get('isCompaction'):
-            comp[0] += 1; comp[1] += i; comp[2] += ou; continue
-        inf = o.get('inference')
-        if isinstance(inf, dict) and inf:
-            k = (inf.get('provider','?'), inf.get('requestedModel') or '?')
-            per_model[k][0] += 1; per_model[k][1] += i; per_model[k][2] += ou
-            e = per_sess[sid][k[1]]; e[0] += 1; e[1] += i; e[2] += ou
-    prices = load_prices()
-    if not prices:
-        print('\n(sin precios en ' + PRICES + ': completa input/output USD por 1M tokens para ver el costo por modelo)')
-    print('\n== por (proveedor, modelo) ==')
-    for (p, m), (n, i, ou) in sorted(per_model.items(), key=lambda x: -x[1][1]):
-        usd = usd_for(p + '/' + m, i, ou, prices)
-        col = ('  USD %8.2f' % usd) if usd is not None else ''
-        print('  %-16s %-28s %6d llam  entrada %7.1fM  salida %6.1fk%s' % (p, m, n, i/1e6, ou/1000, col))
-    print('  %-45s %6d llam  entrada %7.1fM  salida %6.1fk' % ('COMPACTACION INTERNA (no atribuible)', comp[0], comp[1]/1e6, comp[2]/1000))
-    print('\n== sesiones con mas de un modelo ==')
-    for sid, d in per_sess.items():
-        if len(d) > 1:
-            print('  %s: %s' % (sid, '; '.join('%s:%d' % (m, v[0]) for m, v in sorted(d.items(), key=lambda x: -x[1][0]))))
-    print('\n== top sesiones por costo ==')
-    cur.execute('''SELECT id, substr(name,1,26), ROUND(COALESCE(accumulated_cost,0),2), accumulated_input_tokens,
-                          (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id),
-                          (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND COALESCE(m.metadata_json,'') LIKE '%\"agentVisible\":false%')
-                   FROM sessions s WHERE updated_at >= ? ORDER BY accumulated_cost DESC LIMIT 12''', (since,))
-    for sid, nm, usd, ti, msgs, hid in cur.fetchall():
-        print('  %-13s %-26s USD %7.2f  %6d msj (%4.0f%% ocultos)' % (sid, nm or '', usd or 0, msgs, 100.0*hid/max(1,msgs)))
-    con.close()
+
+def report_legacy(con, since, out=print):
+    """Stores anteriores sin ledger: metadata por mensaje, nunca acumulados de sesiones como costo diario."""
+    if not columns(con, 'messages'):
+        out('Sin usage_ledger ni mensajes: no hay datos para auditar.'); return
+    out('LEGACY: sin usage_ledger; fechas de mensajes, cobertura parcial (incl. compactaciones sin mensaje). USD = estimación, NO factura.')
+    days = collections.defaultdict(lambda: [0, 0., 0, 0, 0, set()])
+    models = collections.defaultdict(lambda: [0, 0., 0, 0, 0])
+    sessions = collections.defaultdict(lambda: [0, 0., 0])
+    mixes = collections.defaultdict(set)
+    for sid, ts, raw in con.execute('SELECT session_id, created_timestamp, metadata_json FROM messages WHERE created_timestamp >= ? AND metadata_json IS NOT NULL', (since,)):
+        try:
+            meta = json.loads(raw)
+            usage = meta.get('usage') or {}
+            inf = meta.get('inference') or {}
+            if not isinstance(usage, dict) or not isinstance(inf, dict) or not usage:
+                continue
+            key = (inf.get('provider') or '?', inf.get('requestedModel') or '?')
+            i, o = int(usage.get('inputTokens') or 0), int(usage.get('outputTokens') or 0)
+            cost = usage.get('cost')
+            d = days[datetime.datetime.fromtimestamp(ts, datetime.timezone.utc).strftime('%Y-%m-%d')]
+            d[0] += 1; d[2] += i; d[3] += o; d[5].add(sid)
+            m = models[key]
+            m[0] += 1; m[2] += i; m[3] += o
+            s = sessions[sid]
+            s[0] += 1
+            mixes[sid].add(key)
+            if isinstance(cost, (float, int)):
+                d[1] += cost; m[1] += cost; s[1] += cost
+            else:
+                d[4] += 1; m[4] += 1; s[2] += 1
+        except (TypeError, ValueError, OverflowError, AttributeError):
+            continue
+    out('== por día (UTC; metadata de mensajes, no sesiones.updated_at) ==')
+    for date, (n, usd, i, o, missing, ids) in sorted(days.items()):
+        out('  %s  %d sesiones  %d llam  USD estimado %.2f (%d sin costo)  entrada %.1fM  salida %.1fk' %
+            (date, len(ids), n, usd, missing, i/1e6, o/1000))
+    if not days: out('  (sin uso atribuible en la ventana)')
+    out('== por (proveedor, modelo) ==')
+    for (p, model), (n, usd, i, o, missing) in sorted(models.items(), key=lambda x: -x[1][2]):
+        out('  %-16s %-28s %6d llam  entrada %.1fM  salida %.1fk  USD estimado %.2f (%d sin costo)' %
+            (p, model, n, i/1e6, o/1000, usd, missing))
+    out('== sesiones con más de un modelo en la ventana ==')
+    for sid, mix in sorted(mixes.items()):
+        if len(mix) > 1: out('  %s: %s' % (sid, '; '.join('%s/%s' % x for x in sorted(mix))))
+    out('== top sesiones por costo estimado PARCIAL en la ventana ==')
+    names = {sid: name for sid, name in con.execute('SELECT id, name FROM sessions')}
+    for sid, (n, usd, missing) in sorted(sessions.items(), key=lambda x: -x[1][1])[:12]:
+        out('  %-13s %-26s USD estimado %7.2f  %5d mensajes (%d sin costo)' %
+            (sid, (names.get(sid) or '')[:26], usd, n, missing))
+    out('precios opcionales: %s (%s; nunca sustituyen un costo faltante)' % (PRICES, 'disponibles' if load_prices() else 'no disponibles'))
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--days', type=float, default=2)
+    parser.add_argument('--db', type=pathlib.Path, default=DEFAULT_DB)
+    args = parser.parse_args(argv)
+    if args.days < 0: parser.error('--days debe ser >= 0')
+    since = int(datetime.datetime.now(datetime.timezone.utc).timestamp() - args.days * 86400)
+    print('ventana: desde', datetime.datetime.fromtimestamp(since, datetime.timezone.utc).isoformat(), '(UTC)')
+    with sqlite3.connect(args.db.resolve().as_uri() + '?mode=ro', uri=True) as con:
+        if columns(con, 'usage_ledger'):
+            report_ledger(con, since)
+        else:
+            report_legacy(con, since)
+
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()
