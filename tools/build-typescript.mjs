@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const entries = [
-  { entry: 'src/app.ts', output: 'app/app.js', options: { format: 'esm', platform: 'browser' } },
+  // bundle: la app tiene modulos propios en src/app/*.ts (esbuild los inlina en app.js)
+  { entry: 'src/app.ts', output: 'app/app.js', options: { format: 'esm', platform: 'browser', bundle: true } },
   { entry: 'src/skills.ts', output: 'app/skills.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/stats.ts', output: 'app/stats.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/server.ts', output: 'server.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
