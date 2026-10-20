@@ -2,11 +2,18 @@
   "name": "aegis-web-tools",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Herramientas de la web de aegis (probes node/playwright contra el cliente web)",
   "scripts": {
-    "pop-clamp-check": "node tools/usage-pop-clamp-check.mjs"
+    "pop-clamp-check": "node tools/usage-pop-clamp-check.mjs",
+    "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json && tsc -p tsconfig.tests.json",
+    "build": "npm run typecheck && node tools/build-typescript.mjs",
+    "test": "npm run build && node dist-ts/tests/run.mjs"
   },
   "devDependencies": {
-    "playwright": "^1.64.1"
+    "@types/node": "^22.18.6",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.1",
+    "typescript": "^5.9.3"
   }
 }

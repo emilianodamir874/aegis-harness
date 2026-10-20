@@ -96,7 +96,7 @@ function Save-TunnelUrl {
         'aegis web por Cloudflare - acceso',
         '',
         ('URL:      ' + $new),
-        'Password: ' + $pw,
+        ('Password: ' + $pw),
         ('(local)   ' + $Origin),
         '',
         'La sesion queda guardada 30 dias por dispositivo (cookie firmada).',

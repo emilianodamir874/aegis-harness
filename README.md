@@ -1,5 +1,20 @@
 # aegis-web
 
+## Migracion TypeScript (en paralelo)
+
+`src/app.ts`, `src/skills.ts`, `src/server.ts` y `src/piper-vivo.ts` son las fuentes
+TypeScript del cliente, el panel de Skills, el proxy HTTPS/ACP y Piper. `npm ci`
+instala solo herramientas de desarrollo; `npm run typecheck` verifica el proxy con
+`strict: true` y el cliente con tipado gradual (la app heredada aun conserva
+zonas dinamicas). `npm run build` genera `dist-ts/` con todos los estaticos. No altera el servicio
+activo ni lee ni copia `config.json` o `auth.json`.
+
+Para probar en paralelo, proporcionar `config.json` y `auth.json` **localmente**
+en `dist-ts/`, ajustando los puertos de prueba y el origen ACP autorizado.
+El servicio existente sigue leyendo `server.mjs` y `app/`: el build no publica
+ni reinicia nada. Comparar con la web activa antes de promover; no poner claves
+ni copias de `dist-ts` en Git.
+
 Acceso a aegis del fork de Emiliano desde el navegador por LAN (sin instalar nada en los dispositivos).
 
 - **UI (web):** http://192.168.100.34:3788  (local: http://127.0.0.1:3788)
@@ -417,3 +432,74 @@ Detalle completo y procedimiento de swap: **docs/v6.3-serve-v3.md**. Resumen:
 - **Cap de texto verificado**: AEGIS_MAX_TOOL_RESPONSE_SIZE se mide en CHARs (default 200.000;
   el usuario tiene 60.000) y si funciona (el texto de assistant topea en 78 KB).
 - **Binario nuevo, no en uso**: aegis-serve-v3.exe. v2 sigue siendo el que corre hasta hacer el swap.
+
+## Origin ACP configurable (staging)
+
+`server.ts` takes the ACP `Origin` header from `AEGIS_ACP_ORIGIN` when set, otherwise
+`http://127.0.0.1:<webPort>`. Un staging en 3978 contra el serve de produccion (que solo
+autoriza 3788) debe arrancar con `AEGIS_ACP_ORIGIN=http://127.0.0.1:3788`; produccion no
+necesita la variable.
+
+## Panel "Gasto" (/stats.json)
+
+`tools/stats-index.mjs` agrega la tabla `usage_ledger` de
+`C:\Aegis-Proyects\state\data\sessions\sessions.db` (una fila por llamada, con costo, tokens
+y cache) y `server.ts` la expone en `/stats.json?days=N` (0 = todo), con cache de 60 s y un
+proceso hijo `node --experimental-sqlite` para no bloquear el event loop. El panel vive en
+`src/stats.ts` y se autoinyecta como `app/stats.js` (boton "Gasto" en la barra lateral).
+El costo sale del ledger; los modelos sin precio asignado aparecen con costo 0 y un aviso.
+
+## Herramientas y pruebas en TypeScript (2026-10-18)
+
+Ya no queda codigo escrito a mano en JS. Los cuatro modulos de la app y las dos herramientas de
+sqlite se escriben en `src/` y se compilan a `dist-ts/`:
+
+| Fuente TS | Salida | La usa |
+|---|---|---|
+| `src/app.ts` | `app/app.js` | navegador |
+| `src/skills.ts` | `app/skills.js` | navegador |
+| `src/stats.ts` | `app/stats.js` | navegador |
+| `src/server.ts` | `server.mjs` | node (server/proxy) |
+| `src/piper-vivo.ts` | `piper-vivo.js` | node (TTS) |
+| `src/tools/goals-index.ts` | `tools/goals-index.mjs` | proceso hijo (`--experimental-sqlite`) |
+| `src/tools/stats-index.ts` | `tools/stats-index.mjs` | proceso hijo (`--experimental-sqlite`) |
+
+`tools/*.mjs` de esas dos herramientas es **salida generada**: se sobrescribe en cada build, no se
+edita a mano (el fuente esta en `src/tools/`). Se verifico que la salida JSON es identica a la
+version JS anterior (mismo largo byte a byte para goals y stats).
+
+### Pruebas (`tests/`, Playwright)
+
+- `tests/ui-mobile.ts` — 390x844: sin desborde horizontal, panel Gasto abre con tap, 6 KPIs, ✕ fijo
+  al scrollear y cierra. Read-only.
+- `tests/gasto.ts` — 1440x950: KPIs con valor, barras, filas, cambio de rango 30d->7d y `/stats.json`.
+  Read-only.
+- `tests/reload-smoke.ts` — crea sesion, lanza un turno ACP externo de 12 s, **recarga en medio del
+  turno** y verifica busy/runId y que la respuesta aparezca una sola vez. Borra la sesion. Cuesta un
+  turno real: corre solo con `AEGIS_TEST_SMOKE=1`.
+
+```
+cd web
+npm test                        # ui-mobile + gasto contra AEGIS_WEB_URL (default http://127.0.0.1:3788)
+$env:AEGIS_TEST_SMOKE='1'; npm test
+$env:AEGIS_WEB_URL='https://192.168.100.34:3789'; npm test
+```
+
+## Rebobinado y "Regenerar" (2026-10-18)
+
+**Bug corregido**: rebobinar dos veces no limpiaba bien. Causa: el serve **omite**
+`_meta.aegis.agentVisible` cuando un mensaje quedo oculto (solo manda `agentVisible: true` en los
+visibles, ver `crates/aegis/src/acp/server/message_meta.rs`), y el cliente comparaba
+`agentVisible === false`. Al re-renderizar el transcript (soft refresh, hub, recarga) los mensajes
+rebobinados volvian a aparecer, asi que el segundo rebobinado no tenia nada que limpiar.
+Ahora se marca oculto todo lo que llegue sin `agentVisible: true` (con el watermark
+`aegis.hiddenFrom.<sid>` como red de seguridad si el mensaje no trae `_meta.aegis`) y el primer
+mensaje que el usuario manda despues de rebobinar se guarda como punto de reanudacion
+(`aegis.resume.<sid>`) para que el replay no lo oculte a el.
+
+**Nuevo**: boton "↻ Regenerar" en la ultima respuesta. Rebobina el ultimo turno del usuario
+(`back: 1`), oculta la respuesta vieja y reenvia el mismo texto automaticamente.
+
+Regresion: `tests/rewind-regen.ts` (dentro de `AEGIS_TEST_SMOKE=1`).
+Limitacion conocida: el boton de rebobinar aparece en los mensajes que vienen del serve (abrir o
+recargar el chat); en el mensaje recien enviado aparece recien al recargar.

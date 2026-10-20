@@ -1,4 +1,6 @@
 # deps y salidas de node
+# buzon de descargas: lo que el agente deja para bajar (generado)
+outbox/
 node_modules/
 logs/
 *.log
@@ -30,3 +32,6 @@ scripts/*.bak-*
 *.tmp
 tunnel-url.txt
 tunnel-url-2.txt
+
+# Build TypeScript aislado del servicio activo
+dist-ts/

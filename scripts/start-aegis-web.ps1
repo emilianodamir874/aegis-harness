@@ -35,13 +35,35 @@ New-Item -ItemType Directory -Force "$root\logs" | Out-Null
 $serveUp = Get-NetTCPConnection -LocalPort $cfg.servePort -State Listen -ErrorAction SilentlyContinue
 if (-not $serveUp) {
   $env:AEGIS_SERVER__SECRET_KEY = $cfg.secretKey
-  Start-Process -FilePath $serveExe -ArgumentList @(
-    'serve', '--host', '0.0.0.0', '--port', "$($cfg.servePort)",
-    '--platform', 'desktop', '--enable-scheduler', '--with-builtin', 'developer',
-    '--allowed-origin', "http://$($cfg.publicHost):$($cfg.webPort)",
-    '--allowed-origin', "http://127.0.0.1:$($cfg.webPort)",
-    '--allowed-origin', "http://localhost:$($cfg.webPort)"
-  ) -WorkingDirectory $root -WindowStyle Hidden `
+  # Origenes dados de alta: LAN (http 3788 y https 3789), loopback y el tunel Cloudflare vigente.
+  # El quick tunnel cambia de URL cuando cloudflared se reinicia, asi que la del tunel se lee de
+  # tunnel-url.txt en cada arranque (nunca se clava a mano).
+  $origins = @(
+    "http://$($cfg.publicHost):$($cfg.webPort)",
+    "https://$($cfg.publicHost):$($env:AEGIS_WEB_HTTPS_PORT)",
+    "http://$($cfg.publicHost):$($env:AEGIS_WEB_HTTPS_PORT)",
+    "http://127.0.0.1:$($cfg.webPort)",
+    "http://localhost:$($cfg.webPort)",
+    "https://127.0.0.1:$($env:AEGIS_WEB_HTTPS_PORT)",
+    "https://localhost:$($env:AEGIS_WEB_HTTPS_PORT)"
+  )
+  $tunnelFile = Join-Path $root 'tunnel-url.txt'
+  if (Test-Path $tunnelFile) {
+    $tm = [regex]::Match((Get-Content $tunnelFile -Raw -ErrorAction SilentlyContinue), 'https://[a-z0-9-]+\.trycloudflare\.com')
+    if ($tm.Success -and ($origins -notcontains $tm.Value)) { $origins += $tm.Value }
+  }
+  $originArgs = @()
+  foreach ($o in $origins) { $originArgs += @('--allowed-origin', $o) }
+  # Dos binarios posibles: el harness nuevo (aegis-serve, sin subcomando) y el viejo (aegis serve).
+  # Se decide por --version, no por el nombre: el binario desplegado se llama aegis-vNN.exe.
+  $ver = ((& $serveExe --version 2>&1) -join ' ')
+  $serveArgs = @()
+  if ($ver -notmatch 'aegis-serve') { $serveArgs += 'serve' }
+  $serveArgs += @(
+    '--host', '0.0.0.0', '--port', "$($cfg.servePort)",
+    '--platform', 'desktop', '--enable-scheduler', '--with-builtin', 'developer'
+  )
+  Start-Process -FilePath $serveExe -ArgumentList ($serveArgs + $originArgs) -WorkingDirectory $root -WindowStyle Hidden `
     -RedirectStandardOutput "$root\logs\serve.out.log" -RedirectStandardError "$root\logs\serve.err.log"
   Write-Output "aegis-web: started serve on $($cfg.servePort)"
 } else {

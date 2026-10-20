@@ -1,0 +1,23 @@
+{
+    "compilerOptions":  {
+                            "target":  "ES2022",
+                            "module":  "None",
+                            "lib":  [
+                                        "ES2022",
+                                        "DOM",
+                                        "DOM.Iterable"
+                                    ],
+                            "strict":  false,
+                            "noImplicitAny":  false,
+                            "noEmit":  true,
+                            "skipLibCheck":  true,
+                            "types":  [
+
+                                      ]
+                        },
+    "files":  [
+                  "src/app.ts",
+                  "src/skills.ts",
+                  "src/stats.ts"
+              ]
+}

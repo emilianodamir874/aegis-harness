@@ -63,8 +63,7 @@
     s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
     s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
     s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-    // El punto/coma que cierra la frase no es parte del enlace.
-    s = s.replace(/(https?:\/\/[^\s<)]+?)([.,;:!?]+)?(?=\s|<|$)/g, (m, u, p) => '<a href="' + u + '" target="_blank" rel="noopener noreferrer">' + u + '</a>' + (p || ""));
+    s = s.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
     return s;
   };
   const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(l);
@@ -181,7 +180,7 @@
     for (let i = 0; i < parts.length; i++) {
       if (i % 2 === 1) {
         const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]* ?\r?\n/, "").replace(/\r?\n$/, "");
-        html += `<div class="code-wrap"><button class="copy-code" type="button" title="Copiar el bloque de código" aria-label="Copiar el bloque de código">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
+        html += `<div class="code-wrap"><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
       } else {
         html += mdBlocks(parts[i]);
       }
@@ -417,6 +416,7 @@
           break;
         }
         if (mid && userBubbleOnScreen(mid)) {
+          if (u.content && u.content.type === "image") adjuntarImagenA(mid, u.content);
           noteResume(cur.id, mid);
           break;
         }
@@ -440,6 +440,7 @@
       case "agent_message_chunk":
         if (u.content && u.content.type === "text") {
           chunksTurn++;
+          textoDelTurno += u.content.text;
           streamAppend(u.messageId || "a", u.content.text, false, u._meta && u._meta.aegis ? u._meta.aegis.agentVisible !== true : state.hideTail);
           speedChunk(u.content.text);
         }
@@ -504,10 +505,10 @@
     const meta = s._meta || {};
     const active = state.current && state.current.id === s.sessionId ? " active" : "";
     const n = meta.messageCount;
-    const running = isRunning(s.sessionId, s.updatedAt || meta.createdAt || meta.lastActivityAt);
+    const running = isRunning(s.sessionId);
     const done = !running && isDoneRecently(s.sessionId);
     const sub = `${n != null ? n + " · " : ""}${fmtTime(s.updatedAt || meta.createdAt)}`;
-    return `<div class="sb-row" role="listitem" data-id="${esc(s.sessionId)}"${archived ? ' data-arch="1"' : ""}><button class="sb-item${active}${archived ? " arch" : ""}" type="button"${active ? ' aria-current="page"' : ""}><div class="sb-title">${running ? '<span class="sb-run-dot" aria-hidden="true" title="en produccion ahora">&#9679;</span>' : ""}${done ? '<span class="sb-done-dot" title="termino hace un momento">&#10004;</span>' : ""}${esc(s.title || "Sesión")}${archived ? '<span class="sb-tag">archivada</span>' : ""}</div><div class="sb-sub">${sub}</div></button><button class="sb-rename" type="button" title="Renombrar" aria-label="Renombrar">✎</button><button class="sb-more" type="button" title="Más acciones" aria-label="Más acciones">⋮</button><button class="sb-del" type="button" title="Borrar sesión" aria-label="Borrar sesión">✕</button></div>`;
+    return `<div class="sb-row" data-id="${esc(s.sessionId)}"${archived ? ' data-arch="1"' : ""}><button class="sb-item${active}${archived ? " arch" : ""}"><div class="sb-title">${running ? '<span class="sb-run-dot" title="en produccion ahora">&#9679;</span>' : ""}${done ? '<span class="sb-done-dot" title="termino hace un momento">&#10004;</span>' : ""}${esc(s.title || "Sesión")}${archived ? '<span class="sb-tag">archivada</span>' : ""}</div><div class="sb-sub">${sub}</div></button><button class="sb-rename" title="Renombrar" aria-label="Renombrar">✎</button><button class="sb-more" title="Más acciones" aria-label="Más acciones">⋮</button><button class="sb-del" title="Borrar sesión" aria-label="Borrar sesión">✕</button></div>`;
   };
   setInterval(() => {
     if (document.visibilityState !== "visible") return;
@@ -559,10 +560,6 @@
   function toast(msg, kind) {
     const t = document.createElement("div");
     t.className = "toast" + (kind ? " " + kind : "");
-    // Accesible: los avisos no se ven si el foco esta en el composer.
-    t.setAttribute("role", kind === "err" ? "alert" : "status");
-    t.setAttribute("aria-live", kind === "err" ? "assertive" : "polite");
-    t.setAttribute("aria-atomic", "true");
     t.textContent = msg;
     document.body.appendChild(t);
     requestAnimationFrame(() => t.classList.add("show"));
@@ -678,12 +675,7 @@
     }
   }
   function markActive(id) {
-    document.querySelectorAll(".sb-item").forEach((el) => {
-      const on = el.parentElement.dataset.id === id;
-      el.classList.toggle("active", on);
-      if (on) el.setAttribute("aria-current", "page");
-      else el.removeAttribute("aria-current");
-    });
+    document.querySelectorAll(".sb-item").forEach((el) => el.classList.toggle("active", el.parentElement.dataset.id === id));
   }
   async function refreshSessions() {
     const pages = Math.max(1, state.pages);
@@ -1011,6 +1003,18 @@
     rw.setAttribute("aria-label", "Rebobinar a este mensaje");
     rw.textContent = "↺";
     el.appendChild(rw);
+  }
+  function adjuntarImagenA(mid, content) {
+    if (!content || !content.data || !content.mimeType) return false;
+    const el = document.querySelector('.msg-user[data-mid="' + (window.CSS && CSS.escape ? CSS.escape(mid) : mid) + '"]');
+    if (!el) return false;
+    if (el.querySelector('img[data-dl-img="1"]')) return true;
+    const img = document.createElement("img");
+    img.dataset.dlImg = "1";
+    img.src = "data:" + content.mimeType + ";base64," + content.data;
+    img.alt = "adjunto";
+    el.appendChild(img);
+    return true;
   }
   function addUser(text, replay, atts, opts) {
     noteGoalFrom(text);
@@ -1360,16 +1364,12 @@
       cp.className = "msg-copy";
       cp.type = "button";
       cp.textContent = "Copiar";
-      cp.title = "Copiar el mensaje completo";
-      cp.setAttribute("aria-label", "Copiar el mensaje completo");
       el.appendChild(cp);
       if (!thought) {
         const rd = document.createElement("button");
         rd.className = "msg-read";
         rd.type = "button";
         rd.textContent = "🔊 Escuchar";
-        rd.title = "Leer este mensaje en voz alta";
-        rd.setAttribute("aria-label", "Leer este mensaje en voz alta");
         rd.hidden = true;
         el.appendChild(rd);
       }
@@ -2727,6 +2727,54 @@ ${a.text}
     });
   })();
   let chunksTurn = 0;
+  let textoDelTurno = "";
+  const DESCARGAS_VISTAS = /* @__PURE__ */ new Set();
+  let descargasTimer = null;
+  function ofrecerDescargas() {
+    const inner = document.querySelector("#msg-inner");
+    if (!inner) return;
+    const sid = state.current && state.current.id || "";
+    const re = /\/dl\/([A-Za-z0-9._-]{1,120})/g;
+    const mensajes = inner.querySelectorAll(".msg-a");
+    for (const nodo of Array.from(mensajes)) {
+      const texto = nodo.innerText || "";
+      const nombres = [];
+      let m;
+      re.lastIndex = 0;
+      while ((m = re.exec(texto)) !== null) {
+        const clave = sid + ":" + m[1];
+        if (!DESCARGAS_VISTAS.has(clave)) {
+          DESCARGAS_VISTAS.add(clave);
+          nombres.push(m[1]);
+        }
+      }
+      if (!nombres.length) continue;
+      let row = nodo.querySelector(":scope > .dl-row");
+      if (!row) {
+        row = document.createElement("div");
+        row.className = "dl-row";
+        nodo.appendChild(row);
+      }
+      for (const nombre of nombres) {
+        const a = document.createElement("a");
+        a.className = "dl-chip";
+        a.href = "/dl/" + encodeURIComponent(nombre);
+        a.setAttribute("download", nombre);
+        const ico = document.createElement("span");
+        ico.className = "dl-ico";
+        ico.textContent = "↓";
+        const et = document.createElement("span");
+        et.textContent = nombre;
+        a.append(ico, et);
+        row.appendChild(a);
+      }
+    }
+  }
+  const descargasObs = new MutationObserver(() => {
+    clearTimeout(descargasTimer);
+    descargasTimer = setTimeout(ofrecerDescargas, 400);
+  });
+  descargasObs.observe(document.body, { childList: true, subtree: true, characterData: true });
   function avisoTurnoVacio(texto, atts) {
     systemNote("El turno volvió vacío: el proveedor cortó la respuesta y no llegó contenido. Podés reintentar.");
     const row = document.createElement("div");
@@ -2745,6 +2793,7 @@ ${a.text}
   }
   async function sendText(text, atts, bubble) {
     chunksTurn = 0;
+    textoDelTurno = "";
     state.hideTail = false;
     const el = bubble || addUser(text, false, atts);
     const sid = state.current && state.current.id;
@@ -2763,6 +2812,7 @@ ${a.text}
       stopNote(res && res.stopReason);
       const sr = res && res.stopReason;
       if (chunksTurn === 0 && sr !== "cancelled") avisoTurnoVacio(text, atts);
+      if (sr === "end_turn" && chunksTurn > 0) ofrecerDescargas();
       if (sr === "cancelled") label = "Turno detenido";
       else if (sr && sr !== "end_turn") label = "Turno interrumpido (" + sr + ")";
     } catch (e) {
@@ -4351,7 +4401,6 @@ ${a.text}
     var b = document.getElementById("btn-read");
     if (!b) return false;
     b.classList.toggle("on", READ_ON);
-    b.setAttribute("aria-pressed", READ_ON ? "true" : "false");
     b.title = READ_ON ? "Lectura en voz alta ENCENDIDA: se lee el bloque «Para escuchar» en vivo. Tocá para apagar." : "Leer en voz alta: lee SOLO el bloque «Para escuchar» de cada respuesta, en vivo mientras llega";
     if (READ_ON) readVoicePick();
     try {
@@ -4431,15 +4480,10 @@ ${a.text}
     } catch (e) {
     }
   }
-  function isRunning(id, updatedAt) {
+  function isRunning(id) {
+    if (state.runningIds && state.runningIds.has(id)) return true;
     var r = liveRuns.get(id);
-    if (r) return !r.doneT;
-    if (!(state.runningIds && state.runningIds.has(id))) return false;
-    // El server puede arrastrar ids de runs que murieron (restart, cliente cerrado).
-    // Un run sin actividad hace mas de RUN_STALE_MS no se muestra como "en produccion".
-    var t = Date.parse(String(updatedAt || ""));
-    if (!t) return true;
-    return Date.now() - t < 20 * 60 * 1000;
+    return !!(r && !r.doneT);
   }
   function isDoneRecently(id) {
     var r = liveRuns.get(id);
