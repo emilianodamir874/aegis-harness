@@ -11,7 +11,6 @@ description.workspace = true
 [features]
 default = []
 online-model-meta = []
-telemetry = []
 otel = [
     "dep:tracing-opentelemetry",
     "dep:opentelemetry",
@@ -98,7 +97,6 @@ portable-default = [
     "tree-sitter",
     "live-voice",
     "aws-providers",
-    "telemetry",
     "otel",
     "scheduler",
     "platform-apps",

@@ -99,8 +99,6 @@ impl AegisAcpAgent {
             Ok(deeplink) => deeplink,
             Err(err) => {
                 tracing::error!("Failed to encode recipe: {}", err);
-                #[cfg(feature = "telemetry")]
-                crate::posthog::emit_error("recipe_encode_failed", &err.to_string());
                 return Err(
                     agent_client_protocol::Error::invalid_params().data(format!("recipe: {err}"))
                 );
@@ -117,8 +115,6 @@ impl AegisAcpAgent {
             Ok(recipe) => recipe,
             Err(err) => {
                 tracing::error!("Failed to decode deeplink: {}", err);
-                #[cfg(feature = "telemetry")]
-                crate::posthog::emit_error("recipe_decode_failed", &err.to_string());
                 return Err(
                     agent_client_protocol::Error::invalid_params().data(format!("deeplink: {err}"))
                 );
@@ -206,8 +202,6 @@ impl AegisAcpAgent {
             .await
         {
             tracing::error!("Failed to schedule recipe: {}", err);
-            #[cfg(feature = "telemetry")]
-            crate::posthog::emit_error("recipe_schedule_failed", &err.to_string());
             return Err(agent_client_protocol::Error::internal_error()
                 .data(format!("Failed to schedule recipe: {err}")));
         }

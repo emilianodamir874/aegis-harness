@@ -490,11 +490,6 @@ impl ToolExecutionOperation {
                 )
                 .await;
             let result = result.unwrap_or_else(|error| {
-                #[cfg(feature = "telemetry")]
-                crate::posthog::emit_error(
-                    "tool_execution_failed",
-                    &format!("{}: {}", tool_call.name, error),
-                );
                 ToolCallResult::from(Err(error))
             });
             let result = self
