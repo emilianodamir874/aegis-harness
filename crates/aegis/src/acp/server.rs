@@ -78,6 +78,7 @@ use rmcp::model::{
 };
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -274,6 +275,22 @@ struct ActiveRunDropGuard {
     hub: Arc<SessionHub>,
     session_id: String,
     run_id: String,
+}
+
+fn spawn_prompt_task<F>(
+    turn: F,
+    claim: Option<PromptClaim>,
+) -> tokio::task::JoinHandle<Result<PromptResponse, agent_client_protocol::Error>>
+where
+    F: Future<Output = Result<PromptResponse, agent_client_protocol::Error>> + Send + 'static,
+{
+    tokio::spawn(async move {
+        let result = turn.await;
+        if let Some(claim) = claim {
+            claim.finish(&result);
+        }
+        result
+    })
 }
 
 impl Drop for ActiveRunDropGuard {
@@ -2726,31 +2743,18 @@ impl AegisAcpAgent {
         match claim {
             Some(PromptClaim::Completed(result)) => result,
             Some(PromptClaim::Waiting(receiver)) => PromptClaim::Waiting(receiver).response().await,
-            Some(claim) => {
-                let result = self.spawn_prompt_turn(cx, args).await;
-                claim.finish(&result);
-                result
+            owner => {
+                let agent = Arc::clone(self);
+                let cx = cx.clone();
+                // The lease must move with the run, not the connection's response handler.
+                // A dropped response future cannot abandon the idempotent prompt.
+                let handle = spawn_prompt_task(agent.run_prompt_turn(cx, args), owner);
+                match handle.await {
+                    Ok(result) => result,
+                    Err(error) => Err(agent_client_protocol::Error::internal_error()
+                        .data(format!("Prompt turn task failed: {error}"))),
+                }
             }
-            None => self.spawn_prompt_turn(cx, args).await,
-        }
-    }
-
-    /// The turn runs in its own task so it survives the loss of the connection that
-    /// started it: when the transport drops this future (reload, closed tab, revoked
-    /// roaming connection) the response is lost but the run keeps streaming to every
-    /// watcher of the session and persists its result.
-    async fn spawn_prompt_turn(
-        self: &Arc<Self>,
-        cx: &ConnectionTo<Client>,
-        args: PromptRequest,
-    ) -> Result<PromptResponse, agent_client_protocol::Error> {
-        let agent = Arc::clone(self);
-        let cx = cx.clone();
-        let handle = tokio::spawn(async move { agent.run_prompt_turn(cx, args).await });
-        match handle.await {
-            Ok(result) => result,
-            Err(error) => Err(agent_client_protocol::Error::internal_error()
-                .data(format!("Prompt turn task failed: {error}"))),
         }
     }
 
@@ -3344,6 +3348,40 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use test_case::test_case;
+
+    #[tokio::test]
+    async fn prompt_id_owner_survives_response_handler_drop_and_retries_wait_or_replay() {
+        let registry = Arc::new(ActiveRunRegistry::default());
+        let digest = blake3::hash(b"prompt");
+        let owner = registry.claim_prompt("session", "id", digest).unwrap();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let (finish, done) = tokio::sync::oneshot::channel();
+        let response = PromptResponse::new(StopReason::EndTurn);
+        let response_for_task = response.clone();
+        let handler = tokio::spawn(async move {
+            let run = spawn_prompt_task(
+                async move {
+                    started.send(()).unwrap();
+                    done.await.unwrap();
+                    Ok(response_for_task)
+                },
+                Some(owner),
+            );
+            run.await.unwrap()
+        });
+        ready.await.unwrap();
+        handler.abort();
+        let _ = handler.await;
+        let waiter = registry.claim_prompt("session", "id", digest).unwrap();
+        assert!(matches!(&waiter, PromptClaim::Waiting(_)));
+        let waiting_retry = tokio::spawn(waiter.response());
+        assert!(!waiting_retry.is_finished());
+        finish.send(()).unwrap();
+        assert_eq!(waiting_retry.await.unwrap().unwrap(), response);
+        let completed = registry.claim_prompt("session", "id", digest).unwrap();
+        assert!(matches!(&completed, PromptClaim::Completed(_)));
+        assert_eq!(completed.response().await.unwrap(), response);
+    }
 
     #[derive(Debug)]
     struct AsyncEffortProvider {

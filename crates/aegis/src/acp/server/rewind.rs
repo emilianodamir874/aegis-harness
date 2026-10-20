@@ -47,6 +47,29 @@ impl AegisAcpAgent {
             );
         }
 
+        let requested_profile = req.profile.as_deref().map(str::trim);
+        if matches!(requested_profile, Some(profile) if profile.is_empty() || !matches!(profile.to_ascii_lowercase().as_str(), "work" | "fiction" | "synthetic" | "stacked"))
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("profile must be work, fiction, synthetic or stacked"));
+        }
+        if self.active_runs.agent_run(&session_id).is_some() {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("cannot retry while a run is active for this session"));
+        }
+        let previous = self
+            .session_manager
+            .get_session(&session_id, false)
+            .await
+            .map_err(|_| {
+                agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
+                    .data(format!("Session not found: {session_id}"))
+            })?;
+        let previous_profile = FrameProfileState::of(&previous).profile;
+        let profile = requested_profile
+            .map(|profile| profile.to_ascii_lowercase())
+            .unwrap_or(previous_profile.clone());
+
         let rewound = self
             .on_rewind_session(RewindSessionRequest {
                 session_id: session_id.clone(),
@@ -55,30 +78,24 @@ impl AegisAcpAgent {
             })
             .await?;
 
-        let profile = match req
-            .profile
-            .as_deref()
-            .map(str::trim)
-            .filter(|p| !p.is_empty())
-        {
-            Some(profile) => {
-                self.session_manager
-                    .set_frame_profile(&session_id, profile)
-                    .await
-                    .internal_err_ctx("Failed to set the frame profile")?;
-                profile.to_string()
+        if requested_profile.is_some() && profile != previous_profile {
+            if let Err(error) = self
+                .session_manager
+                .set_frame_profile(&session_id, &profile)
+                .await
+            {
+                self.on_unrewind_session(UnrewindSessionRequest {
+                    session_id: session_id.clone(),
+                })
+                .await
+                .internal_err_ctx(
+                    "Failed to roll back retry rewind after profile update failure",
+                )?;
+                return Err(Err::<(), _>(error)
+                    .internal_err_ctx("Failed to set the frame profile")
+                    .unwrap_err());
             }
-            None => {
-                FrameProfileState::of(
-                    &self
-                        .session_manager
-                        .get_session(&session_id, false)
-                        .await
-                        .internal_err_ctx("Failed to read the session")?,
-                )
-                .profile
-            }
-        };
+        }
 
         Ok(RetryLastTurnResponse {
             text: rewound.text,

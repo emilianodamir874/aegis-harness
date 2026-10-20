@@ -11,11 +11,11 @@
 //! drives it from `/rewind` and `/undo`, the ACP server from
 //! `_aegis/unstable/session/rewind`.
 
-use crate::conversation::message::{Message, MessageContent};
+use crate::conversation::message::{Message, MessageContent, MessageMetadata};
 use crate::conversation::Conversation;
 use crate::session::session_manager::SessionManager;
 use crate::utils::safe_truncate;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rmcp::model::Role;
 
 /// Longest turn preview kept for pickers, in characters.
@@ -83,42 +83,81 @@ pub fn collect_turns(conversation: &Conversation) -> Vec<Turn> {
         .collect()
 }
 
-/// Flip `agent_visible` back on for every stored message after the last visible
-/// one, and return how many returned. This is the inverse of [`hide_tail_from`]:
-/// it can only restore a rewound tail, never compacted history, because
-/// compaction hides messages before the last visible message, not after it.
-///
-/// Turn-context events are skipped: they are agent-only by design and must stay
-/// out of the user's transcript.
+const REWIND_OPERATION: &str = "rewind";
+const BATCH_KEY: &str = "batch";
+
+fn rewind_batch(metadata: &MessageMetadata) -> Option<&str> {
+    metadata
+        .operation_note(REWIND_OPERATION, BATCH_KEY)?
+        .as_str()
+}
+
+fn restore_indices(messages: &[Message]) -> Vec<usize> {
+    let start = messages
+        .iter()
+        .rposition(|message| message.is_agent_visible() && !message.metadata.turn_context)
+        .map_or(0, |index| index + 1);
+    let Some(batch) = messages[start..]
+        .iter()
+        .find_map(|message| rewind_batch(&message.metadata))
+    else {
+        return Vec::new();
+    };
+    messages
+        .iter()
+        .enumerate()
+        .skip(start)
+        .filter(|(_, message)| {
+            !message.is_agent_visible()
+                && message.id.is_some()
+                && rewind_batch(&message.metadata) == Some(batch)
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// Restore only the newest reachable rewind batch, never unmarked messages
+/// hidden by compaction or another operation. Also works when the first user
+/// turn was rewound and no visible messages remain.
 pub async fn show_tail_after_last_visible(
     session_manager: &SessionManager,
     session_id: &str,
     conversation: &Conversation,
 ) -> Result<usize> {
     let messages = conversation.messages();
-    let Some(last_visible) = messages
-        .iter()
-        .rposition(|message| message.is_agent_visible() && !message.metadata.turn_context)
-    else {
-        return Ok(0);
-    };
-
-    let mut restored = 0usize;
-    for message in messages.iter().skip(last_visible + 1) {
-        if message.is_agent_visible() || message.metadata.turn_context {
-            continue;
+    let indices = restore_indices(messages);
+    let mut restored: Vec<&Message> = Vec::new();
+    for index in indices {
+        let message_id = messages[index]
+            .id
+            .as_deref()
+            .expect("selected persisted message");
+        let result = session_manager
+            .update_message_metadata(session_id, message_id, |mut metadata| {
+                metadata.agent_visible = true;
+                if let Some(operations) = metadata.operations.as_mut() {
+                    operations.remove(REWIND_OPERATION);
+                }
+                metadata
+            })
+            .await;
+        if let Err(error) = result {
+            for prior in restored.iter().rev() {
+                let id = prior.id.as_deref().expect("persisted message");
+                session_manager
+                    .update_message_metadata(session_id, id, |mut metadata| {
+                        metadata.agent_visible = false;
+                        metadata.operations = prior.metadata.operations.clone();
+                        metadata
+                    })
+                    .await
+                    .context("Failed to roll back partial unrewind")?;
+            }
+            return Err(error);
         }
-        if let Some(message_id) = message.id.as_deref() {
-            session_manager
-                .update_message_metadata(session_id, message_id, |mut metadata| {
-                    metadata.agent_visible = true;
-                    metadata
-                })
-                .await?;
-            restored += 1;
-        }
+        restored.push(&messages[index]);
     }
-    Ok(restored)
+    Ok(restored.len())
 }
 
 /// The stored index of the turn `back` positions from the end (1 = last).
@@ -134,22 +173,39 @@ pub async fn hide_tail_from(
     conversation: &Conversation,
     from_index: usize,
 ) -> Result<usize> {
-    let mut hidden = 0usize;
+    let batch = uuid::Uuid::new_v4().to_string();
+    let mut hidden: Vec<&Message> = Vec::new();
     for message in conversation.messages().iter().skip(from_index) {
         if !message.is_agent_visible() {
             continue;
         }
-        if let Some(message_id) = message.id.as_deref() {
-            session_manager
-                .update_message_metadata(session_id, message_id, |mut metadata| {
-                    metadata.agent_visible = false;
-                    metadata
-                })
-                .await?;
+        let Some(message_id) = message.id.as_deref() else {
+            continue;
+        };
+        let result = session_manager
+            .update_message_metadata(session_id, message_id, |mut metadata| {
+                metadata.agent_visible = false;
+                metadata.set_operation_note(REWIND_OPERATION, BATCH_KEY, serde_json::json!(batch));
+                metadata
+            })
+            .await;
+        if let Err(error) = result {
+            for prior in hidden.iter().rev() {
+                let id = prior.id.as_deref().expect("persisted message");
+                session_manager
+                    .update_message_metadata(session_id, id, |mut metadata| {
+                        metadata.agent_visible = true;
+                        metadata.operations = prior.metadata.operations.clone();
+                        metadata
+                    })
+                    .await
+                    .context("Failed to roll back partial rewind")?;
+            }
+            return Err(error);
         }
-        hidden += 1;
+        hidden.push(message);
     }
-    Ok(hidden)
+    Ok(hidden.len())
 }
 
 #[cfg(test)]
@@ -219,6 +275,45 @@ mod tests {
         assert!(turns[0].preview.starts_with("line one line two"));
         assert!(turns[0].preview.ends_with("..."));
         assert!(turns[0].preview.chars().count() <= PREVIEW_CHARS);
+    }
+
+    fn tagged(mut message: Message, batch: &str) -> Message {
+        message.metadata.agent_visible = false;
+        message
+            .metadata
+            .set_operation_note(REWIND_OPERATION, BATCH_KEY, serde_json::json!(batch));
+        message
+    }
+
+    #[test]
+    fn unrewind_selects_only_latest_reachable_batch() {
+        let visible = user_with_id("u1", "first");
+        let old_compacted = user_with_id("c", "compacted").with_visibility(true, false);
+        let second = tagged(user_with_id("u2", "second"), "rewind-two");
+        let third = tagged(user_with_id("u3", "third"), "rewind-three");
+        let never_visible = user_with_id("hidden", "user only").with_visibility(true, false);
+        let conversation = vec![old_compacted, visible, second.clone(), third, never_visible];
+        assert_eq!(restore_indices(&conversation), vec![2]);
+        let mut restored = conversation;
+        restored[2].metadata.agent_visible = true;
+        restored[2].metadata.operations = None;
+        assert_eq!(restore_indices(&restored), vec![3]);
+    }
+
+    #[test]
+    fn unrewind_first_turn_ignores_compaction_and_turn_context() {
+        let compacted = user_with_id("old", "old").with_visibility(true, false);
+        let turn = tagged(user_with_id("u1", "first"), "first-batch");
+        let mut context = tagged(user_with_id("context", "context"), "first-batch");
+        context.metadata.turn_context = true;
+        let unrelated = user_with_id("other", "hidden").with_visibility(true, false);
+        assert_eq!(
+            restore_indices(&[compacted, turn, context, unrelated]),
+            vec![1, 2]
+        );
+        assert!(
+            restore_indices(&[user_with_id("old", "old").with_visibility(true, false)]).is_empty()
+        );
     }
 
     #[test]

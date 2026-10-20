@@ -15,12 +15,14 @@
 //!   is pruned. No leaks, no reference cycles.
 //! * `publish` never awaits and never blocks: the lock is a plain
 //!   `std::sync::Mutex` held only for map/queue operations plus non-blocking
-//!   `UnboundedSender::send`. It cannot stall the agent stream.
+//!   bounded-channel sends. A lagging watcher is removed and receives a terminal
+//!   `replay_gap` after queued frames. It cannot stall the agent stream.
 //! * A bounded ring buffer per session (500 events / 2 MB) lets a late or
 //!   reconnecting watcher catch up. When the ring dropped events the watcher
 //!   is told with `replay_gap` and must do a full `session/load`.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
@@ -40,6 +42,8 @@ pub(crate) const MAX_BYTES: usize = 2 * 1024 * 1024;
 /// Idle sessions (no watchers, no active run) release their ring after this.
 const SESSION_TTL: Duration = Duration::from_secs(600);
 const REAP_INTERVAL: Duration = Duration::from_secs(60);
+/// Frames awaiting one watcher forwarder; a full queue terminates the watch.
+const WATCHER_QUEUE_FRAMES: usize = 64;
 
 pub(crate) const REPLAY_GAP_METHOD: &str = "_aegis/unstable/session/replay_gap";
 
@@ -169,12 +173,14 @@ impl SessionLog {
 
 struct Watcher {
     connection_key: u64,
-    tx: mpsc::UnboundedSender<String>,
+    tx: mpsc::Sender<String>,
+    overflowed: Arc<AtomicBool>,
 }
 
 struct SessionState {
     watchers: HashMap<u64, Watcher>,
     next_watcher_id: u64,
+    disconnected_owners: HashSet<u64>,
     log: SessionLog,
     last_touched: Instant,
 }
@@ -184,8 +190,22 @@ impl Default for SessionState {
         Self {
             watchers: HashMap::new(),
             next_watcher_id: 0,
+            disconnected_owners: HashSet::new(),
             log: SessionLog::default(),
             last_touched: Instant::now(),
+        }
+    }
+}
+
+impl Watcher {
+    fn send(&self, json: String) -> bool {
+        match self.tx.try_send(json) {
+            Ok(()) => true,
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                self.overflowed.store(true, Ordering::Release);
+                false
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => false,
         }
     }
 }
@@ -193,6 +213,25 @@ impl Default for SessionState {
 impl SessionState {
     /// Drops watchers whose connection is gone (their forwarder task ended, so
     /// the receiver â€” and with it the channel â€” is dropped).
+    fn broadcast(&mut self, json: &str, owner_key: Option<u64>) -> bool {
+        let mut owner_seen = false;
+        let disconnected = &mut self.disconnected_owners;
+        self.watchers.retain(|_, watcher| {
+            if Some(watcher.connection_key) == owner_key {
+                owner_seen = true;
+            }
+            if watcher.send(json.to_owned()) {
+                true
+            } else {
+                if watcher.overflowed.load(Ordering::Acquire) {
+                    disconnected.insert(watcher.connection_key);
+                }
+                false
+            }
+        });
+        owner_seen || owner_key.is_some_and(|key| self.disconnected_owners.contains(&key))
+    }
+
     fn prune_closed(&mut self) {
         self.watchers.retain(|_, watcher| !watcher.tx.is_closed());
     }
@@ -272,7 +311,8 @@ impl SessionHub {
         since: Option<u64>,
         epoch: Option<&str>,
     ) -> (WatchSnapshot, Result<(), agent_client_protocol::Error>) {
-        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        let (tx, mut rx) = mpsc::channel::<String>(WATCHER_QUEUE_FRAMES);
+        let overflowed = Arc::new(AtomicBool::new(false));
         let snapshot = {
             let mut state_map = self.state.lock().expect("hub lock poisoned");
             let state = state_map.entry(session_id.to_string()).or_default();
@@ -280,11 +320,17 @@ impl SessionHub {
             state
                 .watchers
                 .retain(|_, watcher| watcher.connection_key != connection_key);
+            state.disconnected_owners.remove(&connection_key);
             state.next_watcher_id += 1;
             let watcher_id = state.next_watcher_id;
-            state
-                .watchers
-                .insert(watcher_id, Watcher { connection_key, tx });
+            state.watchers.insert(
+                watcher_id,
+                Watcher {
+                    connection_key,
+                    tx,
+                    overflowed: overflowed.clone(),
+                },
+            );
             state.last_touched = Instant::now();
 
             let (mut replay, gap) = state.log.replay(since);
@@ -310,6 +356,7 @@ impl SessionHub {
         // task to this connection's lifetime, so a dead connection drops `rx`
         // and the hub prunes the watcher on the next publish.
         let forward_cx = cx.clone();
+        let session_id = session_id.to_owned();
         let spawned = cx.spawn(async move {
             while let Some(json) = rx.recv().await {
                 let Ok(message) = serde_json::from_str::<UntypedMessage>(&json) else {
@@ -319,6 +366,12 @@ impl SessionHub {
                 if forward_cx.send_notification(message).is_err() {
                     break;
                 }
+            }
+            if overflowed.load(Ordering::Acquire) {
+                let gap =
+                    UntypedMessage::new(REPLAY_GAP_METHOD, json!({ "sessionId": session_id }))
+                        .expect("replay gap notification");
+                let _ = forward_cx.send_notification(gap);
             }
             Ok(())
         });
@@ -349,9 +402,7 @@ impl SessionHub {
             return;
         };
         state.last_touched = Instant::now();
-        state
-            .watchers
-            .retain(|_, watcher| watcher.tx.send(json.clone()).is_ok());
+        state.broadcast(&json, None);
     }
 
     /// Removes every watcher belonging to `connection_key` (used when a
@@ -366,6 +417,7 @@ impl SessionHub {
             .watchers
             .retain(|_, watcher| watcher.connection_key != connection_key);
         let removed = before - state.watchers.len();
+        state.disconnected_owners.remove(&connection_key);
         state.last_touched = Instant::now();
         removed
     }
@@ -409,7 +461,6 @@ impl SessionHub {
         kind: EventKind,
         owner_key: Option<u64>,
     ) -> Option<String> {
-        let mut owner_seen = false;
         let mut state_map = self.state.lock().expect("hub lock poisoned");
         let state = state_map.entry(session_id.to_string()).or_default();
         let Some(json) = state.log.push(method, params.clone(), kind) else {
@@ -421,18 +472,7 @@ impl SessionHub {
         };
         state.last_touched = Instant::now();
 
-        let mut dead = Vec::new();
-        for (watcher_id, watcher) in state.watchers.iter() {
-            if watcher.tx.send(json.clone()).is_err() {
-                dead.push(*watcher_id);
-            } else if Some(watcher.connection_key) == owner_key {
-                owner_seen = true;
-            }
-        }
-        for watcher_id in dead {
-            state.watchers.remove(&watcher_id);
-        }
-
+        let owner_seen = state.broadcast(&json, owner_key);
         if owner_key.is_some() && !owner_seen {
             Some(json)
         } else {
@@ -446,6 +486,74 @@ mod tests {
     use super::{EventKind, SessionLog, MAX_EVENTS};
     use serde_json::json;
 
+    #[test]
+    fn slow_watcher_is_detached_and_can_replay_from_last_cursor() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use tokio::sync::mpsc;
+
+        let hub = super::SessionHub::new();
+        let (slow_tx, mut slow_rx) = mpsc::channel(super::WATCHER_QUEUE_FRAMES);
+        let (fast_tx, mut fast_rx) = mpsc::channel(super::WATCHER_QUEUE_FRAMES);
+        let overflowed = Arc::new(AtomicBool::new(false));
+        {
+            let mut sessions = hub.state.lock().unwrap();
+            let state = sessions.entry("s".into()).or_default();
+            state.watchers.insert(
+                1,
+                super::Watcher {
+                    connection_key: 1,
+                    tx: slow_tx,
+                    overflowed: overflowed.clone(),
+                },
+            );
+            state.watchers.insert(
+                2,
+                super::Watcher {
+                    connection_key: 2,
+                    tx: fast_tx,
+                    overflowed: Arc::new(AtomicBool::new(false)),
+                },
+            );
+        }
+        for cursor in 1..=super::WATCHER_QUEUE_FRAMES {
+            hub.publish(
+                "s",
+                "session/update",
+                &json!({"event":cursor}),
+                EventKind::Normal,
+                Some(1),
+            );
+            let fast = fast_rx.try_recv().unwrap();
+            assert!(fast.contains(&format!(r#""cursor":{cursor}"#)));
+        }
+        assert!(hub
+            .publish(
+                "s",
+                "session/update",
+                &json!({"event":65}),
+                EventKind::Normal,
+                Some(1)
+            )
+            .is_none());
+        assert!(overflowed.load(Ordering::Acquire));
+        assert_eq!(hub.watcher_count("s"), 1);
+        assert!(fast_rx.try_recv().unwrap().contains(r#""cursor":65"#));
+        for cursor in 1..=super::WATCHER_QUEUE_FRAMES {
+            let slow = slow_rx.try_recv().unwrap();
+            assert!(slow.contains(&format!(r#""cursor":{cursor}"#)));
+        }
+        assert!(slow_rx.try_recv().is_err());
+        let sessions = hub.state.lock().unwrap();
+        let log = &sessions.get("s").unwrap().log;
+        let (replay, gap) = log.replay(Some(super::WATCHER_QUEUE_FRAMES as u64));
+        assert!(!gap);
+        assert_eq!(replay.len(), 1);
+        assert_eq!(
+            replay[0].pointer("/params/_meta/aegis/cursor"),
+            Some(&json!(65))
+        );
+    }
     #[test]
     fn abandoned_run_emits_one_terminal_marker_and_never_clears_replacement() {
         let hub = super::SessionHub::new();
