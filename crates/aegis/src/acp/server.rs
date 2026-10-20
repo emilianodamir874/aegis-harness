@@ -9,7 +9,6 @@ pub(super) use crate::acp::response_builder::{
 };
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
-use crate::execution::PromptClaim;
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::{AegisMcpHostInfo, McpClientTrait};
 use crate::agents::platform_extensions::developer::DeveloperClient;
@@ -17,19 +16,20 @@ use crate::agents::state_machine::{
     has_unapplied_tool_confirmation_response, pending_tool_confirmations,
 };
 use crate::agents::{
-    Agent, AgentConfig, ExtensionConfig, ExtensionLoadResult, AegisPlatform, SessionConfig,
+    AegisPlatform, Agent, AgentConfig, ExtensionConfig, ExtensionLoadResult, SessionConfig,
 };
 use crate::config::base::CONFIG_YAML_NAME;
 use crate::config::extensions::{configured_enabled_state, get_enabled_extensions_with_config};
 use crate::config::paths::Paths;
 use crate::config::permission::PermissionManager;
-use crate::config::{Config, AegisMode};
+use crate::config::{AegisMode, Config};
 use crate::conversation::message::{
     ActionRequiredData, Message, MessageContent, SystemNotificationContent, SystemNotificationType,
     ToolConfirmationRequest, ToolRequest, ToolResponse,
 };
 use crate::conversation::Conversation;
 use crate::execution::manager::{AgentManager, RuntimeContext};
+use crate::execution::PromptClaim;
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
 use crate::providers::base::Provider;
@@ -45,6 +45,7 @@ use crate::session::{
 };
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;
+use aegis_providers::errors::ProviderError;
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, Annotations, AuthMethod, AuthMethodAgent, AuthenticateRequest,
     AuthenticateResponse, CancelNotification, CloseSessionRequest, CloseSessionResponse,
@@ -71,7 +72,6 @@ use anyhow::Result;
 use fs_err as fs;
 use futures::future::{BoxFuture, FutureExt};
 use futures::stream::{self, BoxStream, StreamExt};
-use aegis_providers::errors::ProviderError;
 use rmcp::model::{
     Annotations as RmcpAnnotations, ImageContent as RmcpImageContent, Role,
     TextContent as RmcpTextContent,
@@ -923,7 +923,10 @@ fn model_usage_rows(session: &Session) -> Vec<SessionModelUsage> {
         ) else {
             continue;
         };
-        let key = (inference.provider.clone(), inference.requested_model.clone());
+        let key = (
+            inference.provider.clone(),
+            inference.requested_model.clone(),
+        );
         if !totals.contains_key(&key) {
             order.push(key.clone());
         }
@@ -2722,9 +2725,7 @@ impl AegisAcpAgent {
         };
         match claim {
             Some(PromptClaim::Completed(result)) => result,
-            Some(PromptClaim::Waiting(receiver)) => {
-                PromptClaim::Waiting(receiver).response().await
-            }
+            Some(PromptClaim::Waiting(receiver)) => PromptClaim::Waiting(receiver).response().await,
             Some(claim) => {
                 let result = self.spawn_prompt_turn(cx, args).await;
                 claim.finish(&result);
@@ -2833,7 +2834,10 @@ impl AegisAcpAgent {
 
         let mut user_message = Self::convert_acp_prompt_to_message(&args.prompt);
         // Turn framing: prepended to every user turn of a session that selected a profile.
-        apply_frame_profile(&mut user_message, self.frame_profile_phrase(&session_id).await);
+        apply_frame_profile(
+            &mut user_message,
+            self.frame_profile_phrase(&session_id).await,
+        );
         let session_config = SessionConfig {
             id: session_id.clone(),
             schedule_id: None,
@@ -2959,9 +2963,13 @@ impl AegisAcpAgent {
             .active_runs
             .agent_run(&session_id)
             .map(|(run_id, _)| run_id);
-        let (snapshot, spawned) = self
-            .hub
-            .watch(cx, self.connection_key, &session_id, req.since, req.epoch.as_deref());
+        let (snapshot, spawned) = self.hub.watch(
+            cx,
+            self.connection_key,
+            &session_id,
+            req.since,
+            req.epoch.as_deref(),
+        );
         spawned?;
         debug!(
             session_id = %session_id,
@@ -3322,14 +3330,14 @@ mod tests {
     use super::*;
     use crate::conversation::message::MessageMetadata;
     use crate::session::session_manager::SessionType;
+    use aegis_providers::conversation::token_usage::Usage as TokenUsage;
+    use aegis_providers::thinking::{
+        ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
+    };
     use agent_client_protocol::schema::v1::{
         EmbeddedResource, EnvVariable, HttpHeader, McpServer, McpServerHttp, McpServerSse,
         McpServerStdio, PermissionOptionId, ResourceLink, Role as AcpRole,
         SelectedPermissionOutcome, TextResourceContents,
-    };
-    use aegis_providers::conversation::token_usage::Usage as TokenUsage;
-    use aegis_providers::thinking::{
-        ThinkingEffortCapability, ThinkingEffortOption, ThinkingEffortSupport,
     };
     use rmcp::model::{CallToolRequestParams, CallToolResult};
     use std::io::Write;

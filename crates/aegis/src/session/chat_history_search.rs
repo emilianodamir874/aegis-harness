@@ -213,7 +213,9 @@ impl<'a> ChatHistorySearch<'a> {
 
         match fts {
             Some(_) => {
-                sql.push_str("m.id IN (SELECT row_id FROM messages_fts WHERE messages_fts MATCH ?)");
+                sql.push_str(
+                    "m.id IN (SELECT row_id FROM messages_fts WHERE messages_fts MATCH ?)",
+                );
             }
             None => {
                 for (i, _) in keywords.iter().enumerate() {

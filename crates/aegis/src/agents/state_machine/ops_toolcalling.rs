@@ -489,9 +489,7 @@ impl ToolExecutionOperation {
                     cancellation_token,
                 )
                 .await;
-            let result = result.unwrap_or_else(|error| {
-                ToolCallResult::from(Err(error))
-            });
+            let result = result.unwrap_or_else(|error| ToolCallResult::from(Err(error)));
             let result = self
                 .extension_manager
                 .applying_mutation(result, &session.id);

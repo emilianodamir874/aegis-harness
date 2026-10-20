@@ -143,7 +143,6 @@ impl Operation<Session, AegisEffect> for RecipeOperation {
             }
         }
 
-
         let command_message = messages_since_kickoff(conversation)?
             .first()
             .ok_or_else(|| anyhow!("recipe command conversation has no kickoff message"))?;

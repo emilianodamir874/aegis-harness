@@ -1243,8 +1243,6 @@ mod tests {
             .await
     }
 
-
-
     #[cfg(unix)]
     fn exited(code: i32, stdout: &str, stderr: &str) -> std::process::Output {
         use std::os::unix::process::ExitStatusExt;

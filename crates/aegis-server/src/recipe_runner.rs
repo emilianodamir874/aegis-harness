@@ -64,15 +64,17 @@ pub async fn run(path: PathBuf, text: Option<String>, cwd: PathBuf) -> Result<()
             agent_client_protocol::on_receive_notification!(),
         )
         .on_receive_request(
-            async move |request: RequestPermissionRequest, responder, _cx| {
-                match request.options.first().map(|option| option.option_id.clone()) {
-                    Some(option_id) => responder.respond(RequestPermissionResponse::new(
-                        RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
-                    )),
-                    None => responder.respond(RequestPermissionResponse::new(
-                        RequestPermissionOutcome::Cancelled,
-                    )),
-                }
+            async move |request: RequestPermissionRequest, responder, _cx| match request
+                .options
+                .first()
+                .map(|option| option.option_id.clone())
+            {
+                Some(option_id) => responder.respond(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(option_id)),
+                )),
+                None => responder.respond(RequestPermissionResponse::new(
+                    RequestPermissionOutcome::Cancelled,
+                )),
             },
             agent_client_protocol::on_receive_request!(),
         )

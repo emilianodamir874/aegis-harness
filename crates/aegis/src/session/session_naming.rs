@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::sync::LazyLock;
 
-use anyhow::Result;
 use aegis_providers::conversation::{message::Message, Conversation};
+use anyhow::Result;
 use regex::Regex;
 
 use crate::{providers::base::Provider, utils::safe_truncate};

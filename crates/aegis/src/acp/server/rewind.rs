@@ -55,7 +55,12 @@ impl AegisAcpAgent {
             })
             .await?;
 
-        let profile = match req.profile.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        let profile = match req
+            .profile
+            .as_deref()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+        {
             Some(profile) => {
                 self.session_manager
                     .set_frame_profile(&session_id, profile)
@@ -63,14 +68,16 @@ impl AegisAcpAgent {
                     .internal_err_ctx("Failed to set the frame profile")?;
                 profile.to_string()
             }
-            None => FrameProfileState::of(
-                &self
-                    .session_manager
-                    .get_session(&session_id, false)
-                    .await
-                    .internal_err_ctx("Failed to read the session")?,
-            )
-            .profile,
+            None => {
+                FrameProfileState::of(
+                    &self
+                        .session_manager
+                        .get_session(&session_id, false)
+                        .await
+                        .internal_err_ctx("Failed to read the session")?,
+                )
+                .profile
+            }
         };
 
         Ok(RetryLastTurnResponse {
@@ -80,7 +87,6 @@ impl AegisAcpAgent {
             profile,
         })
     }
-
 
     /// `_aegis/unstable/session/unrewind` — undo the most recent rewind.
     pub(super) async fn on_unrewind_session(
@@ -108,19 +114,15 @@ impl AegisAcpAgent {
             })?;
         let conversation = session.conversation.unwrap_or_else(Conversation::empty);
 
-        let restored = rewind::show_tail_after_last_visible(
-            &self.session_manager,
-            session_id,
-            &conversation,
-        )
-        .await
-        .internal_err_ctx("Failed to restore the rewound tail")?;
+        let restored =
+            rewind::show_tail_after_last_visible(&self.session_manager, session_id, &conversation)
+                .await
+                .internal_err_ctx("Failed to restore the rewound tail")?;
 
         Ok(UnrewindSessionResponse {
             restored: restored as u32,
         })
     }
-
 
     /// `_aegis/unstable/session/rewind` — stop sending everything from an
     /// earlier user turn on, and hand that turn's text back for editing.

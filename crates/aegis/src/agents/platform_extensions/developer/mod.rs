@@ -355,7 +355,6 @@ mod tests {
         }
     }
 
-
     #[cfg(windows)]
     #[test]
     fn developer_instructions_protect_running_work_on_windows() {

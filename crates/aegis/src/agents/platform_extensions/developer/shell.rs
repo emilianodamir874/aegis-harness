@@ -958,7 +958,6 @@ mod tests {
         }
     }
 
-
     #[tokio::test]
     async fn shell_executes_command() {
         let tool = ShellTool::new_for_test().unwrap();

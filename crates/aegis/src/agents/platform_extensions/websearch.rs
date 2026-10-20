@@ -367,7 +367,12 @@ pub fn html_to_text(markup: &str, max_chars: usize) -> String {
     while let Some(offset) = markup.get(index..).unwrap_or("").find('<') {
         let start = index + offset;
         text.push_str(markup.get(index..start).unwrap_or(""));
-        let Some(close) = markup.get(start..).unwrap_or("").find('>').map(|end| start + end + 1) else {
+        let Some(close) = markup
+            .get(start..)
+            .unwrap_or("")
+            .find('>')
+            .map(|end| start + end + 1)
+        else {
             text.push_str(markup.get(start..).unwrap_or(""));
             index = markup.len();
             break;
@@ -379,13 +384,17 @@ pub fn html_to_text(markup: &str, max_chars: usize) -> String {
             } else {
                 "</style"
             };
-            index = markup.get(close..).unwrap_or("")
+            index = markup
+                .get(close..)
+                .unwrap_or("")
                 .bytes()
                 .enumerate()
                 .filter(|(_, byte)| *byte == b'<')
                 .map(|(offset, _)| close + offset)
                 .find(|&start| {
-                    markup.get(start..).unwrap_or("")
+                    markup
+                        .get(start..)
+                        .unwrap_or("")
                         .get(..closing.len())
                         .is_some_and(|candidate| candidate.eq_ignore_ascii_case(closing))
                 })
@@ -482,7 +491,8 @@ fn percent_decode(value: &str) -> String {
     let mut i = 0usize;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(decodificado) = u8::from_str_radix(value.get(i + 1..i + 3).unwrap_or(""), 16) {
+            if let Ok(decodificado) = u8::from_str_radix(value.get(i + 1..i + 3).unwrap_or(""), 16)
+            {
                 out.push(decodificado);
                 i += 3;
                 continue;
@@ -536,11 +546,22 @@ fn parse_anchors(markup: &str, class: &str, count: usize) -> Vec<SearchHit> {
             rest = rest.get(class_at + needle.len()..).unwrap_or("");
             continue;
         };
-        let Some(open_end) = rest.get(anchor_at..).unwrap_or("").find('>').map(|end| anchor_at + end) else {
+        let Some(open_end) = rest
+            .get(anchor_at..)
+            .unwrap_or("")
+            .find('>')
+            .map(|end| anchor_at + end)
+        else {
             break;
         };
-        let href = extract_attribute(rest.get(anchor_at..open_end).unwrap_or(""), "href").unwrap_or_default();
-        let Some(close) = rest.get(open_end..).unwrap_or("").find("</a>").map(|end| open_end + end) else {
+        let href = extract_attribute(rest.get(anchor_at..open_end).unwrap_or(""), "href")
+            .unwrap_or_default();
+        let Some(close) = rest
+            .get(open_end..)
+            .unwrap_or("")
+            .find("</a>")
+            .map(|end| open_end + end)
+        else {
             break;
         };
         let title = html_to_text(rest.get(open_end + 1..close).unwrap_or(""), 200);
@@ -568,7 +589,12 @@ fn fill_snippets(markup: &str, hits: &mut [SearchHit], snippet_class: &str) {
         let Some(class_at) = window.find(&needle) else {
             continue;
         };
-        let Some(text_at) = window.get(class_at..).unwrap_or("").find('>').map(|end| class_at + end + 1) else {
+        let Some(text_at) = window
+            .get(class_at..)
+            .unwrap_or("")
+            .find('>')
+            .map(|end| class_at + end + 1)
+        else {
             continue;
         };
         let rest = window.get(text_at..).unwrap_or("");
@@ -594,13 +620,17 @@ pub fn parse_bing(markup: &str, count: usize) -> Vec<SearchHit> {
     let mut hits = Vec::new();
     let mut search_from = 0usize;
     while hits.len() < count {
-        let Some(at) = markup.get(search_from..).unwrap_or("")
+        let Some(at) = markup
+            .get(search_from..)
+            .unwrap_or("")
             .find(marker)
             .map(|offset| search_from + offset)
         else {
             break;
         };
-        let next = markup.get(at + marker.len()..).unwrap_or("")
+        let next = markup
+            .get(at + marker.len()..)
+            .unwrap_or("")
             .find(marker)
             .map(|offset| at + marker.len() + offset)
             .unwrap_or(markup.len());
@@ -624,7 +654,12 @@ fn snippet_del_bloque(block: &str) -> String {
         let Some(at) = block.find(marca) else {
             continue;
         };
-        let Some(inicio) = block.get(at..).unwrap_or("").find('>').map(|fin| at + fin + 1) else {
+        let Some(inicio) = block
+            .get(at..)
+            .unwrap_or("")
+            .find('>')
+            .map(|fin| at + fin + 1)
+        else {
             continue;
         };
         let resto = block.get(inicio..).unwrap_or("");
@@ -643,12 +678,20 @@ fn snippet_del_bloque(block: &str) -> String {
 /// First anchor with an absolute href inside a block, with its stripped text as title.
 fn first_anchor(block: &str) -> Option<SearchHit> {
     let anchor = block.find("<a ")?;
-    let open_end = block.get(anchor..).unwrap_or("").find('>').map(|end| anchor + end)?;
+    let open_end = block
+        .get(anchor..)
+        .unwrap_or("")
+        .find('>')
+        .map(|end| anchor + end)?;
     let href = extract_attribute(block.get(anchor..open_end).unwrap_or(""), "href")?;
     if !href.starts_with("http") {
         return None;
     }
-    let close = block.get(open_end..).unwrap_or("").find("</a>").map(|end| open_end + end)?;
+    let close = block
+        .get(open_end..)
+        .unwrap_or("")
+        .find("</a>")
+        .map(|end| open_end + end)?;
     let title = html_to_text(block.get(open_end + 1..close).unwrap_or(""), 200);
     if title.is_empty() {
         return None;
@@ -668,13 +711,24 @@ fn parse_h2_anchors(markup: &str, count: usize) -> Vec<SearchHit> {
         let Some(head_at) = rest.get(h2..).unwrap_or("").find('>').map(|end| h2 + end) else {
             break;
         };
-        let Some(close) = rest.get(head_at..).unwrap_or("").find("</h2>").map(|end| head_at + end) else {
+        let Some(close) = rest
+            .get(head_at..)
+            .unwrap_or("")
+            .find("</h2>")
+            .map(|end| head_at + end)
+        else {
             break;
         };
         let block = rest.get(head_at + 1..close).unwrap_or("");
         if let Some(anchor) = block.find("<a ") {
-            if let Some(open_end) = block.get(anchor..).unwrap_or("").find('>').map(|end| anchor + end) {
-                let href = extract_attribute(block.get(anchor..open_end).unwrap_or(""), "href").unwrap_or_default();
+            if let Some(open_end) = block
+                .get(anchor..)
+                .unwrap_or("")
+                .find('>')
+                .map(|end| anchor + end)
+            {
+                let href = extract_attribute(block.get(anchor..open_end).unwrap_or(""), "href")
+                    .unwrap_or_default();
                 let title = html_to_text(block.get(open_end + 1..).unwrap_or(""), 200);
                 if href.starts_with("http") && !title.is_empty() {
                     hits.push(SearchHit {

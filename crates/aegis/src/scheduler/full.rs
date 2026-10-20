@@ -927,7 +927,6 @@ async fn execute_job(
         "Recipe execution started"
     );
 
-
     let prompt_text = recipe
         .prompt
         .as_deref()
@@ -1025,7 +1024,6 @@ async fn execute_job(
             );
         }
     }
-
 
     Ok(session.id)
 }

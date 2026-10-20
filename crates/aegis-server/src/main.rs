@@ -104,7 +104,10 @@ struct Args {
     )]
     stdio: bool,
 
-    #[arg(long, help = "List installed skills and exit (replaces `aegis skills list`)")]
+    #[arg(
+        long,
+        help = "List installed skills and exit (replaces `aegis skills list`)"
+    )]
     list_skills: bool,
 
     #[arg(
@@ -148,9 +151,15 @@ fn generate_secret_key() -> String {
 fn print_paths() {
     let data = Paths::data_dir();
     println!("config_dir    {}", Paths::config_dir().display());
-    println!("config.yaml   {}", Paths::config_dir().join("config.yaml").display());
+    println!(
+        "config.yaml   {}",
+        Paths::config_dir().join("config.yaml").display()
+    );
     println!("data_dir      {}", data.display());
-    println!("sessions.db   {}", data.join("sessions").join("sessions.db").display());
+    println!(
+        "sessions.db   {}",
+        data.join("sessions").join("sessions.db").display()
+    );
     println!("state_dir     {}", Paths::state_dir().display());
     println!("logs_dir      {}", Paths::in_state_dir("logs").display());
     println!("agents_home   {}", Paths::agents_home_dir().display());
@@ -238,8 +247,9 @@ async fn serve(args: Args) -> Result<()> {
             if origin.is_empty() || origin == "*" {
                 anyhow::bail!("--allowed-origin must be a non-wildcard Origin value");
             }
-            axum::http::HeaderValue::from_str(origin)
-                .map_err(|error| anyhow::anyhow!("invalid --allowed-origin value `{origin}`: {error}"))
+            axum::http::HeaderValue::from_str(origin).map_err(|error| {
+                anyhow::anyhow!("invalid --allowed-origin value `{origin}`: {error}")
+            })
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -270,9 +280,11 @@ async fn serve(args: Args) -> Result<()> {
     let addr: SocketAddr = format!("{}:{}", args.host, args.port).parse()?;
     if tls {
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
-        let tls_setup =
-            aegis::acp::transport::tls::setup_tls(tls_cert_path.as_deref(), tls_key_path.as_deref())
-                .await?;
+        let tls_setup = aegis::acp::transport::tls::setup_tls(
+            tls_cert_path.as_deref(),
+            tls_key_path.as_deref(),
+        )
+        .await?;
 
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
         info!(

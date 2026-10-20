@@ -1,7 +1,7 @@
 use crate::agents::Container;
 use crate::config::paths::Paths;
-use crate::config::ExtensionConfig;
 use crate::config::AegisMode;
+use crate::config::ExtensionConfig;
 use crate::conversation::message::{Message, MessageMetadata, MessageUsage, TokenState};
 use crate::conversation::Conversation;
 use crate::providers::base::CostSource;
@@ -13,10 +13,10 @@ use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, Exte
 use crate::session::session_naming::{
     generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
-use anyhow::Result;
-use chrono::{DateTime, TimeZone, Utc};
 use aegis_providers::conversation::token_usage::Usage;
 use aegis_providers::model::ModelConfig;
+use anyhow::Result;
+use chrono::{DateTime, TimeZone, Utc};
 use indexmap::IndexMap;
 use rmcp::model::Role;
 use serde::de::DeserializeOwned;
@@ -1789,7 +1789,7 @@ impl SessionStorage {
                 .execute(&mut **tx)
                 .await?;
             }
-                    18 => {
+            18 => {
                 // Full-text index over the text blocks of every message. FTS5 may be
                 // missing in some SQLite builds: setup failures are logged and ignored
                 // so the database still opens, and search falls back to LIKE.
@@ -1806,7 +1806,7 @@ impl SessionStorage {
                     }
                 }
             }
-    17 => {
+            17 => {
                 for column in [
                     "system_prompt_override",
                     "system_prompt_extras_json",
@@ -1828,7 +1828,7 @@ impl SessionStorage {
                     }
                 }
             }
-19 => {
+            19 => {
                 // El fork sin renombrar creaba la columna como `goose_mode`; el
                 // rename a Aegis la dejo como `aegis_mode`. Renombramos la vieja
                 // para no huerfanar stores existentes (ni backups restaurados).
@@ -4042,7 +4042,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(results.results.len(), 1, "el indice FTS deberia encontrar 'cafe'");
+        assert_eq!(
+            results.results.len(),
+            1,
+            "el indice FTS deberia encontrar 'cafe'"
+        );
         assert!(!results.results[0].messages.is_empty());
 
         // Prefix search keeps working: the index tokenises and expands.
@@ -4054,7 +4058,14 @@ mod tests {
 
         // Y una palabra que no esta no devuelve nada.
         let missing = sm
-            .search_chat_history("zzzznoexiste", Some(5), None, None, None, vec![SessionType::User])
+            .search_chat_history(
+                "zzzznoexiste",
+                Some(5),
+                None,
+                None,
+                None,
+                vec![SessionType::User],
+            )
             .await
             .unwrap();
         assert!(missing.results.is_empty());
@@ -5460,10 +5471,7 @@ mod tests {
         sm.delete_session(&second).await.unwrap();
         let third = new_session(&sm).await;
         assert_ne!(third, second);
-        assert_eq!(
-            third.rsplit('_').next().unwrap().parse::<u32>().unwrap(),
-            3
-        );
+        assert_eq!(third.rsplit('_').next().unwrap().parse::<u32>().unwrap(), 3);
     }
 
     #[tokio::test]
