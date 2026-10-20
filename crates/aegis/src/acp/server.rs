@@ -9,6 +9,7 @@ pub(super) use crate::acp::response_builder::{
 };
 use crate::acp::tool_call_notifier::ToolCallNotifier;
 use crate::acp::{PermissionDecision, ACP_CURRENT_MODEL};
+use crate::execution::PromptClaim;
 use crate::agents::extension::{Envs, PLATFORM_EXTENSIONS};
 use crate::agents::mcp_client::{AegisMcpHostInfo, McpClientTrait};
 use crate::agents::platform_extensions::developer::DeveloperClient;
@@ -2705,12 +2706,43 @@ impl AegisAcpAgent {
         cx: &ConnectionTo<Client>,
         args: PromptRequest,
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
-        // The turn runs in its own task so it survives the loss of the
-        // connection that started it: when the transport drops this future
-        // (reload, closed tab, revoked roaming connection) the response is lost
-        // but the run keeps streaming to every watcher of the session and
-        // persists its result. The registry entry is released by that task,
-        // never by this handler's scope.
+        // Reintentos idempotentes: si el cliente manda `_meta.promptId`, dos pedidos
+        // con el mismo id comparten la corrida (o el resultado ya cacheado) en vez de
+        // ejecutar dos veces el mismo turno. Sin promptId se comporta como siempre.
+        let prompt_id = meta_string(args.meta.as_ref(), "promptId")?;
+        let claim = match prompt_id {
+            Some(id) => {
+                let body = serde_json::to_vec(&args.prompt).unwrap_or_default();
+                Some(
+                    self.active_runs
+                        .claim_prompt(&args.session_id.0, &id, blake3::hash(&body))?,
+                )
+            }
+            None => None,
+        };
+        match claim {
+            Some(PromptClaim::Completed(result)) => result,
+            Some(PromptClaim::Waiting(receiver)) => {
+                PromptClaim::Waiting(receiver).response().await
+            }
+            Some(claim) => {
+                let result = self.spawn_prompt_turn(cx, args).await;
+                claim.finish(&result);
+                result
+            }
+            None => self.spawn_prompt_turn(cx, args).await,
+        }
+    }
+
+    /// The turn runs in its own task so it survives the loss of the connection that
+    /// started it: when the transport drops this future (reload, closed tab, revoked
+    /// roaming connection) the response is lost but the run keeps streaming to every
+    /// watcher of the session and persists its result.
+    async fn spawn_prompt_turn(
+        self: &Arc<Self>,
+        cx: &ConnectionTo<Client>,
+        args: PromptRequest,
+    ) -> Result<PromptResponse, agent_client_protocol::Error> {
         let agent = Arc::clone(self);
         let cx = cx.clone();
         let handle = tokio::spawn(async move { agent.run_prompt_turn(cx, args).await });
@@ -3183,6 +3215,7 @@ impl AegisAcpAgent {
             .await
             .insert(session_id.to_string());
 
+        self.active_runs.clear_session_prompts(session_id);
         self.active_runs.cancel_agent_run(session_id);
         self.live_voice.stop_session_interaction(session_id).await;
 

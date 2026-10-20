@@ -7,4 +7,5 @@ mod active_run;
 pub mod manager;
 
 pub use active_run::ActiveRunRegistry;
+pub(crate) use active_run::PromptClaim;
 pub(crate) use active_run::StartRunError;
