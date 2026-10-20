@@ -4,21 +4,19 @@ use std::collections::{HashMap, HashSet};
 
 const MAX_PARALLEL_READ_STARTUPS: usize = 4;
 
-fn can_parallelize_reads(
-    pending: &[(ToolRequest, ToolDisposition)],
+fn safe_parallel_read(
+    request: &ToolRequest,
+    disposition: &ToolDisposition,
     tools: &[Tool],
     hook_manager: &HookManager,
 ) -> bool {
-    pending.len() > 1
-        && pending.iter().all(|(request, disposition)| {
-            *disposition == ToolDisposition::Execute
-                && request.tool_call.as_ref().is_ok_and(|call| {
-                    tools.iter().any(|tool| {
-                        tool.name == call.name
-                            && crate::agents::extension_manager::get_tool_owner(tool).as_deref()
-                                == Some("developer")
-                            && matches!(call.name.as_ref(), "read_file" | "grep" | "tree")
-                    })
+    *disposition == ToolDisposition::Execute
+        && request.tool_call.as_ref().is_ok_and(|call| {
+            matches!(call.name.as_ref(), "read_file" | "grep" | "tree")
+                && tools.iter().any(|tool| {
+                    tool.name == call.name
+                        && crate::agents::extension_manager::get_tool_owner(tool).as_deref()
+                            == Some("developer")
                 })
         })
         && ![
@@ -28,6 +26,25 @@ fn can_parallelize_reads(
         ]
         .into_iter()
         .any(|event| hook_manager.has_hooks(event))
+}
+
+fn plan_tool_segments(
+    pending: &[(ToolRequest, ToolDisposition)],
+    tools: &[Tool],
+    hook_manager: &HookManager,
+) -> Vec<(std::ops::Range<usize>, bool)> {
+    let mut segments: Vec<(std::ops::Range<usize>, bool)> = Vec::new();
+    for (index, (request, disposition)) in pending.iter().enumerate() {
+        let read = safe_parallel_read(request, disposition, tools, hook_manager);
+        if read {
+            if let Some((range, true)) = segments.last_mut() {
+                range.end += 1;
+                continue;
+            }
+        }
+        segments.push((index..index + 1, read));
+    }
+    segments
 }
 
 async fn run_bounded_ordered<T, F, Fut, R>(requests: Vec<T>, dispatch: F) -> Vec<R>
@@ -285,6 +302,7 @@ pub(super) async fn emit_post_tool_use(
 struct ToolBatch {
     actions: Vec<Message>,
     response: Option<Message>,
+    request_order: HashMap<String, usize>,
 }
 
 impl ToolBatch {
@@ -302,8 +320,28 @@ impl ToolBatch {
         }
     }
 
+    fn set_request_order(&mut self, pending: &[(ToolRequest, ToolDisposition)]) {
+        self.request_order = pending
+            .iter()
+            .enumerate()
+            .map(|(index, (request, _))| (request.id.clone(), index))
+            .collect();
+    }
+
     fn take(&mut self) -> (Vec<Message>, Option<Message>) {
-        (std::mem::take(&mut self.actions), self.response.take())
+        let mut response = self.response.take();
+        if let Some(message) = &mut response {
+            message.content.sort_by_key(|content| match content {
+                MessageContent::ToolResponse(response) => self
+                    .request_order
+                    .get(&response.id)
+                    .copied()
+                    .unwrap_or(usize::MAX),
+                _ => usize::MAX,
+            });
+        }
+        self.request_order.clear();
+        (std::mem::take(&mut self.actions), response)
     }
 }
 
@@ -981,7 +1019,11 @@ impl Operation<Session, AegisEffect> for ToolExecutionOperation {
         };
         let Some(lease) = lease else {
             let mut response = Message::user();
+            let mut seen = HashSet::new();
             for (request, disposition) in pending {
+                if !seen.insert(request.id.clone()) {
+                    continue;
+                }
                 let result = match disposition {
                     ToolDisposition::Execute => {
                         CallToolResult::error(vec![ContentBlock::text(EXPIRED_APPROVAL_RESPONSE)])
@@ -1013,8 +1055,10 @@ impl Operation<Session, AegisEffect> for ToolExecutionOperation {
                 .as_ref()
                 .is_ok_and(|tool_call| known_tools.contains(tool_call.name.as_ref()))
         });
-        let requests: Vec<_> = pending.iter().map(|(request, _)| request.clone()).collect();
-        if requests.is_empty() {
+        let mut seen = HashSet::new();
+        pending.retain(|(request, _)| seen.insert(request.id.clone()));
+
+        if pending.is_empty() {
             return not_applicable();
         }
 
@@ -1041,136 +1085,97 @@ impl Operation<Session, AegisEffect> for ToolExecutionOperation {
             return applied([response.into()]);
         }
 
-        let parallel_reads = can_parallelize_reads(&pending, &tools, &self.hook_manager);
-
-        // Only the built-in read-only tools may start together. Keep mixed batches
-        // sequential: even an apparent read can observe an earlier tool's writes.
-        let results = if parallel_reads {
-            let parallel_requests: Vec<_> =
-                pending.iter().map(|(request, _)| request.clone()).collect();
-            run_bounded_ordered(parallel_requests, |request| {
-                let lease = Arc::clone(&lease);
-                async move {
-                    let call = request
-                        .tool_call
-                        .as_ref()
-                        .expect("executable read is parsed")
-                        .clone();
-                    let result = self
-                        .dispatch_tool_call(
-                            lease,
-                            call,
-                            &request,
-                            emit.cancel_token().clone(),
-                            session,
-                        )
-                        .await;
-                    (
-                        request.id,
-                        result.unwrap_or_else(|error| ToolCallResult::from(Err(error))),
-                    )
-                }
-            })
-            .await
-        } else {
-            let mut results = Vec::new();
-            for (request, disposition) in &pending {
-                if *disposition != ToolDisposition::Execute {
-                    continue;
-                }
-                let tool_call = request
-                    .tool_call
-                    .clone()
-                    .map_err(|e| anyhow!("tool call could not be parsed: {e}"))?;
-                let result = self
-                    .dispatch_tool_call(
-                        Arc::clone(&lease),
-                        tool_call,
-                        request,
-                        emit.cancel_token().clone(),
-                        session,
-                    )
-                    .await;
-                results.push((
-                    request.id.clone(),
-                    result.unwrap_or_else(|error| ToolCallResult::from(Err(error))),
-                ));
-            }
-            results
-        };
-        let mut tool_streams = Vec::new();
-        for (req_id, result) in results {
-            let stream = tool_stream(
-                result
-                    .notification_stream
-                    .unwrap_or_else(|| Box::new(futures::stream::empty())),
-                result
-                    .action_required_stream
-                    .unwrap_or_else(|| Box::new(futures::stream::empty())),
-                result.result,
-            )
-            .map(move |item| (req_id.clone(), item));
-            tool_streams.push(stream);
-        }
-
-        let mut combined = futures::stream::select_all(tool_streams);
-        for (request, disposition) in &pending {
-            let mut batch = self.batch.lock().unwrap();
-            match disposition {
-                ToolDisposition::Execute => {}
-                ToolDisposition::Decline => {
-                    batch.record(
-                        &request.id,
-                        Ok(CallToolResult::error(vec![ContentBlock::text(
-                            DECLINED_RESPONSE,
-                        )])),
-                        request.metadata.as_ref(),
-                    );
-                }
-                ToolDisposition::ParseError(parse_error) => {
-                    batch.record(
-                        &request.id,
-                        Ok(CallToolResult::error(vec![ContentBlock::text(format!(
+        self.batch.lock().unwrap().set_request_order(&pending);
+        for (range, parallel_reads) in plan_tool_segments(&pending, &tools, &self.hook_manager) {
+            let segment = &pending[range];
+            if !parallel_reads && segment[0].1 != ToolDisposition::Execute {
+                let (request, disposition) = &segment[0];
+                let result = match disposition {
+                    ToolDisposition::Decline => {
+                        CallToolResult::error(vec![ContentBlock::text(DECLINED_RESPONSE)])
+                    }
+                    ToolDisposition::ParseError(parse_error) => {
+                        CallToolResult::error(vec![ContentBlock::text(format!(
                             "The tool call could not be parsed: {parse_error}. \
                              Correct the arguments and try again."
-                        ))])),
-                        request.metadata.as_ref(),
-                    );
-                }
+                        ))])
+                    }
+                    ToolDisposition::Execute => unreachable!(),
+                };
+                self.batch.lock().unwrap().record(
+                    &request.id,
+                    Ok(result),
+                    request.metadata.as_ref(),
+                );
+                continue;
             }
-        }
 
-        while let Some((request_id, item)) = combined.next().await {
-            match item {
-                ToolStreamItem::Result(output) => {
-                    if let Ok(result) = &output {
-                        if let Some(notification) = platform_notification(result) {
-                            emit.emit(AgentEvent::McpNotification((
-                                request_id.clone(),
-                                notification,
-                            )));
+            // Dispatch and drain each complete segment before crossing a barrier. A dispatched
+            // call still has a lazy result future; the stream drives it and its post hooks.
+            run_bounded_ordered(
+                segment.iter().map(|(r, _)| r.clone()).collect(),
+                |request| {
+                    let lease = Arc::clone(&lease);
+                    async move {
+                        let call = request
+                            .tool_call
+                            .as_ref()
+                            .expect("executable tool is parsed")
+                            .clone();
+                        let result = self
+                            .dispatch_tool_call(
+                                lease,
+                                call,
+                                &request,
+                                emit.cancel_token().clone(),
+                                session,
+                            )
+                            .await
+                            .unwrap_or_else(|error| ToolCallResult::from(Err(error)));
+                        let mut stream = tool_stream(
+                            result
+                                .notification_stream
+                                .unwrap_or_else(|| Box::new(futures::stream::empty())),
+                            result
+                                .action_required_stream
+                                .unwrap_or_else(|| Box::new(futures::stream::empty())),
+                            result.result,
+                        );
+                        while let Some(item) = stream.next().await {
+                            match item {
+                                ToolStreamItem::Result(output) => {
+                                    if let Ok(result) = &output {
+                                        if let Some(notification) = platform_notification(result) {
+                                            emit.emit(AgentEvent::McpNotification((
+                                                request.id.clone(),
+                                                notification,
+                                            )));
+                                        }
+                                    }
+                                    self.batch.lock().unwrap().record(
+                                        &request.id,
+                                        output,
+                                        request.metadata.as_ref(),
+                                    );
+                                }
+                                ToolStreamItem::Message(msg) => {
+                                    emit.emit(AgentEvent::McpNotification((
+                                        request.id.clone(),
+                                        msg,
+                                    )));
+                                }
+                                ToolStreamItem::ActionRequired(msg) => {
+                                    let msg = msg.with_generated_id_if_missing();
+                                    self.batch.lock().unwrap().actions.push(msg.clone());
+                                    emit.message(msg);
+                                }
+                            }
                         }
                     }
-                    let metadata = requests
-                        .iter()
-                        .find(|r| r.id == request_id)
-                        .and_then(|r| r.metadata.as_ref());
-                    self.batch
-                        .lock()
-                        .unwrap()
-                        .record(&request_id, output, metadata);
-                }
-                ToolStreamItem::Message(msg) => {
-                    emit.emit(AgentEvent::McpNotification((request_id, msg)));
-                }
-                ToolStreamItem::ActionRequired(msg) => {
-                    let msg = msg.with_generated_id_if_missing();
-                    self.batch.lock().unwrap().actions.push(msg.clone());
-                    emit.message(msg);
-                }
-            }
+                },
+            )
+            .await;
         }
-
         let (actions, response) = self.take_batch();
         let response = response.ok_or_else(|| anyhow!("tool batch produced no responses"))?;
         emit.emit(AgentEvent::Message(response.user_visible_content()));
@@ -1210,44 +1215,44 @@ mod tests {
     }
 
     #[test]
-    fn only_unhooked_developer_read_batches_are_parallel_eligible() {
+    fn planner_splits_at_every_barrier_and_rejects_impersonated_reads() {
         let tools = [
             developer_tool("read_file", "developer"),
             developer_tool("grep", "developer"),
             developer_tool("tree", "developer"),
             developer_tool("write", "developer"),
         ];
-        let reads = vec![executable("read_file", "a"), executable("grep", "b")];
-        assert!(can_parallelize_reads(
-            &reads,
-            &tools,
-            &HookManager::default()
-        ));
-        assert!(!can_parallelize_reads(
-            &reads[..1],
-            &tools,
-            &HookManager::default()
-        ));
-        let mixed = vec![executable("read_file", "a"), executable("write", "b")];
-        assert!(!can_parallelize_reads(
-            &mixed,
-            &tools,
-            &HookManager::default()
-        ));
-        let mut declined = reads.clone();
-        declined[1].1 = ToolDisposition::Decline;
-        assert!(!can_parallelize_reads(
-            &declined,
-            &tools,
-            &HookManager::default()
-        ));
+        let mut declined = executable("read_file", "declined");
+        declined.1 = ToolDisposition::Decline;
+        let mut parse_error = executable("grep", "invalid");
+        parse_error.1 = ToolDisposition::ParseError("invalid".into());
+        let pending = vec![
+            executable("read_file", "a"),
+            executable("grep", "b"),
+            executable("write", "write"),
+            executable("tree", "c"),
+            declined,
+            executable("read_file", "d"),
+            parse_error,
+            executable("grep", "e"),
+        ];
+        assert_eq!(
+            plan_tool_segments(&pending, &tools, &HookManager::default()),
+            vec![
+                (0..2, true),
+                (2..3, false),
+                (3..4, true),
+                (4..5, false),
+                (5..6, true),
+                (6..7, false),
+                (7..8, true)
+            ]
+        );
         let impostor = [developer_tool("read_file", "other")];
-        assert!(!can_parallelize_reads(
-            &reads,
-            &impostor,
-            &HookManager::default()
-        ));
-
+        assert_eq!(
+            plan_tool_segments(&pending[..2], &impostor, &HookManager::default()),
+            vec![(0..1, false), (1..2, false)]
+        );
         for event in ["PreToolUse", "PreToolUseResult", "BeforeReadFile"] {
             let root = tempfile::tempdir().unwrap();
             let plugin = root.path().join("test-plugin");
@@ -1255,8 +1260,7 @@ mod tests {
             std::fs::write(
                 plugin.join("hooks/hooks.json"),
                 format!(r#"{{"hooks":{{"{event}":[{{"hooks":[{{"type":"command","command":"echo ok"}}]}}]}}}}"#),
-            )
-            .unwrap();
+            ).unwrap();
             let manager = HookManager::from_plugins_for_test(vec![
                 crate::plugins::discovery::DiscoveredPlugin {
                     name: "test-plugin".into(),
@@ -1264,10 +1268,13 @@ mod tests {
                     scope: crate::plugins::discovery::PluginScope::Project,
                 },
             ]);
-            assert!(!can_parallelize_reads(&reads, &tools, &manager), "{event}");
+            assert_eq!(
+                plan_tool_segments(&pending[..2], &tools, &manager),
+                vec![(0..1, false), (1..2, false)],
+                "{event}"
+            );
         }
     }
-
     #[tokio::test]
     async fn parallel_reads_start_at_most_four_and_return_in_request_order() {
         let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1306,6 +1313,88 @@ mod tests {
         assert_eq!(run.await.unwrap(), (0..6).collect::<Vec<_>>());
     }
 
+    #[tokio::test]
+    async fn deferred_results_and_post_hooks_finish_before_following_read() {
+        let tools = [
+            developer_tool("read_file", "developer"),
+            developer_tool("write", "developer"),
+        ];
+        let pending = vec![
+            executable("read_file", "a"),
+            executable("read_file", "b"),
+            executable("write", "write"),
+            executable("read_file", "after"),
+        ];
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (release_write, wait_write) = tokio::sync::oneshot::channel();
+        let waits = Arc::new(StdMutex::new(HashMap::from([("write", wait_write)])));
+        let segments = plan_tool_segments(&pending, &tools, &HookManager::default());
+        let task = tokio::spawn(async move {
+            for (range, _) in segments {
+                let requests = pending[range]
+                    .iter()
+                    .map(|(request, _)| request.id.clone())
+                    .collect();
+                run_bounded_ordered(requests, |id| {
+                    let events = events_tx.clone();
+                    let wait = waits.lock().unwrap().remove(id.as_str());
+                    async move {
+                        events.send(format!("start:{id}")).unwrap();
+                        if let Some(wait) = wait {
+                            wait.await.unwrap();
+                        }
+                        events.send(format!("result:{id}")).unwrap();
+                        tokio::task::yield_now().await;
+                        events.send(format!("post:{id}")).unwrap();
+                    }
+                })
+                .await;
+            }
+        });
+        let mut before_write = Vec::new();
+        loop {
+            let event = events_rx.recv().await.unwrap();
+            if event == "start:write" {
+                break;
+            }
+            before_write.push(event);
+        }
+        assert!(before_write.contains(&"post:a".to_string()));
+        assert!(before_write.contains(&"post:b".to_string()));
+        assert!(matches!(
+            events_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+        release_write.send(()).unwrap();
+        assert_eq!(events_rx.recv().await.as_deref(), Some("result:write"));
+        assert_eq!(events_rx.recv().await.as_deref(), Some("post:write"));
+        assert_eq!(events_rx.recv().await.as_deref(), Some("start:after"));
+        task.await.unwrap();
+    }
+
+    #[test]
+    fn batch_responses_follow_request_order_even_when_results_finish_out_of_order() {
+        let pending = vec![
+            executable("read_file", "first"),
+            executable("read_file", "second"),
+        ];
+        let mut batch = ToolBatch::default();
+        batch.set_request_order(&pending);
+        batch.record("second", Ok(CallToolResult::success(Vec::new())), None);
+        batch.record("first", Ok(CallToolResult::success(Vec::new())), None);
+        batch.record("first", Ok(CallToolResult::success(Vec::new())), None);
+        let (_, response) = batch.take();
+        let response = response.unwrap();
+        let ids = response
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                MessageContent::ToolResponse(response) => Some(response.id.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ids, ["first", "second"]);
+    }
     #[test]
     fn externally_dispatched_observations_are_not_pending_execution() {
         use crate::conversation::message::TOOL_META_EXTERNAL_DISPATCH_KEY;

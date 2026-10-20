@@ -57,7 +57,6 @@ pub(super) struct CalculatorExtension {
     action_required: Arc<ActionRequiredManager>,
     total: Mutex<i64>,
     contexts: Mutex<Vec<ToolCallContext>>,
-    barrier: Mutex<Option<Arc<tokio::sync::Barrier>>>,
     completed: tokio::sync::Notify,
     notification_senders: Mutex<Vec<mpsc::Sender<ServerNotification>>>,
 }
@@ -78,7 +77,6 @@ impl CalculatorExtension {
             action_required,
             total: Mutex::new(0),
             contexts: Mutex::new(Vec::new()),
-            barrier: Mutex::new(None),
             completed: tokio::sync::Notify::new(),
             notification_senders: Mutex::new(Vec::new()),
         }
@@ -86,10 +84,6 @@ impl CalculatorExtension {
 
     pub(super) fn total(&self) -> i64 {
         *self.total.lock().unwrap()
-    }
-
-    pub(super) fn synchronize(&self, calls: usize) {
-        *self.barrier.lock().unwrap() = Some(Arc::new(tokio::sync::Barrier::new(calls)));
     }
 
     pub(super) fn contexts(&self) -> Vec<ToolCallContext> {
@@ -257,28 +251,6 @@ impl McpClientTrait for CalculatorExtension {
                 })?;
                 (calculate, params.value, params.delay_ms)
             };
-        let barrier = self.barrier.lock().unwrap().clone();
-        if let Some(barrier) = barrier {
-            let result = tokio::select! {
-                _ = cancel_token.cancelled() => {
-                    return Err(McpError::McpError(ErrorData::internal_error(
-                        "calculator call cancelled",
-                        None,
-                    )));
-                }
-                result = tokio::time::timeout(std::time::Duration::from_secs(2), barrier.wait()) => {
-                    result.map_err(|_| {
-                        McpError::McpError(ErrorData::internal_error(
-                            "calculator calls did not execute concurrently",
-                            None,
-                        ))
-                    })?
-                }
-            };
-            if result.is_leader() {
-                *self.barrier.lock().unwrap() = None;
-            }
-        }
         if delay_ms > 0 {
             let delay = std::time::Duration::from_millis(delay_ms);
             tokio::select! {

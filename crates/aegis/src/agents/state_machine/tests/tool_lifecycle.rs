@@ -202,7 +202,6 @@ async fn malformed_tool_calls_recover_and_remain_bounded() -> Result<()> {
 #[tokio::test]
 async fn multiple_tool_calls_are_paired_and_executed_once() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
-    pipeline.synchronize_calculator(2);
     api.on("run several calculations").calls([
         ("first", ADD, delayed_value(1, 50)),
         ("duplicate", ADD, value(2)),
@@ -214,7 +213,7 @@ async fn multiple_tool_calls_are_paired_and_executed_once() -> Result<()> {
 
     result.assert_message(1, ToolCall, ADD);
     result.assert_message(2, ToolCall, ADD);
-    result.assert_message(3, ToolResponse, "result: 2");
+    result.assert_message(3, ToolResponse, "result: 1");
     result.assert_message(4, ToolResponse, "result: 3");
     result.assert_message(-1, Agent, "done");
     assert_eq!(pipeline.calculator_total(), 3);
@@ -247,7 +246,6 @@ async fn approvals_and_per_tool_permissions() -> Result<()> {
     let (pipeline, api) = test_pipeline().await?;
     let pipeline = pipeline.with_aegis_mode(AegisMode::Approve).await;
 
-    pipeline.synchronize_calculator(2);
     api.on("add one and two")
         .calls([("first", ADD, value(1)), ("second", ADD, value(2))]);
     api.on("result: 3").reply("both approved");
@@ -288,8 +286,8 @@ async fn approvals_and_per_tool_permissions() -> Result<()> {
         .calls([("allowed", ADD, value(1)), ("blocked", DIVIDE, value(2))]);
     api.on("result: 4").reply("permissions applied");
     let result = pipeline.run(["apply the saved permissions"]).await?;
-    result.assert_message(-3, ToolResponse, DECLINED_RESPONSE);
-    result.assert_message(-2, ToolResponse, "result: 4");
+    result.assert_message(-3, ToolResponse, "result: 4");
+    result.assert_message(-2, ToolResponse, DECLINED_RESPONSE);
     result.assert_message(-1, Agent, "permissions applied");
     assert_eq!(pipeline.calculator_total(), 4);
 

@@ -417,10 +417,6 @@ impl TestPipeline {
         Ok(pipeline)
     }
 
-    pub(super) fn synchronize_calculator(&self, calls: usize) {
-        self.calculator.synchronize(calls);
-    }
-
     pub(super) async fn run<const N: usize>(&self, user_messages: [&str; N]) -> Result<TestRun> {
         let mut events = Vec::new();
 
