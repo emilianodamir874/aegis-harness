@@ -17,7 +17,9 @@ try {
   page.on('pageerror', (e: Error) => errs.push(e.message));
 
   const waitIdle = async () => {
-    await page.waitForFunction(() => (window as any).__aegisWeb?.state?.busy !== true && !(window as any).__aegisWeb?.state?.runId, null, { timeout: 90000 });
+    // 150 s: un turno real con este proveedor puede pasar de 90 (paso el 2026-10-20 y el test
+    // fallaba por timeout, no por comportamiento).
+    await page.waitForFunction(() => (window as any).__aegisWeb?.state?.busy !== true && !(window as any).__aegisWeb?.state?.runId, null, { timeout: 150000 });
     await page.waitForTimeout(900);
   };
   const send = async (t: string) => { await page.fill('#input', t); await page.keyboard.press('Enter'); await waitIdle(); };
