@@ -16,6 +16,8 @@ const entries = [
   { entry: 'tests/lib.ts', output: 'tests/lib.js', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/ui-mobile.ts', output: 'tests/ui-mobile.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/gasto.ts', output: 'tests/gasto.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
+  { entry: 'tests/client-regressions.ts', output: 'tests/client-regressions.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
+  { entry: 'tests/server-regressions.ts', output: 'tests/server-regressions.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/reload-smoke.ts', output: 'tests/reload-smoke.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/rewind-regen.ts', output: 'tests/rewind-regen.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/dedup-prompt.ts', output: 'tests/dedup-prompt.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },

@@ -200,7 +200,11 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
           rej: (err) => {
             const m = err && err.message ? err.message : String(err);
             const ya = m.indexOf("[metodo: ") >= 0;
-            rej(new Error(ya ? m : m + " [metodo: " + method + "]"));
+            // Mantener code/data del JSON-RPC para distinguir method not found y run activo.
+            if (err && typeof err === 'object') {
+              err.message = ya ? m : m + " [metodo: " + method + "]";
+              rej(err);
+            } else rej(new Error(ya ? m : m + " [metodo: " + method + "]"));
           },
         });
         try { this.ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params })); }
@@ -234,7 +238,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   // dejaba al usuario mirando los mensajes viejos), se guarda aca y se pinta en dos
   // fases en paintReplayTwoPhase(): primero el final, despues el resto arriba.
   function onUpdate(params) {
-    if (state.replayBuf) { state.replayBuf.push(params); return; }
+    if (state.replayBuf && params.sessionId === state.current?.id) { state.replayBuf.push(params); return; }
     applyUpdate(params);
   }
 
@@ -343,7 +347,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     // Refresca el estado 'en produccion' de la lista mientras la pestana este visible.
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
-    if (state.conn !== 'open') return;
+    if (!rpc.ready) return;
     // Con turnos en curso se refresca cada 4 s (para ver en vivo, desde cualquier chat, quien
     // trabaja y quien termino); sin turnos, cada 20 s como antes.
     if (!anyRunning() && Date.now() - lastListPoll < 20000) return;
@@ -465,11 +469,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     document.querySelectorAll('.sb-item').forEach((el) => el.classList.toggle('active', el.parentElement.dataset.id === id));
   }
 
+  let sessionListGeneration = 0;
   async function refreshSessions() {
     const pages = Math.max(1, state.pages);
     const all = [];
     let cursor = null;
-      const running = new Set();
+    const running = new Set<string>();
+    const generation = ++sessionListGeneration;
     try {
       for (let i = 0; i < pages; i++) {
         const res = await rpc.request('session/list', {
@@ -478,14 +484,18 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
         });
         all.push(...((res && res.sessions) || []));
         const rmeta = (res && (res._meta || res.meta)) || {};
-        for (const id of rmeta.runningSessionIds || []) running.add(id);
+        for (const id of rmeta.runningSessionIds || []) running.add(String(id));
         cursor = (res && res.nextCursor) || null;
         if (!cursor) break;
       }
+      if (generation !== sessionListGeneration) return;
+      const previous: Set<string> = state.runningIds || new Set<string>();
       state.runningIds = running;
       state.sessions = all.filter((s) => !(s._meta && s._meta.archivedAt));
       state.archived = all.filter((s) => s._meta && s._meta.archivedAt);
       state.cursor = cursor;
+      for (const id of previous) if (!running.has(id)) markRun(id, false);
+      for (const id of running) if (!previous.has(id)) markRun(id, true);
       renderList();
     } catch (e) {
       report('error', 'session/list: ' + e.message);
@@ -537,7 +547,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     c.querySelector('.ym').addEventListener('click', async (e) => {
       e.stopPropagation();
       try { await rpc.request('session/delete', { sessionId: id }); }
-      catch (err) { systemNote('No se pudo borrar: ' + err.message); }
+      catch (err) { systemNote('No se pudo borrar: ' + err.message); state.hold = null; renderList(); return; }
       state.sessions = state.sessions.filter((s) => s.sessionId !== id);
       if (state.current && state.current.id === id) {
         state.current = null;
@@ -1915,9 +1925,11 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 
   async function newSession() {
     if (!rpc.ready) { systemNote('Sin conexión con el backend - reintentando.'); return; }
-    detachRunView(); // si había un turno en curso, sigue corriendo en el server
+    clearTimeout(draftTimer);
+    saveDraft(); detachRunView(); // si había un turno en curso, sigue corriendo en el server
     try {
       const res = await rpc.request('session/new', { cwd: CFG.cwd || undefined, mcpServers: [] });
+      if (state.hubWatchSid) { const prev = state.hubWatchSid; state.hubWatchSid = null; await hubUnwatch(prev); }
       state.current = { id: res.sessionId, title: 'Nuevo chat', cwd: CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
       // Si el usuario eligio modelo/esfuerzo antes de crear el chat, se aplica ahora.
       await aplicarPendientes(res.sessionId);
@@ -1939,12 +1951,16 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   async function openSession(entry) {
+    const targetId = entry.sessionId || entry.id;
+    clearTimeout(draftTimer);
+    saveDraft();
     resetUsageForSession();
     // Con turno en curso se permite cambiar igual: el run sigue en el server y al
     // volver checkAdoptedRun() lo re-adopta (barra + Detener + refresco periódico).
     detachRunView();
     stopRunWatch();
     await renderSession(entry);
+    if (state.current?.id !== targetId) return;
     // (v6.4) Engancharse al hub después del load + render: la respuesta trae el run activo
     // (adopción sin sondeo) y el replay de lo que pasó mientras no estábamos. Si el server
     // no tiene watch, startHubWatch cae al camino viejo (checkAdoptedRun).
@@ -1959,23 +1975,26 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   // codigo y tablas que se miden recien al hacer flush), asi que el salto queda corto y
   // el usuario aparece mirando mensajes viejos. Se mantiene el fondo durante un ratito
   // (y solo se suelta si el usuario scrollea hacia arriba por su cuenta).
+  let releasePin: (() => void) | null = null;
   function pinBottom(ms) {
+    releasePin?.();
     const box = $('#messages');
     if (!box) return;
     state.pinUntil = performance.now() + (ms || 1200);
     const release = () => {
-      state.pinUntil = 0;
+      if (releasePin === release) { state.pinUntil = 0; releasePin = null; }
       box.removeEventListener('wheel', release);
       box.removeEventListener('touchstart', release);
       box.removeEventListener('pointerdown', release);
     };
+    releasePin = release;
     box.addEventListener('wheel', release, { passive: true });
     box.addEventListener('touchstart', release, { passive: true });
     box.addEventListener('pointerdown', release, { passive: true });
     let ultimaAltura = -1;
     const step = () => {
-      if (!state.pinUntil) return;
-      if (performance.now() > state.pinUntil) { state.pinUntil = 0; return; }
+      if (!state.pinUntil || releasePin !== release) return;
+      if (performance.now() > state.pinUntil) { release(); return; }
       // (v6.7) Escribir scrollTop todos los frames obliga a layout: solo si crecio.
       if (box.scrollHeight !== ultimaAltura) { ultimaAltura = box.scrollHeight; box.scrollTop = ultimaAltura; }
       requestAnimationFrame(step);
@@ -2083,6 +2102,11 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   async function renderSession(entry, opts?) {
     const gen = ++renderGen;
     const id = entry.sessionId || entry.id;
+    if (state.current?.id !== id) {
+      clearTimeout(draftTimer);
+      saveDraft();
+    }
+    if (state.current?.id !== id && state.hubWatchSid) { const prev = state.hubWatchSid; state.hubWatchSid = null; hubUnwatch(prev); }
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
     clearMessages();
@@ -2091,11 +2115,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (!opts || !opts.quiet) setPill('Cargando conversación.');
     if (!SOFT.on) {
       state.replayBuf = []; // (v6.6) se pinta en dos fases al terminar el load
+      const replayBuffer = state.replayBuf;
       state.hideTail = false; // el replay arranca limpio: se vuelve a marcar al cruzar el turno rebobinado
       // Red de seguridad: si la fase doble no llegara a correr (una excepcion en el
       // medio), el buffer se vuelca crudo en vez de dejar la conversacion congelada.
       setTimeout(() => {
-        if (!state.replayBuf) return;
+        if (gen !== renderGen || state.current?.id !== id || state.replayBuf !== replayBuffer) return;
         const sobrante = state.replayBuf;
         state.replayBuf = null;
         for (const p of sobrante) { try { applyUpdate(p); } catch (e) {} }
@@ -2105,15 +2130,17 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     state.replaying = true;
     try {
       const res = await rpc.request('session/load', { sessionId: id, cwd: state.current.cwd || CFG.cwd, mcpServers: [], ...replayMeta(!!(opts && opts.full)) });
+      if (gen !== renderGen || state.current?.id !== id) return;
       if (res && Array.isArray(res.configOptions)) state.current.configOptions = res.configOptions;
       if (res && res.modes) state.current.modes = res.modes;
       renderChips();
     } catch (e) {
-      systemNote('No se pudo cargar la sesión: ' + e.message);
+      if (gen === renderGen && state.current?.id === id) systemNote('No se pudo cargar la sesión: ' + e.message);
     }
-    if (gen !== renderGen) return; // otra carga mas nueva ya tomo el DOM: no pintar esta
+    if (gen !== renderGen || state.current?.id !== id) return; // otra carga mas nueva ya tomo el DOM: no pintar esta
     state.replaying = false;
     if (state.replayBuf) await paintReplayTwoPhase(); else await drainRender(); // el replay se pinta por tramos: esperar al último antes de cerrar y scrollear
+    if (gen !== renderGen || state.current?.id !== id) return;
     clearStreaming(); // el replay nunca debe dejar un cursor de streaming colgado
     flushRender(); // pinta lo que haya quedado pendiente del replay
     setPill(null);
@@ -2648,8 +2675,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       // Punto de reanudacion: lo que se mando despues de un rebobinado es conversacion
       // visible, asi que el replay no debe ocultarlo (ver applyUpdate).
       if (sid && el && el.dataset && el.dataset.mid && hiddenFromId(sid)) setResume(sid, el.dataset.mid);
+      markRun(sid, false);   // si cambiaste de chat, avisa al cerrar el turno
       refreshSessions();
-      markRun(sid, false);   // si termino mientras mirabas otro chat, avisa
     }
   }
 
@@ -2868,13 +2895,21 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       hubUnwatch(prev);
     }
     try {
-      // El watch no puede colgar la apertura de sesión: si el server no contesta,
-      // caemos al camino viejo (que sí tiene red de seguridad propia).
+      // Un watch tardío no debe reenganchar silenciosamente la sesión tras el fallback.
+      let timedOut = false;
+      let timeout: ReturnType<typeof setTimeout>;
+      const request = rpc.request('_aegis/unstable/session/watch', { sessionId: sid, since: since == null ? null : since });
+      request.then(() => { if (timedOut && state.current?.id !== sid) hubUnwatch(sid); }).catch(() => {});
       const res = await Promise.race([
-        rpc.request('_aegis/unstable/session/watch', { sessionId: sid, since: since == null ? null : since }),
-        new Promise((res2) => setTimeout(() => res2(null), 8000)),
+        request,
+        new Promise((resolve) => { timeout = setTimeout(() => { timedOut = true; resolve(null); }, 8000); }),
       ]);
-      if (res === null) { report('watch', 'session/watch sin respuesta en 8 s: se mantiene el refresco viejo'); return 'unsupported'; }
+      clearTimeout(timeout);
+      if (res === null) {
+        if (state.current?.id === sid) state.hubWatch = false;
+        report('watch', 'session/watch sin respuesta en 8 s: se mantiene el refresco viejo');
+        return 'unsupported';
+      }
       if (!(state.current && state.current.id === sid)) { hubUnwatch(sid); return 'ok'; } // cambió de chat mientras respondía
       // Capacidad REAL: el contrato contesta un objeto con `cursor`. Si el server no tiene
       // el método y devuelve null/vacío, no hay watch que valga: comportamiento viejo.
@@ -4186,9 +4221,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   var liveRuns = new Map();   // sid -> { t0, doneT }
   function markRun(sid, on) {
     if (!sid) return;
-    if (on) liveRuns.set(sid, { t0: Date.now(), doneT: 0 });
-    else {
-      var prev = liveRuns.get(sid) || { t0: 0 };
+    var current = liveRuns.get(sid);
+    if (on) {
+      if (current && !current.doneT) return;
+      liveRuns.set(sid, { t0: Date.now(), doneT: 0 });
+    } else {
+      if (current && current.doneT) return;
+      var prev = current || { t0: 0 };
       liveRuns.set(sid, { t0: prev.t0 || 0, doneT: Date.now() });
       var enOtraVista = !(state.current && state.current.id === sid);
       if (enOtraVista) {

@@ -218,9 +218,32 @@ const LOGIN_HTML_BLOCK = LOGIN_PAGE.replace('__ERR__', '<div class="err">Demasia
 
 function safeNext(next: string | null) {
   const n = String(next || '/');
-  if (!n.startsWith('/') || n.startsWith('//')) return '/';
+  // WHATWG URLs interpret backslashes as slashes in http(s) redirects (including /\\evil).
+  if (!n.startsWith('/') || n.startsWith('//') || /[\\\x00-\x1f\x7f]/.test(n) || /%5c/i.test(n)) return '/';
   if (n.startsWith('/login')) return '/';
   return n;
+}
+
+// Browser metadata protects classic <script src="/config.js"> and the cookie-authenticated
+// WebSocket proxy. Missing metadata is allowed for older/LAN clients; it is not a complete
+// defense against clients that omit these headers (or deliberately forge them).
+function sameOriginRequest(req: IncomingMessage) {
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') return false;
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    if (typeof origin !== 'string') return false;
+    try {
+      // The tunnel terminates TLS before the local HTTP server; direct LAN TLS is encrypted.
+      const secure = !!(req.socket as Socket & { encrypted?: boolean }).encrypted || isTunnel(req);
+      const expected = new URL(`${secure ? 'https' : 'http'}://${req.headers.host || ''}`);
+      const received = new URL(origin);
+      if (received.origin !== expected.origin || received.origin === 'null') return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 function redirect(res: ServerResponse, location: string, extraHeaders: OutgoingHttpHeaders = {}) {
   res.writeHead(302, { location, 'cache-control': 'no-store', ...extraHeaders });
@@ -516,6 +539,12 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     // ---- login (solo tiene sentido por el tunel, pero no molesta en LAN)
     if (url.pathname === '/login') {
       if (req.method === 'POST') {
+        // A foreign form must not set a login cookie in the victim's browser.
+        if (!sameOriginRequest(req)) {
+          res.writeHead(403, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+          res.end('forbidden');
+          return;
+        }
         if (!auth || !auth.password) {
           res.writeHead(503, { 'content-type': 'text/plain' });
           res.end('sin auth.json');
@@ -653,6 +682,13 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     if (url.pathname === '/config.js') {
+      // A foreign site can load a classic script despite CORS and read its injected token.
+      // Fetch Metadata rejects cross-site/same-site-but-not-same-origin script loads where sent.
+      if (!sameOriginRequest(req)) {
+        res.writeHead(403, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+        res.end('forbidden');
+        return;
+      }
       const c = configFor(req);
       const body = `window.__AEGIS_APP__ = ${JSON.stringify({
         acpUrl: c.acpUrl,
@@ -666,7 +702,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         defaultProvider: (cfg.appConfig || {}).AEGIS_DEFAULT_PROVIDER || '',
         defaultModel: (cfg.appConfig || {}).AEGIS_DEFAULT_MODEL || '',
       })};`;
-      res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-cache', ...SEC });
+      res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-store', 'cross-origin-resource-policy': 'same-origin', ...SEC });
       res.end(body);
       return;
     }
@@ -781,6 +817,12 @@ const onUpgrade = (req: IncomingMessage, socket: Socket, head: Buffer) => {
   }
   if (url.pathname !== '/acp') {
     socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+    return;
+  }
+  // proxyAcp overwrites Origin for the backend. Check the browser's Origin first,
+  // otherwise a foreign page can use an existing cookie to open an ACP WebSocket.
+  if (!sameOriginRequest(req)) {
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
     return;
   }
   if (isTunnel(req) && !authed(req)) {

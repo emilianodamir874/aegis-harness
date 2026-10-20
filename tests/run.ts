@@ -1,6 +1,6 @@
 // Runner de las pruebas de aegis-web.
 //
-//   npm test                 -> ui-mobile + gasto contra AEGIS_WEB_URL (default http://127.0.0.1:3788)
+//   npm test                 -> regresiones aisladas + ui-mobile + gasto contra AEGIS_WEB_URL (default http://127.0.0.1:3788)
 //   AEGIS_TEST_SMOKE=1 npm test  -> agrega reload-smoke, rewind-regen y dedup-prompt
 //                                  (crean sesiones y gastan turnos reales)
 //
@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const suites = ['ui-mobile.mjs', 'gasto.mjs'];
+const suites = ['client-regressions.mjs', 'server-regressions.mjs', 'ui-mobile.mjs', 'gasto.mjs'];
 if (process.env.AEGIS_TEST_SMOKE === '1') suites.push('reload-smoke.mjs', 'rewind-regen.mjs', 'dedup-prompt.mjs');
 
 const results: Array<{ suite: string; code: number | null; ms: number }> = [];

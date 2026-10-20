@@ -1,6 +1,6 @@
 // Regresiones de cliente SIN web/ACP vivos, credenciales, sesiones reales ni prompts.
 // Desde web/: npx esbuild tests/client-regressions.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/client-regressions.mjs && node node_modules/.cache/client-regressions.mjs
-// El padre integra esta prueba al runner/build; no usar AEGIS_WEB_URL aquí.
+// Integrada al runner/build; no usar AEGIS_WEB_URL aquí.
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium, type WebSocketRoute } from 'playwright';
@@ -63,14 +63,15 @@ try {
   const input = page.locator('#input');
   await input.fill('borrador A sin enviar');
   await page.locator(`.sb-row[data-id="${B}"] .sb-item`).click();
-  await page.waitForFunction((id) => (window as any).__aegisWeb?.state.current?.id === id, B);
+  await page.waitForFunction((id) => (window as any).__aegisWeb?.state.current?.id === id && (window as any).__aegisWeb?.state.hubWatchSid === id, B);
+  if (!requests.some(r => r.method === '_aegis/unstable/session/unwatch' && r.params?.sessionId === A)) throw new Error('watch A no se desenganchó al abrir B');
   if (await input.inputValue() !== '') throw new Error('el borrador A aparece en B');
   await input.fill('borrador B sin enviar');
   await page.locator(`.sb-row[data-id="${A}"] .sb-item`).click();
   await page.waitForFunction((id) => (window as any).__aegisWeb?.state.current?.id === id, A);
   if (await input.inputValue() !== 'borrador A sin enviar') throw new Error('no se restauró borrador A');
   if (await page.evaluate((id) => localStorage.getItem('aegis.draft.' + id), B) !== 'borrador B sin enviar') throw new Error('no se guardó borrador B');
-  console.log('PASS borradores por chat al alternar A/B');
+  console.log('PASS borradores por chat y unwatch anterior al alternar A/B');
 
   // Un error de borrado conserva la fila, muestra la causa y permite reintentar.
   await page.locator(`.sb-row[data-id="${B}"] .sb-del`).click();
@@ -89,8 +90,8 @@ try {
   await page.evaluate(() => (window as any).__aegisWeb.refreshSessions());
   await page.waitForFunction((ids) => ids.every(id => !!document.querySelector(`.sb-row[data-id="${id}"] .sb-run-dot`)), [A, B]);
   running = [B];
-  await page.evaluate(() => (window as any).__aegisWeb.refreshSessions());
-  await page.waitForFunction((id) => !!document.querySelector(`.sb-row[data-id="${id}"] .sb-done-dot`), A);
+  // Sin refresco manual: el polling global debe detectar el fin aun mirando otro chat.
+  await page.waitForFunction((id) => !!document.querySelector(`.sb-row[data-id="${id}"] .sb-done-dot`), A, { timeout: 12000 });
   if (await page.locator(`.sb-row[data-id="${A}"] .sb-run-dot`).count() || await page.locator(`.sb-row[data-id="${B}"] .sb-run-dot`).count() !== 1 || await page.locator(`.sb-row[data-id="${B}"] .sb-done-dot`).count()) throw new Error('insignias de fin/corriendo se mezclaron entre chats');
   console.log('PASS insignias de terminación separadas por chat');
 
