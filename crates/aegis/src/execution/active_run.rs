@@ -1,3 +1,4 @@
+#![allow(dead_code)] // el cache de prompts (PromptClaim/PromptLease) todavia no esta cableado al camino ACP: se deja compilando para no perder el diseno
 use crate::agents::Agent;
 use agent_client_protocol::schema::v1::PromptResponse;
 use agent_client_protocol::Error as AcpError;

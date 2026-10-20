@@ -203,6 +203,7 @@ pub(crate) struct WatchSnapshot {
     pub(crate) watcher_id: u64,
     pub(crate) cursor: u64,
     pub(crate) epoch: String,
+    #[allow(dead_code)] // lo consume el cliente por ACP; el hub solo lo escribe
     pub(crate) active_run_id: Option<String>,
     /// JSON-RPC notifications (`{"method":..,"params":..}`) the watcher needs
     /// to be up to date, oldest first. A leading `replay_gap` means the ring

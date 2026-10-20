@@ -309,7 +309,6 @@ impl McpClientTrait for DeveloperClient {
 mod tests {
     use super::*;
     use crate::session::SessionManager;
-    use rmcp::model::ContentBlock;
     use rmcp::object;
     use std::fs;
 
@@ -356,12 +355,6 @@ mod tests {
         }
     }
 
-    fn first_text(result: &CallToolResult) -> &str {
-        match &result.content[0] {
-            ContentBlock::Text(text) => &text.text,
-            _ => panic!("expected text content"),
-        }
-    }
 
     #[cfg(windows)]
     #[test]

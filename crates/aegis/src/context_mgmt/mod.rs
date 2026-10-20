@@ -674,17 +674,15 @@ fn parse_numbered_summaries(reply: &str, expected: usize) -> Option<Vec<String>>
                 entries[number - 1] = Some(rest.trim().to_string());
                 current = Some(number);
             }
-            None => match current {
-                Some(number) => {
-                    if let Some(existing) = entries[number - 1].as_mut() {
-                        if !existing.is_empty() {
-                            existing.push(' ');
-                        }
-                        existing.push_str(line);
+            None => {
+                let number = current?;
+                if let Some(existing) = entries[number - 1].as_mut() {
+                    if !existing.is_empty() {
+                        existing.push(' ');
                     }
+                    existing.push_str(line);
                 }
-                None => return None,
-            },
+            }
         }
     }
 

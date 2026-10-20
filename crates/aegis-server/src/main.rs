@@ -171,7 +171,7 @@ fn list_skills() {
 async fn list_sessions(limit: usize) -> Result<()> {
     let manager = aegis::session::SessionManager::instance();
     let mut sessions = manager.list_all_sessions().await?;
-    sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    sessions.sort_by_key(|s| std::cmp::Reverse(s.updated_at));
     sessions.truncate(limit);
     for session in sessions {
         println!(

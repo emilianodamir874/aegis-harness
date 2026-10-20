@@ -74,7 +74,7 @@ pub(super) fn retrieve(
         "Current session: {total} matching messages. Showing {count} newest. Use message_id to fetch exact text and offset to page through it.\n"
     );
     for item in matches.into_iter().take(count) {
-        output.push_str("\n");
+        output.push('\n');
         output.push_str(&item);
         output.push('\n');
     }

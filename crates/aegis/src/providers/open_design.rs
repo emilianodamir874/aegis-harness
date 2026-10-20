@@ -395,9 +395,7 @@ mod tests {
             client.timeout(),
             Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS)
         );
-        assert!(
-            STREAM_IDLE_TIMEOUT_SECS < 600,
-            "must stay tighter than the shared provider default"
-        );
+        // limite de diseno: no puede pasar del default compartido de proveedores
+        const _: () = assert!(STREAM_IDLE_TIMEOUT_SECS < 600);
     }
 }

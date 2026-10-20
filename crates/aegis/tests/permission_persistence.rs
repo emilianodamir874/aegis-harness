@@ -1,5 +1,4 @@
-use aegis::config::permission::{PermissionConfig, PermissionLevel, PermissionManager};
-use std::collections::HashMap;
+use aegis::config::permission::{PermissionLevel, PermissionManager};
 
 #[test]
 fn stale_manager_cannot_restore_revoked_permission() {

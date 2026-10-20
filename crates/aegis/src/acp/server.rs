@@ -1072,10 +1072,10 @@ fn tool_results_detail(count: u64, largest: u64) -> String {
 /// that are actually sent (plus the fixed row) add up to the real `used` total.
 ///
 /// `used` is the provider-reported total of the last request, so the residual
-/// (`used` minus the estimated conversation) is the system prompt + tool schemas
-/// + skills, which are not part of the persisted conversation. Messages hidden
-/// by compaction (`agent_visible == false`) are reported but deliberately kept
-/// out of that arithmetic: they are no longer sent to the provider.
+/// (`used` minus the estimated conversation) is the system prompt, the tool schemas
+/// and the skills, which are not part of the persisted conversation. Messages hidden
+/// by compaction (`agent_visible == false`) are reported but deliberately kept out
+/// of that arithmetic: they are no longer sent to the provider.
 pub(super) fn context_breakdown(session: &Session, used: u64) -> Vec<ContextPart> {
     let Some(conversation) = session.conversation.as_ref() else {
         return Vec::new();
@@ -1173,7 +1173,7 @@ pub(super) fn context_breakdown(session: &Session, used: u64) -> Vec<ContextPart
     // Messages the estimate cannot attribute (user-invisible injections,
     // thinking-only blocks) are left out on purpose: they land in the fixed row.
     distribute_rounding_remainder(&mut parts, used);
-    parts.sort_by(|left, right| right.tokens.cmp(&left.tokens));
+    parts.sort_by_key(|part| std::cmp::Reverse(part.tokens));
     parts
 }
 

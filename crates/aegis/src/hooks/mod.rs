@@ -1174,6 +1174,7 @@ async fn resolve_hook_path() -> Option<String> {
     }
 }
 
+#[cfg_attr(windows, allow(dead_code))] // el caller es cfg(unix)
 fn merge_paths(first: &str, second: &str) -> String {
     let mut seen = std::collections::HashSet::new();
     let mut merged = Vec::new();
@@ -1242,24 +1243,7 @@ mod tests {
             .await
     }
 
-    fn oversized_context(event: HookEvent) -> HookContext {
-        let filler = "x".repeat(1024 * 1024);
-        HookContext::new(event, "s").with_tool(
-            "developer__shell",
-            Some(serde_json::json!({ "arg": filler })),
-        )
-    }
 
-    async fn run_chain_with(
-        event: HookEvent,
-        actions: Vec<Value>,
-        ctx: HookContext,
-    ) -> HookChainOutcome {
-        let tmp = tempfile::tempdir().unwrap();
-        manager_for(tmp.path(), event, &[("p", actions)])
-            .emit_blocking_with_outcome(event, ctx)
-            .await
-    }
 
     #[cfg(unix)]
     fn exited(code: i32, stdout: &str, stderr: &str) -> std::process::Output {
