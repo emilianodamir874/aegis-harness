@@ -83,6 +83,137 @@ function toolIconSvg(kind, status) {
   return '<svg class="tico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + TOOL_ICON[kind] + "</svg>";
 }
 
+// src/app/markdown.ts
+var inline = (t) => {
+  let s = esc(t);
+  s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  s = s.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  return s;
+};
+var isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(l);
+var splitRow = (l) => {
+  let s = String(l).trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map((c) => c.trim());
+};
+var alignsOf = (sep) => splitRow(sep).map((c) => c.startsWith(":") && c.endsWith(":") ? "center" : c.endsWith(":") ? "right" : c.startsWith(":") ? "left" : "");
+var tableHtml = (head, aligns, rows) => {
+  const plain = (s) => String(s == null ? "" : s).replace(/[*`_]/g, "").trim();
+  const cell = (tag, txt, i, label) => {
+    const a = aligns[i];
+    return `<${tag}${a ? ` style="text-align:${a}"` : ""}${label ? ` data-label="${esc(label)}"` : ""}>${inline(txt)}</${tag}>`;
+  };
+  const corta = (s, max) => plain(s).length <= max;
+  const compacta = head.length === 2 && rows.length > 0 && rows.every((r) => corta(head[0], 48) && corta(r[0] == null ? "" : r[0], 48) && corta(r[1] == null ? "" : r[1], 72));
+  return '<div class="tbl-wrap"><table' + (compacta ? ' data-cols="2"' : "") + "><thead><tr>" + head.map((c, i) => cell("th", c, i)).join("") + "</tr></thead>" + (rows.length ? "<tbody>" + rows.map((r) => "<tr>" + head.map((_, i) => cell("td", r[i] == null ? "" : r[i], i, plain(head[i]))).join("") + "</tr>").join("") + "</tbody>" : "") + "</table></div>";
+};
+var mdBlocks = (t) => {
+  const lines = t.split(/\r?\n/);
+  let out = "";
+  let para = [];
+  let list = [];
+  let listType = null;
+  const flushPara = () => {
+    if (para.length) {
+      out += `<p>${para.join("<br>")}</p>`;
+      para = [];
+    }
+  };
+  const flushList = () => {
+    if (listType) {
+      out += `<${listType}>${list.map((x) => `<li>${x}</li>`).join("")}</${listType}>`;
+      listType = null;
+      list = [];
+    }
+  };
+  for (let _i = 0; _i < lines.length; _i++) {
+    const line = lines[_i];
+    if (line.includes("|") && _i + 1 < lines.length && isTableSep(lines[_i + 1])) {
+      flushPara();
+      flushList();
+      const head = splitRow(line);
+      const aligns = alignsOf(lines[_i + 1]);
+      const rows = [];
+      let j = _i + 2;
+      while (j < lines.length && lines[j].includes("|") && !/^\s*$/.test(lines[j])) {
+        rows.push(splitRow(lines[j]));
+        j++;
+      }
+      out += tableHtml(head, aligns, rows);
+      _i = j - 1;
+      continue;
+    }
+    const mH = /^(#{1,5})\s+(.*)$/.exec(line);
+    const mUl = /^\s*[-*•]\s+(.*)$/.exec(line);
+    const mOl = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    const mQ = /^>\s?(.*)$/.exec(line);
+    const mHr = /^\s*([-*_])\1{2,}\s*$/.test(line);
+    if (/^\s*$/.test(line)) {
+      flushPara();
+      flushList();
+      continue;
+    }
+    if (mHr) {
+      flushPara();
+      flushList();
+      out += "<hr>";
+      continue;
+    }
+    if (mH) {
+      flushPara();
+      flushList();
+      const lvl = Math.min(mH[1].length + 2, 5);
+      out += `<h${lvl}>${inline(mH[2])}</h${lvl}>`;
+      continue;
+    }
+    if (mUl) {
+      flushPara();
+      if (listType !== "ul") {
+        flushList();
+        listType = "ul";
+      }
+      list.push(inline(mUl[1]));
+      continue;
+    }
+    if (mOl) {
+      flushPara();
+      if (listType !== "ol") {
+        flushList();
+        listType = "ol";
+      }
+      list.push(inline(mOl[1]));
+      continue;
+    }
+    if (mQ) {
+      flushPara();
+      flushList();
+      out += `<blockquote>${inline(mQ[1])}</blockquote>`;
+      continue;
+    }
+    flushList();
+    para.push(inline(line));
+  }
+  flushPara();
+  flushList();
+  return out;
+};
+var md = (text) => {
+  const parts = String(text ?? "").split("```");
+  let html = "";
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 1) {
+      const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]* ?\r?\n/, "").replace(/\r?\n$/, "");
+      html += `<div class="code-wrap"><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
+    } else {
+      html += mdBlocks(parts[i]);
+    }
+  }
+  return html;
+};
+
 // src/app/sessions.ts
 function sessionRow(s, o) {
   const meta = s._meta || {};
@@ -176,135 +307,6 @@ function ttsUrlFor(voice, text) {
   const greeting = () => {
     const h = (/* @__PURE__ */ new Date()).getHours();
     return h >= 6 && h < 12 ? "Buenos días" : h >= 12 && h < 20 ? "Buenas tardes" : "Buenas noches";
-  };
-  const inline = (t) => {
-    let s = esc(t);
-    s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-    s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-    s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-    s = s.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
-    return s;
-  };
-  const isTableSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(l);
-  const splitRow = (l) => {
-    let s = String(l).trim();
-    if (s.startsWith("|")) s = s.slice(1);
-    if (s.endsWith("|")) s = s.slice(0, -1);
-    return s.split("|").map((c) => c.trim());
-  };
-  const alignsOf = (sep) => splitRow(sep).map((c) => c.startsWith(":") && c.endsWith(":") ? "center" : c.endsWith(":") ? "right" : c.startsWith(":") ? "left" : "");
-  const tableHtml = (head, aligns, rows) => {
-    const plain = (s) => String(s == null ? "" : s).replace(/[*`_]/g, "").trim();
-    const cell = (tag, txt, i, label) => {
-      const a = aligns[i];
-      return `<${tag}${a ? ` style="text-align:${a}"` : ""}${label ? ` data-label="${esc(label)}"` : ""}>${inline(txt)}</${tag}>`;
-    };
-    const corta = (s, max) => plain(s).length <= max;
-    const compacta = head.length === 2 && rows.length > 0 && rows.every((r) => corta(head[0], 48) && corta(r[0] == null ? "" : r[0], 48) && corta(r[1] == null ? "" : r[1], 72));
-    return '<div class="tbl-wrap"><table' + (compacta ? ' data-cols="2"' : "") + "><thead><tr>" + head.map((c, i) => cell("th", c, i)).join("") + "</tr></thead>" + (rows.length ? "<tbody>" + rows.map((r) => "<tr>" + head.map((_, i) => cell("td", r[i] == null ? "" : r[i], i, plain(head[i]))).join("") + "</tr>").join("") + "</tbody>" : "") + "</table></div>";
-  };
-  const mdBlocks = (t) => {
-    const lines = t.split(/\r?\n/);
-    let out = "";
-    let para = [];
-    let list = [];
-    let listType = null;
-    const flushPara = () => {
-      if (para.length) {
-        out += `<p>${para.join("<br>")}</p>`;
-        para = [];
-      }
-    };
-    const flushList = () => {
-      if (listType) {
-        out += `<${listType}>${list.map((x) => `<li>${x}</li>`).join("")}</${listType}>`;
-        listType = null;
-        list = [];
-      }
-    };
-    for (let _i = 0; _i < lines.length; _i++) {
-      const line = lines[_i];
-      if (line.includes("|") && _i + 1 < lines.length && isTableSep(lines[_i + 1])) {
-        flushPara();
-        flushList();
-        const head = splitRow(line);
-        const aligns = alignsOf(lines[_i + 1]);
-        const rows = [];
-        let j = _i + 2;
-        while (j < lines.length && lines[j].includes("|") && !/^\s*$/.test(lines[j])) {
-          rows.push(splitRow(lines[j]));
-          j++;
-        }
-        out += tableHtml(head, aligns, rows);
-        _i = j - 1;
-        continue;
-      }
-      const mH = /^(#{1,5})\s+(.*)$/.exec(line);
-      const mUl = /^\s*[-*•]\s+(.*)$/.exec(line);
-      const mOl = /^\s*\d+[.)]\s+(.*)$/.exec(line);
-      const mQ = /^>\s?(.*)$/.exec(line);
-      const mHr = /^\s*([-*_])\1{2,}\s*$/.test(line);
-      if (/^\s*$/.test(line)) {
-        flushPara();
-        flushList();
-        continue;
-      }
-      if (mHr) {
-        flushPara();
-        flushList();
-        out += "<hr>";
-        continue;
-      }
-      if (mH) {
-        flushPara();
-        flushList();
-        const lvl = Math.min(mH[1].length + 2, 5);
-        out += `<h${lvl}>${inline(mH[2])}</h${lvl}>`;
-        continue;
-      }
-      if (mUl) {
-        flushPara();
-        if (listType !== "ul") {
-          flushList();
-          listType = "ul";
-        }
-        list.push(inline(mUl[1]));
-        continue;
-      }
-      if (mOl) {
-        flushPara();
-        if (listType !== "ol") {
-          flushList();
-          listType = "ol";
-        }
-        list.push(inline(mOl[1]));
-        continue;
-      }
-      if (mQ) {
-        flushPara();
-        flushList();
-        out += `<blockquote>${inline(mQ[1])}</blockquote>`;
-        continue;
-      }
-      flushList();
-      para.push(inline(line));
-    }
-    flushPara();
-    flushList();
-    return out;
-  };
-  const md = (text) => {
-    const parts = String(text ?? "").split("```");
-    let html = "";
-    for (let i = 0; i < parts.length; i++) {
-      if (i % 2 === 1) {
-        const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]* ?\r?\n/, "").replace(/\r?\n$/, "");
-        html += `<div class="code-wrap"><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
-      } else {
-        html += mdBlocks(parts[i]);
-      }
-    }
-    return html;
   };
   const copyText = async (text) => {
     try {
