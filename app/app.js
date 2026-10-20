@@ -481,7 +481,10 @@ function ttsUrlFor(voice, text) {
           rej: (err) => {
             const m = err && err.message ? err.message : String(err);
             const ya = m.indexOf("[metodo: ") >= 0;
-            rej(new Error(ya ? m : m + " [metodo: " + method + "]"));
+            if (err && typeof err === "object") {
+              err.message = ya ? m : m + " [metodo: " + method + "]";
+              rej(err);
+            } else rej(new Error(ya ? m : m + " [metodo: " + method + "]"));
           }
         });
         try {
@@ -519,7 +522,7 @@ function ttsUrlFor(voice, text) {
     }
   }
   function onUpdate(params) {
-    if (state.replayBuf) {
+    if (state.replayBuf && params.sessionId === state.current?.id) {
       state.replayBuf.push(params);
       return;
     }
@@ -624,7 +627,7 @@ function ttsUrlFor(voice, text) {
   }
   setInterval(() => {
     if (document.visibilityState !== "visible") return;
-    if (state.conn !== "open") return;
+    if (!rpc.ready) return;
     if (!anyRunning() && Date.now() - lastListPoll < 2e4) return;
     lastListPoll = Date.now();
     refreshSessions().catch(() => {
@@ -766,11 +769,13 @@ function ttsUrlFor(voice, text) {
   function markActive(id) {
     document.querySelectorAll(".sb-item").forEach((el) => el.classList.toggle("active", el.parentElement.dataset.id === id));
   }
+  let sessionListGeneration = 0;
   async function refreshSessions() {
     const pages = Math.max(1, state.pages);
     const all = [];
     let cursor = null;
     const running = /* @__PURE__ */ new Set();
+    const generation = ++sessionListGeneration;
     try {
       for (let i = 0; i < pages; i++) {
         const res = await rpc.request("session/list", {
@@ -779,14 +784,18 @@ function ttsUrlFor(voice, text) {
         });
         all.push(...res && res.sessions || []);
         const rmeta = res && (res._meta || res.meta) || {};
-        for (const id of rmeta.runningSessionIds || []) running.add(id);
+        for (const id of rmeta.runningSessionIds || []) running.add(String(id));
         cursor = res && res.nextCursor || null;
         if (!cursor) break;
       }
+      if (generation !== sessionListGeneration) return;
+      const previous = state.runningIds || /* @__PURE__ */ new Set();
       state.runningIds = running;
       state.sessions = all.filter((s) => !(s._meta && s._meta.archivedAt));
       state.archived = all.filter((s) => s._meta && s._meta.archivedAt);
       state.cursor = cursor;
+      for (const id of previous) if (!running.has(id)) markRun(id, false);
+      for (const id of running) if (!previous.has(id)) markRun(id, true);
       renderList();
     } catch (e) {
       report("error", "session/list: " + e.message);
@@ -851,6 +860,9 @@ function ttsUrlFor(voice, text) {
         await rpc.request("session/delete", { sessionId: id });
       } catch (err) {
         systemNote("No se pudo borrar: " + err.message);
+        state.hold = null;
+        renderList();
+        return;
       }
       state.sessions = state.sessions.filter((s) => s.sessionId !== id);
       if (state.current && state.current.id === id) {
@@ -2191,9 +2203,16 @@ function ttsUrlFor(voice, text) {
       systemNote("Sin conexión con el backend - reintentando.");
       return;
     }
+    clearTimeout(draftTimer);
+    saveDraft();
     detachRunView();
     try {
       const res = await rpc.request("session/new", { cwd: CFG.cwd || void 0, mcpServers: [] });
+      if (state.hubWatchSid) {
+        const prev = state.hubWatchSid;
+        state.hubWatchSid = null;
+        await hubUnwatch(prev);
+      }
       state.current = { id: res.sessionId, title: "Nuevo chat", cwd: CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
       await aplicarPendientes(res.sessionId);
       resetTransient();
@@ -2215,31 +2234,41 @@ function ttsUrlFor(voice, text) {
     }
   }
   async function openSession(entry) {
+    const targetId = entry.sessionId || entry.id;
+    clearTimeout(draftTimer);
+    saveDraft();
     resetUsageForSession();
     detachRunView();
     stopRunWatch();
     await renderSession(entry);
+    if (state.current?.id !== targetId) return;
     await startHubWatch();
     pinBottom(1400);
   }
+  let releasePin = null;
   function pinBottom(ms) {
+    releasePin?.();
     const box = $("#messages");
     if (!box) return;
     state.pinUntil = performance.now() + (ms || 1200);
     const release = () => {
-      state.pinUntil = 0;
+      if (releasePin === release) {
+        state.pinUntil = 0;
+        releasePin = null;
+      }
       box.removeEventListener("wheel", release);
       box.removeEventListener("touchstart", release);
       box.removeEventListener("pointerdown", release);
     };
+    releasePin = release;
     box.addEventListener("wheel", release, { passive: true });
     box.addEventListener("touchstart", release, { passive: true });
     box.addEventListener("pointerdown", release, { passive: true });
     let ultimaAltura = -1;
     const step = () => {
-      if (!state.pinUntil) return;
+      if (!state.pinUntil || releasePin !== release) return;
       if (performance.now() > state.pinUntil) {
-        state.pinUntil = 0;
+        release();
         return;
       }
       if (box.scrollHeight !== ultimaAltura) {
@@ -2327,6 +2356,15 @@ function ttsUrlFor(voice, text) {
   async function renderSession(entry, opts) {
     const gen = ++renderGen;
     const id = entry.sessionId || entry.id;
+    if (state.current?.id !== id) {
+      clearTimeout(draftTimer);
+      saveDraft();
+    }
+    if (state.current?.id !== id && state.hubWatchSid) {
+      const prev = state.hubWatchSid;
+      state.hubWatchSid = null;
+      hubUnwatch(prev);
+    }
     state.current = { id, title: entry.title || "Sesión", cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
     clearMessages();
@@ -2339,9 +2377,10 @@ function ttsUrlFor(voice, text) {
     if (!opts || !opts.quiet) setPill("Cargando conversación.");
     if (!SOFT.on) {
       state.replayBuf = [];
+      const replayBuffer = state.replayBuf;
       state.hideTail = false;
       setTimeout(() => {
-        if (!state.replayBuf) return;
+        if (gen !== renderGen || state.current?.id !== id || state.replayBuf !== replayBuffer) return;
         const sobrante = state.replayBuf;
         state.replayBuf = null;
         for (const p of sobrante) {
@@ -2356,16 +2395,18 @@ function ttsUrlFor(voice, text) {
     state.replaying = true;
     try {
       const res = await rpc.request("session/load", { sessionId: id, cwd: state.current.cwd || CFG.cwd, mcpServers: [], ...replayMeta(!!(opts && opts.full)) });
+      if (gen !== renderGen || state.current?.id !== id) return;
       if (res && Array.isArray(res.configOptions)) state.current.configOptions = res.configOptions;
       if (res && res.modes) state.current.modes = res.modes;
       renderChips();
     } catch (e) {
-      systemNote("No se pudo cargar la sesión: " + e.message);
+      if (gen === renderGen && state.current?.id === id) systemNote("No se pudo cargar la sesión: " + e.message);
     }
-    if (gen !== renderGen) return;
+    if (gen !== renderGen || state.current?.id !== id) return;
     state.replaying = false;
     if (state.replayBuf) await paintReplayTwoPhase();
     else await drainRender();
+    if (gen !== renderGen || state.current?.id !== id) return;
     clearStreaming();
     flushRender();
     setPill(null);
@@ -2905,8 +2946,8 @@ ${a.text}
         report("adopt", "turno de " + (sid || "?") + " cerrado sin tocar la vista actual");
       }
       if (sid && el && el.dataset && el.dataset.mid && hiddenFromId(sid)) setResume(sid, el.dataset.mid);
-      refreshSessions();
       markRun(sid, false);
+      refreshSessions();
     }
   }
   async function send() {
@@ -3129,11 +3170,25 @@ ${a.text}
       hubUnwatch(prev);
     }
     try {
+      let timedOut = false;
+      let timeout;
+      const request = rpc.request("_aegis/unstable/session/watch", { sessionId: sid, since: since == null ? null : since });
+      request.then(() => {
+        if (timedOut && state.current?.id !== sid) hubUnwatch(sid);
+      }).catch(() => {
+      });
       const res = await Promise.race([
-        rpc.request("_aegis/unstable/session/watch", { sessionId: sid, since: since == null ? null : since }),
-        new Promise((res2) => setTimeout(() => res2(null), 8e3))
+        request,
+        new Promise((resolve) => {
+          timeout = setTimeout(() => {
+            timedOut = true;
+            resolve(null);
+          }, 8e3);
+        })
       ]);
+      clearTimeout(timeout);
       if (res === null) {
+        if (state.current?.id === sid) state.hubWatch = false;
         report("watch", "session/watch sin respuesta en 8 s: se mantiene el refresco viejo");
         return "unsupported";
       }
@@ -4487,9 +4542,13 @@ ${a.text}
   var liveRuns = /* @__PURE__ */ new Map();
   function markRun(sid, on) {
     if (!sid) return;
-    if (on) liveRuns.set(sid, { t0: Date.now(), doneT: 0 });
-    else {
-      var prev = liveRuns.get(sid) || { t0: 0 };
+    var current = liveRuns.get(sid);
+    if (on) {
+      if (current && !current.doneT) return;
+      liveRuns.set(sid, { t0: Date.now(), doneT: 0 });
+    } else {
+      if (current && current.doneT) return;
+      var prev = current || { t0: 0 };
       liveRuns.set(sid, { t0: prev.t0 || 0, doneT: Date.now() });
       var enOtraVista = !(state.current && state.current.id === sid);
       if (enOtraVista) {

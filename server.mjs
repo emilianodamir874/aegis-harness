@@ -183,9 +183,26 @@ const LOGIN_HTML_ERR = LOGIN_PAGE.replace("__ERR__", '<div class="err">Contrasen
 const LOGIN_HTML_BLOCK = LOGIN_PAGE.replace("__ERR__", '<div class="err">Demasiados intentos. Espera un minuto.</div>');
 function safeNext(next) {
   const n = String(next || "/");
-  if (!n.startsWith("/") || n.startsWith("//")) return "/";
+  if (!n.startsWith("/") || n.startsWith("//") || /[\\\x00-\x1f\x7f]/.test(n) || /%5c/i.test(n)) return "/";
   if (n.startsWith("/login")) return "/";
   return n;
+}
+function sameOriginRequest(req) {
+  const site = req.headers["sec-fetch-site"];
+  if (site && site !== "same-origin" && site !== "none") return false;
+  const origin = req.headers.origin;
+  if (origin !== void 0) {
+    if (typeof origin !== "string") return false;
+    try {
+      const secure = !!req.socket.encrypted || isTunnel(req);
+      const expected = new URL(`${secure ? "https" : "http"}://${req.headers.host || ""}`);
+      const received = new URL(origin);
+      if (received.origin !== expected.origin || received.origin === "null") return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 function redirect(res, location, extraHeaders = {}) {
   res.writeHead(302, { location, "cache-control": "no-store", ...extraHeaders });
@@ -456,6 +473,11 @@ const handler = async (req, res) => {
     }
     if (url.pathname === "/login") {
       if (req.method === "POST") {
+        if (!sameOriginRequest(req)) {
+          res.writeHead(403, { "content-type": "text/plain", "cache-control": "no-store" });
+          res.end("forbidden");
+          return;
+        }
         if (!auth || !auth.password) {
           res.writeHead(503, { "content-type": "text/plain" });
           res.end("sin auth.json");
@@ -588,6 +610,11 @@ ${Buffer.concat(chunks).toString("utf8")}
       return;
     }
     if (url.pathname === "/config.js") {
+      if (!sameOriginRequest(req)) {
+        res.writeHead(403, { "content-type": "text/plain", "cache-control": "no-store" });
+        res.end("forbidden");
+        return;
+      }
       const c = configFor(req);
       const body2 = `window.__AEGIS_APP__ = ${JSON.stringify({
         acpUrl: c.acpUrl,
@@ -601,7 +628,7 @@ ${Buffer.concat(chunks).toString("utf8")}
         defaultProvider: (cfg.appConfig || {}).AEGIS_DEFAULT_PROVIDER || "",
         defaultModel: (cfg.appConfig || {}).AEGIS_DEFAULT_MODEL || ""
       })};`;
-      res.writeHead(200, { "content-type": MIME[".js"], "cache-control": "no-cache", ...SEC });
+      res.writeHead(200, { "content-type": MIME[".js"], "cache-control": "no-store", "cross-origin-resource-policy": "same-origin", ...SEC });
       res.end(body2);
       return;
     }
@@ -704,6 +731,10 @@ const onUpgrade = (req, socket, head) => {
   }
   if (url.pathname !== "/acp") {
     socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+    return;
+  }
+  if (!sameOriginRequest(req)) {
+    socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     return;
   }
   if (isTunnel(req) && !authed(req)) {
