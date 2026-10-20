@@ -48,7 +48,7 @@ def model_providers(con, since):
 def report_ledger(con, since, out=print):
     cols = columns(con, 'usage_ledger')
     provider_col = 'provider' if 'provider' in cols else None
-    mappings = model_providers(con, since) if not provider_col else {}
+    mappings = model_providers(con, since)
     where = 'WHERE l.created_timestamp >= ?'
     # A query per call preserves nullable cost, source and session/model identity.
     sql = ('SELECT l.session_id, l.created_timestamp, l.model, l.input_tokens, l.output_tokens, '
