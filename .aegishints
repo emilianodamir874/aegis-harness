@@ -1,8 +1,9 @@
 This is a Rust workspace. Crates live in crates/; ui/ has the TypeScript/Electron UI.
 
-crates (real list as of 2026-10-19):
+crates (real list as of 2026-10-20):
 - aegis: core logic (agents, providers, config, prompts, hints, session, checks)
-- aegis-cli: the `aegis` binary and the terminal session UI
+- aegis-server: el harness. Binario `aegis-serve` (ACP sobre HTTP/WS y stdio, `--print-paths`,
+  `--list-skills`, `--list-sessions`, `--run-recipe`). Reemplaza al viejo `aegis-cli`.
 - aegis-agent: agent runtime pieces shared by the CLI and the server path
 - aegis-providers + aegis-provider-types: provider implementations and wire types
 - aegis-context-management: compaction, context window and tool-pair summarization
@@ -11,19 +12,21 @@ crates (real list as of 2026-10-19):
   aegis-sdk, aegis-sdk-types, aegis-test, aegis-test-support
 ui/: aegis-acp, aegis-acp-client, aegis-binary, desktop (Electron), text
 
-There is NO aegis-server and NO aegis-bench crate in this fork. The HTTP/ACP server is the
-`serve` subcommand of the `aegis` binary (crates/aegis-cli), not a separate crate; the
-`aegisd` that runs on port 8765 belongs to the *bridge* project (C:\Aegis-Proyects\bridge).
+NO existe `aegis-cli` (se borro el 2026-10-20): no hay TUI ni binario `aegis`. El servidor
+HTTP/ACP es `aegis-serve` (crates/aegis-server), y el modo stdio del ACP es `aegis-serve --stdio`.
+El `aegisd` que corre en el puerto 8765 pertenece al proyecto *bridge* (C:\Aegis-Proyects\bridge),
+no a este workspace.
 
-Non-trivial features go in the aegis crate and are called from aegis-cli.
+Non-trivial features go in the aegis crate and are called from aegis-server.
 
 Builds on this machine:
 - CARGO_TARGET_DIR=C:\Aegis-Proyects\target. src/target is NOT used anymore (fossil, removed 2026-10-19).
-- Deploy: core/ops/build-and-swap.ps1 -Version vNN (build-safe + copy to core/bin + swap.ps1).
+- Build: core/ops/build.ps1 -Tag vNN (compila aegis-server, copia a core/bin, no toca el puntero).
+- Deploy: core/ops/swap.ps1 -Tag vNN -Restart (puntero + hardlink + reinicio con gate de inactividad).
 - Do not hardcode `-o src/target/...`; cargo already writes into C:\Aegis-Proyects\target.
 
 tips:
 - always check it compiles: cargo fmt, cargo clippy --all-targets -- -D warnings, and the tests of the files you touched
-- reduced CLI feature set: rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
+- serve feature set: rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
 - CI feature set for the aegis lib suite: rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
 - unstaged changes are a good signal of what is being worked on

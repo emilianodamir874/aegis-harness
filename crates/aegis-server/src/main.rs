@@ -6,6 +6,8 @@
 //! subcomando de un binario de 30k lineas con TUI); ahora es un binario propio
 //! con `main` propio.
 
+mod recipe_runner;
+
 use aegis::acp::server::AcpBuiltinSelection;
 use aegis::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
 use aegis::acp::transport::create_router;
@@ -96,6 +98,12 @@ struct Args {
     )]
     print_paths: bool,
 
+    #[arg(
+        long,
+        help = "Serve ACP over stdin/stdout instead of HTTP/WebSocket (replaces `aegis acp`)"
+    )]
+    stdio: bool,
+
     #[arg(long, help = "List installed skills and exit (replaces `aegis skills list`)")]
     list_skills: bool,
 
@@ -105,6 +113,27 @@ struct Args {
         help = "List the N most recent sessions and exit (replaces `aegis session list`)"
     )]
     list_sessions: Option<usize>,
+
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Run a recipe file headlessly through an in-process ACP session and exit (replaces `aegis run --recipe`)"
+    )]
+    run_recipe: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "TEXT",
+        help = "Prompt to start the recipe session with (defaults to the recipe's own prompt)"
+    )]
+    text: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "DIR",
+        help = "Working directory for the recipe session (defaults to the current directory)"
+    )]
+    recipe_cwd: Option<String>,
 }
 
 fn generate_secret_key() -> String {
@@ -141,8 +170,9 @@ fn list_skills() {
 
 async fn list_sessions(limit: usize) -> Result<()> {
     let manager = aegis::session::SessionManager::instance();
-    let mut sessions = manager.list_sessions_with_limit(limit).await?;
+    let mut sessions = manager.list_all_sessions().await?;
     sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    sessions.truncate(limit);
     for session in sessions {
         println!(
             "{}\t{}\t{}\t{}",
@@ -307,6 +337,10 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    if args.stdio {
+        return aegis::acp::server::run(args.builtins.clone(), args.enable_scheduler).await;
+    }
+
     if args.list_skills {
         list_skills();
         return Ok(());
@@ -314,6 +348,17 @@ async fn main() -> Result<()> {
 
     if let Some(limit) = args.list_sessions {
         return list_sessions(limit).await;
+    }
+
+    if let Some(path) = args.run_recipe.clone() {
+        let cwd = match args.recipe_cwd.clone() {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => std::env::current_dir()?,
+        };
+        if !cwd.is_absolute() {
+            anyhow::bail!("--recipe-cwd must be an absolute path");
+        }
+        return recipe_runner::run(std::path::PathBuf::from(path), args.text.clone(), cwd).await;
     }
 
     if let Err(e) = init_logging() {

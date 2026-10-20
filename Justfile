@@ -23,7 +23,7 @@ test-buzz:
 # Default release command
 release-binary:
     @echo "Building release version..."
-    cargo build --release -p aegis-cli --bin aegis
+    cargo build --release -p aegis-server --bin aegis-serve
     @just copy-binary
 
 # Build Windows executable on a Windows host
@@ -34,7 +34,7 @@ release-windows:
 
 [windows]
 release-windows:
-    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p aegis-cli --bin aegis; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/aegis.exe"'
+    @powershell.exe -NoProfile -ExecutionPolicy Bypass -Command 'rustup target add x86_64-pc-windows-msvc; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cargo build --release --target x86_64-pc-windows-msvc -p aegis-server --bin aegis-serve; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Host "Windows executable created at ./target/x86_64-pc-windows-msvc/release/aegis-serve.exe"'
 
 # Build for Intel Mac
 release-intel:
@@ -222,11 +222,6 @@ build-acp-client: generate-acp-types
     cd ui/aegis-acp-client && pnpm run build:ts
     @echo "ACP client package built."
 
-# Generate manpages for the CLI
-generate-manpages:
-    @echo "Generating manpages..."
-    cargo run -p aegis-cli --bin generate_manpages
-    @echo "Manpages generated at target/man/"
 
 # make GUI with latest binary
 lint-ui:
@@ -466,7 +461,7 @@ win-total-rls *allparam:
 
 # Build the binaries the MCP conformance driver needs.
 mcp-conformance-build:
-  cargo build -p aegis-cli --bin aegis --bin mcp_conformance_driver
+  cargo build -p aegis-server --bin aegis-serve
 
 # suite: all, core, extensions, backcompat, auth, metadata, draft, sep-835
 # build: "false" reuses the existing target/debug binaries instead of rebuilding
@@ -474,7 +469,6 @@ mcp-conformance-build:
 # Example: just mcp-conformance 2025-11-25 auth
 # Example: just mcp-conformance 2025-11-25 auth 0.2.0-alpha.10
 # Example: just mcp-conformance 2025-11-25 auth 0.2.0-alpha.10 false
-# Example: just mcp-conformance 2025-11-25 all 0.2.0-alpha.10 true crates/aegis-cli/tests/mcp-conformance/expected-failures-2025-11-25-0.2.0-alpha.10.yaml
 [doc("Run an MCP client conformance suite against Aegis.")]
 mcp-conformance version="2025-11-25" suite="all" conformance_version="0.2.0-alpha.10" build="true" baseline="":
   #!/usr/bin/env bash
@@ -514,27 +508,24 @@ check-lib:
 
 # (fork) Canonical compile gate for the serve binary (feature set que usa aegis-web)
 check-serve:
-    cargo check -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
+    cargo check -p aegis-server --bin aegis-serve --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
 
 # (fork) Compile gate for the CLI (installed feature set) INCLUDING tests
 check-tests:
-    cargo check --tests -p aegis-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall
+    cargo check --tests -p aegis-server --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall
 
 # (fork) Build the reduced-feature CLI variant (debug)
 build-cli:
-    cargo build -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp
+    cargo build -p aegis-server --bin aegis-serve --no-default-features --features rustls-tls,scheduler,bundled-mcp
 
 # (fork) Ship a new-named debug binary: just ship aegis-terminal-vN
 ship name:
-    cargo rustc -p aegis-cli --bin aegis --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall -- -o target/debug/{{name}}.exe
+    cargo rustc -p aegis-server --bin aegis-serve --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall -- -o "${CARGO_TARGET_DIR:-target}/debug/{{name}}.exe"
 
 # (fork) Run the aegis lib suite with CI's feature set
 test-lib:
     cargo test -p aegis --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
 
-# (fork) Run the PTY integration suite (interactive_ui)
-test-ui:
-    cargo test -j 1 -p aegis-cli --no-default-features --features rustls-tls,scheduler,bundled-mcp --test interactive_ui -- --test-threads=1
 
 # (fork) Provider tests (antigravity + open_design)
 test-providers:

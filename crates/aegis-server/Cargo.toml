@@ -47,7 +47,10 @@ native-tls = [
 [dependencies]
 aegis = { path = "../aegis", default-features = false }
 aegis-mcp = { path = "../aegis-mcp", default-features = false, optional = true }
+agent-client-protocol = { workspace = true, features = ["unstable"] }
 anyhow = { workspace = true }
+serde_json = { workspace = true }
+tokio-util = { workspace = true, features = ["compat"] }
 axum = { workspace = true }
 axum-server = { workspace = true, optional = true }
 clap = { workspace = true }
