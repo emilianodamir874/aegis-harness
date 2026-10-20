@@ -1,3 +1,47 @@
+// src/app/format.ts
+var esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+var fmtTok = (n) => {
+  if (n == null) return "–";
+  if (n < 1e3) return String(n);
+  if (n < 1e6) return (Math.round(n / 100) / 10).toString().replace(/\.0$/, "") + "k";
+  return (Math.round(n / 104857.6) / 10).toString().replace(/\.0$/, "") + "M";
+};
+var fmtCost = (c) => {
+  if (c == null) return "";
+  if (c === 0) return "$0";
+  const s = c < 0.01 ? c.toFixed(5) : c.toFixed(4);
+  return "$" + s.replace(/0+$/, "").replace(/\.$/, "");
+};
+var fmtSize = (n) => {
+  if (n == null) return "";
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return Math.round(n / 102.4) / 10 + " KB";
+  return Math.round(n / 104857.6) / 10 + " MB";
+};
+var fmtTps = (v) => (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " tok/s";
+function s0(value) {
+  return typeof value === "number" && isFinite(value) ? value : 0;
+}
+function tpsOf(u) {
+  const outTok = s0(u && u.outputTokens);
+  const elapsed = s0(u && u.elapsedMs);
+  if (outTok <= 0 || elapsed <= 0) return null;
+  return outTok / (Math.max(250, elapsed - s0(u.timeToFirstTokenMs)) / 1e3);
+}
+var COMPACT_RATIO = 0.8;
+function compactTrig(st) {
+  if (!st) return { at: null, pct: null, estimated: true };
+  if (st.autoCompactAt != null) {
+    return {
+      at: st.autoCompactAt,
+      pct: st.autoCompactPct != null ? st.autoCompactPct * 100 : st.limit ? st.autoCompactAt / st.limit * 100 : null,
+      estimated: false
+    };
+  }
+  if (st.limit) return { at: st.limit * COMPACT_RATIO, pct: COMPACT_RATIO * 100, estimated: true };
+  return { at: null, pct: null, estimated: true };
+}
+
 // src/app/icons.ts
 var TOOL_ICON = {
   shell: '<path d="M4.6 5.4 7.2 8l-2.6 2.6M9.4 11h3.2"/>',
@@ -37,25 +81,6 @@ function toolIconSvg(kind, status) {
   };
   window.addEventListener("error", (e) => report("error", (e.message || "") + " @ " + (e.filename || "") + ":" + (e.lineno || "")));
   window.addEventListener("unhandledrejection", (e) => report("rejection", String(e.reason && e.reason.message || e.reason)));
-  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const fmtTok = (n) => {
-    if (n == null) return "–";
-    if (n < 1e3) return String(n);
-    if (n < 1e6) return (Math.round(n / 100) / 10).toString().replace(/\.0$/, "") + "k";
-    return (Math.round(n / 104857.6) / 10).toString().replace(/\.0$/, "") + "M";
-  };
-  const fmtCost = (c) => {
-    if (c == null) return "";
-    if (c === 0) return "$0";
-    const s = c < 0.01 ? c.toFixed(5) : c.toFixed(4);
-    return "$" + s.replace(/0+$/, "").replace(/\.$/, "");
-  };
-  const fmtSize = (n) => {
-    if (n == null) return "";
-    if (n < 1024) return n + " B";
-    if (n < 1048576) return Math.round(n / 102.4) / 10 + " KB";
-    return Math.round(n / 104857.6) / 10 + " MB";
-  };
   const greeting = () => {
     const h = (/* @__PURE__ */ new Date()).getHours();
     return h >= 6 && h < 12 ? "Buenos días" : h >= 12 && h < 20 ? "Buenas tardes" : "Buenas noches";
@@ -1660,7 +1685,6 @@ function toolIconSvg(kind, status) {
     msgWrap().appendChild(el);
     scrollBottom(true);
   }
-  const COMPACT_RATIO = 0.8;
   function modelParts() {
     const opts = state.current && state.current.configOptions || [];
     const val = (id) => {
@@ -1716,18 +1740,6 @@ function toolIconSvg(kind, status) {
     if (s.cost != null) L.push("Costo acumulado: " + fmtCost(s.cost));
     if (!L.length) L.push("Sin datos de uso todavia.");
     return L;
-  }
-  function compactTrig(st) {
-    if (!st) return { at: null, pct: null, estimated: true };
-    if (st.autoCompactAt != null) {
-      return {
-        at: st.autoCompactAt,
-        pct: st.autoCompactPct != null ? st.autoCompactPct * 100 : st.limit ? st.autoCompactAt / st.limit * 100 : null,
-        estimated: false
-      };
-    }
-    if (st.limit) return { at: st.limit * COMPACT_RATIO, pct: COMPACT_RATIO * 100, estimated: true };
-    return { at: null, pct: null, estimated: true };
   }
   function resetUsageForSession() {
     const sid = state.current && state.current.id || null;
@@ -1979,13 +1991,6 @@ function toolIconSvg(kind, status) {
     renderUsage();
   }
   state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null };
-  const fmtTps = (v) => (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " tok/s";
-  function tpsOf(u) {
-    const outTok = s0(u && u.outputTokens);
-    const elapsed = s0(u && u.elapsedMs);
-    if (outTok <= 0 || elapsed <= 0) return null;
-    return outTok / (Math.max(250, elapsed - s0(u.timeToFirstTokenMs)) / 1e3);
-  }
   function speedSpan(id, after) {
     let el = $("#" + id);
     if (el) return el;
@@ -2103,9 +2108,6 @@ function toolIconSvg(kind, status) {
       avgEl.hidden = sum.avg === null;
     }
     return sum;
-  }
-  function s0(value) {
-    return typeof value === "number" && isFinite(value) ? value : 0;
   }
   const stopNote = (sr) => {
     if (!sr || sr === "end_turn") return;

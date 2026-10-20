@@ -1,6 +1,7 @@
 // aegis-web · cliente de chat ACP v3 (sin dependencias): sesiones, streaming,
-import { toolIconSvg } from './app/icons';
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
+import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, tpsOf, COMPACT_RATIO, compactTrig } from './app/format';
+import { toolIconSvg } from './app/icons';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -22,26 +23,6 @@ import { toolIconSvg } from './app/icons';
   window.addEventListener('unhandledrejection', (e) => report('rejection', String((e.reason && e.reason.message) || e.reason)));
 
   // ---------- helpers ----------
-  const esc = (s) =>
-    String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const fmtTok = (n) => {
-    if (n == null) return '–';
-    if (n < 1000) return String(n);
-    if (n < 1000000) return (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k';
-    return (Math.round(n / 104857.6) / 10).toString().replace(/\.0$/, '') + 'M';
-  };
-  const fmtCost = (c) => {
-    if (c == null) return '';
-    if (c === 0) return '$0';
-    const s = c < 0.01 ? c.toFixed(5) : c.toFixed(4);
-    return '$' + s.replace(/0+$/, '').replace(/\.$/, '');
-  };
-  const fmtSize = (n) => {
-    if (n == null) return '';
-    if (n < 1024) return n + ' B';
-    if (n < 1048576) return Math.round(n / 102.4) / 10 + ' KB';
-    return Math.round(n / 104857.6) / 10 + ' MB';
-  };
   const greeting = () => {
     const h = new Date().getHours();
     // El corte estaba en las 13: a las 12:35 todavia decia "Buenos dias". Desde el mediodia, tardes.
@@ -1601,7 +1582,6 @@ import { toolIconSvg } from './app/icons';
   // El server SI manda contextLimit en usage_update (acp/server.rs build_usage_updates),
   // pero el response de session/prompt trae solo totalTokens: si se pisa el estado con eso,
   // el readout queda en "131.4k tok" y no dice nada. Por eso se MEZCLA (state.usage).
-  const COMPACT_RATIO = 0.8; // AEGIS_AUTO_COMPACT_THRESHOLD por defecto: compacta a 80% del limite
   // Modelo y esfuerzo efectivos. OJO: cuando el id termina en -none/-low/-high/-max el
   // esfuerzo lo fija el ALIAS (open_design::selected_effort gana sobre el chip), asi que
   // mostrar solo el chip miente.
@@ -1657,21 +1637,6 @@ import { toolIconSvg } from './app/icons';
     if (s.cost != null) L.push('Costo acumulado: ' + fmtCost(s.cost));
     if (!L.length) L.push('Sin datos de uso todavia.');
     return L;
-  }
-  // Disparador real de compactacion: lo manda el server (autoCompactAt/autoCompactPct,
-  // ya resuelto contra AEGIS_AUTO_COMPACT_TOKEN_LIMIT). Si todavia no llego, cae al 80%
-  // del limite y la UI lo marca como estimado.
-  function compactTrig(st) {
-    if (!st) return { at: null, pct: null, estimated: true };
-    if (st.autoCompactAt != null) {
-      return {
-        at: st.autoCompactAt,
-        pct: st.autoCompactPct != null ? st.autoCompactPct * 100 : (st.limit ? (st.autoCompactAt / st.limit) * 100 : null),
-        estimated: false
-      };
-    }
-    if (st.limit) return { at: st.limit * COMPACT_RATIO, pct: COMPACT_RATIO * 100, estimated: true };
-    return { at: null, pct: null, estimated: true };
   }
 
   function resetUsageForSession() {
@@ -1946,15 +1911,6 @@ import { toolIconSvg } from './app/icons';
   // ventana movil de 4 s; cuando llega el message_usage del paso se reemplaza por el
   // numero exacto (outputTokens / tiempo de generacion, descontando el primer token).
   state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null };
-  const fmtTps = (v) => (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' tok/s';
-  // Ritmo exacto de un paso: salida sobre el tiempo de generacion (sin el primer token, que es
-  // espera del prompt). Lo usan el velocimetro y el popover de contexto, para que digan lo mismo.
-  function tpsOf(u) {
-    const outTok = s0(u && u.outputTokens);
-    const elapsed = s0(u && u.elapsedMs);
-    if (outTok <= 0 || elapsed <= 0) return null;
-    return outTok / (Math.max(250, elapsed - s0(u.timeToFirstTokenMs)) / 1000);
-  }
   // El estilo vive en app.css (.runbar-tps / .runbar-avg), no inline: asi el numero se ve
   // como metrica propia y no como parte de la frase del runbar.
   function speedSpan(id, after) {
@@ -2057,7 +2013,6 @@ import { toolIconSvg } from './app/icons';
     }
     return sum;
   }
-  function s0(value) { return typeof value === 'number' && isFinite(value) ? value : 0; }
   const stopNote = (sr) => {
     if (!sr || sr === 'end_turn') return;
     const m = {
