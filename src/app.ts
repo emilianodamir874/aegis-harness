@@ -2372,9 +2372,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     // a otro chat mientras esperaba el reintento, el prompt podia caer en la sesion equivocada.
     const sid = sidArg || (state.current && state.current.id);
     const antes = sessionMsgCount(sid); // linea base: si el mensaje se persiste, el conteo sube
+    // Idempotencia: el mismo promptId en los 3 intentos. Si el primero llego y se corto la
+    // respuesta, el server devuelve el resultado de esa corrida en vez de ejecutar el turno
+    // otra vez (o espera a que termine). Un mensaje nuevo = un promptId nuevo.
+    const promptId = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
     for (let intento = 1; intento <= 3; intento++) {
       try {
-        return await rpc.request('session/prompt', { sessionId: sid, prompt: promptBlocks(text, atts) });
+        return await rpc.request('session/prompt', { sessionId: sid, prompt: promptBlocks(text, atts), _meta: { promptId } });
       } catch (e) {
         const msg = String((e && e.message) || e);
         const transitorio = /conexi|closed|ECONNRESET|socket|network/i.test(msg);

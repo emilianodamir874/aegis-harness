@@ -2615,9 +2615,10 @@ ${a.text}
   async function promptConRetry(text, atts, sidArg) {
     const sid = sidArg || state.current && state.current.id;
     const antes = sessionMsgCount(sid);
+    const promptId = "p_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10);
     for (let intento = 1; intento <= 3; intento++) {
       try {
-        return await rpc.request("session/prompt", { sessionId: sid, prompt: promptBlocks(text, atts) });
+        return await rpc.request("session/prompt", { sessionId: sid, prompt: promptBlocks(text, atts), _meta: { promptId } });
       } catch (e) {
         const msg = String(e && e.message || e);
         const transitorio = /conexi|closed|ECONNRESET|socket|network/i.test(msg);
