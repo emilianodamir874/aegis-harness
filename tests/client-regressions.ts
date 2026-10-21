@@ -305,6 +305,26 @@ try {
   });
   if (!desktop.siblings || !desktop.speedStillInside || !desktop.rightHidden || desktop.barWidth < 400 || desktop.metaHeight > 36 || desktop.stopSize < 40) throw new Error('meta compartida escritorio: ' + JSON.stringify(desktop));
   console.log('PASS runbar escritorio comparte meta sin pisar velocidad al renderizar uso');
+  const downloadMd = '[descargar AUDITORIA_CASTOR_2026-10-21.md](/dl/AUDITORIA_CASTOR_2026-10-21.md)';
+  const downloadVariants = [downloadMd, '[descargar AUDITORIA_CASTOR_2026-10-21.md]\n(/dl/AUDITORIA_CASTOR_2026-10-21.md)'];
+  for (const variant of downloadVariants) {
+    const result = await page.evaluate((text) => {
+      const app = (window as any).__aegisWeb;
+      const node = document.createElement('div'); node.className = 'msg-a';
+      node.innerHTML = '<div class="content">' + app.md(text) + '</div>';
+      document.querySelector('#msg-inner')!.append(node);
+      const links = [...node.querySelectorAll<HTMLAnchorElement>('a.dl-chip')];
+      const r = { links: links.length, href: links[0]?.getAttribute('href'), label: links[0]?.textContent,
+        text: node.textContent, download: links[0]?.getAttribute('download'), raw: node.innerHTML };
+      node.remove();
+      return r;
+    }, variant);
+    if (result.links !== 1 || result.href !== '/dl/AUDITORIA_CASTOR_2026-10-21.md' ||
+        result.download !== 'AUDITORIA_CASTOR_2026-10-21.md' ||
+        result.text?.includes('(/dl/') || !result.label?.includes('descargar AUDITORIA_CASTOR_2026-10-21.md'))
+      throw new Error('enlace descarga en bruto/duplicado: ' + JSON.stringify(result));
+  }
+  console.log('PASS enlaces Markdown de descarga en una o dos líneas son un único botón');
   const longCell = 'Resultado largo que supera holgadamente setenta y dos caracteres, contiene observaciones adicionales y también una URL https://ejemplo.local/ruta/con/segmentos/muy-largos/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
   const manyColumns = '| Componente | Antes | Ahora | Cómo comprobarlo |\n|---|---|---|---|\n| Verificación exhaustiva | Esta descripción contiene bastantes palabras y distintos detalles para una columna | También hay varios resultados largos que comparar con el anterior | Escribir otro párrafo largo y verificar la tabla sin perder el texto |';
   for (const width of [320, 390, 640, 800]) {

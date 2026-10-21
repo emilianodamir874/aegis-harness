@@ -2669,8 +2669,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   let chunksTurn = 0;
   let textoDelTurno = '';
 
-  // Descargas: cualquier /dl/<archivo> en la transcripción se vuelve un chip.
-  // Se escanea el DOM (no el último turno) para que funcione también al reabrir un chat y en el replay.
+  // Compatibilidad con mensajes antiguos que sólo imprimían la ruta /dl/ en texto.
+  // Los enlaces Markdown nuevos ya se renderizan como chips por el parser.
   const DESCARGAS_VISTAS = new Set<string>();
   let descargasTimer: any = null;
   function ofrecerDescargas() {
@@ -2680,12 +2680,19 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const re = /\/dl\/([A-Za-z0-9._-]{1,120})/g;
     const mensajes = inner.querySelectorAll('.msg-a');
     for (const nodo of Array.from(mensajes) as HTMLElement[]) {
-      const texto = nodo.innerText || '';
+      const texto = (nodo.querySelector(':scope > .content') as HTMLElement | null)?.innerText || '';
+      const enlaces = new Set(Array.from(nodo.querySelectorAll<HTMLAnchorElement>('.content a.dl-chip[href^="/dl/"]')).map((a) => decodeURIComponent(a.getAttribute('href')!.slice(4))));
+      const legacyRow = nodo.querySelector(':scope > .dl-row');
+      legacyRow?.querySelectorAll<HTMLAnchorElement>('a.dl-chip[href^="/dl/"]').forEach((a) => {
+        if (enlaces.has(decodeURIComponent(a.getAttribute('href')!.slice(4)))) a.remove();
+      });
+      if (legacyRow && !legacyRow.children.length) legacyRow.remove();
       const nombres: string[] = [];
       let m: RegExpExecArray | null;
       re.lastIndex = 0;
       while ((m = re.exec(texto)) !== null) {
         const clave = sid + ':' + m[1];
+        if (enlaces.has(m[1])) { DESCARGAS_VISTAS.add(clave); continue; }
         if (!DESCARGAS_VISTAS.has(clave)) {
           DESCARGAS_VISTAS.add(clave);
           nombres.push(m[1]);

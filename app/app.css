@@ -1193,6 +1193,16 @@ body { background: var(--bg); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Enlaces de descarga Markdown: una sola acción, sin URL literal y sin chip duplicado. */
+.msg-a .content a.dl-chip {
+  display: inline-flex; max-width: 100%; vertical-align: middle;
+  border: 1px solid var(--border); color: var(--text);
+  text-decoration: none; white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .msg-a .content a.dl-chip { padding: 5px 8px; font-size: max(11px, var(--chat-small-font)); }
+  .msg-a .content a.dl-chip .dl-ico { width: 17px; height: 17px; }
+}
 
 /* Mobile runbar: one compact row inside the composer. Keep the speed and the
    stop action visible; the per-turn average remains in the end-of-turn note. */

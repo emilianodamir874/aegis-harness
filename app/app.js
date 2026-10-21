@@ -89,6 +89,10 @@ var inline = (t) => {
   s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
   s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  s = s.replace(
+    /\[([^\]\n]+)\]\(\/dl\/([A-Za-z0-9._-]{1,120})\)/g,
+    (_match, label, name) => `<a class="dl-chip" href="/dl/${name}" download="${name}"><span class="dl-ico" aria-hidden="true">↓</span><span>${label}</span></a>`
+  );
   s = s.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
   return s;
 };
@@ -206,7 +210,8 @@ var md = (text) => {
       const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]* ?\r?\n/, "").replace(/\r?\n$/, "");
       html += `<div class="code-wrap"><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
     } else {
-      html += mdBlocks(parts[i]);
+      const joinedDownloads = parts[i].replace(/\[([^\]\r\n]+)\]\s*\r?\n\s*\((\/dl\/[A-Za-z0-9._-]{1,120})\)/g, "[$1]($2)");
+      html += mdBlocks(joinedDownloads);
     }
   }
   return html;
@@ -2959,12 +2964,22 @@ ${a.text}
     const re = /\/dl\/([A-Za-z0-9._-]{1,120})/g;
     const mensajes = inner.querySelectorAll(".msg-a");
     for (const nodo of Array.from(mensajes)) {
-      const texto = nodo.innerText || "";
+      const texto = nodo.querySelector(":scope > .content")?.innerText || "";
+      const enlaces = new Set(Array.from(nodo.querySelectorAll('.content a.dl-chip[href^="/dl/"]')).map((a) => decodeURIComponent(a.getAttribute("href").slice(4))));
+      const legacyRow = nodo.querySelector(":scope > .dl-row");
+      legacyRow?.querySelectorAll('a.dl-chip[href^="/dl/"]').forEach((a) => {
+        if (enlaces.has(decodeURIComponent(a.getAttribute("href").slice(4)))) a.remove();
+      });
+      if (legacyRow && !legacyRow.children.length) legacyRow.remove();
       const nombres = [];
       let m;
       re.lastIndex = 0;
       while ((m = re.exec(texto)) !== null) {
         const clave = sid + ":" + m[1];
+        if (enlaces.has(m[1])) {
+          DESCARGAS_VISTAS.add(clave);
+          continue;
+        }
         if (!DESCARGAS_VISTAS.has(clave)) {
           DESCARGAS_VISTAS.add(clave);
           nombres.push(m[1]);

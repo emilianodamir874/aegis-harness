@@ -9,6 +9,9 @@ import { esc } from './format';
     s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
     s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+    // Descargas de esta misma web: nunca convertir una ruta arbitraria en href.
+    s = s.replace(/\[([^\]\n]+)\]\(\/dl\/([A-Za-z0-9._-]{1,120})\)/g,
+      (_match, label, name) => `<a class="dl-chip" href="/dl/${name}" download="${name}"><span class="dl-ico" aria-hidden="true">↓</span><span>${label}</span></a>`);
     s = s.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
     return s;
   };
@@ -81,7 +84,8 @@ import { esc } from './format';
         const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]* ?\r?\n/, '').replace(/\r?\n$/, '');
         html += `<div class="code-wrap"><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
       } else {
-        html += mdBlocks(parts[i]);
+        const joinedDownloads = parts[i].replace(/\[([^\]\r\n]+)\]\s*\r?\n\s*\((\/dl\/[A-Za-z0-9._-]{1,120})\)/g, '[$1]($2)');
+        html += mdBlocks(joinedDownloads);
       }
     }
     return html;
