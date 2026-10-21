@@ -287,13 +287,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
         break;
       case 'agent_thought_chunk':
         if (u.content && u.content.type === 'text') {
-          speedStep(u.messageId);
+          speedStep(u.messageId, true);
           streamAppend(thoughtKeyFor(u), u.content.text, true, (u._meta && u._meta.aegis) ? u._meta.aegis.agentVisible !== true : state.hideTail);
         }
         break;
       case 'tool_call':
       case 'tool_call_update':
-        speedStep(u.messageId);
+        speedStep(u.messageId, true);
         toolUpsert(u);
         break;
       case 'usage_update':
@@ -1785,9 +1785,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   // ---------- velocimetro de tokens/segundo ----------
-  // Stream: estimado por caracteres; message_usage: exacto sólo con generationMs > 0.
-  // Sin esa medición, el popover muestra exclusivamente throughput de solicitud.
-  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null, seen: new Set<string>(), messages: new Set<string>(), stepId: null, runId: null, finished: false, note: null };
+  // Stream: sólo texto visible estimado; usage: generación medida o throughput de solicitud.
+  // latest incluye el messageId para no llamar "actual" a un ritmo de otro paso.
+  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, stepText: false, currentRate: false, runId: null, finished: false, note: null };
   // El estilo vive en app.css (.runbar-tps / .runbar-avg), no inline: asi el numero se ve
   // como metrica propia y no como parte de la frase del runbar.
   function speedSpan(id, after) {
@@ -1812,51 +1812,60 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (el) el.className = 'runbar-avg';
     return el;
   }
+  function speedRateLabel(rate, previous = false) {
+    return (previous ? 'última ' : '') + (rate.kind === 'generation' ? 'generación ' : 'solicitud ') + fmtTps(rate.value);
+  }
   function speedLabel() {
     const s = state.speed;
-    if (s.exact !== null) return 'generación ' + fmtTps(s.exact);
+    if (s.currentRate && s.latest?.mid === s.stepId) return speedRateLabel(s.latest);
     const now = performance.now();
     const recent = s.ticks.filter((t) => now - t.at <= 4000);
-    if (recent.length < 2) return '';
-    const first = recent[0];
-    const last = recent[recent.length - 1];
-    const seconds = Math.max(0.4, (last.at - first.at) / 1000);
-    const chars = last.chars - first.chars;
-    if (chars <= 0) return '';
-    const tps = chars / 4 / seconds;
-    return '~' + fmtTps(tps);
+    if (recent.length >= 2) {
+      const first = recent[0];
+      const last = recent[recent.length - 1];
+      const seconds = Math.max(0.4, (last.at - first.at) / 1000);
+      const chars = last.chars - first.chars;
+      if (chars > 0) return '~' + fmtTps(chars / 4 / seconds);
+    }
+    // Sin muestra del paso actual, conservar la última MEDICIÓN, identificada como anterior.
+    // No confundir pensamiento/herramientas sin usage con velocidad de generación actual.
+    return s.latest ? speedRateLabel(s.latest, true) : '— tok/s';
   }
   const compactRunBar = () => window.matchMedia('(max-width: 560px)').matches;
   function speedBadge(el, label) {
     if (!el) return;
     el.dataset.fullLabel = label;
-    el.textContent = compactRunBar() ? label.replace(/^generación /, '') : label;
-    el.title = label ? (label.startsWith('~') ? 'Ritmo estimado de generación: ' + label : 'Ritmo exacto de ' + label) : '';
+    el.textContent = compactRunBar()
+      ? label.replace(/^última generación /, 'últ. ').replace(/^última solicitud /, 'últ. sol. ').replace(/^generación /, '').replace(/^solicitud /, 'sol. ')
+      : label;
+    el.title = label.startsWith('~') ? 'Ritmo estimado de generación: ' + label
+      : label.startsWith('última ') ? 'Última medición disponible (paso anterior): ' + label
+      : label.startsWith('solicitud ') ? 'Throughput de solicitud completa (no generación): ' + label
+      : label.startsWith('generación ') ? 'Ritmo medido de ' + label
+      : 'Esperando tokens medidos o texto visible para estimar el ritmo';
     el.hidden = !label;
   }
   function speedPaint() {
-    const el = speedEl();
-    const label = speedLabel();
-    speedBadge(el, label);
+    speedBadge(speedEl(), speedLabel());
     const avgEl = speedAvgEl();
-    if (!avgEl || state.speed.exact !== null) return;
-    // Mientras corre solo se muestra el paso actual; el promedio llega al cerrar el turno.
+    if (!avgEl) return;
+    // El promedio incluye sólo generación medida y aparece al cerrar el turno.
     avgEl.textContent = '';
     avgEl.hidden = true;
   }
-  // Resumen del turno (paso final exacto + promedio ponderado por tiempo de generacion).
   function speedSummary() {
     const s = state.speed;
     return {
-      last: s.exact,
+      last: s.latest?.value ?? null,
+      kind: s.latest?.kind ?? null,
       avg: s.runOut > 0 && s.runGen > 0 ? s.runOut / (s.runGen / 1000) : null,
       out: s.runOut
     };
   }
   function speedStart() {
     const s = state.speed;
-    s.ticks = []; s.exact = null; s.runOut = 0; s.runGen = 0;
-    s.runId = state.runId || null; s.finished = false; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null;
+    s.ticks = []; s.latest = null; s.runOut = 0; s.runGen = 0;
+    s.runId = state.runId || null; s.finished = false; s.seen.clear(); s.messages.clear(); s.stepId = null; s.stepText = false; s.currentRate = false; s.note = null;
     clearInterval(s.timer);
     s.timer = setInterval(speedPaint, 300);
     speedPaint();
@@ -1864,26 +1873,35 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   function speedReset() {
     const s = state.speed;
     clearInterval(s.timer); s.timer = 0;
-    s.ticks = []; s.exact = null; s.finished = true; s.runId = null; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null;
+    s.ticks = []; s.latest = null; s.finished = true; s.runId = null; s.seen.clear(); s.messages.clear(); s.stepId = null; s.stepText = false; s.currentRate = false; s.note = null;
     s.runOut = 0; s.runGen = 0;
     speedBadge($('#runbar-tps'), '');
     const avg = $('#runbar-avg'); if (avg) { avg.textContent = ''; avg.hidden = true; }
   }
-  function speedStep(messageId) {
+  function speedStep(messageId, nonText = false) {
     const s = state.speed;
     if (!messageId || !state.busy || state.replaying || state.hubReplay || s.finished) return;
     s.messages.add(messageId);
-    if (s.stepId === messageId) return;
+    if (s.stepId === messageId) {
+      // Una fase de pensamiento/herramienta con el mismo id no hereda como actual
+      // la métrica ya medida para una fase anterior del mismo mensaje.
+      if (nonText && (s.stepText || s.currentRate)) { s.stepText = false; s.currentRate = false; s.ticks = []; speedPaint(); }
+      else if (!nonText && (!s.stepText || s.currentRate)) { s.stepText = true; s.currentRate = false; s.ticks = []; speedPaint(); }
+      return;
+    }
     s.stepId = messageId;
-    s.exact = null; s.ticks = [];
-    speedPaint(); // No mostrar el exacto del paso anterior durante un tool/think nuevo.
+    s.stepText = !nonText;
+    s.currentRate = false;
+    s.ticks = [];
+    speedPaint(); // La medición previa sigue disponible, pero se etiqueta como "última".
   }
   function speedChunk(text, messageId?) {
     if (!text) return;
     const s = state.speed;
     if (!state.busy || state.replaying || state.hubReplay || s.finished) return;
+    // Sin id no se puede distinguir un paso nuevo del anterior ni atribuir sus muestras.
+    if (!messageId) { s.ticks = []; s.currentRate = false; s.stepId = null; speedPaint(); return; }
     speedStep(messageId);
-    s.exact = null;
     const prev = s.ticks.length ? s.ticks[s.ticks.length - 1].chars : 0;
     s.ticks.push({ at: performance.now(), chars: prev + text.length });
     if (s.ticks.length > 240) s.ticks.splice(0, s.ticks.length - 240);
@@ -1902,21 +1920,29 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (s.runId && state.runId && s.runId !== state.runId) return;
     if (!s.messages.has(mid)) return; // prueba de pertenencia al run (no basta state.busy)
     if (s.seen.has(mid)) return;
-    s.seen.add(mid);
     const rate = stepRate(update.usage);
-    if (!rate || rate.kind !== 'generation') return;
-    s.exact = rate.value;
-    s.runOut += update.usage.outputTokens;
-    s.runGen += rate.durationMs;
+    // Un elapsed demasiado breve no permite interpretar una tasa de solicitud estable.
+    if (!rate || (rate.kind === 'request' && rate.durationMs < 1000)) return;
+    s.seen.add(mid);
+    const order = [...s.messages].indexOf(mid);
+    // Usage tardío suma al promedio, pero nunca reemplaza una medición posterior.
+    if (!s.latest || order >= s.latest.order) {
+      s.latest = { value: rate.value, kind: rate.kind, mid, order };
+      s.currentRate = mid === s.stepId;
+    }
+    if (rate.kind === 'generation') {
+      s.runOut += update.usage.outputTokens;
+      s.runGen += rate.durationMs;
+    }
     if (s.finished) {
       const sum = speedSummary();
       s.note.innerHTML = speedNoteHtml(s.noteMs, sum);
       const bar = $('#runbar');
       if (bar && !bar.hidden && bar.classList.contains('done')) {
         const el = speedEl();
-        speedBadge(el, 'generación ' + fmtTps(sum.last));
+        speedBadge(el, sum.last === null ? '' : speedRateLabel({ value: sum.last, kind: sum.kind }));
         const avg = speedAvgEl();
-        if (avg) { avg.textContent = 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok'; avg.hidden = false; }
+        if (avg) { avg.textContent = sum.avg === null ? '' : 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok'; avg.hidden = sum.avg === null; }
       }
     } else speedPaint();
   }
@@ -1925,7 +1951,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     clearInterval(s.timer); s.timer = 0; s.finished = true;
     const sum = speedSummary();
     const el = speedEl();
-    speedBadge(el, sum.last === null ? '' : 'generación ' + fmtTps(sum.last));
+    speedBadge(el, sum.last === null ? '' : speedRateLabel({ value: sum.last, kind: sum.kind }));
     const avgEl = speedAvgEl();
     if (avgEl) {
       avgEl.textContent = sum.avg === null ? '' : 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok';
@@ -2309,7 +2335,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   // así se ve aunque la barra de arriba ya se haya ido.
   function speedNoteHtml(ms, sum) {
     const parts = ['fin del turno · ' + fmtElapsed(ms)];
-    if (sum.last !== null) parts.push('generación ' + fmtTps(sum.last));
+    if (sum.last !== null) parts.push(speedRateLabel({ value: sum.last, kind: sum.kind }));
     if (sum.avg !== null) parts.push('prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok');
     return esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + '</span>').join('');
   }

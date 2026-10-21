@@ -170,7 +170,7 @@ try {
     const note = document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '';
     return { live, beforeLate, afterLate, pop, note, stale };
   }, A);
-  eq(rates.stale, '', 'el paso nuevo limpia el exacto previo');
+  eq(rates.stale, 'última generación 10.0 tok/s', 'el paso nuevo distingue el ritmo anterior');
   eq(rates.live.out, 20, 'uso único por messageId/run');
   eq(rates.live.avg, 10, 'promedio solo generación');
   eq(rates.beforeLate.out, 20, 'fin de turno mantiene generación');
@@ -195,10 +195,27 @@ try {
     return { exact, afterTool, summary };
   }, A);
   eq(newRun.exact, 'generación 30.0 tok/s', 'run nuevo usa generationMs aun si TTFT=elapsed');
-  eq(newRun.afterTool, '', 'tool-only nuevo paso no hereda tasa exacta anterior');
+  eq(newRun.afterTool, 'última generación 30.0 tok/s', 'tool-only marca el ritmo anterior');
   eq(newRun.summary.out, 30, 'run nuevo no hereda tokens ni acepta usage anterior/tool-only');
   eq(newRun.summary.avg, 30, 'promedio sólo generación observada del run nuevo');
-  console.log('PASS cambio de run y paso tool-only sin ritmo de generación inventado');
+  const requestRate = await page.evaluate((sid) => {
+    const app = (window as any).__aegisWeb, ui = app.testUi;
+    ui.run('run-request');
+    const initial = document.querySelector<HTMLElement>('#runbar-tps')!;
+    const pending = { text: initial.textContent, hidden: initial.hidden };
+    ui.update({ sessionId: sid, update: { sessionUpdate: 'tool_call', messageId: 'request-tool', toolCallId: 'request-tool', title: 'tool mock', status: 'in_progress' } });
+    ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: 'request-tool', usage: { outputTokens: 70, elapsedMs: 3500, timeToFirstTokenMs: 3500 } } });
+    const request = { text: initial.textContent, title: initial.title };
+    ui.update({ sessionId: sid, update: { sessionUpdate: 'tool_call', messageId: 'request-tool-next', toolCallId: 'request-tool-next', title: 'otro tool mock', status: 'in_progress' } });
+    const previous = { text: initial.textContent, title: initial.title };
+    const avg = app.speedSummary().avg;
+    ui.run(null);
+    return { pending, request, previous, avg };
+  }, A);
+  if (requestRate.pending.text !== '— tok/s' || requestRate.pending.hidden || requestRate.request.text !== 'solicitud 20.0 tok/s' ||
+      !requestRate.request.title.includes('no generación') || requestRate.previous.text !== 'última solicitud 20.0 tok/s' || requestRate.avg !== null)
+    throw new Error('ritmo de solicitud o estado pendiente engañoso: ' + JSON.stringify(requestRate));
+  console.log('PASS cambio de run, tool-only y throughput de solicitud diferenciado');
   await page.evaluate(() => {
     const app = (window as any).__aegisWeb;
     app.testUi.run('mock-run');
@@ -288,6 +305,38 @@ try {
   });
   if (!desktop.siblings || !desktop.speedStillInside || !desktop.rightHidden || desktop.barWidth < 400 || desktop.metaHeight > 36 || desktop.stopSize < 40) throw new Error('meta compartida escritorio: ' + JSON.stringify(desktop));
   console.log('PASS runbar escritorio comparte meta sin pisar velocidad al renderizar uso');
+  const longCell = 'Resultado largo que supera holgadamente setenta y dos caracteres, contiene observaciones adicionales y también una URL https://ejemplo.local/ruta/con/segmentos/muy-largos/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+  for (const width of [320, 390, 640, 800]) {
+    await page.setViewportSize({ width, height: 780 });
+    const table = await page.evaluate(({ result }) => {
+      const app = (window as any).__aegisWeb;
+      const fixture = document.createElement('div'); fixture.className = 'msg-a';
+      fixture.innerHTML = app.md('| Comprobación | Resultado |\n|---|---|\n| Versión | ' + result + ' |');
+      document.querySelector('#msg-inner')!.append(fixture);
+      const two = fixture.querySelector<HTMLElement>('table')!;
+      const twoRow = two.querySelector<HTMLElement>('tbody tr')!;
+      const twoCells = [...twoRow.querySelectorAll<HTMLElement>('td')];
+      const three = document.createElement('div'); three.className = 'msg-a';
+      three.innerHTML = app.md('| A | B | C |\n|---|---|---|\n| uno | dos | tres |');
+      document.querySelector('#msg-inner')!.append(three);
+      const third = three.querySelector<HTMLElement>('table')!;
+      const widthTotal = fixture.getBoundingClientRect().width;
+      const rowHeight = twoRow.getBoundingClientRect().height;
+      const resultCell = twoCells[1];
+      const data = { twoCols: two.dataset.cols, threeCols: third.dataset.cols || '', row: getComputedStyle(twoRow).display,
+        cells: twoCells.map(c => getComputedStyle(c).display), pseudo: getComputedStyle(resultCell, '::before').display,
+        full: resultCell.textContent?.includes(result), noOverflow: two.getBoundingClientRect().width <= widthTotal + 1,
+        wrap: getComputedStyle(resultCell).whiteSpace, rowHeight,
+        threeRow: getComputedStyle(third.querySelector('tbody tr')!).display };
+      fixture.remove(); three.remove();
+      return data;
+    }, { result: longCell });
+    if (table.twoCols !== '2' || table.threeCols || !table.full || (width <= 640 &&
+        (table.row !== 'table-row' || table.cells.some(x => x !== 'table-cell') || table.pseudo !== 'none' ||
+          !table.noOverflow || table.wrap !== 'normal' || table.threeRow !== 'block')))
+      throw new Error('tabla de dos columnas larga en ' + width + 'px: ' + JSON.stringify(table));
+  }
+  console.log('PASS tabla larga de dos columnas en móvil sin tarjetas ni desborde');
   const font = page.getByRole('button', { name: 'Tamaño de letra', exact: true });
   const checkFont = async (px: number) => page.evaluate((size) => {
     const box = document.querySelector('#msg-inner')!;

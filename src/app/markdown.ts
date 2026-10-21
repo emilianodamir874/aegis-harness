@@ -29,16 +29,9 @@ import { esc } from './format';
     // aplasta la columna y parte las palabras letra por letra.
     const plain = (s) => String(s == null ? '' : s).replace(/[*`_]/g, '').trim();
     const cell = (tag, txt, i, label?) => { const a = aligns[i]; return `<${tag}${a ? ` style="text-align:${a}"` : ''}${label ? ` data-label="${esc(label)}"` : ''}>${inline(txt)}</${tag}>`; };
-    // data-cols: en pantalla angosta las tablas se rearman como tarjetas (una fila = una tarjeta).
-    // Excepcion: una tabla de 2 columnas con celdas CORTAS (etiqueta + valor) se muestra como tabla
-    // real, que se lee mejor. Si alguna celda tiene texto largo se dejan las tarjetas: si no, la
-    // primera columna queda aplastada palabra por palabra y la otra se corta.
-    const corta = (s, max) => plain(s).length <= max;
-    const compacta =
-      head.length === 2 &&
-      rows.length > 0 &&
-      rows.every((r) => corta(head[0], 48) && corta(r[0] == null ? '' : r[0], 48) && corta(r[1] == null ? '' : r[1], 72));
-    return '<div class="tbl-wrap"><table' + (compacta ? ' data-cols="2"' : '') + '><thead><tr>' + head.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>'
+    // Todas las tablas de dos columnas son pares etiqueta/valor en movil, incluso si una
+    // celda es larga o todavia no hay filas. Las de 3+ columnas siguen como tarjetas.
+    return '<div class="tbl-wrap"><table' + (head.length === 2 ? ' data-cols="2"' : '') + '><thead><tr>' + head.map((c, i) => cell('th', c, i)).join('') + '</tr></thead>'
       + (rows.length ? '<tbody>' + rows.map((r) => '<tr>' + head.map((_, i) => cell('td', r[i] == null ? '' : r[i], i, plain(head[i]))).join('') + '</tr>').join('') + '</tbody>' : '')
       + '</table></div>';
   };

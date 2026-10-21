@@ -106,9 +106,7 @@ var tableHtml = (head, aligns, rows) => {
     const a = aligns[i];
     return `<${tag}${a ? ` style="text-align:${a}"` : ""}${label ? ` data-label="${esc(label)}"` : ""}>${inline(txt)}</${tag}>`;
   };
-  const corta = (s, max) => plain(s).length <= max;
-  const compacta = head.length === 2 && rows.length > 0 && rows.every((r) => corta(head[0], 48) && corta(r[0] == null ? "" : r[0], 48) && corta(r[1] == null ? "" : r[1], 72));
-  return '<div class="tbl-wrap"><table' + (compacta ? ' data-cols="2"' : "") + "><thead><tr>" + head.map((c, i) => cell("th", c, i)).join("") + "</tr></thead>" + (rows.length ? "<tbody>" + rows.map((r) => "<tr>" + head.map((_, i) => cell("td", r[i] == null ? "" : r[i], i, plain(head[i]))).join("") + "</tr>").join("") + "</tbody>" : "") + "</table></div>";
+  return '<div class="tbl-wrap"><table' + (head.length === 2 ? ' data-cols="2"' : "") + "><thead><tr>" + head.map((c, i) => cell("th", c, i)).join("") + "</tr></thead>" + (rows.length ? "<tbody>" + rows.map((r) => "<tr>" + head.map((_, i) => cell("td", r[i] == null ? "" : r[i], i, plain(head[i]))).join("") + "</tr>").join("") + "</tbody>" : "") + "</table></div>";
 };
 var mdBlocks = (t) => {
   const lines = t.split(/\r?\n/);
@@ -571,13 +569,13 @@ function ttsUrlFor(voice, text) {
         break;
       case "agent_thought_chunk":
         if (u.content && u.content.type === "text") {
-          speedStep(u.messageId);
+          speedStep(u.messageId, true);
           streamAppend(thoughtKeyFor(u), u.content.text, true, u._meta && u._meta.aegis ? u._meta.aegis.agentVisible !== true : state.hideTail);
         }
         break;
       case "tool_call":
       case "tool_call_update":
-        speedStep(u.messageId);
+        speedStep(u.messageId, true);
         toolUpsert(u);
         break;
       case "usage_update":
@@ -2055,7 +2053,7 @@ function ttsUrlFor(voice, text) {
     speedExact(update);
     renderUsage();
   }
-  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null, seen: /* @__PURE__ */ new Set(), messages: /* @__PURE__ */ new Set(), stepId: null, runId: null, finished: false, note: null };
+  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, latest: null, seen: /* @__PURE__ */ new Set(), messages: /* @__PURE__ */ new Set(), stepId: null, stepText: false, currentRate: false, runId: null, finished: false, note: null };
   function speedSpan(id, after) {
     let el = $("#" + id);
     if (el) return el;
@@ -2078,41 +2076,43 @@ function ttsUrlFor(voice, text) {
     if (el) el.className = "runbar-avg";
     return el;
   }
+  function speedRateLabel(rate, previous = false) {
+    return (previous ? "última " : "") + (rate.kind === "generation" ? "generación " : "solicitud ") + fmtTps(rate.value);
+  }
   function speedLabel() {
     const s = state.speed;
-    if (s.exact !== null) return "generación " + fmtTps(s.exact);
+    if (s.currentRate && s.latest?.mid === s.stepId) return speedRateLabel(s.latest);
     const now = performance.now();
     const recent = s.ticks.filter((t) => now - t.at <= 4e3);
-    if (recent.length < 2) return "";
-    const first = recent[0];
-    const last = recent[recent.length - 1];
-    const seconds = Math.max(0.4, (last.at - first.at) / 1e3);
-    const chars = last.chars - first.chars;
-    if (chars <= 0) return "";
-    const tps = chars / 4 / seconds;
-    return "~" + fmtTps(tps);
+    if (recent.length >= 2) {
+      const first = recent[0];
+      const last = recent[recent.length - 1];
+      const seconds = Math.max(0.4, (last.at - first.at) / 1e3);
+      const chars = last.chars - first.chars;
+      if (chars > 0) return "~" + fmtTps(chars / 4 / seconds);
+    }
+    return s.latest ? speedRateLabel(s.latest, true) : "— tok/s";
   }
   const compactRunBar = () => window.matchMedia("(max-width: 560px)").matches;
   function speedBadge(el, label) {
     if (!el) return;
     el.dataset.fullLabel = label;
-    el.textContent = compactRunBar() ? label.replace(/^generación /, "") : label;
-    el.title = label ? label.startsWith("~") ? "Ritmo estimado de generación: " + label : "Ritmo exacto de " + label : "";
+    el.textContent = compactRunBar() ? label.replace(/^última generación /, "últ. ").replace(/^última solicitud /, "últ. sol. ").replace(/^generación /, "").replace(/^solicitud /, "sol. ") : label;
+    el.title = label.startsWith("~") ? "Ritmo estimado de generación: " + label : label.startsWith("última ") ? "Última medición disponible (paso anterior): " + label : label.startsWith("solicitud ") ? "Throughput de solicitud completa (no generación): " + label : label.startsWith("generación ") ? "Ritmo medido de " + label : "Esperando tokens medidos o texto visible para estimar el ritmo";
     el.hidden = !label;
   }
   function speedPaint() {
-    const el = speedEl();
-    const label = speedLabel();
-    speedBadge(el, label);
+    speedBadge(speedEl(), speedLabel());
     const avgEl = speedAvgEl();
-    if (!avgEl || state.speed.exact !== null) return;
+    if (!avgEl) return;
     avgEl.textContent = "";
     avgEl.hidden = true;
   }
   function speedSummary() {
     const s = state.speed;
     return {
-      last: s.exact,
+      last: s.latest?.value ?? null,
+      kind: s.latest?.kind ?? null,
       avg: s.runOut > 0 && s.runGen > 0 ? s.runOut / (s.runGen / 1e3) : null,
       out: s.runOut
     };
@@ -2120,7 +2120,7 @@ function ttsUrlFor(voice, text) {
   function speedStart() {
     const s = state.speed;
     s.ticks = [];
-    s.exact = null;
+    s.latest = null;
     s.runOut = 0;
     s.runGen = 0;
     s.runId = state.runId || null;
@@ -2128,6 +2128,8 @@ function ttsUrlFor(voice, text) {
     s.seen.clear();
     s.messages.clear();
     s.stepId = null;
+    s.stepText = false;
+    s.currentRate = false;
     s.note = null;
     clearInterval(s.timer);
     s.timer = setInterval(speedPaint, 300);
@@ -2138,12 +2140,14 @@ function ttsUrlFor(voice, text) {
     clearInterval(s.timer);
     s.timer = 0;
     s.ticks = [];
-    s.exact = null;
+    s.latest = null;
     s.finished = true;
     s.runId = null;
     s.seen.clear();
     s.messages.clear();
     s.stepId = null;
+    s.stepText = false;
+    s.currentRate = false;
     s.note = null;
     s.runOut = 0;
     s.runGen = 0;
@@ -2154,13 +2158,27 @@ function ttsUrlFor(voice, text) {
       avg.hidden = true;
     }
   }
-  function speedStep(messageId) {
+  function speedStep(messageId, nonText = false) {
     const s = state.speed;
     if (!messageId || !state.busy || state.replaying || state.hubReplay || s.finished) return;
     s.messages.add(messageId);
-    if (s.stepId === messageId) return;
+    if (s.stepId === messageId) {
+      if (nonText && (s.stepText || s.currentRate)) {
+        s.stepText = false;
+        s.currentRate = false;
+        s.ticks = [];
+        speedPaint();
+      } else if (!nonText && (!s.stepText || s.currentRate)) {
+        s.stepText = true;
+        s.currentRate = false;
+        s.ticks = [];
+        speedPaint();
+      }
+      return;
+    }
     s.stepId = messageId;
-    s.exact = null;
+    s.stepText = !nonText;
+    s.currentRate = false;
     s.ticks = [];
     speedPaint();
   }
@@ -2168,8 +2186,14 @@ function ttsUrlFor(voice, text) {
     if (!text) return;
     const s = state.speed;
     if (!state.busy || state.replaying || state.hubReplay || s.finished) return;
+    if (!messageId) {
+      s.ticks = [];
+      s.currentRate = false;
+      s.stepId = null;
+      speedPaint();
+      return;
+    }
     speedStep(messageId);
-    s.exact = null;
     const prev = s.ticks.length ? s.ticks[s.ticks.length - 1].chars : 0;
     s.ticks.push({ at: performance.now(), chars: prev + text.length });
     if (s.ticks.length > 240) s.ticks.splice(0, s.ticks.length - 240);
@@ -2184,23 +2208,29 @@ function ttsUrlFor(voice, text) {
     if (s.runId && state.runId && s.runId !== state.runId) return;
     if (!s.messages.has(mid)) return;
     if (s.seen.has(mid)) return;
-    s.seen.add(mid);
     const rate = stepRate(update.usage);
-    if (!rate || rate.kind !== "generation") return;
-    s.exact = rate.value;
-    s.runOut += update.usage.outputTokens;
-    s.runGen += rate.durationMs;
+    if (!rate || rate.kind === "request" && rate.durationMs < 1e3) return;
+    s.seen.add(mid);
+    const order = [...s.messages].indexOf(mid);
+    if (!s.latest || order >= s.latest.order) {
+      s.latest = { value: rate.value, kind: rate.kind, mid, order };
+      s.currentRate = mid === s.stepId;
+    }
+    if (rate.kind === "generation") {
+      s.runOut += update.usage.outputTokens;
+      s.runGen += rate.durationMs;
+    }
     if (s.finished) {
       const sum = speedSummary();
       s.note.innerHTML = speedNoteHtml(s.noteMs, sum);
       const bar = $("#runbar");
       if (bar && !bar.hidden && bar.classList.contains("done")) {
         const el = speedEl();
-        speedBadge(el, "generación " + fmtTps(sum.last));
+        speedBadge(el, sum.last === null ? "" : speedRateLabel({ value: sum.last, kind: sum.kind }));
         const avg = speedAvgEl();
         if (avg) {
-          avg.textContent = "prom generación " + fmtTps(sum.avg) + " · " + sum.out + " tok";
-          avg.hidden = false;
+          avg.textContent = sum.avg === null ? "" : "prom generación " + fmtTps(sum.avg) + " · " + sum.out + " tok";
+          avg.hidden = sum.avg === null;
         }
       }
     } else speedPaint();
@@ -2212,7 +2242,7 @@ function ttsUrlFor(voice, text) {
     s.finished = true;
     const sum = speedSummary();
     const el = speedEl();
-    speedBadge(el, sum.last === null ? "" : "generación " + fmtTps(sum.last));
+    speedBadge(el, sum.last === null ? "" : speedRateLabel({ value: sum.last, kind: sum.kind }));
     const avgEl = speedAvgEl();
     if (avgEl) {
       avgEl.textContent = sum.avg === null ? "" : "prom generación " + fmtTps(sum.avg) + " · " + sum.out + " tok";
@@ -2581,7 +2611,7 @@ function ttsUrlFor(voice, text) {
   }
   function speedNoteHtml(ms, sum) {
     const parts = ["fin del turno · " + fmtElapsed(ms)];
-    if (sum.last !== null) parts.push("generación " + fmtTps(sum.last));
+    if (sum.last !== null) parts.push(speedRateLabel({ value: sum.last, kind: sum.kind }));
     if (sum.avg !== null) parts.push("prom generación " + fmtTps(sum.avg) + " · " + sum.out + " tok");
     return esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + "</span>").join("");
   }
