@@ -1250,20 +1250,35 @@ body { background: var(--bg); }
 }
 
 /* Adjustable conversation typography; chrome, composer and sidebar remain unchanged. */
-.messages { --chat-font: 16px; --chat-scale: 1; }
+.messages {
+  --chat-font: 16px;
+  --chat-user-font: 14.5px;
+  --chat-small-font: 12.5px;
+  --chat-h3-font: 18px;
+  --chat-h4-font: 16.5px;
+  --chat-h5-font: 15px;
+  --chat-thought-font: 13.5px;
+  --chat-table-label-font: 11px;
+  --chat-tool-output-font: 11.5px;
+  --chat-tool-name-font: 12px;
+  --chat-permission-font: 13.5px;
+}
 .messages .msg-a { font-size: var(--chat-font); }
-.messages .msg-user { font-size: calc(14.5px * var(--chat-scale)); }
-.messages .tool, .messages .msg-a table, .messages .msg-a code,
-.messages .msg-a pre code { font-size: calc(12.5px * var(--chat-scale)); }
-.messages .msg-a h3 { font-size: calc(18px * var(--chat-scale)); }
-.messages .msg-a h4 { font-size: calc(16.5px * var(--chat-scale)); }
-.messages .msg-a h5 { font-size: calc(15px * var(--chat-scale)); }
-.messages .msg-a .thought { font-size: calc(13.5px * var(--chat-scale)); }
-.messages .msg-a td::before { font-size: calc(11px * var(--chat-scale)); }
-.messages .tool pre { font-size: calc(11.5px * var(--chat-scale)); }
-.messages .tool-title .tname, .messages .perm-tool code { font-size: calc(12px * var(--chat-scale)); }
-.messages .perm { font-size: calc(13.5px * var(--chat-scale)); }
-.messages .perm-tool { font-size: calc(12.5px * var(--chat-scale)); }
+.messages .msg-user { font-size: var(--chat-user-font); }
+.messages .msg-a table,
+.messages .msg-a code, .messages .msg-a pre code,
+.messages .tool, .messages .tool-title,
+.messages .tool-body, .messages .perm-tool { font-size: var(--chat-small-font); }
+.messages .msg-a th, .messages .msg-a td,
+.messages .msg-a table[data-cols="2"] td { font-size: var(--chat-small-font); }
+.messages .msg-a h3 { font-size: var(--chat-h3-font); }
+.messages .msg-a h4 { font-size: var(--chat-h4-font); }
+.messages .msg-a h5 { font-size: var(--chat-h5-font); }
+.messages .msg-a .thought { font-size: var(--chat-thought-font); }
+.messages .msg-a td::before { font-size: var(--chat-table-label-font); }
+.messages .tool pre { font-size: var(--chat-tool-output-font); }
+.messages .tool-title .tname, .messages .perm-tool code { font-size: var(--chat-tool-name-font); }
+.messages .perm { font-size: var(--chat-permission-font); }
 .chat-font-pop[hidden] { display: none; }
 .chat-font-pop {
   position: absolute; top: 54px; right: 16px; z-index: 90;

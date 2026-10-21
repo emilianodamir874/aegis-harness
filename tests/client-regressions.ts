@@ -294,17 +294,20 @@ try {
     let fixture = document.querySelector('#font-fixture');
     if (!fixture) {
       fixture = document.createElement('div'); fixture.id = 'font-fixture';
-      fixture.innerHTML = '<div class="msg-user">usuario</div><div class="msg-a"><div class="content"><p>asistente <code>inline</code></p><pre><code>código</code></pre><div class="thought">pensamiento</div><div class="tbl-wrap"><table><tbody><tr><td data-label="columna">celda</td></tr></tbody></table></div></div></div><div class="tool"><div class="tool-body"><div class="tool-title">herramienta</div><pre>salida</pre></div></div>';
+      fixture.innerHTML = '<div class="msg-user">usuario</div><div class="msg-a"><div class="content"><p>asistente <code>inline</code></p><pre><code>código</code></pre><div class="thought">pensamiento</div><div class="tbl-wrap"><table data-cols="2"><tbody><tr><th>Encabezado</th><td data-label="columna">celda</td></tr></tbody></table></div><div class="tbl-wrap"><table data-cols="3"><tbody><tr><th>Encabezado</th><td data-label="columna">celda</td></tr></tbody></table></div></div></div><div class="tool"><div class="tool-body"><div class="tool-title">herramienta <span class="tname">developer.shell</span></div><pre>salida</pre></div></div>';
       box.append(fixture);
     }
-    const selectors = ['.msg-user', '.msg-a', '.msg-a code', '.msg-a pre code', '.msg-a .thought', '.msg-a td', '.msg-a td::before', '.tool', '.tool pre'];
+    const selectors = ['.msg-user', '.msg-a', '.msg-a code', '.msg-a pre code', '.msg-a .thought', '.msg-a table[data-cols="2"] th', '.msg-a table[data-cols="2"] td', '.msg-a table[data-cols="3"] th', '.msg-a table[data-cols="3"] td', '.msg-a table[data-cols="3"] td::before', '.tool', '.tool-body', '.tool-title', '.tool-title .tname', '.tool pre'];
     const sizes = selectors.map(s => {
       const pseudo = s.includes('::before');
       const el = fixture!.querySelector(pseudo ? s.replace('::before', '') : s)!;
       const actual = parseFloat(getComputedStyle(el, pseudo ? '::before' : undefined).fontSize);
       const baseline: Record<string, number> = { '.msg-user': 14.5, '.msg-a': 16, '.msg-a code': 12.5,
-        '.msg-a pre code': 12.5, '.msg-a .thought': 13.5, '.msg-a td': 12.5,
-        '.msg-a td::before': 11, '.tool': 12.5, '.tool pre': 11.5 };
+        '.msg-a pre code': 12.5, '.msg-a .thought': 13.5,
+        '.msg-a table[data-cols="2"] th': 12.5, '.msg-a table[data-cols="2"] td': 12.5,
+        '.msg-a table[data-cols="3"] th': 12.5, '.msg-a table[data-cols="3"] td': 12.5,
+        '.msg-a table[data-cols="3"] td::before': 11, '.tool': 12.5,
+        '.tool-body': 12.5, '.tool-title': 12.5, '.tool-title .tname': 12, '.tool pre': 11.5 };
       return [s, actual, baseline[s] * size / 16] as const;
     });
     return { sizes, stored: localStorage.getItem('aegis.chatFontPx'), value: document.querySelector('#chat-font-value')?.textContent,

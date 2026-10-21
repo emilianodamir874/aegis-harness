@@ -4273,7 +4273,7 @@ ${a.text}
     report("boot", "ok - sesiones=" + state.sessions.length + " archivadas=" + state.archived.length + " adoptado=" + state.adopted);
   }
   const CHAT_FONT_KEY = "aegis.chatFontPx";
-  const CHAT_FONT_DEFAULT = 15;
+  const CHAT_FONT_DEFAULT = 16;
   function validChatFont(raw) {
     if (raw === null || !/^(?:1[2-9]|2[0-2])$/.test(raw)) return CHAT_FONT_DEFAULT;
     return Number(raw);
@@ -4287,8 +4287,21 @@ ${a.text}
     chatFont = Math.max(12, Math.min(22, Math.round(px)));
     const messages = $("#messages");
     if (messages) {
-      messages.style.setProperty("--chat-font", chatFont + "px");
-      messages.style.setProperty("--chat-scale", String(chatFont / CHAT_FONT_DEFAULT));
+      const scale = chatFont / CHAT_FONT_DEFAULT;
+      const sizes = {
+        "--chat-font": chatFont,
+        "--chat-user-font": 14.5 * scale,
+        "--chat-small-font": 12.5 * scale,
+        "--chat-h3-font": 18 * scale,
+        "--chat-h4-font": 16.5 * scale,
+        "--chat-h5-font": 15 * scale,
+        "--chat-thought-font": 13.5 * scale,
+        "--chat-table-label-font": 11 * scale,
+        "--chat-tool-output-font": 11.5 * scale,
+        "--chat-tool-name-font": 12 * scale,
+        "--chat-permission-font": 13.5 * scale
+      };
+      for (const [name, size] of Object.entries(sizes)) messages.style.setProperty(name, size + "px");
     }
     const range = $("#chat-font-range");
     if (range) range.value = String(chatFont);
