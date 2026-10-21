@@ -2237,6 +2237,7 @@ fn message_usage_update(
                 CostSource::Estimated => CostSourceData::Estimated,
             }),
             elapsed_ms: usage.elapsed_ms,
+            generation_ms: usage.generation_ms,
             time_to_first_token_ms: usage.time_to_first_token_ms,
             is_compaction: usage.is_compaction,
         },
@@ -3348,6 +3349,23 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use test_case::test_case;
+
+    #[test]
+    fn message_usage_update_preserves_timing_and_generation_ms() {
+        let usage = crate::conversation::message::MessageUsage {
+            elapsed_ms: Some(4200),
+            time_to_first_token_ms: Some(840),
+            generation_ms: Some(2900),
+            ..Default::default()
+        };
+        let update = message_usage_update(Some("m1".to_string()), &usage);
+        assert_eq!(update.message_id.as_deref(), Some("m1"));
+        assert_eq!(update.usage.elapsed_ms, Some(4200));
+        assert_eq!(update.usage.time_to_first_token_ms, Some(840));
+        assert_eq!(update.usage.generation_ms, Some(2900));
+        let wire = serde_json::to_value(&update).unwrap();
+        assert_eq!(wire["usage"]["generationMs"], 2900);
+    }
 
     #[tokio::test]
     async fn prompt_id_owner_survives_response_handler_drop_and_retries_wait_or_replay() {

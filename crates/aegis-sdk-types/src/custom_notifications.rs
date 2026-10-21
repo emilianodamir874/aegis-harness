@@ -163,9 +163,12 @@ pub struct MessageUsageData {
     pub cost: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost_source: Option<CostSourceData>,
-    /// Wall-clock generation time, used by the client for a tokens/sec readout.
+    /// Total request duration (or provider-reported elapsed time).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub elapsed_ms: Option<u64>,
+    /// Observed duration between first and last content chunks.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_to_first_token_ms: Option<u64>,
     /// Usage from a compaction/summarization call rather than a normal turn.
@@ -304,6 +307,7 @@ mod tests {
                     cost: Some(0.0123),
                     cost_source: Some(CostSourceData::Estimated),
                     elapsed_ms: Some(4200),
+                    generation_ms: Some(2900),
                     time_to_first_token_ms: Some(840),
                     is_compaction: false,
                 },
@@ -327,6 +331,7 @@ mod tests {
                         "cost": 0.0123,
                         "costSource": "estimated",
                         "elapsedMs": 4200,
+                        "generationMs": 2900,
                         "timeToFirstTokenMs": 840,
                         "isCompaction": false
                     }

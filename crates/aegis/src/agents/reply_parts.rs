@@ -143,21 +143,55 @@ pub(crate) async fn toolshim_postprocess(
     }
 }
 
-/// Fill `usage.stats` timing fields measured by the stream wrapper, keeping any
-/// values the provider already reported (e.g. MLX's own `elapsed_ms`).
-fn fill_stream_timing(
-    usage: &mut ProviderUsage,
+/// Measure observed first-to-last content separately from the total request duration.
+/// Keep TTFT on the original request clock, including retries.
+struct StreamTiming {
     request_started: std::time::Instant,
     first_content_at: Option<std::time::Instant>,
-) {
-    let stats = usage.stats.get_or_insert_with(ProviderStats::default);
-    if stats.time_to_first_token_ms.is_none() {
-        if let Some(first) = first_content_at {
-            stats.time_to_first_token_ms = Some((first - request_started).as_millis() as u64);
+    last_content_at: Option<std::time::Instant>,
+}
+
+impl StreamTiming {
+    fn new(started: std::time::Instant) -> Self {
+        Self {
+            request_started: started,
+            first_content_at: None,
+            last_content_at: None,
         }
     }
-    if stats.elapsed_ms.is_none() {
-        stats.elapsed_ms = Some(request_started.elapsed().as_millis() as u64);
+
+    fn observe(&mut self, message: Option<&Message>, at: std::time::Instant) {
+        if message.is_some_and(message_has_timing_content) {
+            self.first_content_at.get_or_insert(at);
+            self.last_content_at = Some(at);
+        }
+    }
+
+    fn fill_usage(&self, usage: &mut ProviderUsage, at: std::time::Instant) {
+        let total_elapsed_ms = at.duration_since(self.request_started).as_millis() as u64;
+        let generation_ms =
+            self.first_content_at
+                .zip(self.last_content_at)
+                .and_then(|(first, last)| {
+                    let elapsed = last.duration_since(first).as_millis() as u64;
+                    (elapsed > 0).then_some(elapsed)
+                });
+        let stats = usage.stats.get_or_insert_with(ProviderStats::default);
+        if stats.time_to_first_token_ms.is_none() {
+            stats.time_to_first_token_ms = self
+                .first_content_at
+                .map(|first| first.duration_since(self.request_started).as_millis() as u64);
+        }
+        if stats.elapsed_ms.is_none() {
+            stats.elapsed_ms = Some(total_elapsed_ms);
+        }
+        if let Some(generation_ms) = generation_ms {
+            usage
+                .additional_data
+                .get_or_insert_with(Default::default)
+                .entry("generation_ms".to_string())
+                .or_insert_with(|| json!(generation_ms));
+        }
     }
 }
 
@@ -351,6 +385,7 @@ pub(crate) async fn stream_response_from_provider(
     };
 
     Ok(Box::pin(try_stream! {
+        let mut timing = StreamTiming::new(request_started);
         if !provider.manages_own_context() {
             let retry_config = provider.retry_config().transient_only();
             let mut attempts = 0;
@@ -417,15 +452,12 @@ pub(crate) async fn stream_response_from_provider(
             // and stripped before any output reaches the UI.
             let mut accumulated_message: Option<Message> = None;
             let mut final_usage: Option<ProviderUsage> = None;
-            let mut first_content_at: Option<std::time::Instant> = None;
 
             while let Some(result) = stream.next().await {
                 let (msg_opt, usage_opt) = result?;
+                timing.observe(msg_opt.as_ref(), std::time::Instant::now());
 
                 if let Some(msg) = msg_opt {
-                    if first_content_at.is_none() && message_has_timing_content(&msg) {
-                        first_content_at = Some(std::time::Instant::now());
-                    }
                     accumulated_message = Some(match accumulated_message {
                         Some(mut prev) => {
                             for new_content in msg.content {
@@ -458,7 +490,7 @@ pub(crate) async fn stream_response_from_provider(
 
             // The toolshim interpreter call below must not count toward elapsed time.
             if let Some(usage) = final_usage.as_mut() {
-                fill_stream_timing(usage, request_started, first_content_at);
+                timing.fill_usage(usage, std::time::Instant::now());
                 gen_ai_telemetry::record_provider_usage(&span, usage);
             }
 
@@ -476,20 +508,15 @@ pub(crate) async fn stream_response_from_provider(
                 yield (None, final_usage);
             }
         } else {
-            let mut first_content_at: Option<std::time::Instant> = None;
             let mut active_mergeable_assistant_id: Option<String> = None;
             let mut output_message: Option<Message> = None;
+            let mut final_usage: Option<ProviderUsage> = None;
             while let Some(result) = stream.next().await {
-                let (message, mut usage) = result?;
+                let (message, usage) = result?;
 
-                if first_content_at.is_none()
-                    && message.as_ref().is_some_and(message_has_timing_content)
-                {
-                    first_content_at = Some(std::time::Instant::now());
-                }
-                if let Some(usage) = usage.as_mut() {
-                    fill_stream_timing(usage, request_started, first_content_at);
-                    gen_ai_telemetry::record_provider_usage(&span, usage);
+                timing.observe(message.as_ref(), std::time::Instant::now());
+                if let Some(usage) = usage {
+                    final_usage = Some(usage);
                 }
                 if capture_message_content {
                     if let Some(message) = message.as_ref() {
@@ -512,7 +539,12 @@ pub(crate) async fn stream_response_from_provider(
                     }
                 });
 
-                yield (message, usage);
+                yield (message, None);
+            }
+            if let Some(mut usage) = final_usage {
+                timing.fill_usage(&mut usage, std::time::Instant::now());
+                gen_ai_telemetry::record_provider_usage(&span, &usage);
+                yield (None, Some(usage));
             }
             if let Some(output_message) = output_message {
                 let output_messages = gen_ai_telemetry::output_message_json(&output_message);
@@ -1217,16 +1249,22 @@ mod tests {
         let first_content_at = Some(request_started + Duration::from_millis(40));
         let mut usage = usage_with_stats(None);
 
-        fill_stream_timing(&mut usage, request_started, first_content_at);
+        let mut timing = StreamTiming::new(request_started);
+        timing.observe(
+            Some(&Message::assistant().with_text("first")),
+            first_content_at.unwrap(),
+        );
+        timing.observe(
+            Some(&Message::assistant().with_text("last")),
+            request_started + Duration::from_millis(90),
+        );
+        timing.fill_usage(&mut usage, request_started + Duration::from_millis(100));
 
         let stats = usage.stats.expect("stats must be created when absent");
         assert_eq!(stats.time_to_first_token_ms, Some(40));
         let elapsed = stats.elapsed_ms.expect("elapsed_ms must be filled");
-        assert!(
-            elapsed >= 100,
-            "elapsed_ms ({elapsed}) must cover the full request duration"
-        );
-        assert!(stats.time_to_first_token_ms.unwrap() <= elapsed);
+        assert_eq!(elapsed, 100, "elapsed_ms is the full request duration");
+        assert_eq!(usage.additional_data.unwrap()["generation_ms"], 50);
     }
 
     #[test]
@@ -1240,7 +1278,16 @@ mod tests {
             ..Default::default()
         }));
 
-        fill_stream_timing(&mut usage, request_started, first_content_at);
+        let mut timing = StreamTiming::new(request_started);
+        timing.observe(
+            Some(&Message::assistant().with_text("first")),
+            first_content_at.unwrap(),
+        );
+        timing.observe(
+            Some(&Message::assistant().with_text("last")),
+            request_started + Duration::from_millis(75),
+        );
+        timing.fill_usage(&mut usage, request_started + Duration::from_millis(100));
 
         let stats = usage.stats.expect("stats must survive");
         assert_eq!(
@@ -1258,6 +1305,7 @@ mod tests {
             Some(42),
             "unrelated provider stats must survive the fill"
         );
+        assert_eq!(usage.additional_data.unwrap()["generation_ms"], 50);
     }
 
     #[test]
@@ -1265,14 +1313,85 @@ mod tests {
         let request_started = Instant::now() - Duration::from_millis(100);
         let mut usage = usage_with_stats(None);
 
-        fill_stream_timing(&mut usage, request_started, None);
+        let timing = StreamTiming::new(request_started);
+        timing.fill_usage(&mut usage, request_started + Duration::from_millis(100));
 
         let stats = usage.stats.expect("stats must be created when absent");
         assert_eq!(
             stats.time_to_first_token_ms, None,
             "no content chunk observed means no TTFT"
         );
-        assert!(stats.elapsed_ms.expect("elapsed_ms must be filled") >= 100);
+        assert_eq!(stats.elapsed_ms, Some(100));
+        assert!(usage.additional_data.is_none());
+    }
+
+    #[test]
+    fn timing_retry_keeps_ttft_and_elapsed_on_original_request_clock() {
+        let started = Instant::now() - Duration::from_millis(500);
+        let mut timing = StreamTiming::new(started);
+        timing.observe(
+            Some(&Message::assistant().with_text("first")),
+            started + Duration::from_millis(340),
+        );
+        timing.observe(
+            Some(&Message::assistant().with_text("last")),
+            started + Duration::from_millis(430),
+        );
+        let mut usage = usage_with_stats(None);
+        timing.fill_usage(&mut usage, started + Duration::from_millis(480));
+
+        let stats = usage.stats.unwrap();
+        assert_eq!(stats.time_to_first_token_ms, Some(340));
+        assert_eq!(stats.elapsed_ms, Some(480));
+        assert_eq!(usage.additional_data.unwrap()["generation_ms"], 90);
+    }
+
+    #[test]
+    fn timing_single_content_with_final_usage_uses_request_elapsed() {
+        let started = Instant::now() - Duration::from_millis(100);
+        let mut timing = StreamTiming::new(started);
+        timing.observe(
+            Some(&Message::assistant().with_text("tool output")),
+            started + Duration::from_millis(80),
+        );
+        let mut usage = usage_with_stats(None);
+        timing.fill_usage(&mut usage, started + Duration::from_millis(80));
+
+        let stats = usage.stats.unwrap();
+        assert_eq!(stats.time_to_first_token_ms, Some(80));
+        assert_eq!(stats.elapsed_ms, Some(80));
+        assert!(usage.additional_data.is_none());
+    }
+
+    #[test]
+    fn timing_ignores_notifications_and_preserves_provider_additional_data() {
+        let started = Instant::now() - Duration::from_millis(120);
+        let mut timing = StreamTiming::new(started);
+        let notification = Message::assistant()
+            .with_system_notification(SystemNotificationType::ProgressMessage, "Preparing...");
+        timing.observe(Some(&notification), started + Duration::from_millis(10));
+        timing.observe(
+            Some(&Message::assistant().with_text("first")),
+            started + Duration::from_millis(40),
+        );
+        timing.observe(Some(&notification), started + Duration::from_millis(75));
+        timing.observe(
+            Some(&Message::assistant().with_text("last")),
+            started + Duration::from_millis(90),
+        );
+        let mut usage = usage_with_stats(None);
+        usage.additional_data = Some(serde_json::Map::from_iter([
+            ("provider_key".to_string(), json!("untouched")),
+            ("generation_ms".to_string(), json!(999)),
+        ]));
+        timing.fill_usage(&mut usage, started + Duration::from_millis(120));
+
+        let stats = usage.stats.unwrap();
+        assert_eq!(stats.time_to_first_token_ms, Some(40));
+        assert_eq!(stats.elapsed_ms, Some(120));
+        let additional = usage.additional_data.unwrap();
+        assert_eq!(additional["provider_key"], "untouched");
+        assert_eq!(additional["generation_ms"], 999);
     }
 
     type TestStreamItem = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>;
@@ -1345,6 +1464,51 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn first_item_with_usage_has_no_fabricated_generation_span() {
+        let provider = Arc::new(SequencedProvider::new(vec![Ok(vec![Ok((
+            Some(Message::assistant().with_text("tool output")),
+            Some(usage_with_stats(None)),
+        ))])]));
+        let mut stream = stream_for_test(provider).await;
+        let (message, usage) = stream.next().await.unwrap().unwrap();
+        assert_eq!(message.unwrap().as_concat_text(), "tool output");
+        assert!(usage.is_none());
+        let (message, usage) = stream.next().await.unwrap().unwrap();
+        assert!(message.is_none());
+        let usage = usage.unwrap();
+        let stats = usage.stats.unwrap();
+        assert!(stats.elapsed_ms.is_some());
+        assert!(stats.time_to_first_token_ms <= stats.elapsed_ms);
+        assert!(usage.additional_data.is_none());
+    }
+
+    #[tokio::test]
+    async fn early_usage_is_deferred_until_after_last_content() {
+        let provider = Arc::new(SequencedProvider::new(vec![Ok(vec![
+            Ok((
+                Some(Message::assistant().with_text("first")),
+                Some(usage_with_stats(None)),
+            )),
+            Ok((Some(Message::assistant().with_text("last")), None)),
+        ])]));
+        let mut stream = stream_for_test(provider).await;
+        for expected in ["first", "last"] {
+            let (message, usage) = stream.next().await.unwrap().unwrap();
+            assert_eq!(message.unwrap().as_concat_text(), expected);
+            assert!(usage.is_none());
+            tokio::time::sleep(Duration::from_millis(3)).await;
+        }
+        let (message, usage) = stream.next().await.unwrap().unwrap();
+        assert!(message.is_none());
+        let usage = usage.unwrap();
+        assert!(usage.stats.unwrap().elapsed_ms.is_some());
+        assert!(usage.additional_data.unwrap()["generation_ms"]
+            .as_u64()
+            .is_some());
+        assert!(stream.next().await.is_none());
     }
 
     #[tokio::test]

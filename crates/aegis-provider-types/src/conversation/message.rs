@@ -794,6 +794,8 @@ pub struct MessageUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub elapsed_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub time_to_first_token_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_compaction: bool,
@@ -811,6 +813,11 @@ impl MessageUsage {
             cost: usage.cost,
             cost_source: usage.cost_source,
             elapsed_ms: stats.and_then(|s| s.elapsed_ms),
+            generation_ms: usage
+                .additional_data
+                .as_ref()
+                .and_then(|data| data.get("generation_ms"))
+                .and_then(|value| value.as_u64()),
             time_to_first_token_ms: stats.and_then(|s| s.time_to_first_token_ms),
             is_compaction,
         }
@@ -1458,6 +1465,31 @@ mod tests {
     use rmcp::model::{CallToolRequestParams, ContentBlock, EmbeddedResource, PromptMessage, Role};
     use rmcp::object;
     use serde_json::Value;
+
+    #[test]
+    fn message_usage_maps_optional_generation_and_serializes_camel_case() {
+        use crate::conversation::message::MessageUsage;
+        use crate::conversation::token_usage::{ProviderUsage, Usage};
+
+        let mut provider = ProviderUsage::new("mock".to_string(), Usage::default());
+        let no_generation = MessageUsage::from_provider_usage(&provider, false);
+        assert!(no_generation.generation_ms.is_none());
+        assert!(serde_json::to_value(no_generation)
+            .unwrap()
+            .get("generationMs")
+            .is_none());
+
+        provider.additional_data = Some(serde_json::Map::from_iter([
+            ("generation_ms".to_string(), serde_json::json!(275)),
+            ("other".to_string(), serde_json::json!("preserved")),
+        ]));
+        let mapped = MessageUsage::from_provider_usage(&provider, false);
+        assert_eq!(mapped.generation_ms, Some(275));
+        let value = serde_json::to_value(&mapped).unwrap();
+        assert_eq!(value["generationMs"], 275);
+        let restored: MessageUsage = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.generation_ms, Some(275));
+    }
 
     #[test]
     fn provider_authentication_error_has_authentication_kind() {
