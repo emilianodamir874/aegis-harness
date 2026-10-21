@@ -4042,6 +4042,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const messages = $('#messages');
     if (messages) {
       const scale = chatFont / CHAT_FONT_DEFAULT;
+      messages.classList.toggle('chat-compact', chatFont <= 10);
+      messages.style.setProperty('--chat-space-scale', String(Math.max(0.35, Math.min(1.25, scale))));
       const sizes: Record<string, number> = {
         '--chat-font': chatFont,
         '--chat-user-font': 14.5 * scale,

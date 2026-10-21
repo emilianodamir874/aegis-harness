@@ -1279,6 +1279,57 @@ body { background: var(--bg); }
 .messages .tool pre { font-size: var(--chat-tool-output-font); }
 .messages .tool-title .tname, .messages .perm-tool code { font-size: var(--chat-tool-name-font); }
 .messages .perm { font-size: var(--chat-permission-font); }
+/* The compact reading mode scales card geometry as well as text. Tool results
+   default to a one-line preview; tapping a card still expands the full output. */
+.messages.chat-compact .msg-inner { gap: calc(18px * var(--chat-space-scale)); }
+.messages.chat-compact .tool {
+  gap: calc(10px * var(--chat-space-scale));
+  padding: calc(8px * var(--chat-space-scale)) calc(11px * var(--chat-space-scale));
+  border-radius: calc(12px * var(--chat-space-scale));
+  contain-intrinsic-size: auto 28px;
+}
+.messages.chat-compact .tool-ic {
+  width: calc(16px * var(--chat-space-scale));
+  height: calc(16px * var(--chat-space-scale));
+}
+.messages.chat-compact .tool-ic .tico {
+  width: calc(15px * var(--chat-space-scale));
+  height: calc(15px * var(--chat-space-scale));
+}
+.messages.chat-compact .tool pre {
+  margin: calc(6px * var(--chat-space-scale)) 0 calc(2px * var(--chat-space-scale));
+  max-height: 1.55em;
+  overflow: hidden;
+  border-radius: calc(10px * var(--chat-space-scale));
+}
+.messages.chat-compact .tool pre::after { display: none; }
+.messages.chat-compact .tool:not(.open):not(.expandido) pre { white-space: nowrap; text-overflow: ellipsis; overflow-wrap: normal; }
+.messages.chat-compact .tool.open pre,
+.messages.chat-compact .tool.expandido pre { max-height: none; }
+.messages.chat-compact .tool-more {
+  font-size: max(10px, var(--chat-small-font));
+  padding: 1px 6px;
+  margin: 2px 0 0;
+}
+.messages.chat-compact .msg-a .tbl-wrap { margin: calc(10px * var(--chat-space-scale)) 0; }
+.messages.chat-compact .msg-a th,
+.messages.chat-compact .msg-a td,
+.messages.chat-compact .msg-a table[data-cols="2"] td {
+  padding: calc(7px * var(--chat-space-scale)) calc(11px * var(--chat-space-scale));
+}
+@media (max-width: 640px) {
+  .messages.chat-compact .msg-a tr {
+    margin-bottom: calc(8px * var(--chat-space-scale));
+    padding: calc(6px * var(--chat-space-scale)) calc(4px * var(--chat-space-scale));
+    border-radius: calc(10px * var(--chat-space-scale));
+  }
+  .messages.chat-compact .msg-a td {
+    padding: calc(3px * var(--chat-space-scale)) calc(10px * var(--chat-space-scale));
+  }
+  .messages.chat-compact .msg-a table[data-cols="2"] td {
+    padding: calc(6px * var(--chat-space-scale)) 0;
+  }
+}
 .chat-font-pop[hidden] { display: none; }
 .chat-font-pop {
   position: absolute; top: 54px; right: 16px; z-index: 90;

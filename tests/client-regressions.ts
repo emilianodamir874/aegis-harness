@@ -344,7 +344,20 @@ try {
   await page.locator('#chat-font-range').fill('2');
   await page.locator('#chat-font-minus').click();
   eq((await checkFont(2)).stored, '2', 'límite inferior');
+  const compact = await page.evaluate(() => {
+    const messages = document.querySelector<HTMLElement>('#messages')!;
+    const tool = document.querySelector<HTMLElement>('#font-fixture .tool')!;
+    const pre = tool.querySelector<HTMLElement>('pre')!;
+    const cell = document.querySelector<HTMLElement>('#font-fixture .msg-a table[data-cols="3"] td')!;
+    const gap = getComputedStyle(document.querySelector('#msg-inner')!).gap;
+    return { mode: messages.classList.contains('chat-compact'), pad: parseFloat(getComputedStyle(tool).paddingTop),
+      preview: parseFloat(getComputedStyle(pre).maxHeight), line: parseFloat(getComputedStyle(pre).lineHeight),
+      cellPad: parseFloat(getComputedStyle(cell).paddingLeft), gap: parseFloat(gap) };
+  });
+  if (!compact.mode || compact.pad > 4 || compact.preview > compact.line + 1 || compact.cellPad > 6 || compact.gap > 9)
+    throw new Error('tarjetas gordas con texto de 2 px: ' + JSON.stringify(compact));
   await page.locator('#chat-font-range').fill('12');
+  if (await page.locator('#messages').evaluate(el => el.classList.contains('chat-compact'))) throw new Error('modo compacto persiste fuera de 2–10 px');
   eq((await checkFont(12)).stored, '12', 'valor intermedio');
   await page.locator('#chat-font-reset').click();
   eq((await checkFont(16)).stored, '16', 'restablecer default');
