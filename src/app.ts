@@ -4032,13 +4032,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   const CHAT_FONT_KEY = 'aegis.chatFontPx';
   const CHAT_FONT_DEFAULT = 16;
   function validChatFont(raw: string | null) {
-    if (raw === null || !/^(?:1[2-9]|2[0-2])$/.test(raw)) return CHAT_FONT_DEFAULT;
+    if (raw === null || !/^(?:[2-9]|1[0-9]|2[0-2])$/.test(raw)) return CHAT_FONT_DEFAULT;
     return Number(raw);
   }
   let chatFont = CHAT_FONT_DEFAULT;
   try { chatFont = validChatFont(localStorage.getItem(CHAT_FONT_KEY)); } catch {}
   function setChatFont(px: number) {
-    chatFont = Math.max(12, Math.min(22, Math.round(px)));
+    chatFont = Math.max(2, Math.min(22, Math.round(px)));
     const messages = $('#messages');
     if (messages) {
       const scale = chatFont / CHAT_FONT_DEFAULT;

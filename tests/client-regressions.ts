@@ -341,16 +341,18 @@ try {
   await page.locator('#chat-font-range').fill('22');
   await page.locator('#chat-font-plus').click();
   eq((await checkFont(22)).stored, '22', 'límite superior');
-  await page.locator('#chat-font-range').fill('12');
+  await page.locator('#chat-font-range').fill('2');
   await page.locator('#chat-font-minus').click();
-  eq((await checkFont(12)).stored, '12', 'límite inferior');
+  eq((await checkFont(2)).stored, '2', 'límite inferior');
+  await page.locator('#chat-font-range').fill('12');
+  eq((await checkFont(12)).stored, '12', 'valor intermedio');
   await page.locator('#chat-font-reset').click();
   eq((await checkFont(16)).stored, '16', 'restablecer default');
   await page.evaluate(() => localStorage.setItem('aegis.chatFontPx', '999'));
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => (window as any).__aegisWeb?.state.sessions.length === 2);
   eq((await checkFont(16)).value, '16 px', 'almacenamiento fuera de rango rechazado');
-  console.log('PASS fuente 12–22, reset, recarga, tarjeta móvil y storage inválido');
+  console.log('PASS fuente 2–22, reset, recarga, tarjeta móvil y storage inválido');
   const rpcError = await page.evaluate(async () => {
     try { await (window as any).__aegisWeb.rpc.request('test/error', {}); return null; }
     catch (e: any) { return { message: e.message, code: e.code, data: e.data }; }
