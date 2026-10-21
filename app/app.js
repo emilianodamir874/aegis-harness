@@ -19,14 +19,14 @@ var fmtSize = (n) => {
   return Math.round(n / 104857.6) / 10 + " MB";
 };
 var fmtTps = (v) => (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + " tok/s";
-function s0(value) {
-  return typeof value === "number" && isFinite(value) ? value : 0;
-}
-function tpsOf(u) {
-  const outTok = s0(u && u.outputTokens);
-  const elapsed = s0(u && u.elapsedMs);
-  if (outTok <= 0 || elapsed <= 0) return null;
-  return outTok / (Math.max(250, elapsed - s0(u.timeToFirstTokenMs)) / 1e3);
+function stepRate(u) {
+  const output = u?.outputTokens;
+  if (typeof output !== "number" || !Number.isFinite(output) || output <= 0) return null;
+  const generation = u?.generationMs;
+  const hasGeneration = typeof generation === "number" && Number.isFinite(generation) && generation > 0;
+  const durationMs = hasGeneration ? generation : u?.elapsedMs;
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) return null;
+  return { value: output / (durationMs / 1e3), kind: hasGeneration ? "generation" : "request", durationMs };
 }
 var COMPACT_RATIO = 0.8;
 function compactTrig(st) {
@@ -566,21 +566,25 @@ function ttsUrlFor(voice, text) {
           chunksTurn++;
           textoDelTurno += u.content.text;
           streamAppend(u.messageId || "a", u.content.text, false, u._meta && u._meta.aegis ? u._meta.aegis.agentVisible !== true : state.hideTail);
-          speedChunk(u.content.text);
+          speedChunk(u.content.text, u.messageId);
         }
         break;
       case "agent_thought_chunk":
-        if (u.content && u.content.type === "text") streamAppend(thoughtKeyFor(u), u.content.text, true, u._meta && u._meta.aegis ? u._meta.aegis.agentVisible !== true : state.hideTail);
+        if (u.content && u.content.type === "text") {
+          speedStep(u.messageId);
+          streamAppend(thoughtKeyFor(u), u.content.text, true, u._meta && u._meta.aegis ? u._meta.aegis.agentVisible !== true : state.hideTail);
+        }
         break;
       case "tool_call":
       case "tool_call_update":
+        speedStep(u.messageId);
         toolUpsert(u);
         break;
       case "usage_update":
         setUsage(u);
         break;
       case "message_usage":
-        setMsgUsage(u.usage);
+        setMsgUsage(u);
         break;
       case "available_commands_update":
         if (Array.isArray(u.availableCommands)) {
@@ -620,7 +624,7 @@ function ttsUrlFor(voice, text) {
     if (g && g.activeRunId !== void 0 && (!params.sessionId || params.sessionId === cur.id)) applyActiveRunId(g.activeRunId || null);
     if (params.sessionId !== cur.id) return;
     if (u.sessionUpdate === "usage_update") setUsage(u);
-    if (u.sessionUpdate === "message_usage") setMsgUsage(u.usage);
+    if (u.sessionUpdate === "message_usage") setMsgUsage(u);
     if (u.sessionUpdate === "status_message" && u.status && u.status.type === "progress" && u.status.message) {
       setPill(u.status.message);
     }
@@ -1906,9 +1910,9 @@ function ttsUrlFor(voice, text) {
     w.querySelector(".up-meter em").style.left = Math.round(trigPct) + "%";
     w.querySelector(".up-sub").innerHTML = s.used == null ? "todavia sin datos de uso" : "<b>" + niceTok(s.used) + "</b> de " + niceTok(s.limit) + " tok" + (trig ? "  ·  compacta a " + niceTok(trig) + " (" + Math.round(trigPct) + "%)" + (ct.estimated ? " (estimado)" : "") : "");
     const mu = s.last || {};
-    const rate = tpsOf(mu);
+    const rate = stepRate(mu);
     const cachePct = mu.cacheReadTokens != null && (mu.inputTokens || 0) + mu.cacheReadTokens > 0 ? Math.round(mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0) * 100) + "%" : "--";
-    w.querySelector(".up-rows").innerHTML = popRow("ultimo paso", "entrada " + niceTok(mu.inputTokens) + "  ·  salida " + niceTok(mu.outputTokens) + (mu.elapsedMs != null ? "  ·  " + (mu.elapsedMs / 1e3).toFixed(1) + "s" : "") + (rate === null ? "" : "  ·  " + fmtTps(rate))) + popRow("cache", cachePct + (mu.timeToFirstTokenMs != null ? "  ·  1er token " + (mu.timeToFirstTokenMs / 1e3).toFixed(1) + "s" : "")) + popRow("sesion", "entrada " + niceTok(s.inTok) + "  ·  salida " + niceTok(s.outTok)) + popRow("margen", s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + " tok antes de compactar" + (ct.estimated ? " (estimado)" : "") : "--");
+    w.querySelector(".up-rows").innerHTML = popRow("ultimo paso", "entrada " + niceTok(mu.inputTokens) + "  ·  salida " + niceTok(mu.outputTokens) + (mu.elapsedMs != null ? "  ·  " + (mu.elapsedMs / 1e3).toFixed(1) + "s" : "") + (rate === null ? "" : "  ·  " + (rate.kind === "generation" ? "generación " : "solicitud total ") + fmtTps(rate.value))) + popRow("cache", cachePct + (mu.timeToFirstTokenMs != null ? "  ·  1er token " + (mu.timeToFirstTokenMs / 1e3).toFixed(1) + "s" : "")) + popRow("sesion", "entrada " + niceTok(s.inTok) + "  ·  salida " + niceTok(s.outTok)) + popRow("margen", s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + " tok antes de compactar" + (ct.estimated ? " (estimado)" : "") : "--");
     const cbd = Array.isArray(s.contextBreakdown) ? s.contextBreakdown : null;
     if (cbd && cbd.length) {
       const tot = cbd.reduce((a, p) => a + (p.tokens || 0), 0) || 1;
@@ -2040,17 +2044,18 @@ function ttsUrlFor(voice, text) {
     if (u.autoCompactPct != null) s.autoCompactPct = u.autoCompactPct;
     renderUsage();
   }
-  function setMsgUsage(u) {
+  function setMsgUsage(update) {
+    const u = update?.usage;
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, lastSet: null, lastMsg: null });
     dbg.setMsgUsage++;
     dbg.lastMsg = u;
     resetUsageForSession();
     const s = state.usage || (state.usage = {});
-    if (u) s.last = u;
-    speedExact(u);
+    if (u && !state.replaying && !state.hubReplay && (!state.busy && !state.speed.note || update?.messageId && state.speed.messages.has(update.messageId))) s.last = u;
+    speedExact(update);
     renderUsage();
   }
-  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null };
+  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null, seen: /* @__PURE__ */ new Set(), messages: /* @__PURE__ */ new Set(), stepId: null, runId: null, finished: false, note: null };
   function speedSpan(id, after) {
     let el = $("#" + id);
     if (el) return el;
@@ -2075,7 +2080,7 @@ function ttsUrlFor(voice, text) {
   }
   function speedLabel() {
     const s = state.speed;
-    if (s.exact !== null) return fmtTps(s.exact);
+    if (s.exact !== null) return "generación " + fmtTps(s.exact);
     const now = performance.now();
     const recent = s.ticks.filter((t) => now - t.at <= 4e3);
     if (recent.length < 2) return "";
@@ -2113,6 +2118,12 @@ function ttsUrlFor(voice, text) {
     s.exact = null;
     s.runOut = 0;
     s.runGen = 0;
+    s.runId = state.runId || null;
+    s.finished = false;
+    s.seen.clear();
+    s.messages.clear();
+    s.stepId = null;
+    s.note = null;
     clearInterval(s.timer);
     s.timer = setInterval(speedPaint, 300);
     speedPaint();
@@ -2123,6 +2134,14 @@ function ttsUrlFor(voice, text) {
     s.timer = 0;
     s.ticks = [];
     s.exact = null;
+    s.finished = true;
+    s.runId = null;
+    s.seen.clear();
+    s.messages.clear();
+    s.stepId = null;
+    s.note = null;
+    s.runOut = 0;
+    s.runGen = 0;
     const el = $("#runbar-tps");
     if (el) {
       el.textContent = "";
@@ -2134,37 +2153,74 @@ function ttsUrlFor(voice, text) {
       avg.hidden = true;
     }
   }
-  function speedChunk(text) {
+  function speedStep(messageId) {
+    const s = state.speed;
+    if (!messageId || !state.busy || state.replaying || state.hubReplay || s.finished) return;
+    s.messages.add(messageId);
+    if (s.stepId === messageId) return;
+    s.stepId = messageId;
+    s.exact = null;
+    s.ticks = [];
+    speedPaint();
+  }
+  function speedChunk(text, messageId) {
     if (!text) return;
     const s = state.speed;
+    if (!state.busy || state.replaying || state.hubReplay || s.finished) return;
+    speedStep(messageId);
     s.exact = null;
     const prev = s.ticks.length ? s.ticks[s.ticks.length - 1].chars : 0;
     s.ticks.push({ at: performance.now(), chars: prev + text.length });
     if (s.ticks.length > 240) s.ticks.splice(0, s.ticks.length - 240);
   }
-  function speedExact(u) {
-    const tps = tpsOf(u);
-    if (tps === null) return;
-    const genMs = Math.max(250, s0(u.elapsedMs) - s0(u.timeToFirstTokenMs));
+  function speedExact(update) {
     const s = state.speed;
-    s.exact = tps;
-    s.runOut += s0(u.outputTokens);
-    s.runGen += genMs;
-    speedPaint();
+    const mid = update?.messageId;
+    if (state.replaying || state.hubReplay || !mid || !update?.usage) return;
+    if (s.finished) {
+      if (!s.note || !s.messages.has(mid)) return;
+    } else if (!state.busy) return;
+    if (s.runId && state.runId && s.runId !== state.runId) return;
+    if (!s.messages.has(mid)) return;
+    if (s.seen.has(mid)) return;
+    s.seen.add(mid);
+    const rate = stepRate(update.usage);
+    if (!rate || rate.kind !== "generation") return;
+    s.exact = rate.value;
+    s.runOut += update.usage.outputTokens;
+    s.runGen += rate.durationMs;
+    if (s.finished) {
+      const sum = speedSummary();
+      s.note.innerHTML = speedNoteHtml(s.noteMs, sum);
+      const bar = $("#runbar");
+      if (bar && !bar.hidden && bar.classList.contains("done")) {
+        const el = speedEl();
+        if (el) {
+          el.textContent = "generación " + fmtTps(sum.last);
+          el.hidden = false;
+        }
+        const avg = speedAvgEl();
+        if (avg) {
+          avg.textContent = "prom generación " + fmtTps(sum.avg) + " · " + sum.out + " tok";
+          avg.hidden = false;
+        }
+      }
+    } else speedPaint();
   }
   function speedFinish() {
     const s = state.speed;
     clearInterval(s.timer);
     s.timer = 0;
+    s.finished = true;
     const sum = speedSummary();
     const el = speedEl();
     if (el) {
-      el.textContent = sum.last === null ? "" : fmtTps(sum.last);
+      el.textContent = sum.last === null ? "" : "generación " + fmtTps(sum.last);
       el.hidden = sum.last === null;
     }
     const avgEl = speedAvgEl();
     if (avgEl) {
-      avgEl.textContent = sum.avg === null ? "" : "prom " + fmtTps(sum.avg) + " · " + sum.out + " tok";
+      avgEl.textContent = sum.avg === null ? "" : "prom generación " + fmtTps(sum.avg) + " · " + sum.out + " tok";
       avgEl.hidden = sum.avg === null;
     }
     return sum;
@@ -2488,14 +2544,18 @@ function ttsUrlFor(voice, text) {
       bar.classList.remove("done");
     }, 6e3);
   }
+  function speedNoteHtml(ms, sum) {
+    const parts = ["fin del turno · " + fmtElapsed(ms)];
+    if (sum.last !== null) parts.push("generación " + fmtTps(sum.last));
+    if (sum.avg !== null) parts.push("prom generación " + fmtTps(sum.avg) + " · " + sum.out + " tok");
+    return esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + "</span>").join("");
+  }
   function turnEndNote(ms) {
     const el = document.createElement("div");
     el.className = "turn-end";
-    const sum = speedSummary();
-    const parts = ["fin del turno · " + fmtElapsed(ms)];
-    if (sum.last !== null) parts.push(fmtTps(sum.last));
-    if (sum.avg !== null) parts.push("prom " + fmtTps(sum.avg) + " · " + sum.out + " tok");
-    el.innerHTML = esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + "</span>").join("");
+    state.speed.note = el;
+    state.speed.noteMs = ms;
+    el.innerHTML = speedNoteHtml(ms, speedSummary());
     msgWrap().appendChild(el);
     document.querySelectorAll("#msg-inner .msg-regen").forEach((b) => b.remove());
     const ultimaA = [...document.querySelectorAll("#msg-inner > .msg-a")].filter((x) => !x.querySelector(".thought")).pop();
@@ -3232,7 +3292,9 @@ ${a.text}
       state.hubCursor = rewound ? res.cursor : Math.max(state.hubCursor || 0, res.cursor);
       if (res && typeof res.watcherCount === "number") state.hubWatchers = res.watcherCount;
       WATCH_DBG.hubWatches++;
+      const liveRidBeforeReplay = state.runId;
       const gap = hubApplyReplay(res && res.replay);
+      if (liveRunRevision !== revisionAtRequest) state.runId = liveRidBeforeReplay;
       if (res && res.activeRunId !== void 0 && liveRunRevision === revisionAtRequest) {
         applyActiveRunId(res.activeRunId || null);
       }
@@ -3374,7 +3436,9 @@ ${a.text}
       return state.runId;
     }
     if (rid) HUB.orphanMissAt = 0;
+    if (rid && prev && rid !== prev && state.busy) speedStart();
     state.runId = rid || null;
+    if (rid && state.busy) state.speed.runId = rid;
     if (rid) {
       if (!prev) WATCH_DBG.hubRunStarts++;
       if (!state.busy) {
@@ -4924,7 +4988,7 @@ ${a.text}
     METRICS.composerMs = 0;
     METRICS.maxComposerMs = 0;
   }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
-  if (CFG.host === "mock") window.__aegisWeb.testUi = { update: applyUpdate, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => state.steers.set(mid, { el, text: "", atts: [] }), watchRevision: () => liveRunRevision };
+  if (CFG.host === "mock") window.__aegisWeb.testUi = { update: applyUpdate, usage: onAegisUpdate, rate: stepRate, pop: openUsagePop, busy: setBusy, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => state.steers.set(mid, { el, text: "", atts: [] }), watchRevision: () => liveRunRevision };
   wire();
   rpc.connect();
   report("boot", "app cargada (v6.4+hub+detach+wd+sc)");

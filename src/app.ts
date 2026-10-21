@@ -1,6 +1,6 @@
 // aegis-web · cliente de chat ACP v3 (sin dependencias): sesiones, streaming,
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
-import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, tpsOf, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
+import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, stepRate, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
 import { toolIconSvg } from './app/icons';
 import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
@@ -282,21 +282,25 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
           chunksTurn++;
           textoDelTurno += u.content.text;
           streamAppend(u.messageId || 'a', u.content.text, false, (u._meta && u._meta.aegis) ? u._meta.aegis.agentVisible !== true : state.hideTail);
-          speedChunk(u.content.text);
+          speedChunk(u.content.text, u.messageId);
         }
         break;
       case 'agent_thought_chunk':
-        if (u.content && u.content.type === 'text') streamAppend(thoughtKeyFor(u), u.content.text, true, (u._meta && u._meta.aegis) ? u._meta.aegis.agentVisible !== true : state.hideTail);
+        if (u.content && u.content.type === 'text') {
+          speedStep(u.messageId);
+          streamAppend(thoughtKeyFor(u), u.content.text, true, (u._meta && u._meta.aegis) ? u._meta.aegis.agentVisible !== true : state.hideTail);
+        }
         break;
       case 'tool_call':
       case 'tool_call_update':
+        speedStep(u.messageId);
         toolUpsert(u);
         break;
       case 'usage_update':
         setUsage(u);
         break;
       case 'message_usage':
-        setMsgUsage(u.usage);
+        setMsgUsage(u);
         break;
       case 'available_commands_update':
         if (Array.isArray(u.availableCommands)) {
@@ -336,7 +340,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (g && g.activeRunId !== undefined && (!params.sessionId || params.sessionId === cur.id)) applyActiveRunId(g.activeRunId || null);
     if (params.sessionId !== cur.id) return; // el resto de las notificaciones sí son de esta sesión
     if (u.sessionUpdate === 'usage_update') setUsage(u);
-    if (u.sessionUpdate === 'message_usage') setMsgUsage(u.usage);
+    if (u.sessionUpdate === 'message_usage') setMsgUsage(u);
     if (u.sessionUpdate === 'status_message' && u.status && u.status.type === 'progress' && u.status.message) {
       setPill(u.status.message);
     }
@@ -1629,13 +1633,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     w.querySelector('.up-sub').innerHTML = s.used == null ? 'todavia sin datos de uso' :
       '<b>' + niceTok(s.used) + '</b> de ' + niceTok(s.limit) + ' tok' + (trig ? '  ·  compacta a ' + niceTok(trig) + ' (' + Math.round(trigPct) + '%)' + (ct.estimated ? ' (estimado)' : '') : '');
     const mu = s.last || {};
-    const rate = tpsOf(mu);
+    const rate = stepRate(mu);
     const cachePct = mu.cacheReadTokens != null && (mu.inputTokens || 0) + mu.cacheReadTokens > 0
       ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--';
     w.querySelector('.up-rows').innerHTML =
       popRow('ultimo paso', 'entrada ' + niceTok(mu.inputTokens) + '  ·  salida ' + niceTok(mu.outputTokens) +
         (mu.elapsedMs != null ? '  ·  ' + (mu.elapsedMs / 1000).toFixed(1) + 's' : '') +
-        (rate === null ? '' : '  ·  ' + fmtTps(rate))) +
+        (rate === null ? '' : '  ·  ' + (rate.kind === 'generation' ? 'generación ' : 'solicitud total ') + fmtTps(rate.value))) +
       popRow('cache', cachePct + (mu.timeToFirstTokenMs != null ? '  ·  1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')) +
       popRow('sesion', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok)) +
       popRow('margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok antes de compactar' + (ct.estimated ? ' (estimado)' : '') : '--');
@@ -1768,21 +1772,22 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     renderUsage();
   }
   // message_usage (aegis-sdk-types): uso POR PASO, con cache y tiempos. El cliente lo ignoraba.
-  function setMsgUsage(u) {
+  function setMsgUsage(update) {
+    const u = update?.usage;
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, lastSet: null, lastMsg: null });
     dbg.setMsgUsage++; dbg.lastMsg = u;
     resetUsageForSession();
     const s = state.usage || (state.usage = {});
-    if (u) s.last = u;
-    speedExact(u);
+    if (u && !state.replaying && !state.hubReplay &&
+        (!state.busy && !state.speed.note || (update?.messageId && state.speed.messages.has(update.messageId)))) s.last = u;
+    speedExact(update);
     renderUsage();
   }
 
   // ---------- velocimetro de tokens/segundo ----------
-  // Mientras llega el stream se estima con los caracteres (≈4 chars por token) en una
-  // ventana movil de 4 s; cuando llega el message_usage del paso se reemplaza por el
-  // numero exacto (outputTokens / tiempo de generacion, descontando el primer token).
-  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null };
+  // Stream: estimado por caracteres; message_usage: exacto sólo con generationMs > 0.
+  // Sin esa medición, el popover muestra exclusivamente throughput de solicitud.
+  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, exact: null, seen: new Set<string>(), messages: new Set<string>(), stepId: null, runId: null, finished: false, note: null };
   // El estilo vive en app.css (.runbar-tps / .runbar-avg), no inline: asi el numero se ve
   // como metrica propia y no como parte de la frase del runbar.
   function speedSpan(id, after) {
@@ -1809,7 +1814,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
   function speedLabel() {
     const s = state.speed;
-    if (s.exact !== null) return fmtTps(s.exact);
+    if (s.exact !== null) return 'generación ' + fmtTps(s.exact);
     const now = performance.now();
     const recent = s.ticks.filter((t) => now - t.at <= 4000);
     if (recent.length < 2) return '';
@@ -1843,6 +1848,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   function speedStart() {
     const s = state.speed;
     s.ticks = []; s.exact = null; s.runOut = 0; s.runGen = 0;
+    s.runId = state.runId || null; s.finished = false; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null;
     clearInterval(s.timer);
     s.timer = setInterval(speedPaint, 300);
     speedPaint();
@@ -1850,37 +1856,71 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   function speedReset() {
     const s = state.speed;
     clearInterval(s.timer); s.timer = 0;
-    s.ticks = []; s.exact = null;
+    s.ticks = []; s.exact = null; s.finished = true; s.runId = null; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null;
+    s.runOut = 0; s.runGen = 0;
     const el = $('#runbar-tps'); if (el) { el.textContent = ''; el.hidden = true; }
     const avg = $('#runbar-avg'); if (avg) { avg.textContent = ''; avg.hidden = true; }
   }
-  function speedChunk(text) {
+  function speedStep(messageId) {
+    const s = state.speed;
+    if (!messageId || !state.busy || state.replaying || state.hubReplay || s.finished) return;
+    s.messages.add(messageId);
+    if (s.stepId === messageId) return;
+    s.stepId = messageId;
+    s.exact = null; s.ticks = [];
+    speedPaint(); // No mostrar el exacto del paso anterior durante un tool/think nuevo.
+  }
+  function speedChunk(text, messageId?) {
     if (!text) return;
     const s = state.speed;
+    if (!state.busy || state.replaying || state.hubReplay || s.finished) return;
+    speedStep(messageId);
     s.exact = null;
     const prev = s.ticks.length ? s.ticks[s.ticks.length - 1].chars : 0;
     s.ticks.push({ at: performance.now(), chars: prev + text.length });
     if (s.ticks.length > 240) s.ticks.splice(0, s.ticks.length - 240);
   }
-  function speedExact(u) {
-    const tps = tpsOf(u);
-    if (tps === null) return;
-    const genMs = Math.max(250, s0(u.elapsedMs) - s0(u.timeToFirstTokenMs));
+  function speedExact(update) {
     const s = state.speed;
-    s.exact = tps;
-    s.runOut += s0(u.outputTokens);
-    s.runGen += genMs;
-    speedPaint();
+    const mid = update?.messageId;
+    // El load y el replay del hub incluyen message_usage antiguos. Nunca sumarlos
+    // al run vivo, ni aceptar uso sin messageId (no se puede deduplicar).
+    if (state.replaying || state.hubReplay || !mid || !update?.usage) return;
+    if (s.finished) {
+      // El terminal puede adelantarse al último usage: sólo admitir un mensaje
+      // cuyo chunk ya pertenecía a ESTE run. No contaminar el siguiente turno.
+      if (!s.note || !s.messages.has(mid)) return;
+    } else if (!state.busy) return;
+    if (s.runId && state.runId && s.runId !== state.runId) return;
+    if (!s.messages.has(mid)) return; // prueba de pertenencia al run (no basta state.busy)
+    if (s.seen.has(mid)) return;
+    s.seen.add(mid);
+    const rate = stepRate(update.usage);
+    if (!rate || rate.kind !== 'generation') return;
+    s.exact = rate.value;
+    s.runOut += update.usage.outputTokens;
+    s.runGen += rate.durationMs;
+    if (s.finished) {
+      const sum = speedSummary();
+      s.note.innerHTML = speedNoteHtml(s.noteMs, sum);
+      const bar = $('#runbar');
+      if (bar && !bar.hidden && bar.classList.contains('done')) {
+        const el = speedEl();
+        if (el) { el.textContent = 'generación ' + fmtTps(sum.last); el.hidden = false; }
+        const avg = speedAvgEl();
+        if (avg) { avg.textContent = 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok'; avg.hidden = false; }
+      }
+    } else speedPaint();
   }
   function speedFinish() {
     const s = state.speed;
-    clearInterval(s.timer); s.timer = 0;
+    clearInterval(s.timer); s.timer = 0; s.finished = true;
     const sum = speedSummary();
     const el = speedEl();
-    if (el) { el.textContent = sum.last === null ? '' : fmtTps(sum.last); el.hidden = sum.last === null; }
+    if (el) { el.textContent = sum.last === null ? '' : 'generación ' + fmtTps(sum.last); el.hidden = sum.last === null; }
     const avgEl = speedAvgEl();
     if (avgEl) {
-      avgEl.textContent = sum.avg === null ? '' : 'prom ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok';
+      avgEl.textContent = sum.avg === null ? '' : 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok';
       avgEl.hidden = sum.avg === null;
     }
     return sum;
@@ -2216,15 +2256,19 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
   // Marca del fin del turno en la conversación: queda donde terminó el streaming,
   // así se ve aunque la barra de arriba ya se haya ido.
+  function speedNoteHtml(ms, sum) {
+    const parts = ['fin del turno · ' + fmtElapsed(ms)];
+    if (sum.last !== null) parts.push('generación ' + fmtTps(sum.last));
+    if (sum.avg !== null) parts.push('prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok');
+    return esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + '</span>').join('');
+  }
   function turnEndNote(ms) {
     const el = document.createElement('div');
     el.className = 'turn-end';
-    // El ritmo se escribe aca: el runbar se esconde a los pocos segundos y el numero se perdia.
-    const sum = speedSummary();
-    const parts = ['fin del turno · ' + fmtElapsed(ms)];
-    if (sum.last !== null) parts.push(fmtTps(sum.last));
-    if (sum.avg !== null) parts.push('prom ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok');
-    el.innerHTML = esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + '</span>').join('');
+    // El último usage puede llegar DESPUÉS del marcador de fin: conservar su nodo
+    // hasta que arranque otro turno para corregir el resumen sin inventar un ritmo.
+    state.speed.note = el; state.speed.noteMs = ms;
+    el.innerHTML = speedNoteHtml(ms, speedSummary());
     msgWrap().appendChild(el);
     // El boton "Regenerar" vive en la ultima respuesta: se mueve con cada turno.
     document.querySelectorAll('#msg-inner .msg-regen').forEach((b) => b.remove());
@@ -2953,7 +2997,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       // El hub no manda watcherCount en la respuesta de watch: se lee de session/info.
       if (res && typeof res.watcherCount === 'number') state.hubWatchers = res.watcherCount;
       WATCH_DBG.hubWatches++;
+      const liveRidBeforeReplay = state.runId;
       const gap = hubApplyReplay(res && res.replay);
+      // El replay no puede rebobinar un run avisado en vivo mientras watch esperaba.
+      if (liveRunRevision !== revisionAtRequest) state.runId = liveRidBeforeReplay;
       // Un cursor que RETROCEDE significa que el hub soltó el ring de la sesión (TTL de
       // inactividad) y volvió a empezar: lo tratamos como replay_gap y recargamos todo.
       // El estado de watch se aplica sólo si no llegó un aviso vivo mientras
@@ -3087,7 +3134,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     // Replay: sólo se registra el estado; decide la respuesta de watch (ver watchSession).
     if (state.hubReplay) { state.runId = rid || null; return state.runId; }
     if (rid) HUB.orphanMissAt = 0;
+    if (rid && prev && rid !== prev && state.busy) speedStart(); // otro run: no heredar muestras
     state.runId = rid || null;
+    if (rid && state.busy) state.speed.runId = rid;
     if (rid) {
       if (!prev) WATCH_DBG.hubRunStarts++;
       // Run vivo que no arrancamos nosotros (otra pestaña, el celular, un reload): se adopta
@@ -4578,7 +4627,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     draft: { save: saveDraft, load: loadDraft, key: draftKey },
     engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
 
-  if (CFG.host === 'mock') (window as any).__aegisWeb.testUi = { update: applyUpdate, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => state.steers.set(mid, { el, text: '', atts: [] }), watchRevision: () => liveRunRevision };
+  if (CFG.host === 'mock') (window as any).__aegisWeb.testUi = { update: applyUpdate, usage: onAegisUpdate, rate: stepRate, pop: openUsagePop, busy: setBusy, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => state.steers.set(mid, { el, text: '', atts: [] }), watchRevision: () => liveRunRevision };
 
   wire();
   rpc.connect();

@@ -5,6 +5,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium, type WebSocketRoute } from 'playwright';
 import { build } from 'esbuild';
+// Fórmulas probadas contra el bundle del cliente a través del hook mock.
+
+const eq = (actual: unknown, expected: unknown, message: string) => {
+  if (actual !== expected) throw new Error(message + ': ' + String(actual) + ' ≠ ' + String(expected));
+};
 
 // Ejecutar desde la raíz de web; así el bundle temporal puede vivir fuera del repo.
 const root = resolve(process.cwd()) + '/';
@@ -58,6 +63,27 @@ try {
   });
   await page.goto('http://client-regressions.invalid/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => (window as any).__aegisWeb?.state.sessions.length === 2);
+  const formulas = await page.evaluate(() => {
+    const r = (window as any).__aegisWeb.testUi.rate;
+    return [
+      r({ outputTokens: 100, elapsedMs: 2100, generationMs: 2000, timeToFirstTokenMs: 2100 }),
+      r({ outputTokens: 100, elapsedMs: 2000 }),
+      r({ outputTokens: 10, elapsedMs: 100, timeToFirstTokenMs: 100 }),
+      r({ outputTokens: 10, elapsedMs: 100, generationMs: 50, timeToFirstTokenMs: -1 }),
+      r({ outputTokens: 10, elapsedMs: 100, generationMs: 0, timeToFirstTokenMs: 0 }),
+      r({ outputTokens: 10, elapsedMs: 0 }),
+      r({ outputTokens: 10, generationMs: 100 }),
+      r({ outputTokens: 10, elapsedMs: 100, generationMs: Number.NaN }),
+    ];
+  });
+  eq(formulas[0]?.value, 50, 'generationMs prima incluso si TTFT=elapsed'); eq(formulas[0]?.kind, 'generation', 'generationMs válido');
+  eq(formulas[1]?.value, 50, 'sin generationMs tasa de solicitud'); eq(formulas[1]?.kind, 'request', 'histórico: solicitud total');
+  eq(formulas[2]?.value, 100, 'TTFT igual a total no usa 250ms'); eq(formulas[2]?.kind, 'request', 'TTFT igual a total no es generación');
+  eq(formulas[3]?.value, 200, 'generationMs independiente de TTFT negativo'); eq(formulas[3]?.kind, 'generation', 'generationMs válido');
+  eq(formulas[4]?.kind, 'request', 'generationMs=0 cae a solicitud'); eq(formulas[5], null, 'elapsed 0 sin generationMs');
+  eq(formulas[6]?.kind, 'generation', 'generationMs sin elapsed todavía válido');
+  eq(formulas[7]?.kind, 'request', 'generationMs NaN cae a solicitud');
+  console.log('PASS generationMs exacto vs solicitud histórica, sin restar TTFT');
   await page.locator(`.sb-row[data-id="${A}"] .sb-item`).click();
   await page.waitForFunction((id) => (window as any).__aegisWeb?.state.current?.id === id && (window as any).__aegisWeb?.state.hubWatchSid === id, A);
   const input = page.locator('#input');
@@ -116,6 +142,62 @@ try {
   }, A);
   if (!uiState.textOk || !uiState.imageOk || !uiState.steerOk || uiState.users !== 3 || uiState.identified !== 3) throw new Error('burbuja sin rebobinar inmediato: ' + JSON.stringify(uiState));
   console.log('PASS rebobinar inmediato de texto, imagen y steer sin recargar');
+  const rates = await page.evaluate((sid) => {
+    const app = (window as any).__aegisWeb;
+    const ui = app.testUi;
+    const notify = (id: string, output: number, gen?: number) => ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: id, usage: { outputTokens: output, elapsedMs: 2100, timeToFirstTokenMs: 2100, ...(gen === undefined ? {} : { generationMs: gen }) } } });
+    const chunk = (id: string) => ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: id, content: { type: 'text', text: 'prueba' } } });
+    ui.run('run-usage');
+    // Una notificación antigua justo después del arranque y un usage sin mensaje no pertenecen al run.
+    notify('old', 999);
+    ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', usage: { outputTokens: 999, elapsedMs: 2100, timeToFirstTokenMs: 100 } } });
+    chunk('step1');
+    app.state.hubReplay = true; notify('step1', 20); app.state.hubReplay = false;
+    notify('step1', 20, 2000); notify('step1', 20, 2000); // replay duplicado después del vivo
+    chunk('step2'); // nuevo paso: jamás debe mostrar la etiqueta exacta de step1
+    const stale = document.querySelector('#runbar-tps')?.textContent || '';
+    notify('step2', 20); // TTFT=elapsed; solicitud total: popover, no generación
+    chunk('step3'); // usage genuino que llega después del terminal
+    const live = app.speedSummary();
+    const pop = (() => { ui.pop(); return document.querySelector('#usage-pop')?.textContent || ''; })();
+    ui.run(null);
+    const beforeLate = app.speedSummary();
+    notify('old', 999); // jamás hubo chunk de old en ESTE run
+    notify('step3', 40, 2000); // chunk de step3 sí pertenece a este turno
+    notify('step3', 40, 2000); notify('step1', 20, 2000); // duplicados luego del terminal
+    const afterLate = app.speedSummary();
+    const note = document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '';
+    return { live, beforeLate, afterLate, pop, note, stale };
+  }, A);
+  eq(rates.stale, '', 'el paso nuevo limpia el exacto previo');
+  eq(rates.live.out, 20, 'uso único por messageId/run');
+  eq(rates.live.avg, 10, 'promedio solo generación');
+  eq(rates.beforeLate.out, 20, 'fin de turno mantiene generación');
+  eq(rates.afterLate.out, 60, 'usage tardío del run suma una vez; ajenos ignorados');
+  eq(rates.afterLate.avg, 15, 'promedio ponderado actualizado tras terminal');
+  if (!rates.pop.includes('solicitud total 9.5 tok/s') || !rates.note.includes('prom generación 15.0 tok/s')) throw new Error('etiquetas de velocidad erróneas: ' + JSON.stringify(rates));
+  console.log('PASS uso ordenado/deduplicado por mensaje y run, replay y etiquetas de solicitud/generación');
+  const newRun = await page.evaluate((sid) => {
+    const app = (window as any).__aegisWeb, ui = app.testUi;
+    ui.run('run-new');
+    const chunk = (id: string) => ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: id, content: { type: 'text', text: 'prueba' } } });
+    const usage = (id: string, gen: number) => ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: id, usage: { outputTokens: 30, elapsedMs: 3000, timeToFirstTokenMs: 3000, generationMs: gen } } });
+    usage('step3', 1000); // pertenece al run anterior, aunque haya llegado tarde
+    chunk('step-new'); usage('step-new', 1000);
+    const exact = document.querySelector('#runbar-tps')?.textContent || '';
+    // Paso tool-only: no tener etiqueta exacta vieja hasta que haya contenido propio.
+    ui.update({ sessionId: sid, update: { sessionUpdate: 'tool_call', messageId: 'tool-new', toolCallId: 'tool-new', title: 'tool mock', status: 'in_progress' } });
+    const afterTool = document.querySelector('#runbar-tps')?.textContent || '';
+    usage('tool-new', 0); // sin contenido observado: nunca incluir en promedio de generación
+    const summary = app.speedSummary();
+    ui.run(null);
+    return { exact, afterTool, summary };
+  }, A);
+  eq(newRun.exact, 'generación 30.0 tok/s', 'run nuevo usa generationMs aun si TTFT=elapsed');
+  eq(newRun.afterTool, '', 'tool-only nuevo paso no hereda tasa exacta anterior');
+  eq(newRun.summary.out, 30, 'run nuevo no hereda tokens ni acepta usage anterior/tool-only');
+  eq(newRun.summary.avg, 30, 'promedio sólo generación observada del run nuevo');
+  console.log('PASS cambio de run y paso tool-only sin ritmo de generación inventado');
   await page.evaluate(() => {
     const app = (window as any).__aegisWeb;
     app.testUi.run('mock-run');

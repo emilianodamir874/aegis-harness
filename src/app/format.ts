@@ -31,13 +31,22 @@ export function s0(value: unknown): number {
   return typeof value === 'number' && isFinite(value) ? value : 0;
 }
 
-// Ritmo exacto de un paso: salida sobre el tiempo de generacion (sin el primer token, que es
-// espera del prompt). Lo usan el velocimetro y el popover de contexto, para que digan lo mismo.
-export function tpsOf(u: { outputTokens?: number; elapsedMs?: number; timeToFirstTokenMs?: number } | null | undefined): number | null {
-  const outTok = s0(u && u.outputTokens);
-  const elapsed = s0(u && u.elapsedMs);
-  if (outTok <= 0 || elapsed <= 0) return null;
-  return outTok / (Math.max(250, elapsed - s0(u!.timeToFirstTokenMs)) / 1000);
+// generationMs mide el primer al último contenido observado (sin depender de TTFT).
+// Un registro histórico sin esa medición sólo permite throughput de solicitud total.
+// Nunca inferir generación restando TTFT: retries y pasos tool-only lo invalidan.
+export type StepRate = { value: number; kind: 'generation' | 'request'; durationMs: number };
+export function stepRate(u: { outputTokens?: number; elapsedMs?: number; generationMs?: number | null; timeToFirstTokenMs?: number | null } | null | undefined): StepRate | null {
+  const output = u?.outputTokens;
+  if (typeof output !== 'number' || !Number.isFinite(output) || output <= 0) return null;
+  const generation = u?.generationMs;
+  const hasGeneration = typeof generation === 'number' && Number.isFinite(generation) && generation > 0;
+  const durationMs = hasGeneration ? generation : u?.elapsedMs;
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs <= 0) return null;
+  return { value: output / (durationMs / 1000), kind: hasGeneration ? 'generation' : 'request', durationMs };
+}
+export function tpsOf(u: Parameters<typeof stepRate>[0]): number | null {
+  const rate = stepRate(u);
+  return rate?.kind === 'generation' ? rate.value : null;
 }
 
 export const COMPACT_RATIO = 0.8; // AEGIS_AUTO_COMPACT_THRESHOLD por defecto: compacta a 80% del limite
