@@ -1826,10 +1826,18 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const tps = chars / 4 / seconds;
     return '~' + fmtTps(tps);
   }
+  const compactRunBar = () => window.matchMedia('(max-width: 560px)').matches;
+  function speedBadge(el, label) {
+    if (!el) return;
+    el.dataset.fullLabel = label;
+    el.textContent = compactRunBar() ? label.replace(/^generación /, '') : label;
+    el.title = label ? (label.startsWith('~') ? 'Ritmo estimado de generación: ' + label : 'Ritmo exacto de ' + label) : '';
+    el.hidden = !label;
+  }
   function speedPaint() {
     const el = speedEl();
     const label = speedLabel();
-    if (el) { el.textContent = label; el.hidden = !label; }
+    speedBadge(el, label);
     const avgEl = speedAvgEl();
     if (!avgEl || state.speed.exact !== null) return;
     // Mientras corre solo se muestra el paso actual; el promedio llega al cerrar el turno.
@@ -1858,7 +1866,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     clearInterval(s.timer); s.timer = 0;
     s.ticks = []; s.exact = null; s.finished = true; s.runId = null; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null;
     s.runOut = 0; s.runGen = 0;
-    const el = $('#runbar-tps'); if (el) { el.textContent = ''; el.hidden = true; }
+    speedBadge($('#runbar-tps'), '');
     const avg = $('#runbar-avg'); if (avg) { avg.textContent = ''; avg.hidden = true; }
   }
   function speedStep(messageId) {
@@ -1906,7 +1914,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       const bar = $('#runbar');
       if (bar && !bar.hidden && bar.classList.contains('done')) {
         const el = speedEl();
-        if (el) { el.textContent = 'generación ' + fmtTps(sum.last); el.hidden = false; }
+        speedBadge(el, 'generación ' + fmtTps(sum.last));
         const avg = speedAvgEl();
         if (avg) { avg.textContent = 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok'; avg.hidden = false; }
       }
@@ -1917,7 +1925,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     clearInterval(s.timer); s.timer = 0; s.finished = true;
     const sum = speedSummary();
     const el = speedEl();
-    if (el) { el.textContent = sum.last === null ? '' : 'generación ' + fmtTps(sum.last); el.hidden = sum.last === null; }
+    speedBadge(el, sum.last === null ? '' : 'generación ' + fmtTps(sum.last));
     const avgEl = speedAvgEl();
     if (avgEl) {
       avgEl.textContent = sum.avg === null ? '' : 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok';
@@ -2210,7 +2218,48 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const s = Math.max(0, ms || 0) / 1000;
     return s < 60 ? s.toFixed(1) + ' s' : Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
   };
+  // Mantener una etiqueta corta en teléfonos, sin perder el diagnóstico completo.
+  function setRunBarText(full) {
+    const el = $('#runbar-text');
+    const bar = $('#runbar');
+    if (!el || !bar) return;
+    bar.dataset.fullStatus = full;
+    renderRunBarText();
+  }
+  function renderRunBarText() {
+    const bar = $('#runbar'), el = $('#runbar-text');
+    if (!bar || !el) return;
+    const full = bar.dataset.fullStatus || '';
+    el.title = full;
+    el.textContent = compactRunBar()
+      ? (bar.classList.contains('done') ? 'Terminado' : bar.classList.contains('cancelling') ? 'Deteniendo…'
+        : full.startsWith('El corte no se confirmó') ? 'Sin confirmar' : 'Trabaja')
+      : full;
+  }
+  function paintQueuedRunBar() {
+    const bar = $('#runbar');
+    if (!bar) return;
+    let badge = $('#runbar-queued');
+    const count = state.queue.length + state.steers.size;
+    if (!badge && count) {
+      badge = document.createElement('span');
+      badge.id = 'runbar-queued'; badge.className = 'runbar-queued';
+      $('#runbar-text').after(badge);
+    }
+    if (badge) {
+      badge.hidden = !state.busy || !count || bar.hidden;
+      badge.textContent = compactRunBar() ? 'pendiente' : count === 1 ? '1 pendiente' : count + ' pendientes';
+      badge.title = count === 1 ? '1 indicación pendiente del agente' : count + ' indicaciones pendientes del agente';
+    }
+  }
+  window.addEventListener('resize', () => {
+    renderRunBarText();
+    paintQueuedRunBar();
+    const el = $('#runbar-tps');
+    if (el) speedBadge(el, el.dataset.fullLabel || '');
+  });
   const paintRunBar = () => {
+    paintQueuedRunBar();
     const t = $('#runbar-time');
     if (t && runStart) t.textContent = fmtElapsed(performance.now() - runStart);
   };
@@ -2220,7 +2269,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     clearTimeout(runDoneTimer);
     bar.hidden = false;
     bar.classList.remove('done', 'cancelling');
-    $('#runbar-text').textContent = text || 'Aegis está trabajando…';
+    setRunBarText(text || 'Aegis está trabajando…');
+    paintQueuedRunBar();
     $('#runbar-stop').hidden = false;
     $('#runbar-stop').disabled = false;
     if (!runStart) runStart = performance.now();
@@ -2237,6 +2287,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     runStart = 0;
     speedReset();
     if (bar) { bar.hidden = true; bar.classList.remove('done', 'cancelling'); }
+    paintQueuedRunBar();
     const stopBtn = $('#runbar-stop'); if (stopBtn) stopBtn.hidden = true;
   }
   function runBarDone(text, ms) {
@@ -2247,7 +2298,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     bar.hidden = false;
     bar.classList.remove('cancelling');
     bar.classList.add('done');
-    $('#runbar-text').textContent = text;
+    setRunBarText(text);
+    paintQueuedRunBar();
     $('#runbar-time').textContent = fmtElapsed(ms);
     speedFinish();
     $('#runbar-stop').hidden = true;
@@ -2308,7 +2360,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const bar = $('#runbar');
     if (bar && !bar.hidden) {
       bar.classList.add('cancelling');
-      $('#runbar-text').textContent = 'Deteniendo…';
+      setRunBarText('Deteniendo…');
       $('#runbar-stop').disabled = true;
     }
     systemNote('Cancelando…');
@@ -2319,7 +2371,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       const b = $('#runbar');
       if (!state.busy || !b || b.hidden) return;
       b.classList.remove('cancelling');
-      $('#runbar-text').textContent = 'El corte no se confirmó — probá Detener otra vez';
+      setRunBarText('El corte no se confirmó — probá Detener otra vez');
       $('#runbar-stop').disabled = false;
     }, 12000);
   }
@@ -2768,6 +2820,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     }
     if (rid && (await steerTo(rid, text, attsText, el))) return;
     state.queue.push({ text, atts: attsText });
+    paintQueuedRunBar();
     setQueuedNote(el, 'se enviará al terminar el turno');
   }
 
@@ -2784,6 +2837,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       const mid = (res && res.messageId) || null;
       if (mid) {
         state.steers.set(mid, { el, text, atts: atts || [] });
+        paintQueuedRunBar();
         if (el && el.isConnected) el.dataset.mid = mid;
         trackPending(mid, text);
       }
@@ -2802,6 +2856,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const info = state.steers.get(messageId);
     if (!info) return;
     state.steers.delete(messageId);
+    paintQueuedRunBar();
     untrackPending(messageId);
     if (info.el) {
       info.el.classList.remove('queued');
@@ -2815,6 +2870,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (!rpc.ready) return; // sin backend: la cola espera a la reconexión
     const q = state.queue.slice();
     state.queue = [];
+    paintQueuedRunBar();
     const text = q.map((x) => x.text).filter(Boolean).join('\n\n');
     const atts = q.flatMap((x) => x.atts || []);
     if (!text && !atts.length) return;
@@ -2839,7 +2895,6 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   let watchKey = '';
   let watchSince = 0;
   const ADOPTED_NOTE = 'Turno en curso (lo arrancó otra conexión)';
-  const setRunBarText = (t) => { const b = $('#runbar-text'); if (b) b.textContent = t; };
 
   // ==================== v6.4: watch por sesión (fan-out del hub) ====================
   // El server v4 replica las notificaciones de una sesión a TODAS las conexiones
@@ -3194,7 +3249,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (runId) state.runId = runId;
     const text = note || ADOPTED_NOTE;
     if (!state.busy) setBusy(true, text, startedAt);
-    else setRunBarText(text); // no pisamos un "Deteniendo…" en curso
+    else if (!$('#runbar')?.classList.contains('cancelling')) setRunBarText(text); // no pisamos "Deteniendo…"
     startRunWatch();
   }
 
@@ -4627,7 +4682,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     draft: { save: saveDraft, load: loadDraft, key: draftKey },
     engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
 
-  if (CFG.host === 'mock') (window as any).__aegisWeb.testUi = { update: applyUpdate, usage: onAegisUpdate, rate: stepRate, pop: openUsagePop, busy: setBusy, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => state.steers.set(mid, { el, text: '', atts: [] }), watchRevision: () => liveRunRevision };
+  if (CFG.host === 'mock') (window as any).__aegisWeb.testUi = { update: applyUpdate, usage: onAegisUpdate, rate: stepRate, pop: openUsagePop, busy: setBusy, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => { state.steers.set(mid, { el, text: '', atts: [] }); paintQueuedRunBar(); }, watchRevision: () => liveRunRevision };
 
   wire();
   rpc.connect();

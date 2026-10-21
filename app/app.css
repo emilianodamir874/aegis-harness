@@ -1195,3 +1195,31 @@ body { background: var(--bg); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Mobile runbar: one compact row inside the composer. Keep the speed and the
+   stop action visible; the per-turn average remains in the end-of-turn note. */
+@media (max-width: 560px) {
+  .composer { padding-top: 4px; padding-bottom: 4px; }
+  .composer > .runbar {
+    box-sizing: border-box; width: 100%; min-width: 0;
+    margin: 0; padding: 0; gap: 5px;
+  }
+  .composer > .runbar .runbar-spin { width: 11px; height: 11px; }
+  .composer > .runbar .runbar-text { flex: 1 1 0; min-width: 0; }
+  .composer > .runbar .runbar-time { font-size: 11px; }
+  .composer > .runbar .runbar-tps { flex: 0 0 auto; }
+  .composer > .runbar .runbar-avg { display: none; }
+  .composer > .runbar .runbar-stop {
+    flex: 0 0 auto; min-width: 64px; min-height: 40px;
+    padding: 6px 8px;
+  }
+  .composer > .runbar .runbar-queued {
+    flex: 0 1 auto; min-width: 0; max-width: 72px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+}
+@media (max-width: 400px) {
+  /* When a pending indication competes for room, its badge replaces the status
+     text; the spinner still conveys activity and the full text remains in title. */
+  .composer > .runbar:has(.runbar-queued:not([hidden])) .runbar-text { display: none; }
+}

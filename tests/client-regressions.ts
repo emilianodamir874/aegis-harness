@@ -50,6 +50,7 @@ try {
         case 'initialize': reply({ protocolVersion: 1 }); break;
         case 'session/list': reply({ sessions, _meta: { runningSessionIds: running }, nextCursor: null }); break;
         case 'session/load': reply({ configOptions: [], modes: {} }); break;
+        case '_aegis/unstable/session/info': reply({ activeRunId: 'mock-mobile-run' }); break; // watchdog mock, sin red real
         case '_aegis/unstable/session/watch': reply({ cursor: 1, replay: [], activeRunId: null }); break;
         case '_aegis/unstable/session/unwatch': reply({}); break;
         case 'session/delete':
@@ -208,6 +209,62 @@ try {
   if (await page.locator('#runbar-stop').isVisible()) throw new Error('el botón Detener sigue visible tras recibir fin de run');
   console.log('PASS fin de run por hub libera la barra sin recargar');
 
+  await page.evaluate(() => { const pop = document.querySelector<HTMLElement>('#usage-pop'); if (pop) pop.hidden = true; });
+  // Tres teléfonos, sin session/prompt: el run y el usage son solamente mocks de UI.
+  // Se mide el layout real (CSS + JS), no solo el texto: la tasa y Detener deben caber.
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 780 });
+    const snapshot = await page.evaluate((sid) => {
+      const app = (window as any).__aegisWeb, ui = app.testUi;
+      const bar = document.querySelector<HTMLElement>('#runbar')!;
+      const text = document.querySelector<HTMLElement>('#runbar-text')!;
+      const queued = document.querySelector<HTMLElement>('#runbar-queued');
+      ui.busy(true, 'Turno en curso (lo arrancó otra conexión)');
+      ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: 'mobile-live-' + innerWidth, content: { type: 'text', text: 'prueba' } } });
+      const speed = app.state.speed;
+      app.speedStart(); // restablece estado; fijamos ticks de mock después
+      speed.ticks = [{ at: performance.now() - 900, chars: 0 }, { at: performance.now(), chars: 80 }];
+      // La función de pintado se ejecuta con el tick periódico; esperar afuera.
+      return { text: text.textContent, title: text.title, initialQueue: !!queued && !queued.hidden };
+    }, A);
+    await page.waitForFunction(() => /^~[\d.]+ tok\/s$/.test(document.querySelector('#runbar-tps')?.textContent || ''), null, { timeout: 2000 });
+    const live = await page.evaluate((sid) => {
+      const app = (window as any).__aegisWeb, ui = app.testUi;
+      const bar = document.querySelector<HTMLElement>('#runbar')!, badge = document.querySelector<HTMLElement>('#runbar-tps')!;
+      const queued = document.querySelector<HTMLElement>('#runbar-queued');
+      const stop = document.querySelector<HTMLElement>('#runbar-stop')!;
+      const rect = (el: HTMLElement) => el.getBoundingClientRect();
+      const text = document.querySelector<HTMLElement>('#runbar-text')!;
+      ui.seedSteer('mobile-steer-' + innerWidth, ui.addUser('indicación local mock', false, [], { queued: true }));
+      const pending = document.querySelector<HTMLElement>('#runbar-queued')!;
+      const withQueue = { text: pending.textContent, visible: !pending.hidden && getComputedStyle(pending).display !== 'none', bounds: rect(pending), title: pending.title };
+      ui.steerDelivered('mobile-steer-' + innerWidth);
+      const elapsed = document.querySelector<HTMLElement>('#runbar-time')!;
+      return { rate: badge.textContent, title: badge.title, bounds: rect(badge), bar: rect(bar), stop: rect(stop), statusRect: rect(text), statusClipped: text.scrollWidth > text.clientWidth + 1, elapsed: rect(elapsed), avgDisplay: getComputedStyle(document.querySelector('#runbar-avg')!).display, queue: withQueue, afterDelivery: pending.hidden, status: text.textContent };
+    }, A);
+    if (snapshot.text !== 'Trabaja' || !snapshot.title.includes('otra conexión') || snapshot.initialQueue) throw new Error('estado móvil inicial falso: ' + JSON.stringify(snapshot));
+    if (!live.rate?.startsWith('~') || !live.rate.endsWith(' tok/s') || !live.title.includes('estimado') || !live.queue.visible || live.queue.text !== 'pendiente' || !live.queue.title.includes('indicación') || !live.afterDelivery) throw new Error('badge estimado o cola incorrecta: ' + JSON.stringify(live));
+    if (live.avgDisplay !== 'none') throw new Error('promedio debe quedar sólo en nota de conversación en móvil');
+    const fits = (x: DOMRect) => x.left >= live.bar.left - 1 && x.right <= live.bar.right + 1 && x.top >= live.bar.top - 1 && x.bottom <= live.bar.bottom + 1;
+    if (![live.bounds, live.stop, live.queue.bounds, live.statusRect, live.elapsed].every(fits) || live.stop.top - live.bar.top > 16 || live.bar.height > 54 || live.statusRect.width < 24 || live.statusClipped) throw new Error('runbar con overflow/segunda línea a ' + width + 'px: ' + JSON.stringify(live));
+    await page.evaluate((sid) => {
+      const app = (window as any).__aegisWeb, ui = app.testUi;
+      ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: 'mobile-exact-' + innerWidth, content: { type: 'text', text: 'prueba' } } });
+      ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: 'mobile-exact-' + innerWidth, usage: { outputTokens: 36, elapsedMs: 2200, generationMs: 1200 } } });
+    }, A);
+    eq(await page.locator('#runbar-tps').textContent(), '30.0 tok/s', 'ritmo exacto corto en móvil');
+    await page.locator('#runbar-stop').click(); // cancelación UI mock; no envía prompt ni contacta backend real
+    const cancelling = await page.evaluate(() => ({ text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, disabled: (document.querySelector('#runbar-stop') as HTMLButtonElement).disabled }));
+    if (cancelling.text !== 'Deteniendo…' || cancelling.title !== 'Deteniendo…' || !cancelling.disabled) throw new Error('cancelación móvil no compacta: ' + JSON.stringify(cancelling));
+    await page.evaluate(() => (window as any).__aegisWeb.testUi.busy(false, 'Respuesta completa'));
+    const done = await page.evaluate(() => {
+      const bar = document.querySelector<HTMLElement>('#runbar')!, rate = document.querySelector<HTMLElement>('#runbar-tps')!;
+      return { text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, rate: rate.textContent, full: rate.title, hidden: bar.hidden, note: document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '', stop: getComputedStyle(document.querySelector('#runbar-stop')!).display };
+    });
+    if (done.text !== 'Terminado' || done.title !== 'Respuesta completa' || !done.full?.includes('generación 30.0') || !done.note.includes('prom generación 30.0 tok/s') || done.stop !== 'none') throw new Error('resumen de fin de turno móvil: ' + JSON.stringify(done));
+    console.log('PASS runbar móvil ' + width + 'px: vivo/pendiente/exacto/fin sin recorte');
+  }
+  await page.setViewportSize({ width: 1024, height: 780 });
   const rpcError = await page.evaluate(async () => {
     try { await (window as any).__aegisWeb.rpc.request('test/error', {}); return null; }
     catch (e: any) { return { message: e.message, code: e.code, data: e.data }; }
