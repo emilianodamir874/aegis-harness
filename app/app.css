@@ -1340,3 +1340,38 @@ body { background: var(--bg); }
 .chat-font-pop input { min-width: 55px; width: 100px; accent-color: var(--accent); }
 .chat-font-pop output { min-width: 34px; text-align: center; }
 .chat-font-pop button:focus-visible, #btn-chat-font:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* En teléfono, conservar las tablas de 3+ columnas como tablas desplazables.
+   La vista de escritorio no se modifica; las tablas de 2 columnas mantienen sus filas. */
+@media (max-width: 640px) {
+  .msg-a .tbl-wrap {
+    max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch; overscroll-behavior-inline: contain;
+    border: 1px solid var(--border-soft); border-radius: 10px;
+    background: rgba(245, 244, 239, 0.02);
+  }
+  .msg-a table:not([data-cols="2"]) {
+    display: table; width: max-content; min-width: 100%; border-collapse: collapse;
+  }
+  .msg-a table:not([data-cols="2"]) thead { display: table-header-group; }
+  .msg-a table:not([data-cols="2"]) tbody { display: table-row-group; }
+  .msg-a table:not([data-cols="2"]) tr {
+    display: table-row; border: 0; border-radius: 0; background: none;
+    margin: 0; padding: 0;
+  }
+  .msg-a table:not([data-cols="2"]) th,
+  .msg-a table:not([data-cols="2"]) td {
+    display: table-cell; width: auto; min-width: 90px; max-width: 240px;
+    padding: 7px 11px; vertical-align: top; text-align: left !important;
+    border: 0; border-bottom: 1px solid var(--border-soft);
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  .msg-a table:not([data-cols="2"]) th { white-space: nowrap; }
+  .msg-a table:not([data-cols="2"]) td::before { content: none; display: none; }
+  .msg-a table:not([data-cols="2"]) td a,
+  .msg-a table:not([data-cols="2"]) td code { white-space: normal; overflow-wrap: anywhere; }
+  .messages.chat-compact .msg-a table:not([data-cols="2"]) th,
+  .messages.chat-compact .msg-a table:not([data-cols="2"]) td {
+    padding: calc(7px * var(--chat-space-scale)) calc(11px * var(--chat-space-scale));
+  }
+}

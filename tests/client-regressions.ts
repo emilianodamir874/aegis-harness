@@ -306,9 +306,10 @@ try {
   if (!desktop.siblings || !desktop.speedStillInside || !desktop.rightHidden || desktop.barWidth < 400 || desktop.metaHeight > 36 || desktop.stopSize < 40) throw new Error('meta compartida escritorio: ' + JSON.stringify(desktop));
   console.log('PASS runbar escritorio comparte meta sin pisar velocidad al renderizar uso');
   const longCell = 'Resultado largo que supera holgadamente setenta y dos caracteres, contiene observaciones adicionales y también una URL https://ejemplo.local/ruta/con/segmentos/muy-largos/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+  const manyColumns = '| Componente | Antes | Ahora | Cómo comprobarlo |\n|---|---|---|---|\n| Verificación exhaustiva | Esta descripción contiene bastantes palabras y distintos detalles para una columna | También hay varios resultados largos que comparar con el anterior | Escribir otro párrafo largo y verificar la tabla sin perder el texto |';
   for (const width of [320, 390, 640, 800]) {
     await page.setViewportSize({ width, height: 780 });
-    const table = await page.evaluate(({ result }) => {
+    const table = await page.evaluate(({ result, manyColumns }) => {
       const app = (window as any).__aegisWeb;
       const fixture = document.createElement('div'); fixture.className = 'msg-a';
       fixture.innerHTML = app.md('| Comprobación | Resultado |\n|---|---|\n| Versión | ' + result + ' |');
@@ -317,7 +318,7 @@ try {
       const twoRow = two.querySelector<HTMLElement>('tbody tr')!;
       const twoCells = [...twoRow.querySelectorAll<HTMLElement>('td')];
       const three = document.createElement('div'); three.className = 'msg-a';
-      three.innerHTML = app.md('| A | B | C |\n|---|---|---|\n| uno | dos | tres |');
+      three.innerHTML = app.md(manyColumns);
       document.querySelector('#msg-inner')!.append(three);
       const third = three.querySelector<HTMLElement>('table')!;
       const widthTotal = fixture.getBoundingClientRect().width;
@@ -327,16 +328,27 @@ try {
         cells: twoCells.map(c => getComputedStyle(c).display), pseudo: getComputedStyle(resultCell, '::before').display,
         full: resultCell.textContent?.includes(result), noOverflow: two.getBoundingClientRect().width <= widthTotal + 1,
         wrap: getComputedStyle(resultCell).whiteSpace, rowHeight,
-        threeRow: getComputedStyle(third.querySelector('tbody tr')!).display };
+        threeRow: getComputedStyle(third.querySelector('tbody tr')!).display,
+        threeTable: getComputedStyle(third).display,
+        threeHead: getComputedStyle(third.querySelector('thead')!).display,
+        threeCell: getComputedStyle(third.querySelector('tbody td')!).display,
+        threePseudo: getComputedStyle(third.querySelector('tbody td')!, '::before').display,
+        scrollMode: getComputedStyle(three.querySelector('.tbl-wrap')!).overflowX,
+        tableWidth: third.getBoundingClientRect().width,
+        wrapperWidth: three.querySelector('.tbl-wrap')!.getBoundingClientRect().width,
+        viewportWidth: document.documentElement.scrollWidth };
       fixture.remove(); three.remove();
       return data;
-    }, { result: longCell });
+    }, { result: longCell, manyColumns });
     if (table.twoCols !== '2' || table.threeCols || !table.full || (width <= 640 &&
         (table.row !== 'table-row' || table.cells.some(x => x !== 'table-cell') || table.pseudo !== 'none' ||
-          !table.noOverflow || table.wrap !== 'normal' || table.threeRow !== 'block')))
+          !table.noOverflow || table.wrap !== 'normal' || table.threeRow !== 'table-row' ||
+          table.threeTable !== 'table' || table.threeHead !== 'table-header-group' ||
+          table.threeCell !== 'table-cell' || table.threePseudo !== 'none' || table.scrollMode !== 'auto' ||
+          table.wrapperWidth > width || table.viewportWidth > width || table.tableWidth <= table.wrapperWidth)))
       throw new Error('tabla de dos columnas larga en ' + width + 'px: ' + JSON.stringify(table));
   }
-  console.log('PASS tabla larga de dos columnas en móvil sin tarjetas ni desborde');
+  console.log('PASS tablas de dos y tres columnas en móvil sin tarjetas ni desborde global');
   const font = page.getByRole('button', { name: 'Tamaño de letra', exact: true });
   const checkFont = async (px: number) => page.evaluate((size) => {
     const box = document.querySelector('#msg-inner')!;
