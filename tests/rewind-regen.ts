@@ -45,6 +45,8 @@ try {
   const sid = await page.evaluate(() => (window as any).__aegisWeb.state.current.id);
   console.log('sesion ' + sid);
   await send('responde solo la letra B');
+  await page.waitForFunction(() => [...document.querySelectorAll('#msg-inner > .msg-user')].slice(-2).every((el) => !!(el as HTMLElement).dataset.mid && el.querySelectorAll('.rewind-btn').length === 1));
+  check(await page.locator('#msg-inner > .msg-user').count() === 2, 'los dos prompts tienen una sola burbuja antes de refrescar');
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);

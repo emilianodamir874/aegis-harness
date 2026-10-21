@@ -95,6 +95,37 @@ try {
   if (await page.locator(`.sb-row[data-id="${A}"] .sb-run-dot`).count() || await page.locator(`.sb-row[data-id="${B}"] .sb-run-dot`).count() !== 1 || await page.locator(`.sb-row[data-id="${B}"] .sb-done-dot`).count()) throw new Error('insignias de fin/corriendo se mezclaron entre chats');
   console.log('PASS insignias de terminación separadas por chat');
 
+  const uiState = await page.evaluate((sid) => {
+    const app = (window as any).__aegisWeb;
+    const ui = app.testUi;
+    if (!ui) throw new Error('testUi missing; keys=' + Object.keys(app).join(',') + ' script=' + [...document.scripts].map(s => s.src).join(','));
+    const user = ui.addUser('mensaje local de prueba', false, []);
+    ui.update({ sessionId: sid, update: { sessionUpdate: 'user_message_chunk', messageId: 'mid-text', content: { type: 'text', text: 'mensaje local de prueba' } } });
+    const textOk = user.dataset.mid === 'mid-text' && user.querySelectorAll('.rewind-btn').length === 1;
+    const image = { type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' };
+    const imageUser = ui.addUser('', false, [{ mimeType: image.mimeType, data: image.data }]);
+    ui.update({ sessionId: sid, update: { sessionUpdate: 'user_message_chunk', messageId: 'mid-image', content: image } });
+    ui.update({ sessionId: sid, update: { sessionUpdate: 'user_message_chunk', messageId: 'mid-image', content: { type: 'text', text: 'texto posterior' } } });
+    const imageOk = imageUser.dataset.mid === 'mid-image' && imageUser.querySelectorAll('.rewind-btn').length === 1;
+    const steer = ui.addUser('indicación entregada', false, [], { queued: true });
+    ui.seedSteer('mid-steer', steer);
+    ui.update({ sessionId: sid, update: { sessionUpdate: 'user_message_chunk', messageId: 'mid-steer', content: { type: 'text', text: 'indicación entregada' } } });
+    const steerOk = steer.dataset.mid === 'mid-steer' && steer.querySelectorAll('.rewind-btn').length === 1 && !steer.classList.contains('queued');
+    const users = [...document.querySelectorAll('#msg-inner .msg-user')];
+    return { textOk, imageOk, steerOk, users: users.length, identified: users.filter(el => !!(el as HTMLElement).dataset.mid).length };
+  }, A);
+  if (!uiState.textOk || !uiState.imageOk || !uiState.steerOk || uiState.users !== 3 || uiState.identified !== 3) throw new Error('burbuja sin rebobinar inmediato: ' + JSON.stringify(uiState));
+  console.log('PASS rebobinar inmediato de texto, imagen y steer sin recargar');
+  await page.evaluate(() => {
+    const app = (window as any).__aegisWeb;
+    app.testUi.run('mock-run');
+  });
+  await page.waitForFunction(() => (window as any).__aegisWeb.state.busy === true);
+  await page.evaluate(() => (window as any).__aegisWeb.testUi.run(null));
+  await page.waitForFunction(() => (window as any).__aegisWeb.state.busy === false);
+  if (await page.locator('#runbar-stop').isVisible()) throw new Error('el botón Detener sigue visible tras recibir fin de run');
+  console.log('PASS fin de run por hub libera la barra sin recargar');
+
   const rpcError = await page.evaluate(async () => {
     try { await (window as any).__aegisWeb.rpc.request('test/error', {}); return null; }
     catch (e: any) { return { message: e.message, code: e.code, data: e.data }; }

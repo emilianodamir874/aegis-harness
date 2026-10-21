@@ -544,7 +544,7 @@ function ttsUrlFor(voice, text) {
           noteResume(cur.id, mid);
           break;
         }
-        if (mid && u.content && u.content.type === "text" && adoptLocalEcho(mid, u.content.text)) {
+        if (mid && u.content && (u.content.type === "text" && adoptLocalEcho(mid, u.content.text) || u.content.type === "image" && adoptLocalImage(mid, u.content))) {
           noteResume(cur.id, mid);
           break;
         }
@@ -1104,6 +1104,12 @@ function ttsUrlFor(voice, text) {
     rw.setAttribute("aria-label", "Rebobinar a este mensaje");
     rw.textContent = "↺";
     el.appendChild(rw);
+  }
+  function identifyUserBubble(el, mid) {
+    if (!el || !el.isConnected || !mid || el.dataset.mid && el.dataset.mid !== mid) return false;
+    el.dataset.mid = mid;
+    if (!el.classList.contains("queued")) addRewindBtn(el);
+    return true;
   }
   function adjuntarImagenA(mid, content) {
     if (!content || !content.data || !content.mimeType) return false;
@@ -1791,7 +1797,7 @@ function ttsUrlFor(voice, text) {
       if (mu.isCompaction) b.push("COMPACTACION");
       if (b.length) L.push("Ultimo paso: " + b.join("  ·  "));
     }
-    if (s.cost != null) L.push("Costo acumulado estimado (no factura): " + fmtCost(s.cost));
+    if (s.cost != null) L.push("Costo acumulado: " + fmtCost(s.cost));
     if (!L.length) L.push("Sin datos de uso todavia.");
     return L;
   }
@@ -1918,10 +1924,18 @@ function ttsUrlFor(voice, text) {
     }
     (function() {
       const mid = "  " + String.fromCharCode(183) + "  ";
+      const price = (m) => {
+        const pr = pricesCache && pricesCache[m.provider + "/" + m.model] || null;
+        if (!pr) return "";
+        const eff = pr.inputEffective != null ? pr.inputEffective : pr.input;
+        if (eff == null) return "";
+        const usd = m.inputTokens / 1e6 * eff;
+        return "  " + String.fromCharCode(183) + "  USD " + usd.toFixed(3);
+      };
       let extra = "";
       if (Array.isArray(s.modelUsage) && s.modelUsage.length) {
         extra += s.modelUsage.map(function(m) {
-          return popRow("  " + m.model, m.calls + " llam" + mid + "entrada " + niceTok(m.inputTokens) + mid + "salida " + niceTok(m.outputTokens));
+          return popRow("  " + m.model, m.calls + " llam" + mid + "entrada " + niceTok(m.inputTokens) + mid + "salida " + niceTok(m.outputTokens) + price(m));
         }).join("");
       }
       if (s.compactionCalls) {
@@ -1929,7 +1943,7 @@ function ttsUrlFor(voice, text) {
       }
       if (extra) w.querySelector(".up-rows").insertAdjacentHTML("beforeend", extra);
     })();
-    w.querySelector(".up-foot").textContent = (mp.model || "modelo ?") + (mp.effort ? "  ·  esfuerzo " + mp.effort + (mp.fromAlias ? " (alias)" : "") : "") + (s.cost != null ? "  ·  costo estimado " + fmtCost(s.cost) + " (no factura)" : "");
+    w.querySelector(".up-foot").textContent = (mp.model || "modelo ?") + (mp.effort ? "  ·  esfuerzo " + mp.effort + (mp.fromAlias ? " (alias)" : "") : "") + (s.cost != null ? "  ·  " + fmtCost(s.cost) : "");
     w.hidden = false;
     placeUsagePop();
     bar.style.transition = "none";
@@ -1983,7 +1997,7 @@ function ttsUrlFor(voice, text) {
     const parts = [];
     if (pct != null) parts.push(pct + "%");
     if (s.used != null) parts.push(fmtTok(s.used) + (s.limit ? "/" + fmtTok(s.limit) : "") + " tok");
-    if (s.cost != null) parts.push("~" + fmtCost(s.cost) + " est.");
+    if (s.cost != null) parts.push(fmtCost(s.cost));
     el.textContent = flag + parts.filter(Boolean).join("  ·  ");
     el.title = usageLines().join(String.fromCharCode(10)) + String.fromCharCode(10) + String.fromCharCode(10) + "Toque para ver el detalle en el chat.";
     el.dataset.level = pct == null ? "na" : pct >= COMPACT_RATIO * 100 ? "hot" : pct >= 50 ? "warm" : "ok";
@@ -1998,6 +2012,12 @@ function ttsUrlFor(voice, text) {
       }
     };
   }
+  let pricesCache = null;
+  fetch("./prices.json").then((r) => r.json()).then((p) => {
+    pricesCache = p || {};
+  }).catch(() => {
+    pricesCache = {};
+  });
   function setUsage(u) {
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, lastSet: null, lastMsg: null });
     dbg.setUsage++;
@@ -2172,6 +2192,7 @@ function ttsUrlFor(voice, text) {
     state.attachments = [];
     state.runId = null;
     state.adopted = false;
+    liveRunRevision++;
     state.hubCursor = null;
     state.hubWatchSid = null;
     state.steers.clear();
@@ -2529,7 +2550,7 @@ function ttsUrlFor(voice, text) {
     }, 12e3);
   }
   let orphanTimer = 0;
-  const orphanTickMs = () => state.hubWatch === true ? 3e4 : 15e3;
+  const orphanTickMs = () => state.hubWatch === true ? 5e3 : 15e3;
   function startOrphanWatch() {
     clearInterval(orphanTimer);
     HUB.orphanMissAt = 0;
@@ -2564,6 +2585,7 @@ function ttsUrlFor(voice, text) {
     state.adopted = false;
     state.runId = null;
     runStart = 0;
+    HUB.orphanMissAt = 0;
     stopRunWatch();
     stopOrphanWatch();
     runBarHide();
@@ -2874,6 +2896,7 @@ ${a.text}
     const sid = state.current && state.current.id;
     state.adopted = false;
     setBusy(true, "Aegis está trabajando.");
+    const turnStartedAt = runStart;
     markRun(sid, true);
     let label = "Respuesta completa";
     let loMandoComoIndicacion = false;
@@ -2924,7 +2947,7 @@ ${a.text}
         if (loMandoComoIndicacion && state.busy) {
           runBarShow(ADOPTED_NOTE);
           startRunWatch();
-        } else {
+        } else if (state.busy && runStart === turnStartedAt) {
           setBusy(false, label);
         }
         flushQueue();
@@ -2999,6 +3022,7 @@ ${a.text}
       const mid = res && res.messageId || null;
       if (mid) {
         state.steers.set(mid, { el, text, atts: atts || [] });
+        if (el && el.isConnected) el.dataset.mid = mid;
         trackPending(mid, text);
       }
       state.runId = runId;
@@ -3016,7 +3040,10 @@ ${a.text}
     if (!info) return;
     state.steers.delete(messageId);
     untrackPending(messageId);
-    if (info.el) info.el.classList.remove("queued");
+    if (info.el) {
+      info.el.classList.remove("queued");
+      identifyUserBubble(info.el, messageId);
+    }
     setQueuedNote(info, "indicación recibida por el agente");
   }
   async function flushQueue() {
@@ -3114,17 +3141,26 @@ ${a.text}
   function adoptLocalEcho(mid, text) {
     const nodes = document.querySelectorAll("#msg-inner .msg-user");
     const needle = wordsOf(text);
+    const matches = [];
     for (let i = nodes.length - 1; i >= 0 && i >= nodes.length - 4; i--) {
       const el = nodes[i];
-      if (el.dataset.mid) continue;
+      if (el.dataset.mid || el.classList.contains("queued")) continue;
       const shown = wordsOf(el.textContent);
-      if (shown && needle && (shown === needle || needle.startsWith(shown))) {
-        el.dataset.mid = mid;
-        addRewindBtn(el);
-        return true;
-      }
+      if (shown && needle && (shown === needle || needle.startsWith(shown))) matches.push(el);
     }
-    return false;
+    return matches.length === 1 && identifyUserBubble(matches[0], mid);
+  }
+  function adoptLocalImage(mid, content) {
+    if (!content || !content.data || !content.mimeType) return false;
+    const nodes = document.querySelectorAll("#msg-inner .msg-user");
+    const src = "data:" + content.mimeType + ";base64," + content.data;
+    const matches = [];
+    for (let i = nodes.length - 1; i >= 0 && i >= nodes.length - 4; i--) {
+      const el = nodes[i];
+      if (el.dataset.mid || el.classList.contains("queued")) continue;
+      if ([...el.querySelectorAll("img")].some((img) => img.src === src)) matches.push(el);
+    }
+    return matches.length === 1 && identifyUserBubble(matches[0], mid);
   }
   function hubApplyReplay(replay) {
     let gap = false;
@@ -3149,6 +3185,7 @@ ${a.text}
   async function watchSession(since, opts) {
     if (!state.current || !rpc.ready) return "error";
     const sid = state.current.id;
+    const revisionAtRequest = liveRunRevision;
     if (state.hubWatchSid && state.hubWatchSid !== sid) {
       const prev = state.hubWatchSid;
       state.hubWatchSid = null;
@@ -3191,12 +3228,14 @@ ${a.text}
       }
       state.hubWatch = true;
       state.hubWatchSid = sid;
-      if (res && typeof res.cursor === "number") state.hubCursor = res.cursor;
+      const rewound = typeof since === "number" && res.cursor < since;
+      state.hubCursor = rewound ? res.cursor : Math.max(state.hubCursor || 0, res.cursor);
       if (res && typeof res.watcherCount === "number") state.hubWatchers = res.watcherCount;
       WATCH_DBG.hubWatches++;
       const gap = hubApplyReplay(res && res.replay);
-      const rewound = typeof since === "number" && typeof res.cursor === "number" && res.cursor < since;
-      if (res && res.activeRunId !== void 0) applyActiveRunId(res.activeRunId || null);
+      if (res && res.activeRunId !== void 0 && liveRunRevision === revisionAtRequest) {
+        applyActiveRunId(res.activeRunId || null);
+      }
       if (!opts || !opts.quiet) report("watch", "enganchado " + sid.slice(0, 12) + " cursor=" + state.hubCursor + " replay=" + (res && res.replay && res.replay.length || 0) + (res && res.activeRunId ? " run=" + res.activeRunId : ""));
       updateMetaHints();
       return gap || rewound ? "gap" : "ok";
@@ -3301,27 +3340,41 @@ ${a.text}
     return true;
   }
   async function hubOrphanTick() {
+    const sid = state.current?.id;
+    const run = state.runId;
+    if (!sid || !state.busy || state.resyncing || !rpc.ready) return;
     const probe = await runIdFromInfo();
-    if (!state.current || !state.busy || state.adopted) return;
-    if (!probe.known || probe.runId) {
+    if (state.current?.id !== sid || !state.busy || state.resyncing || state.runId !== run) return;
+    if (!probe.known) return;
+    if (probe.runId) {
       HUB.orphanMissAt = 0;
+      if (state.runId !== probe.runId) applyActiveRunId(probe.runId);
       return;
     }
     if (!HUB.orphanMissAt) {
       HUB.orphanMissAt = performance.now();
       return;
     }
-    if (performance.now() - HUB.orphanMissAt < 6e4) return;
+    if (performance.now() - HUB.orphanMissAt < (run || state.adopted ? 4e3 : 15e3)) return;
     HUB.orphanMissAt = 0;
     WATCH_DBG.hubOrphanFrees++;
-    report("adopt", "turno huerfano (hub): se libera la consola (prompt sin respuesta)");
-    systemNote("El turno anterior quedó sin cerrar (no hay run activo): se liberó la consola para seguir.");
-    setBusy(false, "Sin respuesta del turno anterior");
+    report("adopt", "fin del run confirmado por session/info");
+    if (run || state.adopted) endRun("El turno terminó");
+    else {
+      systemNote("El turno anterior quedó sin cerrar (no hay run activo): se liberó la consola para seguir.");
+      setBusy(false, "Sin respuesta del turno anterior");
+    }
   }
+  let liveRunRevision = 0;
   function applyActiveRunId(rid) {
+    if (!state.hubReplay) liveRunRevision++;
     const prev = state.runId;
+    if (state.hubReplay) {
+      state.runId = rid || null;
+      return state.runId;
+    }
+    if (rid) HUB.orphanMissAt = 0;
     state.runId = rid || null;
-    if (state.hubReplay) return state.runId;
     if (rid) {
       if (!prev) WATCH_DBG.hubRunStarts++;
       if (!state.busy) {
@@ -3331,7 +3384,10 @@ ${a.text}
       return rid;
     }
     if (!state.busy) return null;
-    if (!prev && !state.adopted) return null;
+    if (!prev && !state.adopted) {
+      void hubOrphanTick();
+      return null;
+    }
     if (state.hubWatch === true || state.adopted) endRun("El turno terminó");
     return null;
   }
@@ -4868,6 +4924,7 @@ ${a.text}
     METRICS.composerMs = 0;
     METRICS.maxComposerMs = 0;
   }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
+  if (CFG.host === "mock") window.__aegisWeb.testUi = { update: applyUpdate, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => state.steers.set(mid, { el, text: "", atts: [] }), watchRevision: () => liveRunRevision };
   wire();
   rpc.connect();
   report("boot", "app cargada (v6.4+hub+detach+wd+sc)");

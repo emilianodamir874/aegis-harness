@@ -260,7 +260,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
           noteResume(cur.id, mid);
           break;
         }
-        if (mid && u.content && u.content.type === 'text' && adoptLocalEcho(mid, u.content.text)) { noteResume(cur.id, mid); break; }
+        if (mid && u.content && ((u.content.type === 'text' && adoptLocalEcho(mid, u.content.text)) || (u.content.type === 'image' && adoptLocalImage(mid, u.content)))) { noteResume(cur.id, mid); break; }
         // Rebobinado: del turno marcado en adelante nada lo ve el modelo. El replay llega
         // ordenado, asi que al cruzar ese messageId se oculta todo lo que sigue; el primer
         // mensaje que el usuario manda DESPUES vuelve a ser visible (punto de reanudacion).
@@ -791,6 +791,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     rw.setAttribute('aria-label', 'Rebobinar a este mensaje');
     rw.textContent = '↺';
     el.appendChild(rw);
+  }
+  function identifyUserBubble(el: HTMLElement | null, mid: string) {
+    if (!el || !el.isConnected || !mid || (el.dataset.mid && el.dataset.mid !== mid)) return false;
+    el.dataset.mid = mid;
+    if (!el.classList.contains('queued')) addRewindBtn(el);
+    return true;
   }
   // Un mensaje con texto + imagen llega en dos chunks con el mismo messageId. El primero crea la
   // burbuja; el segundo hay que pegarlo en esa misma burbuja en vez de descartarlo.
@@ -1909,6 +1915,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     state.attachments = [];
     state.runId = null;
     state.adopted = false;
+    liveRunRevision++;
     // (v6.4) El cursor del hub es por sesión: al cambiar de conversación arranca de cero.
     state.hubCursor = null;
     state.hubWatchSid = null;
@@ -2274,14 +2281,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   // ---------- enviar / steering ----------
-  // Watchdog de turno HUÉRFANO (caso run muerto en silencio): si estamos "busy" como
-  // dueños (no adoptado) y el server ya no tiene run activo, el prompt quedo sin
-  // respuesta para siempre -> la consola no acepta mas mensajes. Sondeamos y liberamos.
+  // Watchdog de turno huérfano: reconcilia busy con el run real, también en
+  // otra pestaña o cuando la notificación terminal se perdió durante una reconexión.
   let orphanTimer = 0;
-  // (v6.4) Con hub esta red de seguridad sigue existiendo pero SIN sondeos caros: se espacia
-  // a 30 s y consulta `session/info` (no `steer`). Si no hay run y el prompt no tuvo
-  // respuesta, a los ~90 s se libera la consola igual que antes.
-  const orphanTickMs = () => (state.hubWatch === true ? 30000 : 15000);
+  // Con hub se consulta session/info (nunca steer) cada 5 s mientras haya un turno;
+  // si falta el evento terminal, se reconcilia sin recargar la página.
+  const orphanTickMs = () => (state.hubWatch === true ? 5000 : 15000);
   function startOrphanWatch() {
     clearInterval(orphanTimer);
     HUB.orphanMissAt = 0;
@@ -2319,6 +2324,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     state.adopted = false;
     state.runId = null;
     runStart = 0;
+    HUB.orphanMissAt = 0;
     stopRunWatch();
     stopOrphanWatch();
     runBarHide();
@@ -2616,6 +2622,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const sid = state.current && state.current.id; // dueño del turno: si te vas a otro chat, esa vista no se toca
     state.adopted = false;
     setBusy(true, 'Aegis está trabajando.');
+    const turnStartedAt = runStart;
     markRun(sid, true);   // marca inmediata en la lista, aunque esta vista no sea la del turno
     let label = 'Respuesta completa';
     let loMandoComoIndicacion = false;
@@ -2665,7 +2672,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
           // el turno sigue vivo en otra conexión: seguimos en modo adoptado
           runBarShow(ADOPTED_NOTE);
           startRunWatch();
-        } else {
+        } else if (state.busy && runStart === turnStartedAt) {
           setBusy(false, label);
         }
         flushQueue();
@@ -2733,6 +2740,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       const mid = (res && res.messageId) || null;
       if (mid) {
         state.steers.set(mid, { el, text, atts: atts || [] });
+        if (el && el.isConnected) el.dataset.mid = mid;
         trackPending(mid, text);
       }
       state.runId = runId;
@@ -2751,7 +2759,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (!info) return;
     state.steers.delete(messageId);
     untrackPending(messageId);
-    if (info.el) info.el.classList.remove('queued');
+    if (info.el) {
+      info.el.classList.remove('queued');
+      identifyUserBubble(info.el, messageId);
+    }
     setQueuedNote(info, 'indicación recibida por el agente');
   }
 
@@ -2790,8 +2801,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   // El server v4 replica las notificaciones de una sesión a TODAS las conexiones
   // enganchadas (`_aegis/unstable/session/watch`): un turno ya no pertenece a la conexión
   // que lo arrancó, así que dos pestañas y el celular ven el mismo streaming y el fin de
-  // turno llega como evento (`_aegis/unstable/session/update` con activeRunId=null), sin
-  // sondeos ni refrescos periódicos. Si el server no tiene el método (v2/v3) se marca
+  // turno llega como evento (`_aegis/unstable/session/update` con activeRunId=null);
+  // session/info reconcilia si ese evento se pierde. Si el server no tiene el método (v2/v3) se marca
   // hubWatch=false y nada de esto corre: queda el comportamiento viejo (soft-poll +
   // sondeo por steer + orphan watch) tal como estaba.
   const HUB = { text: new Map(), kind: new Map(), gapRecovering: false, orphanMissAt: 0 };
@@ -2854,13 +2865,27 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   function adoptLocalEcho(mid, text) {
     const nodes = document.querySelectorAll<HTMLElement>('#msg-inner .msg-user');
     const needle = wordsOf(text);
+    const matches: HTMLElement[] = [];
     for (let i = nodes.length - 1; i >= 0 && i >= nodes.length - 4; i--) {
       const el = nodes[i];
-      if (el.dataset.mid) continue;
+      if (el.dataset.mid || el.classList.contains('queued')) continue;
       const shown = wordsOf(el.textContent);
-      if (shown && needle && (shown === needle || needle.startsWith(shown))) { el.dataset.mid = mid; addRewindBtn(el); return true; }
+      if (shown && needle && (shown === needle || needle.startsWith(shown))) matches.push(el);
     }
-    return false;
+    return matches.length === 1 && identifyUserBubble(matches[0], mid);
+  }
+
+  function adoptLocalImage(mid, content) {
+    if (!content || !content.data || !content.mimeType) return false;
+    const nodes = document.querySelectorAll<HTMLElement>('#msg-inner .msg-user');
+    const src = 'data:' + content.mimeType + ';base64,' + content.data;
+    const matches: HTMLElement[] = [];
+    for (let i = nodes.length - 1; i >= 0 && i >= nodes.length - 4; i--) {
+      const el = nodes[i];
+      if (el.dataset.mid || el.classList.contains('queued')) continue;
+      if ([...el.querySelectorAll('img')].some((img) => img.src === src)) matches.push(el);
+    }
+    return matches.length === 1 && identifyUserBubble(matches[0], mid);
   }
 
   // Aplica el replay de la respuesta de watch, en orden, por el mismo camino que un evento
@@ -2889,6 +2914,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   async function watchSession(since: number | null, opts?: { quiet?: boolean }): Promise<WatchResult> {
     if (!state.current || !rpc.ready) return 'error';
     const sid = state.current.id;
+    const revisionAtRequest = liveRunRevision;
     if (state.hubWatchSid && state.hubWatchSid !== sid) {
       const prev = state.hubWatchSid;
       state.hubWatchSid = null; state.hubCursor = null;
@@ -2922,17 +2948,19 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       }
       state.hubWatch = true;
       state.hubWatchSid = sid;
-      if (res && typeof res.cursor === 'number') state.hubCursor = res.cursor;
+      const rewound = typeof since === 'number' && res.cursor < since;
+      state.hubCursor = rewound ? res.cursor : Math.max(state.hubCursor || 0, res.cursor);
       // El hub no manda watcherCount en la respuesta de watch: se lee de session/info.
       if (res && typeof res.watcherCount === 'number') state.hubWatchers = res.watcherCount;
       WATCH_DBG.hubWatches++;
       const gap = hubApplyReplay(res && res.replay);
       // Un cursor que RETROCEDE significa que el hub soltó el ring de la sesión (TTL de
       // inactividad) y volvió a empezar: lo tratamos como replay_gap y recargamos todo.
-      const rewound = typeof since === 'number' && typeof res.cursor === 'number' && res.cursor < since;
-      // La respuesta manda sobre el replay: es el estado del run AHORA (el replay puede
-      // incluir eventos viejos del ring y no debe animar la UI por ellos).
-      if (res && res.activeRunId !== undefined) applyActiveRunId(res.activeRunId || null);
+      // El estado de watch se aplica sólo si no llegó un aviso vivo mientras
+      // se esperaba la respuesta; el replay puede contener estados anteriores.
+      if (res && res.activeRunId !== undefined && liveRunRevision === revisionAtRequest) {
+        applyActiveRunId(res.activeRunId || null);
+      }
       if (!opts || !opts.quiet) report('watch', 'enganchado ' + sid.slice(0, 12) + ' cursor=' + state.hubCursor + ' replay=' + ((res && res.replay && res.replay.length) || 0) + (res && res.activeRunId ? ' run=' + res.activeRunId : ''));
       updateMetaHints();
       return (gap || rewound) ? 'gap' : 'ok';
@@ -3023,30 +3051,43 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     return true;
   }
 
-  // Red de seguridad del hub: consulta `session/info` (NO `steer`) y libera la consola sólo
-  // si el server dice que no hay run y el prompt quedó sin respuesta (~90 s de margen).
+  // El hub puede perder el aviso terminal al reconectar: reconciliar con session/info
+  // también para turnos adoptados, sin enviar un steer falso. Dos lecturas separadas
+  // evitan cerrar durante la ventana de registro del run recién iniciado.
   async function hubOrphanTick() {
+    const sid = state.current?.id;
+    const run = state.runId;
+    if (!sid || !state.busy || state.resyncing || !rpc.ready) return;
     const probe = await runIdFromInfo();
-    if (!state.current || !state.busy || state.adopted) return;
-    if (!probe.known || probe.runId) { HUB.orphanMissAt = 0; return; }
+    if (state.current?.id !== sid || !state.busy || state.resyncing || state.runId !== run) return;
+    if (!probe.known) return;
+    if (probe.runId) {
+      HUB.orphanMissAt = 0;
+      if (state.runId !== probe.runId) applyActiveRunId(probe.runId);
+      return;
+    }
     if (!HUB.orphanMissAt) { HUB.orphanMissAt = performance.now(); return; }
-    if (performance.now() - HUB.orphanMissAt < 60000) return;
+    if (performance.now() - HUB.orphanMissAt < (run || state.adopted ? 4000 : 15000)) return;
     HUB.orphanMissAt = 0;
     WATCH_DBG.hubOrphanFrees++;
-    report('adopt', 'turno huerfano (hub): se libera la consola (prompt sin respuesta)');
-    systemNote('El turno anterior quedó sin cerrar (no hay run activo): se liberó la consola para seguir.');
-    setBusy(false, 'Sin respuesta del turno anterior');
+    report('adopt', 'fin del run confirmado por session/info');
+    if (run || state.adopted) endRun('El turno terminó');
+    else {
+      systemNote('El turno anterior quedó sin cerrar (no hay run activo): se liberó la consola para seguir.');
+      setBusy(false, 'Sin respuesta del turno anterior');
+    }
   }
 
-  // `activeRunId` de la sesión: arranque y fin de turno. Con watch es el ÚNICO aviso de fin
-  // para el DUEÑO del prompt (su response puede perderse: reload, socket caído) y también
-  // para el turno adoptado. Guarda: un `null` viejo no cierra un turno recién lanzado que
-  // todavía no registró su run (no vimos ningún run ni lo adoptamos).
+  // El estado del run llega por el hub y por la respuesta de watch. La revisión
+  // impide que una respuesta atrasada de watch pise una notificación más nueva.
+  let liveRunRevision = 0;
   function applyActiveRunId(rid) {
+    if (!state.hubReplay) liveRunRevision++;
     const prev = state.runId;
-    state.runId = rid || null;
     // Replay: sólo se registra el estado; decide la respuesta de watch (ver watchSession).
-    if (state.hubReplay) return state.runId;
+    if (state.hubReplay) { state.runId = rid || null; return state.runId; }
+    if (rid) HUB.orphanMissAt = 0;
+    state.runId = rid || null;
     if (rid) {
       if (!prev) WATCH_DBG.hubRunStarts++;
       // Run vivo que no arrancamos nosotros (otra pestaña, el celular, un reload): se adopta
@@ -3055,9 +3096,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       return rid;
     }
     if (!state.busy) return null;
-    if (!prev && !state.adopted) return null;
-    // Antes esto era sólo para el turno adoptado; con hub vale también para el dueño (un
-    // prompt sin respuesta dejaba la consola muda hasta recargar).
+    if (!prev && !state.adopted) {
+      // El dueño aún puede estar enviando el prompt. Confirmar null en session/info
+      // antes de cerrar evita que un terminal anterior cierre este turno.
+      void hubOrphanTick();
+      return null;
+    }
     if (state.hubWatch === true || state.adopted) endRun('El turno terminó');
     return null;
   }
@@ -3106,8 +3150,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   function startRunWatch() {
-    // (v6.4) Con watch no hay nada que sondear cada 2,5 s: el fin de turno llega como
-    // evento (activeRunId=null) a todas las conexiones enganchadas a la sesión.
+    // El hub recibe streaming; session/info queda como reconciliación de terminales perdidos.
     if (state.hubWatch === true) return;
     if (runWatch) return;
     watchSince = Date.now();
@@ -4534,6 +4577,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     append: (t) => streamAppend('test-msg', t, false, false),
     draft: { save: saveDraft, load: loadDraft, key: draftKey },
     engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
+
+  if (CFG.host === 'mock') (window as any).__aegisWeb.testUi = { update: applyUpdate, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => state.steers.set(mid, { el, text: '', atts: [] }), watchRevision: () => liveRunRevision };
 
   wire();
   rpc.connect();
