@@ -56,10 +56,19 @@
         <div id="chat-title" class="chat-title">Nuevo chat</div>
         <div id="chips" class="chips"></div>
         <span id="default-model-chip" class="chip chip-default" hidden></span>
+        <button id="btn-chat-font" class="icon-btn" type="button" aria-label="Tamaño de letra" title="Tamaño de letra del chat" aria-expanded="false" aria-controls="chat-font-pop">Aa</button>
         <button id="btn-goals" class="icon-btn" type="button" aria-label="Objetivos (/goal)" title="Objetivos de los chats (/goal y /grind)" aria-pressed="false">
           <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="6.6" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.4" fill="currentColor"/></svg>
         </button>
       </header>
+
+      <div id="chat-font-pop" class="chat-font-pop" role="group" aria-label="Tamaño de letra del chat" hidden>
+        <button id="chat-font-minus" type="button" aria-label="Reducir letra">−</button>
+        <input id="chat-font-range" type="range" min="12" max="22" step="1" aria-label="Tamaño de letra del chat">
+        <button id="chat-font-plus" type="button" aria-label="Aumentar letra">+</button>
+        <output id="chat-font-value" for="chat-font-range"></output>
+        <button id="chat-font-reset" type="button">Restablecer</button>
+      </div>
 
       <div id="messages" class="messages" role="log" aria-label="Conversación">
         <div id="welcome" class="welcome">
@@ -79,12 +88,6 @@
         <div id="attachments" class="attachments" hidden></div>
         <div id="slash-menu" class="slash-menu" hidden></div>
         <div class="composer">
-          <div id="runbar" class="runbar" role="status" aria-live="polite" hidden>
-            <span class="runbar-spin" aria-hidden="true"></span>
-            <span id="runbar-text" class="runbar-text">Aegis está trabajando…</span>
-            <span id="runbar-time" class="runbar-time"></span>
-            <button id="runbar-stop" class="runbar-stop" type="button">Detener</button>
-          </div>
           <button id="btn-attach" class="icon-btn attach-btn" type="button" aria-label="Adjuntar imagen o archivo" title="Adjuntar imagen o archivo de texto (o arrastralos / pegá una captura)">
             <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           </button>
@@ -105,6 +108,11 @@
         </div>
         <div class="composer-meta">
           <span id="meta-left"></span>
+          <div id="runbar" class="runbar" role="status" aria-live="polite" hidden>
+            <span class="runbar-spin" aria-hidden="true"></span>
+            <span id="runbar-text" class="runbar-text">Aegis está trabajando…</span>
+            <span id="runbar-time" class="runbar-time"></span>
+          </div>
           <span id="meta-right"></span>
         </div>
       </footer>

@@ -206,7 +206,7 @@ try {
   await page.waitForFunction(() => (window as any).__aegisWeb.state.busy === true);
   await page.evaluate(() => (window as any).__aegisWeb.testUi.run(null));
   await page.waitForFunction(() => (window as any).__aegisWeb.state.busy === false);
-  if (await page.locator('#runbar-stop').isVisible()) throw new Error('el botón Detener sigue visible tras recibir fin de run');
+  if (await page.locator('#btn-stop').isVisible()) throw new Error('el botón Detener sigue visible tras recibir fin de run');
   console.log('PASS fin de run por hub libera la barra sin recargar');
 
   await page.evaluate(() => { const pop = document.querySelector<HTMLElement>('#usage-pop'); if (pop) pop.hidden = true; });
@@ -232,7 +232,7 @@ try {
       const app = (window as any).__aegisWeb, ui = app.testUi;
       const bar = document.querySelector<HTMLElement>('#runbar')!, badge = document.querySelector<HTMLElement>('#runbar-tps')!;
       const queued = document.querySelector<HTMLElement>('#runbar-queued');
-      const stop = document.querySelector<HTMLElement>('#runbar-stop')!;
+      const stop = document.querySelector<HTMLElement>('#btn-stop')!;
       const rect = (el: HTMLElement) => el.getBoundingClientRect();
       const text = document.querySelector<HTMLElement>('#runbar-text')!;
       ui.seedSteer('mobile-steer-' + innerWidth, ui.addUser('indicación local mock', false, [], { queued: true }));
@@ -240,31 +240,114 @@ try {
       const withQueue = { text: pending.textContent, visible: !pending.hidden && getComputedStyle(pending).display !== 'none', bounds: rect(pending), title: pending.title };
       ui.steerDelivered('mobile-steer-' + innerWidth);
       const elapsed = document.querySelector<HTMLElement>('#runbar-time')!;
-      return { rate: badge.textContent, title: badge.title, bounds: rect(badge), bar: rect(bar), stop: rect(stop), statusRect: rect(text), statusClipped: text.scrollWidth > text.clientWidth + 1, elapsed: rect(elapsed), avgDisplay: getComputedStyle(document.querySelector('#runbar-avg')!).display, queue: withQueue, afterDelivery: pending.hidden, status: text.textContent };
+      const meta = document.querySelector<HTMLElement>('.composer-meta')!;
+      const composer = document.querySelector<HTMLElement>('.composer')!;
+      const input = document.querySelector<HTMLElement>('#input')!;
+      return { rate: badge.textContent, title: badge.title, bounds: rect(badge), bar: rect(bar), meta: rect(meta), composer: rect(composer), input: rect(input), stop: rect(stop), statusRect: rect(text), statusClipped: text.scrollWidth > text.clientWidth + 1, statusVisible: getComputedStyle(text).display !== 'none', elapsed: rect(elapsed), avgDisplay: getComputedStyle(document.querySelector('#runbar-avg')!).display, queue: withQueue, afterDelivery: pending.hidden, status: text.textContent, siblings: bar.parentElement === meta && meta.children.length === 3, hintsHidden: getComputedStyle(document.querySelector('#meta-left')!).display === 'none' && getComputedStyle(document.querySelector('#meta-right')!).display === 'none' };
     }, A);
     if (snapshot.text !== 'Trabaja' || !snapshot.title.includes('otra conexión') || snapshot.initialQueue) throw new Error('estado móvil inicial falso: ' + JSON.stringify(snapshot));
     if (!live.rate?.startsWith('~') || !live.rate.endsWith(' tok/s') || !live.title.includes('estimado') || !live.queue.visible || live.queue.text !== 'pendiente' || !live.queue.title.includes('indicación') || !live.afterDelivery) throw new Error('badge estimado o cola incorrecta: ' + JSON.stringify(live));
     if (live.avgDisplay !== 'none') throw new Error('promedio debe quedar sólo en nota de conversación en móvil');
     const fits = (x: DOMRect) => x.left >= live.bar.left - 1 && x.right <= live.bar.right + 1 && x.top >= live.bar.top - 1 && x.bottom <= live.bar.bottom + 1;
-    if (![live.bounds, live.stop, live.queue.bounds, live.statusRect, live.elapsed].every(fits) || live.stop.top - live.bar.top > 16 || live.bar.height > 54 || live.statusRect.width < 24 || live.statusClipped) throw new Error('runbar con overflow/segunda línea a ' + width + 'px: ' + JSON.stringify(live));
+    if (![live.bounds, live.queue.bounds, live.statusRect, live.elapsed].every(fits) || live.bar.height > 28 || live.meta.height > 36 || live.statusRect.width < 24 || live.statusClipped || !live.statusVisible || !live.siblings || !live.hintsHidden || live.composer.bottom > live.meta.top || live.input.width < 90 || live.stop.width < 40 || live.stop.height < 40 || live.stop.right > width || live.stop.left < 0) throw new Error('runbar con overflow/segunda línea a ' + width + 'px: ' + JSON.stringify(live));
     await page.evaluate((sid) => {
       const app = (window as any).__aegisWeb, ui = app.testUi;
       ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: 'mobile-exact-' + innerWidth, content: { type: 'text', text: 'prueba' } } });
       ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: 'mobile-exact-' + innerWidth, usage: { outputTokens: 36, elapsedMs: 2200, generationMs: 1200 } } });
     }, A);
     eq(await page.locator('#runbar-tps').textContent(), '30.0 tok/s', 'ritmo exacto corto en móvil');
-    await page.locator('#runbar-stop').click(); // cancelación UI mock; no envía prompt ni contacta backend real
-    const cancelling = await page.evaluate(() => ({ text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, disabled: (document.querySelector('#runbar-stop') as HTMLButtonElement).disabled }));
+    await page.locator('#btn-stop').click(); // cancelación UI mock; no envía prompt ni contacta backend real
+    const cancelling = await page.evaluate(() => ({ text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, disabled: (document.querySelector('#btn-stop') as HTMLButtonElement).disabled }));
     if (cancelling.text !== 'Deteniendo…' || cancelling.title !== 'Deteniendo…' || !cancelling.disabled) throw new Error('cancelación móvil no compacta: ' + JSON.stringify(cancelling));
     await page.evaluate(() => (window as any).__aegisWeb.testUi.busy(false, 'Respuesta completa'));
     const done = await page.evaluate(() => {
       const bar = document.querySelector<HTMLElement>('#runbar')!, rate = document.querySelector<HTMLElement>('#runbar-tps')!;
-      return { text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, rate: rate.textContent, full: rate.title, hidden: bar.hidden, note: document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '', stop: getComputedStyle(document.querySelector('#runbar-stop')!).display };
+      return { text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, rate: rate.textContent, full: rate.title, hidden: bar.hidden, note: document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '', stop: getComputedStyle(document.querySelector('#btn-stop')!).display };
     });
-    if (done.text !== 'Terminado' || done.title !== 'Respuesta completa' || !done.full?.includes('generación 30.0') || !done.note.includes('prom generación 30.0 tok/s') || done.stop !== 'none') throw new Error('resumen de fin de turno móvil: ' + JSON.stringify(done));
+    if (done.text !== 'Terminado' || done.title !== 'Respuesta completa' || !done.full?.includes('generación 30.0') || !done.note.includes('prom generación 30.0 tok/s') || done.stop !== 'none' || done.hidden) throw new Error('resumen de fin de turno móvil: ' + JSON.stringify(done));
     console.log('PASS runbar móvil ' + width + 'px: vivo/pendiente/exacto/fin sin recorte');
   }
+  await page.waitForFunction(() => (document.querySelector('#runbar') as HTMLElement)?.hidden, null, { timeout: 7500 });
+  if (await page.locator('#btn-stop').isVisible()) throw new Error('Detener visible tras 6s de fin de turno');
+  console.log('PASS fin del turno visible durante ventana de 6s y luego desaparece');
   await page.setViewportSize({ width: 1024, height: 780 });
+  const desktop = await page.evaluate(() => {
+    const ui = (window as any).__aegisWeb.testUi;
+    ui.busy(true, 'Estado del agente en escritorio');
+    const meta = document.querySelector<HTMLElement>('.composer-meta')!;
+    const bar = document.querySelector<HTMLElement>('#runbar')!;
+    const speed = document.querySelector<HTMLElement>('#runbar-tps')!;
+    const right = document.querySelector<HTMLElement>('#meta-right')!;
+    (window as any).__aegisWeb.renderUsagePublic();
+    const result = { siblings: bar.parentElement === meta && right.parentElement === meta,
+      barWidth: bar.getBoundingClientRect().width, metaHeight: meta.getBoundingClientRect().height,
+      rightHidden: getComputedStyle(right).display === 'none', speedStillInside: speed.parentElement === bar,
+      stopSize: document.querySelector('#btn-stop')!.getBoundingClientRect().width };
+    ui.busy(false, 'Respuesta completa');
+    return result;
+  });
+  if (!desktop.siblings || !desktop.speedStillInside || !desktop.rightHidden || desktop.barWidth < 400 || desktop.metaHeight > 36 || desktop.stopSize < 40) throw new Error('meta compartida escritorio: ' + JSON.stringify(desktop));
+  console.log('PASS runbar escritorio comparte meta sin pisar velocidad al renderizar uso');
+  const font = page.getByRole('button', { name: 'Tamaño de letra', exact: true });
+  const checkFont = async (px: number) => page.evaluate((size) => {
+    const box = document.querySelector('#msg-inner')!;
+    let fixture = document.querySelector('#font-fixture');
+    if (!fixture) {
+      fixture = document.createElement('div'); fixture.id = 'font-fixture';
+      fixture.innerHTML = '<div class="msg-user">usuario</div><div class="msg-a"><div class="content"><p>asistente <code>inline</code></p><pre><code>código</code></pre><div class="thought">pensamiento</div><div class="tbl-wrap"><table><tbody><tr><td data-label="columna">celda</td></tr></tbody></table></div></div></div><div class="tool"><div class="tool-body"><div class="tool-title">herramienta</div><pre>salida</pre></div></div>';
+      box.append(fixture);
+    }
+    const selectors = ['.msg-user', '.msg-a', '.msg-a code', '.msg-a pre code', '.msg-a .thought', '.msg-a td', '.msg-a td::before', '.tool', '.tool pre'];
+    const sizes = selectors.map(s => {
+      const pseudo = s.includes('::before');
+      const el = fixture!.querySelector(pseudo ? s.replace('::before', '') : s)!;
+      const actual = parseFloat(getComputedStyle(el, pseudo ? '::before' : undefined).fontSize);
+      const baseline: Record<string, number> = { '.msg-user': 14.5, '.msg-a': 16, '.msg-a code': 12.5,
+        '.msg-a pre code': 12.5, '.msg-a .thought': 13.5, '.msg-a td': 12.5,
+        '.msg-a td::before': 11, '.tool': 12.5, '.tool pre': 11.5 };
+      return [s, actual, baseline[s] * size / 16] as const;
+    });
+    return { sizes, stored: localStorage.getItem('aegis.chatFontPx'), value: document.querySelector('#chat-font-value')?.textContent,
+      chrome: getComputedStyle(document.querySelector('.topbar')!).fontSize,
+      input: getComputedStyle(document.querySelector('#input')!).fontSize,
+      expected: size + 'px' };
+  }, px);
+  await font.click();
+  if (await font.getAttribute('aria-expanded') !== 'true') throw new Error('popover de fuente no accesible');
+  await page.locator('#chat-font-range').fill('20');
+  let typography = await checkFont(20);
+  if (typography.sizes.some(([, actual, expected]) => Math.abs(actual - expected) > 0.02) || typography.value !== '20 px' || typography.stored !== '20') throw new Error('escala incompleta: ' + JSON.stringify(typography));
+  await page.locator('#chat-font-plus').click();
+  eq((await checkFont(21)).stored, '21', 'botón aumentar');
+  await page.locator('#chat-font-minus').click();
+  eq((await checkFont(20)).stored, '20', 'botón reducir');
+  await page.setViewportSize({ width: 390, height: 780 });
+  typography = await checkFont(20);
+  if (typography.sizes.some(([, actual, expected]) => Math.abs(actual - expected) > 0.02) || parseFloat(typography.input) < 16) throw new Error('tipografía tarjeta móvil o zoom de textarea: ' + JSON.stringify(typography));
+  for (const width of [360, 390, 430]) {
+    await page.setViewportSize({ width, height: 780 });
+    const mobileFont = await checkFont(20);
+    if (mobileFont.sizes.some(([, actual, expected]) => Math.abs(actual - expected) > 0.02) || parseFloat(mobileFont.input) < 16)
+      throw new Error('escala de letra móvil ' + width + 'px: ' + JSON.stringify(mobileFont));
+  }
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => (window as any).__aegisWeb?.state.sessions.length === 2);
+  typography = await checkFont(20);
+  if (typography.sizes.some(([, actual, expected]) => Math.abs(actual - expected) > 0.02) || typography.chrome !== '14.5px') throw new Error('persistencia fuente o cambió chrome: ' + JSON.stringify(typography));
+  await font.click();
+  await page.locator('#chat-font-range').fill('22');
+  await page.locator('#chat-font-plus').click();
+  eq((await checkFont(22)).stored, '22', 'límite superior');
+  await page.locator('#chat-font-range').fill('12');
+  await page.locator('#chat-font-minus').click();
+  eq((await checkFont(12)).stored, '12', 'límite inferior');
+  await page.locator('#chat-font-reset').click();
+  eq((await checkFont(16)).stored, '16', 'restablecer default');
+  await page.evaluate(() => localStorage.setItem('aegis.chatFontPx', '999'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => (window as any).__aegisWeb?.state.sessions.length === 2);
+  eq((await checkFont(16)).value, '16 px', 'almacenamiento fuera de rango rechazado');
+  console.log('PASS fuente 12–22, reset, recarga, tarjeta móvil y storage inválido');
   const rpcError = await page.evaluate(async () => {
     try { await (window as any).__aegisWeb.rpc.request('test/error', {}); return null; }
     catch (e: any) { return { message: e.message, code: e.code, data: e.data }; }

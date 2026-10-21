@@ -2533,8 +2533,7 @@ function ttsUrlFor(voice, text) {
     bar.classList.remove("done", "cancelling");
     setRunBarText(text || "Aegis está trabajando…");
     paintQueuedRunBar();
-    $("#runbar-stop").hidden = false;
-    $("#runbar-stop").disabled = false;
+    $("#btn-stop").disabled = false;
     if (!runStart) runStart = performance.now();
     paintRunBar();
     speedStart();
@@ -2556,8 +2555,7 @@ function ttsUrlFor(voice, text) {
       bar.classList.remove("done", "cancelling");
     }
     paintQueuedRunBar();
-    const stopBtn = $("#runbar-stop");
-    if (stopBtn) stopBtn.hidden = true;
+    $("#btn-stop").disabled = false;
   }
   function runBarDone(text, ms) {
     const bar = $("#runbar");
@@ -2573,11 +2571,12 @@ function ttsUrlFor(voice, text) {
     paintQueuedRunBar();
     $("#runbar-time").textContent = fmtElapsed(ms);
     speedFinish();
-    $("#runbar-stop").hidden = true;
+    $("#btn-stop").disabled = false;
     clearTimeout(runDoneTimer);
     runDoneTimer = setTimeout(() => {
       bar.hidden = true;
       bar.classList.remove("done");
+      updateMetaHints();
     }, 6e3);
   }
   function speedNoteHtml(ms, sum) {
@@ -2633,7 +2632,7 @@ function ttsUrlFor(voice, text) {
     if (bar && !bar.hidden) {
       bar.classList.add("cancelling");
       setRunBarText("Deteniendo…");
-      $("#runbar-stop").disabled = true;
+      $("#btn-stop").disabled = true;
     }
     systemNote("Cancelando…");
     clearTimeout(cancelTimer);
@@ -2642,7 +2641,7 @@ function ttsUrlFor(voice, text) {
       if (!state.busy || !b || b.hidden) return;
       b.classList.remove("cancelling");
       setRunBarText("El corte no se confirmó — probá Detener otra vez");
-      $("#runbar-stop").disabled = false;
+      $("#btn-stop").disabled = false;
     }, 12e3);
   }
   let orphanTimer = 0;
@@ -2726,8 +2725,8 @@ function ttsUrlFor(voice, text) {
     const l = $("#meta-left");
     if (!l) return;
     const hub = state.hubWatch === true && state.hubWatchers > 1 ? " · " + state.hubWatchers + " conexiones sobre esta sesión" : "";
-    if (state.busy) {
-      l.innerHTML = "El agente está trabajando · <b>Enter</b> manda una indicación al vuelo · <b>Detener</b> corta el turno" + esc(hub);
+    if (state.busy || !$("#runbar")?.hidden) {
+      l.textContent = "";
     } else if (state.slashLoaded && state.slash.length) {
       l.textContent = "Enter envía · Shift+Enter salto de línea · / comandos · Ctrl+K buscar" + hub;
     } else {
@@ -4273,7 +4272,61 @@ ${a.text}
     refreshSlashMenu();
     report("boot", "ok - sesiones=" + state.sessions.length + " archivadas=" + state.archived.length + " adoptado=" + state.adopted);
   }
+  const CHAT_FONT_KEY = "aegis.chatFontPx";
+  const CHAT_FONT_DEFAULT = 15;
+  function validChatFont(raw) {
+    if (raw === null || !/^(?:1[2-9]|2[0-2])$/.test(raw)) return CHAT_FONT_DEFAULT;
+    return Number(raw);
+  }
+  let chatFont = CHAT_FONT_DEFAULT;
+  try {
+    chatFont = validChatFont(localStorage.getItem(CHAT_FONT_KEY));
+  } catch {
+  }
+  function setChatFont(px) {
+    chatFont = Math.max(12, Math.min(22, Math.round(px)));
+    const messages = $("#messages");
+    if (messages) {
+      messages.style.setProperty("--chat-font", chatFont + "px");
+      messages.style.setProperty("--chat-scale", String(chatFont / CHAT_FONT_DEFAULT));
+    }
+    const range = $("#chat-font-range");
+    if (range) range.value = String(chatFont);
+    const value = $("#chat-font-value");
+    if (value) value.textContent = chatFont + " px";
+    try {
+      localStorage.setItem(CHAT_FONT_KEY, String(chatFont));
+    } catch {
+    }
+  }
+  function wireChatFont() {
+    setChatFont(chatFont);
+    const pop = $("#chat-font-pop");
+    const button = $("#btn-chat-font");
+    button.addEventListener("click", () => {
+      pop.hidden = !pop.hidden;
+      button.setAttribute("aria-expanded", String(!pop.hidden));
+    });
+    $("#chat-font-range").addEventListener("input", (e) => setChatFont(Number(e.target.value)));
+    $("#chat-font-minus").addEventListener("click", () => setChatFont(chatFont - 1));
+    $("#chat-font-plus").addEventListener("click", () => setChatFont(chatFont + 1));
+    $("#chat-font-reset").addEventListener("click", () => setChatFont(CHAT_FONT_DEFAULT));
+    document.addEventListener("pointerdown", (e) => {
+      if (!pop.hidden && !pop.contains(e.target) && !button.contains(e.target)) {
+        pop.hidden = true;
+        button.setAttribute("aria-expanded", "false");
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !pop.hidden) {
+        pop.hidden = true;
+        button.setAttribute("aria-expanded", "false");
+        button.focus();
+      }
+    });
+  }
   function wire() {
+    wireChatFont();
     $("#messages").addEventListener("click", (e) => {
       const cc = e.target.closest(".copy-code");
       if (cc) {
@@ -4316,7 +4369,6 @@ ${a.text}
     $("#btn-close-drawer").addEventListener("click", closeDrawer);
     $("#btn-send").addEventListener("click", send);
     $("#btn-stop").addEventListener("click", stopRun);
-    $("#runbar-stop").addEventListener("click", stopRun);
     const rb = $("#btn-read");
     if (rb) rb.addEventListener("click", () => readToggle());
     const corta = () => readReset(true);

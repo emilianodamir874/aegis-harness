@@ -1223,3 +1223,56 @@ body { background: var(--bg); }
      text; the spinner still conveys activity and the full text remains in title. */
   .composer > .runbar:has(.runbar-queued:not([hidden])) .runbar-text { display: none; }
 }
+
+/* Composer status shares the existing metadata strip; no extra row. */
+.composer { flex-wrap: nowrap; }
+.composer-meta { align-items: center; gap: 6px; min-width: 0; }
+.composer-meta:has(.runbar:not([hidden])) #meta-left,
+.composer-meta:has(.runbar:not([hidden])) #meta-right { display: none; }
+.composer-meta > .runbar {
+  flex: 1 1 auto; min-width: 0; max-width: none; margin: 0; padding: 0;
+  border: 0; background: transparent; border-radius: 0; gap: 6px;
+  font-size: 11.5px; white-space: nowrap;
+}
+.composer-meta > .runbar[hidden] { display: none; }
+.composer-meta .runbar::after { display: none; }
+.composer-meta .runbar-avg { display: none; }
+.composer .send.stop { min-width: 40px; min-height: 40px; width: 40px; height: 40px; }
+@media (max-width: 560px) {
+  .composer textarea { font-size: 16px; }
+  .composer-meta .runbar-text { flex: 1 1 auto; min-width: 26px; }
+  .composer-meta .runbar-queued { flex: none; }
+  .composer-meta .runbar-time { font-size: 11px; }
+}
+@media (max-width: 400px) {
+  .composer-meta .runbar:has(.runbar-queued:not([hidden])) .runbar-text { display: block; }
+  .composer-meta > .runbar { gap: 4px; }
+}
+
+/* Adjustable conversation typography; chrome, composer and sidebar remain unchanged. */
+.messages { --chat-font: 16px; --chat-scale: 1; }
+.messages .msg-a { font-size: var(--chat-font); }
+.messages .msg-user { font-size: calc(14.5px * var(--chat-scale)); }
+.messages .tool, .messages .msg-a table, .messages .msg-a code,
+.messages .msg-a pre code { font-size: calc(12.5px * var(--chat-scale)); }
+.messages .msg-a h3 { font-size: calc(18px * var(--chat-scale)); }
+.messages .msg-a h4 { font-size: calc(16.5px * var(--chat-scale)); }
+.messages .msg-a h5 { font-size: calc(15px * var(--chat-scale)); }
+.messages .msg-a .thought { font-size: calc(13.5px * var(--chat-scale)); }
+.messages .msg-a td::before { font-size: calc(11px * var(--chat-scale)); }
+.messages .tool pre { font-size: calc(11.5px * var(--chat-scale)); }
+.messages .tool-title .tname, .messages .perm-tool code { font-size: calc(12px * var(--chat-scale)); }
+.messages .perm { font-size: calc(13.5px * var(--chat-scale)); }
+.messages .perm-tool { font-size: calc(12.5px * var(--chat-scale)); }
+.chat-font-pop[hidden] { display: none; }
+.chat-font-pop {
+  position: absolute; top: 54px; right: 16px; z-index: 90;
+  display: flex; align-items: center; gap: 6px; padding: 8px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg-raise); box-shadow: 0 12px 32px rgba(0,0,0,.6);
+  max-width: calc(100vw - 24px);
+}
+.chat-font-pop button { min-width: 40px; min-height: 40px; padding: 5px; border-radius: 8px; background: var(--accent-soft); }
+.chat-font-pop input { min-width: 55px; width: 100px; accent-color: var(--accent); }
+.chat-font-pop output { min-width: 34px; text-align: center; }
+.chat-font-pop button:focus-visible, #btn-chat-font:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
