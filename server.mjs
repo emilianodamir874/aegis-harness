@@ -138,6 +138,16 @@ function isTunnel(req) {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return !isPrivateIp(host);
   return true;
 }
+// Cualquier peer que no sea loopback (LAN, tailnet, VPN) exige login. El tunel de
+// Cloudflare entra por loopback y se detecta por sus cabeceras. Esto cierra el bypass
+// por "IP privada = confianza" que dejaba la UI abierta a toda la LAN.
+function needsAuth(req) {
+  const peer = String(req.socket && req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+  const loopback = peer === "127.0.0.1" || peer === "::1";
+  if (!loopback) return true;
+  const h = req.headers;
+  return !!(h["cf-connecting-ip"] || h["cf-ray"] || h["cf-worker"]);
+}
 const loginFails = /* @__PURE__ */ new Map();
 function loginBlocked(ip) {
   const e = loginFails.get(ip);
@@ -414,7 +424,7 @@ const handler = async (req, res) => {
 `
     );
     if (url.pathname === "/tts" && req.method === "GET") {
-      if (tunneled && !authed(req)) {
+      if (needsAuth(req) && !authed(req)) {
         res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ error: "unauthorized", login: "/login" }));
         return;
@@ -521,7 +531,7 @@ const handler = async (req, res) => {
       res.end(LOGIN_HTML_OK);
       return;
     }
-    if (tunneled && !authed(req)) {
+    if (needsAuth(req) && !authed(req)) {
       if (readsHtml(req)) {
         redirect(res, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
       } else {
@@ -737,7 +747,7 @@ const onUpgrade = (req, socket, head) => {
     socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     return;
   }
-  if (isTunnel(req) && !authed(req)) {
+  if (needsAuth(req) && !authed(req)) {
     logLine("auth.log", `${(/* @__PURE__ */ new Date()).toISOString()} upgrade BLOQUEADO ${req.headers.host} ip=${req.socket.remoteAddress}
 `);
     socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
