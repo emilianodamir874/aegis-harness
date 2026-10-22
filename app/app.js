@@ -3878,6 +3878,57 @@ ${a.text}
     if (!bruto || bruto.indexOf("_") === -1) return bruto;
     return bruto.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
   }
+  const MODELOS_CONOCIDOS = {
+    chatgpt_codex: ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-reserve"],
+    open_design: ["deepseek-v4.1-flash", "glm-5.3-flash"]
+  };
+  const MODELOS_VISTOS_KEY = "aegis.modelosPorProveedor";
+  const MODELO_ELEGIDO_KEY = "aegis.modeloPorProveedor";
+  function leerModeloElegido(provider) {
+    try {
+      const j = JSON.parse(localStorage.getItem(MODELO_ELEGIDO_KEY) || "{}");
+      return j && typeof j === "object" && typeof j[provider] === "string" ? j[provider] : "";
+    } catch (e) {
+      return "";
+    }
+  }
+  function recordarModeloElegido(provider, valor) {
+    if (!provider || !valor) return;
+    try {
+      const j = JSON.parse(localStorage.getItem(MODELO_ELEGIDO_KEY) || "{}");
+      const todos = j && typeof j === "object" ? j : {};
+      if (todos[provider] === valor) return;
+      todos[provider] = valor;
+      localStorage.setItem(MODELO_ELEGIDO_KEY, JSON.stringify(todos));
+    } catch (e) {
+    }
+  }
+  function leerModelosVistos() {
+    try {
+      const j = JSON.parse(localStorage.getItem(MODELOS_VISTOS_KEY) || "{}");
+      return j && typeof j === "object" ? j : {};
+    } catch (e) {
+      return {};
+    }
+  }
+  // Los modelos por proveedor se recuerdan de cada sesion real: es la lista del backend,
+  // no una copia fija. MODELOS_CONOCIDOS solo cubre el primer uso, antes de abrir un chat.
+  function recordarModelos(provider, valores) {
+    const lista = (valores || []).filter((v) => typeof v === "string" && v);
+    if (!provider || !lista.length) return;
+    const todos = leerModelosVistos();
+    if (JSON.stringify(todos[provider] || []) === JSON.stringify(lista)) return;
+    todos[provider] = lista;
+    try {
+      localStorage.setItem(MODELOS_VISTOS_KEY, JSON.stringify(todos));
+    } catch (e) {
+    }
+  }
+  function modelosDeProveedor(provider) {
+    const vistos = leerModelosVistos()[provider];
+    if (Array.isArray(vistos) && vistos.length) return vistos;
+    return MODELOS_CONOCIDOS[provider] || [];
+  }
   const LEGACY_MODEL = /^(deepseek-v4\.1-flash|glm-5\.3-flash|gemini-3\.8-flash)-(none|low|medium|high|max)$/;
   const migradas = /* @__PURE__ */ new Set();
   let migrando = false;
@@ -3916,6 +3967,11 @@ ${a.text}
     if (deLaSesion) guardarCacheChips(deLaSesion);
     const opts = deLaSesion || leerCacheChips();
     const providerOpt = opts.find((o) => o && o.id === "provider");
+    const modelOptCache = opts.find((o) => o && o.id === "model");
+    if (providerOpt && modelOptCache && Array.isArray(modelOptCache.options)) {
+      recordarModelos(providerOpt.currentValue, modelOptCache.options.map((o) => o && o.value));
+      if (deLaSesion && modelOptCache.currentValue) recordarModeloElegido(providerOpt.currentValue, modelOptCache.currentValue);
+    }
     if (!deLaSesion && providerOpt && !providerOpt.options.some((o) => o.value === "opencode_go")) {
       providerOpt.options.push({ value: "opencode_go", name: "OpenCode Go" });
     }
@@ -3995,15 +4051,26 @@ ${a.text}
       if (opt) {
         opt.currentValue = value;
         guardarCacheChips(cache);
+        if (configId === "model") {
+          const prov = (cache.find((o) => o && o.id === "provider") || {}).currentValue;
+          recordarModeloElegido(prov, value);
+        }
       }
       if (configId === "provider") {
-        delete state.pendingConfig.model;
-        guardarPendientes();
+        // Sin sesion todavia no hay lista del backend: se usa la ultima vista de ese
+        // proveedor (o la tabla conocida) y se deja elegido su primer modelo, para que
+        // el selector de modelo no desaparezca al cambiar de proveedor.
+        const modelos = modelosDeProveedor(value);
+        const elegido = leerModeloElegido(value);
+        const porDefecto = modelos.indexOf(elegido) >= 0 ? elegido : modelos[0] || "";
         const model = cache.find((o) => o && o.id === "model");
         if (model) {
-          model.options = [];
-          model.currentValue = "";
+          model.options = modelos.map((v) => ({ value: v, name: v }));
+          model.currentValue = porDefecto;
         }
+        if (porDefecto) state.pendingConfig.model = porDefecto;
+        else delete state.pendingConfig.model;
+        guardarPendientes();
         guardarCacheChips(cache);
       }
       renderChips();
