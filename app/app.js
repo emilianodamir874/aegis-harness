@@ -2314,6 +2314,7 @@ function ttsUrlFor(voice, text) {
       loadDraft();
       readLoad();
       debateLoad();
+      enforceFixedModel();
       updateTitle();
       renderChips();
       markActive(res.sessionId);
@@ -2468,6 +2469,7 @@ function ttsUrlFor(voice, text) {
     loadDraft();
     readLoad();
     debateLoad();
+    enforceFixedModel();
     localStorage.setItem("gweb.last", id);
     if (!opts || !opts.quiet) setPill("Cargando conversación.");
     if (!SOFT.on) {
@@ -3063,14 +3065,30 @@ ${a.text}
   var DEBATE = DEBATE || { on: false, prev: "auto", turns: 0, prevEffort: "" };
   var HF = { on: false };
   var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
-  var DEBATE_MODEL = (function() {
+  var FIXED_MODELS = { open_design: "deepseek-v4.1-flash", opencode_go: "deepseek-v4.1-flash" };
+  function providerNow() {
+    const opts = state.current && state.current.configOptions || [];
+    const opt = opts.find((o) => o && o.id === "provider");
+    return opt ? String(opt.currentValue || "") : "";
+  }
+  function modelNow() {
+    const opts = state.current && state.current.configOptions || [];
+    const opt = opts.find((o) => o && o.id === "model");
+    return opt ? String(opt.currentValue || "") : "";
+  }
+  async function enforceFixedModel() {
+    const prov = providerNow();
+    const want = FIXED_MODELS[prov];
+    if (!want || modelNow() === want) return false;
     try {
-      var v = localStorage.getItem("aegis.debateModel");
-      return v === null ? "step-5-preview" : v;
+      await setConfig("model", want);
+      systemNote("Modelo fijado a " + want + " con " + prov + ".");
+      return true;
     } catch (e) {
-      return "step-5-preview";
+      report("modelo", "no pude fijar " + want + ": " + String(e && e.message || e).slice(0, 120));
+      return false;
     }
-  })();
+  }
   var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos. Discutí el plan, marcá riesgos y hacé preguntas. Respondé corto: 2 a 4 frases, sin listas largas ni el plan completo (el plan va en el cierre). Si la charla no apunta a un trabajo concreto (solo conversar del proyecto), podés cerrar el debate escribiendo en una linea aparte: — fin del debate —. Arrancás a trabajar cuando diga "dale".]';
   function debateKeyFor(id) {
     return "aegis.debate." + (id || "nuevo");
@@ -3098,22 +3116,6 @@ ${a.text}
   function debateCurrentMode() {
     const m = state.current && state.current.modes;
     return m && (m.currentModeId || m.current_mode_id) || "auto";
-  }
-  function debateCurrentModel() {
-    const opts = state.current && state.current.configOptions || [];
-    const opt = opts.find((o) => o && o.id === "model");
-    return opt ? String(opt.currentValue || "") : "";
-  }
-  async function debateRestoreModel() {
-    const prev = DEBATE.prevModel;
-    DEBATE.prevModel = "";
-    if (!prev) return;
-    if (debateCurrentModel() === prev) return;
-    try {
-      await setConfig("model", prev);
-    } catch (e) {
-      report("debate", "no pude volver al modelo " + prev);
-    }
   }
   function debateEffortNow() {
     const opts = state.current && state.current.configOptions || [];
@@ -3165,21 +3167,13 @@ ${a.text}
       if (!READ_ON) readToggle(true);
       DEBATE.prevEffort = debateEffortNow() || "off";
       await debateSetEffort("off");
-      DEBATE.prevModel = debateCurrentModel();
-      if (DEBATE_MODEL && DEBATE.prevModel && DEBATE_MODEL !== DEBATE.prevModel) {
-        try {
-          await setConfig("model", DEBATE_MODEL);
-        } catch (e) {
-          report("debate", "no pude cambiar a " + DEBATE_MODEL);
-        }
-      }
+      await enforceFixedModel();
       systemNote('Modo debate: micrófono abierto y respuestas en voz alta. Hablá; decí "dale" para que ejecute.');
       if (!state.busy && !AUD.playing && !AUD.q.length) micStart({ auto: true });
       else handsFreeMaybe(800);
     } else {
       HF.on = false;
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
-      await debateRestoreModel();
       if (MIC.rec) {
         if (MIC.spoke) micStop();
         else micStop(true);
@@ -3213,7 +3207,6 @@ ${a.text}
       await debateHide(1);
       await debateSetMode("auto");
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
-      await debateRestoreModel();
       DEBATE.on = false;
       DEBATE.turns = 0;
       HF.on = false;
@@ -3228,7 +3221,6 @@ ${a.text}
     const ocultos = await debateHide(turns + 1);
     await debateSetMode("auto");
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
-    await debateRestoreModel();
     DEBATE.turns = 0;
     try {
       localStorage.setItem(debateKeyFor(cur.id), "0");
@@ -3247,7 +3239,6 @@ ${a.text}
     DEBATE.turns = 0;
     await debateSetMode("auto");
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
-    await debateRestoreModel();
     try {
       localStorage.setItem(debateKeyFor(state.current && state.current.id), "0");
     } catch (e) {
@@ -4360,6 +4351,14 @@ ${a.text}
     true
   );
   async function setConfig(configId, value) {
+    if (configId === "model") {
+      const fijo = FIXED_MODELS[providerNow()];
+      if (fijo && value && value !== fijo) {
+        systemNote("Con " + providerNow() + " el modelo es fijo: " + fijo + ".");
+        renderChips();
+        return false;
+      }
+    }
     if (!state.current) {
       state.pendingConfig = state.pendingConfig || {};
       state.pendingConfig[configId] = value;
