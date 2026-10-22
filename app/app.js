@@ -3063,7 +3063,15 @@ ${a.text}
   var DEBATE = DEBATE || { on: false, prev: "auto", turns: 0, prevEffort: "" };
   var HF = { on: false };
   var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
-  var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos. Discutí el plan, marcá riesgos y hacé preguntas. Respondé corto: 2 a 4 frases, sin listas largas ni el plan completo (el plan va en el cierre). Arrancás a trabajar cuando diga "dale".]';
+  var DEBATE_MODEL = (function() {
+    try {
+      var v = localStorage.getItem("aegis.debateModel");
+      return v === null ? "step-5-preview" : v;
+    } catch (e) {
+      return "step-5-preview";
+    }
+  })();
+  var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos. Discutí el plan, marcá riesgos y hacé preguntas. Respondé corto: 2 a 4 frases, sin listas largas ni el plan completo (el plan va en el cierre). Si la charla no apunta a un trabajo concreto (solo conversar del proyecto), podés cerrar el debate escribiendo en una linea aparte: — fin del debate —. Arrancás a trabajar cuando diga "dale".]';
   function debateKeyFor(id) {
     return "aegis.debate." + (id || "nuevo");
   }
@@ -3090,6 +3098,22 @@ ${a.text}
   function debateCurrentMode() {
     const m = state.current && state.current.modes;
     return m && (m.currentModeId || m.current_mode_id) || "auto";
+  }
+  function debateCurrentModel() {
+    const opts = state.current && state.current.configOptions || [];
+    const opt = opts.find((o) => o && o.id === "model");
+    return opt ? String(opt.currentValue || "") : "";
+  }
+  async function debateRestoreModel() {
+    const prev = DEBATE.prevModel;
+    DEBATE.prevModel = "";
+    if (!prev) return;
+    if (debateCurrentModel() === prev) return;
+    try {
+      await setConfig("model", prev);
+    } catch (e) {
+      report("debate", "no pude volver al modelo " + prev);
+    }
   }
   function debateEffortNow() {
     const opts = state.current && state.current.configOptions || [];
@@ -3139,14 +3163,23 @@ ${a.text}
     if (next) {
       HF.on = true;
       if (!READ_ON) readToggle(true);
-      DEBATE.prevEffort = debateEffortNow();
-      if (DEBATE.prevEffort && DEBATE.prevEffort !== "off") await debateSetEffort("off");
+      DEBATE.prevEffort = debateEffortNow() || "off";
+      await debateSetEffort("off");
+      DEBATE.prevModel = debateCurrentModel();
+      if (DEBATE_MODEL && DEBATE.prevModel && DEBATE_MODEL !== DEBATE.prevModel) {
+        try {
+          await setConfig("model", DEBATE_MODEL);
+        } catch (e) {
+          report("debate", "no pude cambiar a " + DEBATE_MODEL);
+        }
+      }
       systemNote('Modo debate: micrófono abierto y respuestas en voz alta. Hablá; decí "dale" para que ejecute.');
       if (!state.busy && !AUD.playing && !AUD.q.length) micStart({ auto: true });
       else handsFreeMaybe(800);
     } else {
       HF.on = false;
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+      await debateRestoreModel();
       if (MIC.rec) {
         if (MIC.spoke) micStop();
         else micStop(true);
@@ -3171,13 +3204,31 @@ ${a.text}
     if (!cur) return;
     const extra = String(userText || "").replace(VOICE_SETTLE, "").replace(/^[\s,.:;-]+/, "").trim();
     const turns = Math.max(1, DEBATE.turns || 1);
-    const instr = 'Cerrá el debate. Escribí UN solo mensaje con el plan final acordado: concreto, en imperativo, con el orden de los pasos y lo que NO hay que tocar. No menciones la discusión ni lo que descartamos, no uses herramientas y no incluyas el bloque "Para escuchar" ni encabezados de lectura (este mensaje se manda tal cual como pedido).' + (extra ? " El usuario agrega: " + extra : "");
+    const instr = 'Cerrá el debate. Escribí UN solo mensaje con el plan final acordado: concreto, en imperativo, con el orden de los pasos y lo que NO hay que tocar. No menciones la discusión ni lo que descartamos, no uses herramientas y no incluyas el bloque "Para escuchar" ni encabezados de lectura (este mensaje se manda tal cual como pedido).' + (extra ? " El usuario agrega: " + extra : "") + " Si en la conversación NO hay trabajo concreto para hacer (fue solo charla), respondé exactamente SIN-PLAN y nada más.";
     DEBATE.on = false;
     await sendText(instr);
     const plan = String(textoDelTurno || "").trim();
+    const sinPlan = !plan || /^sin[\s_-]?plan\b/i.test(plan);
+    if (sinPlan) {
+      await debateHide(1);
+      await debateSetMode("auto");
+      if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+      await debateRestoreModel();
+      DEBATE.on = false;
+      DEBATE.turns = 0;
+      HF.on = false;
+      try {
+        localStorage.setItem(debateKeyFor(cur.id), "0");
+      } catch (e) {
+      }
+      debateSyncBtn();
+      systemNote("Debate cerrado sin plan: queda como conversación (no mando nada al agente).");
+      return;
+    }
     const ocultos = await debateHide(turns + 1);
     await debateSetMode("auto");
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+    await debateRestoreModel();
     DEBATE.turns = 0;
     try {
       localStorage.setItem(debateKeyFor(cur.id), "0");
@@ -3190,6 +3241,19 @@ ${a.text}
     }
     systemNote("Debate cerrado (" + ocultos + " mensaje(s) fuera del contexto): el plan va como mensaje y el agente arranca.");
     await sendText(plan);
+  }
+  async function debateAutoClose() {
+    DEBATE.on = false;
+    DEBATE.turns = 0;
+    await debateSetMode("auto");
+    if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+    await debateRestoreModel();
+    try {
+      localStorage.setItem(debateKeyFor(state.current && state.current.id), "0");
+    } catch (e) {
+    }
+    debateSyncBtn();
+    systemNote("El bot cerró el debate: seguimos charlando, sin plan de trabajo.");
   }
   async function debateHide(back) {
     const cur = state.current;
@@ -3393,6 +3457,7 @@ ${a.text}
       markRun(sid, false);
       refreshSessions();
     }
+    if (DEBATE && DEBATE.on && /fin del debate/i.test(textoDelTurno)) debateAutoClose();
     handsFreeMaybe(900);
   }
   async function send() {
