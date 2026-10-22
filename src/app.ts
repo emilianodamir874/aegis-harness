@@ -2748,7 +2748,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   // Encendido: la sesión pasa a `chat` (el server rechaza TODA herramienta) y cada mensaje
   // lleva una instruccion corta para discutir el plan. Cuando decis "dale" (o una de las
   // frases de VOICE_SETTLE) vuelve a `auto` y ese mensaje ya se ejecuta.
-  var DEBATE: any = DEBATE || { on: false, prev: 'auto' };
+  var DEBATE: any = DEBATE || { on: false, prev: 'auto', turns: 0, prevEffort: '' };
   // Manos libres: se prende con Debate y sigue activo despues de decir "dale" (para escuchar
   // el trabajo y poder seguir hablando). Se apaga apagando Debate.
   var HF: any = { on: false };
@@ -2760,6 +2760,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (!DEBATE) DEBATE = { on: false, prev: 'auto' };
     try { DEBATE.on = localStorage.getItem(debateKeyFor(state.current && state.current.id)) === '1'; } catch (e) { DEBATE.on = false; }
     if (HF) HF.on = false;   // el microfono se abre con un gesto (toggle), no al cargar el chat
+    DEBATE.turns = 0;
     debateSyncBtn();
     return DEBATE.on;
   }
@@ -2842,36 +2843,61 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (VOICE_SETTLE.test(t) && t.length <= 90) return t;
     return DEBATE_PREAMBLE + '\n\n' + t;
   }
-  async function debateSettle(text) {
+  // Cierre del debate: el mensaje del usuario solo dispara la conclusion.
+  function debateIsSettle(text) {
     if (!DEBATE || !DEBATE.on) return false;
     const t = String(text || '');
-    if (!VOICE_SETTLE.test(t) || t.length > 90) return false;
-    DEBATE.on = false;
-    try { localStorage.setItem(debateKeyFor(state.current && state.current.id), '0'); } catch (e) {}
+    return VOICE_SETTLE.test(t) && t.length <= 90;
+  }
+  async function debateConclude(userText) {
+    const cur = state.current;
+    if (!cur) return;
+    const extra = String(userText || '').replace(VOICE_SETTLE, '').replace(/^[\s,.:;-]+/, '').trim();
+    const turns = Math.max(1, DEBATE.turns || 1);
+    // 1) el bot escribe el plan final (sigue en modo chat: no puede tocar nada)
+    const instr = 'Cerrá el debate. Escribí UN solo mensaje con el plan final acordado: concreto, en imperativo, con el orden de los pasos y lo que NO hay que tocar. No menciones la discusión ni lo que descartamos, no uses herramientas y no incluyas el bloque "Para escuchar" ni encabezados de lectura (este mensaje se manda tal cual como pedido).'
+      + (extra ? ' El usuario agrega: ' + extra : '');
+    DEBATE.on = false;   // el turno de cierre no lleva preambulo
+    await sendText(instr);
+    const plan = String(textoDelTurno || '').trim();
+    // 2) el debate entero (incluido el cierre) sale del contexto del agente
+    const ocultos = await debateHide(turns + 1);
+    // 3) modo trabajo + esfuerzo original, y el plan va como mensaje nuevo
     await debateSetMode('auto');
+    if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+    DEBATE.turns = 0;
+    try { localStorage.setItem(debateKeyFor(cur.id), '0'); } catch (e) {}
     debateSyncBtn();
-    systemNote('Modo trabajo: "dale" detectado, ejecutando.');
-    return true;
+    if (!plan) {
+      systemNote('El debate cerró sin plan: no mando nada al agente (quedó oculto igual).');
+      return;
+    }
+    systemNote('Debate cerrado (' + ocultos + ' mensaje(s) fuera del contexto): el plan va como mensaje y el agente arranca.');
+    await sendText(plan);
   }
   // Un turno de debate no debe engordar el contexto del agente: se marca agentVisible=false
   // con el mismo rewind que usa el boton de rebobinar. Queda visible (gris) en el transcript.
-  async function debateRewind() {
+  async function debateHide(back) {
     const cur = state.current;
-    if (!cur) return;
+    if (!cur) return 0;
+    const n = Math.max(1, Number(back) || 1);
     try {
-      const res = await rpc.request('_aegis/unstable/session/rewind', { sessionId: cur.id, back: 1 });
+      const res = await rpc.request('_aegis/unstable/session/rewind', { sessionId: cur.id, back: n });
       const inner = $('#msg-inner') as HTMLElement | null;
       const users = inner ? [...inner.querySelectorAll<HTMLElement>(':scope > .msg-user')] : [];
-      const lastUser = users[users.length - 1];
-      if (lastUser && lastUser.dataset.mid) setHiddenFrom(cur.id, lastUser.dataset.mid);
-      if (inner && lastUser) {
+      const firstHidden = users[Math.max(0, users.length - n)];
+      if (firstHidden && firstHidden.dataset.mid) setHiddenFrom(cur.id, firstHidden.dataset.mid);
+      if (inner && firstHidden) {
         let seen = false;
-        for (const k of inner.children) { if (k === lastUser) seen = true; if (seen) k.classList.add('hidden-from-agent'); }
+        for (const k of inner.children) { if (k === firstHidden) seen = true; if (seen) k.classList.add('hidden-from-agent'); }
       }
       markHiddenTail();
-      report('debate', 'turno oculto para el agente (' + ((res && res.hidden) || 0) + ' mensaje(s))');
+      const hidden = (res && res.hidden) || 0;
+      report('debate', 'ocultos ' + hidden + ' mensaje(s) (' + n + ' turno(s))');
+      return hidden;
     } catch (e) {
       report('debate', 'rewind del debate fallo: ' + String((e && e.message) || e).slice(0, 120));
+      return 0;
     }
   }
   // Manos libres: microfono abierto + lectura encendida. El ciclo se cierra solo: escucha,
@@ -2981,8 +3007,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   async function sendText(text, atts?, bubble?) {
-    await debateSettle(text);          // si dijo "dale", esto devuelve el modo a auto
-    const enDebate = !!(DEBATE && DEBATE.on);   // turno de debate: no debe quedar en el contexto
+    if (debateIsSettle(text)) return debateConclude(text);   // "dale": cierra y manda el plan
+    if (DEBATE && DEBATE.on) DEBATE.turns = (DEBATE.turns || 0) + 1;   // el debate SI ve su propio hilo
     const wire = debateDecorate(text); // en debate, el mensaje lleva la consigna
     chunksTurn = 0;
     textoDelTurno = '';
@@ -3055,7 +3081,6 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       markRun(sid, false);   // si cambiaste de chat, avisa al cerrar el turno
       refreshSessions();
     }
-    if (enDebate && !loMandoComoIndicacion) debateRewind();   // el debate no acumula contexto
     handsFreeMaybe(900);   // manos libres: el micro vuelve aunque la respuesta no se lea
   }
 

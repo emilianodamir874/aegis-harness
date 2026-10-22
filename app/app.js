@@ -3060,7 +3060,7 @@ ${a.text}
       systemNote("No pude abrir el micrófono: " + String(e && e.message || e).slice(0, 140));
     });
   }
-  var DEBATE = DEBATE || { on: false, prev: "auto" };
+  var DEBATE = DEBATE || { on: false, prev: "auto", turns: 0, prevEffort: "" };
   var HF = { on: false };
   var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
   var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos; discutí el plan, marcá riesgos y hacé preguntas. Arrancás a trabajar cuando diga "dale".]';
@@ -3075,6 +3075,7 @@ ${a.text}
       DEBATE.on = false;
     }
     if (HF) HF.on = false;
+    DEBATE.turns = 0;
     debateSyncBtn();
     return DEBATE.on;
   }
@@ -3160,40 +3161,60 @@ ${a.text}
     if (VOICE_SETTLE.test(t) && t.length <= 90) return t;
     return DEBATE_PREAMBLE + "\n\n" + t;
   }
-  async function debateSettle(text) {
+  function debateIsSettle(text) {
     if (!DEBATE || !DEBATE.on) return false;
     const t = String(text || "");
-    if (!VOICE_SETTLE.test(t) || t.length > 90) return false;
-    DEBATE.on = false;
-    try {
-      localStorage.setItem(debateKeyFor(state.current && state.current.id), "0");
-    } catch (e) {
-    }
-    await debateSetMode("auto");
-    debateSyncBtn();
-    systemNote('Modo trabajo: "dale" detectado, ejecutando.');
-    return true;
+    return VOICE_SETTLE.test(t) && t.length <= 90;
   }
-  async function debateRewind() {
+  async function debateConclude(userText) {
     const cur = state.current;
     if (!cur) return;
+    const extra = String(userText || "").replace(VOICE_SETTLE, "").replace(/^[\s,.:;-]+/, "").trim();
+    const turns = Math.max(1, DEBATE.turns || 1);
+    const instr = 'Cerrá el debate. Escribí UN solo mensaje con el plan final acordado: concreto, en imperativo, con el orden de los pasos y lo que NO hay que tocar. No menciones la discusión ni lo que descartamos, no uses herramientas y no incluyas el bloque "Para escuchar" ni encabezados de lectura (este mensaje se manda tal cual como pedido).' + (extra ? " El usuario agrega: " + extra : "");
+    DEBATE.on = false;
+    await sendText(instr);
+    const plan = String(textoDelTurno || "").trim();
+    const ocultos = await debateHide(turns + 1);
+    await debateSetMode("auto");
+    if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+    DEBATE.turns = 0;
     try {
-      const res = await rpc.request("_aegis/unstable/session/rewind", { sessionId: cur.id, back: 1 });
+      localStorage.setItem(debateKeyFor(cur.id), "0");
+    } catch (e) {
+    }
+    debateSyncBtn();
+    if (!plan) {
+      systemNote("El debate cerró sin plan: no mando nada al agente (quedó oculto igual).");
+      return;
+    }
+    systemNote("Debate cerrado (" + ocultos + " mensaje(s) fuera del contexto): el plan va como mensaje y el agente arranca.");
+    await sendText(plan);
+  }
+  async function debateHide(back) {
+    const cur = state.current;
+    if (!cur) return 0;
+    const n = Math.max(1, Number(back) || 1);
+    try {
+      const res = await rpc.request("_aegis/unstable/session/rewind", { sessionId: cur.id, back: n });
       const inner = $("#msg-inner");
       const users = inner ? [...inner.querySelectorAll(":scope > .msg-user")] : [];
-      const lastUser = users[users.length - 1];
-      if (lastUser && lastUser.dataset.mid) setHiddenFrom(cur.id, lastUser.dataset.mid);
-      if (inner && lastUser) {
+      const firstHidden = users[Math.max(0, users.length - n)];
+      if (firstHidden && firstHidden.dataset.mid) setHiddenFrom(cur.id, firstHidden.dataset.mid);
+      if (inner && firstHidden) {
         let seen = false;
         for (const k of inner.children) {
-          if (k === lastUser) seen = true;
+          if (k === firstHidden) seen = true;
           if (seen) k.classList.add("hidden-from-agent");
         }
       }
       markHiddenTail();
-      report("debate", "turno oculto para el agente (" + (res && res.hidden || 0) + " mensaje(s))");
+      const hidden = res && res.hidden || 0;
+      report("debate", "ocultos " + hidden + " mensaje(s) (" + n + " turno(s))");
+      return hidden;
     } catch (e) {
       report("debate", "rewind del debate fallo: " + String(e && e.message || e).slice(0, 120));
+      return 0;
     }
   }
   function handsFreeOn() {
@@ -3300,8 +3321,8 @@ ${a.text}
     scrollBottom();
   }
   async function sendText(text, atts, bubble) {
-    await debateSettle(text);
-    const enDebate = !!(DEBATE && DEBATE.on);
+    if (debateIsSettle(text)) return debateConclude(text);
+    if (DEBATE && DEBATE.on) DEBATE.turns = (DEBATE.turns || 0) + 1;
     const wire2 = debateDecorate(text);
     chunksTurn = 0;
     textoDelTurno = "";
@@ -3372,7 +3393,6 @@ ${a.text}
       markRun(sid, false);
       refreshSessions();
     }
-    if (enDebate && !loMandoComoIndicacion) debateRewind();
     handsFreeMaybe(900);
   }
   async function send() {

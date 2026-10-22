@@ -74,19 +74,23 @@ try {
 
   await page.waitForTimeout(2500);   // deja correr el rewind automatico
 
-  // "dale": el debate se cierra y ESE turno tiene que quedar visible para el agente.
+  // "dale": cierra el debate (turno de cierre con el plan) y despues manda el plan como
+  // mensaje nuevo (turno de trabajo). Hay que esperar DOS turnos.
   await page.fill('#input', 'dale');
   await page.press('#input', 'Enter');
   const t1 = Date.now();
-  let arranco = false;
-  while (Date.now() - t1 < 60000) {
-    await page.waitForTimeout(500);
+  let turnos = 0;
+  let enCurso = false;
+  let quietoDesde = Date.now();
+  while (Date.now() - t1 < 180000) {
+    await page.waitForTimeout(400);
     const busy = await page.evaluate(() => !!(window.__aegisWeb && window.__aegisWeb.state.busy));
-    if (busy) arranco = true;
-    if (arranco && !busy) break;
+    if (busy && !enCurso) { enCurso = true; turnos++; }
+    if (!busy) { if (enCurso) enCurso = false; } else { quietoDesde = Date.now(); }
+    if (turnos >= 1 && !busy && Date.now() - quietoDesde > 14000) break;
   }
-  if (!arranco) throw new Error('el turno de dale nunca arranco');
-  console.log('turno de dale terminado');
+  console.log('turnos vistos tras dale: ' + turnos);
+  if (turnos < 2) throw new Error('no se vieron los dos turnos (cierre + plan)');
   await page.waitForTimeout(1500);
   await page.click('#btn-debate');   // por si quedo encendido: apagarlo
   await page.waitForTimeout(800);
