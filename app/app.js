@@ -3063,7 +3063,7 @@ ${a.text}
   var DEBATE = DEBATE || { on: false, prev: "auto", turns: 0, prevEffort: "" };
   var HF = { on: false };
   var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
-  var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos; discutí el plan, marcá riesgos y hacé preguntas. Arrancás a trabajar cuando diga "dale".]';
+  var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos. Discutí el plan, marcá riesgos y hacé preguntas. Respondé corto: 2 a 4 frases, sin listas largas ni el plan completo (el plan va en el cierre). Arrancás a trabajar cuando diga "dale".]';
   function debateKeyFor(id) {
     return "aegis.debate." + (id || "nuevo");
   }
