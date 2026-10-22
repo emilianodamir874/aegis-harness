@@ -2777,6 +2777,25 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const m = state.current && state.current.modes;
     return (m && (m.currentModeId || m.current_mode_id)) || 'auto';
   }
+  // En debate no queremos razonamiento: la respuesta tiene que salir rapido para conversar.
+  function debateEffortNow() {
+    const opts = (state.current && state.current.configOptions) || [];
+    const opt = opts.find((o) => o && o.id === 'thinking_effort');
+    return opt ? String(opt.currentValue || '') : '';
+  }
+  async function debateSetEffort(value) {
+    const sid = state.current && state.current.id;
+    if (!sid || !value) return false;
+    try {
+      const r = await rpc.request('session/set_config_option', { sessionId: sid, configId: 'thinking_effort', value: value });
+      if (r && Array.isArray(r.configOptions) && state.current) state.current.configOptions = r.configOptions;
+      renderChips();
+      return true;
+    } catch (e) {
+      report('debate', 'no pude fijar thinking_effort=' + value + ': ' + String((e && e.message) || e).slice(0, 120));
+      return false;
+    }
+  }
   async function debateSetMode(modeId) {
     const sid = state.current && state.current.id;
     if (!sid) return false;
@@ -2804,11 +2823,14 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (next) {
       HF.on = true;
       if (!READ_ON) readToggle(true);   // sin voz del bot no hay ciclo manos libres
+      DEBATE.prevEffort = debateEffortNow();
+      if (DEBATE.prevEffort && DEBATE.prevEffort !== 'off') await debateSetEffort('off');
       systemNote('Modo debate: micrófono abierto y respuestas en voz alta. Hablá; decí "dale" para que ejecute.');
       if (!state.busy && !AUD.playing && !AUD.q.length) micStart({ auto: true });
       else handsFreeMaybe(800);
     } else {
       HF.on = false;
+      if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
       if (MIC.rec) { if (MIC.spoke) micStop(); else micStop(true); }
       systemNote('Modo trabajo: herramientas habilitadas.');
     }
@@ -2830,6 +2852,27 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     debateSyncBtn();
     systemNote('Modo trabajo: "dale" detectado, ejecutando.');
     return true;
+  }
+  // Un turno de debate no debe engordar el contexto del agente: se marca agentVisible=false
+  // con el mismo rewind que usa el boton de rebobinar. Queda visible (gris) en el transcript.
+  async function debateRewind() {
+    const cur = state.current;
+    if (!cur) return;
+    try {
+      const res = await rpc.request('_aegis/unstable/session/rewind', { sessionId: cur.id, back: 1 });
+      const inner = $('#msg-inner') as HTMLElement | null;
+      const users = inner ? [...inner.querySelectorAll<HTMLElement>(':scope > .msg-user')] : [];
+      const lastUser = users[users.length - 1];
+      if (lastUser && lastUser.dataset.mid) setHiddenFrom(cur.id, lastUser.dataset.mid);
+      if (inner && lastUser) {
+        let seen = false;
+        for (const k of inner.children) { if (k === lastUser) seen = true; if (seen) k.classList.add('hidden-from-agent'); }
+      }
+      markHiddenTail();
+      report('debate', 'turno oculto para el agente (' + ((res && res.hidden) || 0) + ' mensaje(s))');
+    } catch (e) {
+      report('debate', 'rewind del debate fallo: ' + String((e && e.message) || e).slice(0, 120));
+    }
   }
   // Manos libres: microfono abierto + lectura encendida. El ciclo se cierra solo: escucha,
   // transcribe, envia, el bot contesta, se lee y el microfono vuelve a abrirse.
@@ -2939,6 +2982,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 
   async function sendText(text, atts?, bubble?) {
     await debateSettle(text);          // si dijo "dale", esto devuelve el modo a auto
+    const enDebate = !!(DEBATE && DEBATE.on);   // turno de debate: no debe quedar en el contexto
     const wire = debateDecorate(text); // en debate, el mensaje lleva la consigna
     chunksTurn = 0;
     textoDelTurno = '';
@@ -3011,6 +3055,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       markRun(sid, false);   // si cambiaste de chat, avisa al cerrar el turno
       refreshSessions();
     }
+    if (enDebate && !loMandoComoIndicacion) debateRewind();   // el debate no acumula contexto
     handsFreeMaybe(900);   // manos libres: el micro vuelve aunque la respuesta no se lea
   }
 
@@ -4570,6 +4615,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     // retroactivamente mientras llega markdown a medias (un ` sin cerrar, un [link](url sin
     // terminar), y ahi los offsets se corrian y se hablaban pedazos ("ta y codigo.").
     var raw = readBlock(rawText);
+    if (!raw) {
+      // Sin bloque "Para escuchar": en manos libres se lee la respuesta completa (el debate no
+      // trae ese encabezado). Fuera de manos libres, solo prosa corta y sin codigo.
+      var texto = String(rawText || '');
+      if (HF && HF.on) raw = texto;
+      else if (READ_ON && texto.indexOf('```') < 0 && texto.length <= 1200) raw = texto;
+    }
     if (!raw) return;
     var done = READ.consumed || 0;
     if (raw.length <= done) return;

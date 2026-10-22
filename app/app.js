@@ -3090,6 +3090,24 @@ ${a.text}
     const m = state.current && state.current.modes;
     return m && (m.currentModeId || m.current_mode_id) || "auto";
   }
+  function debateEffortNow() {
+    const opts = state.current && state.current.configOptions || [];
+    const opt = opts.find((o) => o && o.id === "thinking_effort");
+    return opt ? String(opt.currentValue || "") : "";
+  }
+  async function debateSetEffort(value) {
+    const sid = state.current && state.current.id;
+    if (!sid || !value) return false;
+    try {
+      const r = await rpc.request("session/set_config_option", { sessionId: sid, configId: "thinking_effort", value });
+      if (r && Array.isArray(r.configOptions) && state.current) state.current.configOptions = r.configOptions;
+      renderChips();
+      return true;
+    } catch (e) {
+      report("debate", "no pude fijar thinking_effort=" + value + ": " + String(e && e.message || e).slice(0, 120));
+      return false;
+    }
+  }
   async function debateSetMode(modeId) {
     const sid = state.current && state.current.id;
     if (!sid) return false;
@@ -3120,11 +3138,14 @@ ${a.text}
     if (next) {
       HF.on = true;
       if (!READ_ON) readToggle(true);
+      DEBATE.prevEffort = debateEffortNow();
+      if (DEBATE.prevEffort && DEBATE.prevEffort !== "off") await debateSetEffort("off");
       systemNote('Modo debate: micrófono abierto y respuestas en voz alta. Hablá; decí "dale" para que ejecute.');
       if (!state.busy && !AUD.playing && !AUD.q.length) micStart({ auto: true });
       else handsFreeMaybe(800);
     } else {
       HF.on = false;
+      if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
       if (MIC.rec) {
         if (MIC.spoke) micStop();
         else micStop(true);
@@ -3152,6 +3173,28 @@ ${a.text}
     debateSyncBtn();
     systemNote('Modo trabajo: "dale" detectado, ejecutando.');
     return true;
+  }
+  async function debateRewind() {
+    const cur = state.current;
+    if (!cur) return;
+    try {
+      const res = await rpc.request("_aegis/unstable/session/rewind", { sessionId: cur.id, back: 1 });
+      const inner = $("#msg-inner");
+      const users = inner ? [...inner.querySelectorAll(":scope > .msg-user")] : [];
+      const lastUser = users[users.length - 1];
+      if (lastUser && lastUser.dataset.mid) setHiddenFrom(cur.id, lastUser.dataset.mid);
+      if (inner && lastUser) {
+        let seen = false;
+        for (const k of inner.children) {
+          if (k === lastUser) seen = true;
+          if (seen) k.classList.add("hidden-from-agent");
+        }
+      }
+      markHiddenTail();
+      report("debate", "turno oculto para el agente (" + (res && res.hidden || 0) + " mensaje(s))");
+    } catch (e) {
+      report("debate", "rewind del debate fallo: " + String(e && e.message || e).slice(0, 120));
+    }
   }
   function handsFreeOn() {
     return !!(HF && HF.on) && READ_ON;
@@ -3258,6 +3301,7 @@ ${a.text}
   }
   async function sendText(text, atts, bubble) {
     await debateSettle(text);
+    const enDebate = !!(DEBATE && DEBATE.on);
     const wire2 = debateDecorate(text);
     chunksTurn = 0;
     textoDelTurno = "";
@@ -3328,6 +3372,7 @@ ${a.text}
       markRun(sid, false);
       refreshSessions();
     }
+    if (enDebate && !loMandoComoIndicacion) debateRewind();
     handsFreeMaybe(900);
   }
   async function send() {
@@ -4932,6 +4977,11 @@ ${a.text}
     READ.lastKey = key;
     READ.lastRaw = rawText;
     var raw = readBlock(rawText);
+    if (!raw) {
+      var texto = String(rawText || "");
+      if (HF && HF.on) raw = texto;
+      else if (READ_ON && texto.indexOf("```") < 0 && texto.length <= 1200) raw = texto;
+    }
     if (!raw) return;
     var done = READ.consumed || 0;
     if (raw.length <= done) return;
