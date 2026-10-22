@@ -2313,6 +2313,7 @@ function ttsUrlFor(voice, text) {
       showWelcome("new");
       loadDraft();
       readLoad();
+      debateLoad();
       updateTitle();
       renderChips();
       markActive(res.sessionId);
@@ -2466,6 +2467,7 @@ function ttsUrlFor(voice, text) {
     closeDrawer();
     loadDraft();
     readLoad();
+    debateLoad();
     localStorage.setItem("gweb.last", id);
     if (!opts || !opts.quiet) setPill("Cargando conversación.");
     if (!SOFT.on) {
@@ -2836,8 +2838,9 @@ ${a.text}
       }
     }
   }
-  var VOICE_PROVIDER = "groq";
-  var micRec = null, micChunks = [];
+  var VOICE_PROVIDERS = ["groq", "model"];
+  var VOICE_MIN_MS = 450, VOICE_MAX_MS = 9e4, VOICE_SILENCE_MS = 900, VOICE_RMS = 0.012;
+  var MIC = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0 };
   function micSecure() {
     return !!window.isSecureContext;
   }
@@ -2861,57 +2864,132 @@ ${a.text}
     const btn = document.getElementById("btn-mic");
     if (!btn) return;
     btn.classList.toggle("rec", !!on);
-    btn.title = on ? "Grabando... tocá para cortar y transcribir" : "Dictar por voz";
+    btn.title = on ? "Grabando… tocá para cortar y transcribir" : "Dictar por voz (corta solo cuando te quedás callado)";
   }
-  function micTranscribe() {
-    micSetState(false);
-    const rec = micRec;
-    micRec = null;
-    const chunks = micChunks;
-    micChunks = [];
-    const btn = document.getElementById("btn-mic");
+  function micStop() {
+    if (!MIC.rec) return;
     try {
-      const type = (rec && rec.mimeType || "audio/webm").split(";")[0];
-      const blob = new Blob(chunks, { type });
-      if (!blob.size) {
-        systemNote("No se grabó audio.");
-        return;
-      }
-      if (btn) btn.classList.add("busy");
-      systemNote("Transcribiendo " + Math.round(blob.size / 1024) + " KB con " + VOICE_PROVIDER + "...");
-      const fr = new FileReader();
-      fr.onload = function() {
-        const b64 = String(fr.result).split(",")[1];
-        rpc.request("_aegis/unstable/dictation/transcribe", { audio: b64, mimeType: type, provider: VOICE_PROVIDER }).then(function(r) {
-          if (btn) btn.classList.remove("busy");
-          const txt = (r && r.text || "").trim();
-          if (!txt) {
-            systemNote("La transcripción vino vacía.");
-            return;
-          }
-          micInsert(txt);
-          systemNote("Dictado: " + txt.slice(0, 90));
-        }).catch(function(e) {
-          if (btn) btn.classList.remove("busy");
-          systemNote("Falló la transcripción (" + VOICE_PROVIDER + "): " + String(e && e.message || e).slice(0, 160));
-        });
-      };
-      fr.onerror = function() {
-        if (btn) btn.classList.remove("busy");
-        systemNote("No pude leer el audio grabado.");
-      };
-      fr.readAsDataURL(blob);
+      MIC.rec.stop();
     } catch (e) {
-      if (btn) btn.classList.remove("busy");
-      systemNote("Error al procesar el audio: " + String(e && e.message || e).slice(0, 160));
     }
   }
-  function micStart() {
-    if (micRec) {
-      try {
-        micRec.stop();
-      } catch (e) {
-      }
+  function micCleanup() {
+    try {
+      if (MIC.stream) MIC.stream.getTracks().forEach(function(x) {
+        x.stop();
+      });
+    } catch (e) {
+    }
+    try {
+      if (MIC.ctx && MIC.ctx.close) MIC.ctx.close();
+    } catch (e) {
+    }
+    if (MIC.timer) {
+      clearInterval(MIC.timer);
+      MIC.timer = 0;
+    }
+    MIC.stream = null;
+    MIC.ctx = null;
+    MIC.analyser = null;
+    MIC.buf = null;
+  }
+  function micWatch(stream) {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const src = ctx.createMediaStreamSource(stream);
+      const an = ctx.createAnalyser();
+      an.fftSize = 1024;
+      src.connect(an);
+      MIC.ctx = ctx;
+      MIC.analyser = an;
+      MIC.buf = new Float32Array(an.fftSize);
+      MIC.timer = setInterval(function() {
+        if (!MIC.analyser || !MIC.buf) return;
+        MIC.analyser.getFloatTimeDomainData(MIC.buf);
+        let sum = 0;
+        for (let i = 0; i < MIC.buf.length; i++) sum += MIC.buf[i] * MIC.buf[i];
+        const rms = Math.sqrt(sum / MIC.buf.length);
+        const now = Date.now();
+        if (now - MIC.startedAt > VOICE_MAX_MS) {
+          micStop();
+          return;
+        }
+        if (rms >= VOICE_RMS) {
+          MIC.spoke = true;
+          MIC.quietSince = 0;
+          return;
+        }
+        if (!MIC.spoke) return;
+        if (!MIC.quietSince) {
+          MIC.quietSince = now;
+          return;
+        }
+        if (now - MIC.quietSince >= VOICE_SILENCE_MS) micStop();
+      }, 100);
+    } catch (e) {
+      report("mic", "VAD no disponible: " + String(e && e.message || e));
+    }
+  }
+  function micTranscribe(blob, idx) {
+    const i = idx || 0;
+    const provider = VOICE_PROVIDERS[i];
+    const btn = document.getElementById("btn-mic");
+    if (!provider) {
+      if (btn) btn.classList.remove("busy");
+      MIC.auto = false;
+      systemNote("No pude transcribir con ningún proveedor (revisá GROQ_API_KEY o el proveedor activo).");
+      return;
+    }
+    if (btn) btn.classList.add("busy");
+    systemNote("Transcribiendo " + Math.round(blob.size / 1024) + " KB con " + provider + "…");
+    const fr = new FileReader();
+    fr.onload = function() {
+      const b64 = String(fr.result).split(",")[1];
+      const type = (blob.type || "audio/webm").split(";")[0];
+      rpc.request("_aegis/unstable/dictation/transcribe", { audio: b64, mimeType: type, provider }).then(function(r) {
+        if (btn) btn.classList.remove("busy");
+        const txt = (r && r.text || "").trim();
+        if (!txt) {
+          MIC.auto = false;
+          systemNote("La transcripción vino vacía (" + provider + ").");
+          return;
+        }
+        micDeliver(txt);
+      }).catch(function(e) {
+        const msg = String(e && e.message || e).slice(0, 120);
+        report("dictado", provider + " falló: " + msg);
+        if (i + 1 < VOICE_PROVIDERS.length) {
+          systemNote("Falló " + provider + " (" + msg + "). Pruebo con " + VOICE_PROVIDERS[i + 1] + "…");
+          micTranscribe(blob, i + 1);
+          return;
+        }
+        if (btn) btn.classList.remove("busy");
+        MIC.auto = false;
+        systemNote("Falló la transcripción: " + msg);
+      });
+    };
+    fr.onerror = function() {
+      if (btn) btn.classList.remove("busy");
+      MIC.auto = false;
+      systemNote("No pude leer el audio grabado.");
+    };
+    fr.readAsDataURL(blob);
+  }
+  function micDeliver(txt) {
+    const auto = MIC.auto;
+    MIC.auto = false;
+    systemNote("Dictado: " + txt.slice(0, 90));
+    if (auto && !state.busy) {
+      sendText(txt);
+      return;
+    }
+    micInsert(txt);
+  }
+  function micStart(opts) {
+    if (MIC.rec) {
+      micStop();
       return;
     }
     if (!micSecure()) {
@@ -2922,35 +3000,147 @@ ${a.text}
       systemNote("Este navegador no soporta grabación de audio.");
       return;
     }
-    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } }).then(function(st) {
+    MIC.auto = !!(opts && opts.auto);
+    MIC.spoke = false;
+    MIC.quietSince = 0;
+    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function(st) {
+      MIC.granted = true;
+      MIC.stream = st;
       const mt = MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
-      micChunks = [];
-      micRec = mt ? new MediaRecorder(st, { mimeType: mt }) : new MediaRecorder(st);
-      micRec.ondataavailable = function(ev) {
-        if (ev.data && ev.data.size) micChunks.push(ev.data);
+      MIC.chunks = [];
+      const rec = mt ? new MediaRecorder(st, { mimeType: mt }) : new MediaRecorder(st);
+      MIC.rec = rec;
+      MIC.startedAt = Date.now();
+      rec.ondataavailable = function(ev) {
+        if (ev.data && ev.data.size) MIC.chunks.push(ev.data);
       };
-      micRec.onstop = function() {
-        try {
-          st.getTracks().forEach(function(x) {
-            x.stop();
-          });
-        } catch (e) {
+      rec.onstop = function() {
+        const ms = Date.now() - MIC.startedAt;
+        const chunks = MIC.chunks;
+        MIC.chunks = [];
+        MIC.rec = null;
+        micCleanup();
+        micSetState(false);
+        const blob = new Blob(chunks, { type: (rec.mimeType || "audio/webm").split(";")[0] });
+        if (!blob.size) {
+          MIC.auto = false;
+          systemNote("No se grabó audio.");
+          return;
         }
-        micTranscribe();
+        if (ms < VOICE_MIN_MS) {
+          MIC.auto = false;
+          systemNote("Grabación muy corta (" + ms + " ms): la descarto.");
+          return;
+        }
+        micTranscribe(blob, 0);
       };
-      micRec.start();
+      rec.start();
       micSetState(true);
-      systemNote("Grabando... tocá el micrófono de nuevo para cortar y transcribir.");
+      micWatch(st);
+      if (!MIC.auto) systemNote("Grabando… tocá el micrófono para cortar, o quedate callado ~1 s y corta solo.");
     }).catch(function(e) {
-      micRec = null;
+      MIC.rec = null;
+      MIC.auto = false;
       micSetState(false);
       systemNote("No pude abrir el micrófono: " + String(e && e.message || e).slice(0, 140));
     });
+  }
+  var DEBATE = DEBATE || { on: false, prev: "auto" };
+  var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
+  var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos; discutí el plan, marcá riesgos y hacé preguntas. Arrancás a trabajar cuando diga "dale".]';
+  function debateKeyFor(id) {
+    return "aegis.debate." + (id || "nuevo");
+  }
+  function debateLoad() {
+    if (!DEBATE) DEBATE = { on: false, prev: "auto" };
+    try {
+      DEBATE.on = localStorage.getItem(debateKeyFor(state.current && state.current.id)) === "1";
+    } catch (e) {
+      DEBATE.on = false;
+    }
+    debateSyncBtn();
+    return DEBATE.on;
+  }
+  function debateSyncBtn() {
+    const b = document.getElementById("btn-debate");
+    if (!b || !DEBATE) return;
+    b.classList.toggle("on", !!DEBATE.on);
+    b.textContent = DEBATE.on ? "Debate · ON" : "Debate";
+    b.setAttribute("aria-pressed", DEBATE.on ? "true" : "false");
+    b.title = DEBATE.on ? 'Modo debate ENCENDIDO: el bot conversa y NO puede usar herramientas. Decí "dale" para pasar a trabajar.' : "Modo debate: discutir el plan antes de que el bot toque nada (sin herramientas).";
+  }
+  function debateCurrentMode() {
+    const m = state.current && state.current.modes;
+    return m && (m.currentModeId || m.current_mode_id) || "auto";
+  }
+  async function debateSetMode(modeId) {
+    const sid = state.current && state.current.id;
+    if (!sid) return false;
+    try {
+      await rpc.request("session/set_mode", { sessionId: sid, modeId });
+      if (state.current) {
+        if (!state.current.modes) state.current.modes = {};
+        state.current.modes.currentModeId = modeId;
+      }
+      return true;
+    } catch (e) {
+      systemNote("No pude cambiar el modo a " + modeId + ": " + String(e && e.message || e).slice(0, 120));
+      return false;
+    }
+  }
+  async function debateToggle() {
+    const next = !(DEBATE && DEBATE.on);
+    if (next) {
+      DEBATE.prev = debateCurrentMode();
+      if (!await debateSetMode("chat")) return;
+    } else if (!await debateSetMode(DEBATE.prev || "auto")) return;
+    DEBATE.on = next;
+    try {
+      localStorage.setItem(debateKeyFor(state.current && state.current.id), next ? "1" : "0");
+    } catch (e) {
+    }
+    debateSyncBtn();
+    systemNote(next ? 'Modo debate: hablamos el plan. El bot no puede usar herramientas hasta que digas "dale".' : "Modo trabajo: herramientas habilitadas.");
+  }
+  function debateDecorate(text) {
+    const t = String(text || "");
+    if (!DEBATE || !DEBATE.on) return t;
+    if (VOICE_SETTLE.test(t) && t.length <= 90) return t;
+    return DEBATE_PREAMBLE + "\n\n" + t;
+  }
+  async function debateSettle(text) {
+    if (!DEBATE || !DEBATE.on) return false;
+    const t = String(text || "");
+    if (!VOICE_SETTLE.test(t) || t.length > 90) return false;
+    DEBATE.on = false;
+    try {
+      localStorage.setItem(debateKeyFor(state.current && state.current.id), "0");
+    } catch (e) {
+    }
+    await debateSetMode("auto");
+    debateSyncBtn();
+    systemNote('Modo trabajo: "dale" detectado, ejecutando.');
+    return true;
+  }
+  function handsFreeOn() {
+    return !!(DEBATE && DEBATE.on) && READ_ON;
+  }
+  function handsFreeMaybe() {
+    if (!handsFreeOn() || state.busy || MIC.rec) return;
+    if (document.visibilityState !== "visible") return;
+    if (!MIC.granted) return;
+    setTimeout(function() {
+      if (handsFreeOn() && !state.busy && !MIC.rec) micStart({ auto: true });
+    }, 700);
   }
   (function bindMic() {
     const btn = document.getElementById("btn-mic");
     if (btn) btn.addEventListener("click", function() {
       micStart();
+    });
+    const dbg = document.getElementById("btn-debate");
+    if (dbg) dbg.addEventListener("click", function() {
+      debateToggle();
     });
   })();
   let chunksTurn = 0;
@@ -3029,6 +3219,8 @@ ${a.text}
     scrollBottom();
   }
   async function sendText(text, atts, bubble) {
+    await debateSettle(text);
+    const wire2 = debateDecorate(text);
     chunksTurn = 0;
     textoDelTurno = "";
     state.hideTail = false;
@@ -3041,7 +3233,7 @@ ${a.text}
     let label = "Respuesta completa";
     let loMandoComoIndicacion = false;
     try {
-      const res = await promptConRetry(text, atts, sid);
+      const res = await promptConRetry(wire2, atts, sid);
       if (!(state.current && state.current.id === sid)) {
         report("adopt", "turno terminó en " + (sid || "?") + " con la vista en otro chat");
         return;
@@ -3878,57 +4070,6 @@ ${a.text}
     if (!bruto || bruto.indexOf("_") === -1) return bruto;
     return bruto.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
   }
-  const MODELOS_CONOCIDOS = {
-    chatgpt_codex: ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-reserve"],
-    open_design: ["deepseek-v4.1-flash", "glm-5.3-flash"]
-  };
-  const MODELOS_VISTOS_KEY = "aegis.modelosPorProveedor";
-  const MODELO_ELEGIDO_KEY = "aegis.modeloPorProveedor";
-  function leerModeloElegido(provider) {
-    try {
-      const j = JSON.parse(localStorage.getItem(MODELO_ELEGIDO_KEY) || "{}");
-      return j && typeof j === "object" && typeof j[provider] === "string" ? j[provider] : "";
-    } catch (e) {
-      return "";
-    }
-  }
-  function recordarModeloElegido(provider, valor) {
-    if (!provider || !valor) return;
-    try {
-      const j = JSON.parse(localStorage.getItem(MODELO_ELEGIDO_KEY) || "{}");
-      const todos = j && typeof j === "object" ? j : {};
-      if (todos[provider] === valor) return;
-      todos[provider] = valor;
-      localStorage.setItem(MODELO_ELEGIDO_KEY, JSON.stringify(todos));
-    } catch (e) {
-    }
-  }
-  function leerModelosVistos() {
-    try {
-      const j = JSON.parse(localStorage.getItem(MODELOS_VISTOS_KEY) || "{}");
-      return j && typeof j === "object" ? j : {};
-    } catch (e) {
-      return {};
-    }
-  }
-  // Los modelos por proveedor se recuerdan de cada sesion real: es la lista del backend,
-  // no una copia fija. MODELOS_CONOCIDOS solo cubre el primer uso, antes de abrir un chat.
-  function recordarModelos(provider, valores) {
-    const lista = (valores || []).filter((v) => typeof v === "string" && v);
-    if (!provider || !lista.length) return;
-    const todos = leerModelosVistos();
-    if (JSON.stringify(todos[provider] || []) === JSON.stringify(lista)) return;
-    todos[provider] = lista;
-    try {
-      localStorage.setItem(MODELOS_VISTOS_KEY, JSON.stringify(todos));
-    } catch (e) {
-    }
-  }
-  function modelosDeProveedor(provider) {
-    const vistos = leerModelosVistos()[provider];
-    if (Array.isArray(vistos) && vistos.length) return vistos;
-    return MODELOS_CONOCIDOS[provider] || [];
-  }
   const LEGACY_MODEL = /^(deepseek-v4\.1-flash|glm-5\.3-flash|gemini-3\.8-flash)-(none|low|medium|high|max)$/;
   const migradas = /* @__PURE__ */ new Set();
   let migrando = false;
@@ -3967,11 +4108,6 @@ ${a.text}
     if (deLaSesion) guardarCacheChips(deLaSesion);
     const opts = deLaSesion || leerCacheChips();
     const providerOpt = opts.find((o) => o && o.id === "provider");
-    const modelOptCache = opts.find((o) => o && o.id === "model");
-    if (providerOpt && modelOptCache && Array.isArray(modelOptCache.options)) {
-      recordarModelos(providerOpt.currentValue, modelOptCache.options.map((o) => o && o.value));
-      if (deLaSesion && modelOptCache.currentValue) recordarModeloElegido(providerOpt.currentValue, modelOptCache.currentValue);
-    }
     if (!deLaSesion && providerOpt && !providerOpt.options.some((o) => o.value === "opencode_go")) {
       providerOpt.options.push({ value: "opencode_go", name: "OpenCode Go" });
     }
@@ -4009,6 +4145,19 @@ ${a.text}
       item.append(btn, menu);
       wrap.appendChild(item);
     }
+    const dwrap = document.createElement("div");
+    dwrap.className = "chip-wrap";
+    const dbtn = document.createElement("button");
+    dbtn.id = "btn-debate";
+    dbtn.type = "button";
+    dbtn.className = "chip debate-chip";
+    dbtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      debateToggle();
+    });
+    dwrap.appendChild(dbtn);
+    wrap.appendChild(dwrap);
+    debateSyncBtn();
     migrarModeloViejo();
   }
   function openMenu(btn, menu) {
@@ -4051,26 +4200,15 @@ ${a.text}
       if (opt) {
         opt.currentValue = value;
         guardarCacheChips(cache);
-        if (configId === "model") {
-          const prov = (cache.find((o) => o && o.id === "provider") || {}).currentValue;
-          recordarModeloElegido(prov, value);
-        }
       }
       if (configId === "provider") {
-        // Sin sesion todavia no hay lista del backend: se usa la ultima vista de ese
-        // proveedor (o la tabla conocida) y se deja elegido su primer modelo, para que
-        // el selector de modelo no desaparezca al cambiar de proveedor.
-        const modelos = modelosDeProveedor(value);
-        const elegido = leerModeloElegido(value);
-        const porDefecto = modelos.indexOf(elegido) >= 0 ? elegido : modelos[0] || "";
+        delete state.pendingConfig.model;
+        guardarPendientes();
         const model = cache.find((o) => o && o.id === "model");
         if (model) {
-          model.options = modelos.map((v) => ({ value: v, name: v }));
-          model.currentValue = porDefecto;
+          model.options = [];
+          model.currentValue = "";
         }
-        if (porDefecto) state.pendingConfig.model = porDefecto;
-        else delete state.pendingConfig.model;
-        guardarPendientes();
         guardarCacheChips(cache);
       }
       renderChips();
@@ -4693,6 +4831,7 @@ ${a.text}
       AUD.playing = false;
       AUD.cur = null;
       audNext();
+      if (!AUD.playing && !AUD.q.length) handsFreeMaybe();
     };
     var fallar = function() {
       if (AUD.cur === a) {

@@ -2017,7 +2017,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       resetTransient();
       clearMessages();
       showWelcome('new');
-      loadDraft(); readLoad();
+      loadDraft(); readLoad(); debateLoad();
       updateTitle(); renderChips(); markActive(res.sessionId);
       localStorage.setItem('gweb.last', res.sessionId);
       closeDrawer();
@@ -2191,7 +2191,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
     clearMessages();
-    updateTitle(); markActive(id); closeDrawer(); loadDraft(); readLoad();
+    updateTitle(); markActive(id); closeDrawer(); loadDraft(); readLoad(); debateLoad();
     localStorage.setItem('gweb.last', id);
     if (!opts || !opts.quiet) setPill('Cargando conversación.');
     if (!SOFT.on) {
@@ -2572,13 +2572,16 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       }
     }
   }
-  // --- Dictado por voz (2026-10-15) -------------------------------------------------------
-  // El backend existia desde antes (_aegis/unstable/dictation/transcribe) y no tenia cliente.
-  // Se graba con MediaRecorder y se manda el audio en base64; el texto se pega en el cursor.
-  // getUserMedia exige contexto seguro: HTTPS o localhost. Por la IP de LAN el navegador no
-  // da el permiso ni pregunta, asi que se avisa en vez de fallar en silencio.
-  var VOICE_PROVIDER = 'groq'; // Aegis ya lo tiene cableado (GROQ_API_KEY en secrets.yaml)
-  var micRec = null, micChunks = [];
+  // --- Dictado por voz + modo manos libres (2026-10-22) -----------------------------------
+  // Graba con MediaRecorder y manda el audio a _aegis/unstable/dictation/transcribe.
+  // Sobre la version 2026-10-15:
+  //   * VAD: corta solo tras ~900 ms de silencio despues de hablar (no hay que tocar nada).
+  //   * Cadena de proveedores: groq (whisper-large-v3-turbo) y, si falla, el modelo activo.
+  //   * En manos libres (debate + lectura) el texto se envia solo y, cuando termina la voz del
+  //     bot, el microfono se vuelve a abrir: la conversacion cierra el circulo sola.
+  var VOICE_PROVIDERS = ['groq', 'model'];
+  var VOICE_MIN_MS = 450, VOICE_MAX_MS = 90000, VOICE_SILENCE_MS = 900, VOICE_RMS = 0.012;
+  var MIC: any = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0 };
 
   function micSecure() { return !!window.isSecureContext; }
 
@@ -2600,68 +2603,220 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const btn = document.getElementById('btn-mic');
     if (!btn) return;
     btn.classList.toggle('rec', !!on);
-    btn.title = on ? 'Grabando... tocá para cortar y transcribir' : 'Dictar por voz';
+    btn.title = on ? 'Grabando… tocá para cortar y transcribir' : 'Dictar por voz (corta solo cuando te quedás callado)';
   }
 
-  function micTranscribe() {
-    micSetState(false);
-    const rec = micRec; micRec = null;
-    const chunks = micChunks; micChunks = [];
-    const btn = document.getElementById('btn-mic');
+  function micStop() {
+    if (!MIC.rec) return;
+    try { MIC.rec.stop(); } catch (e) {}
+  }
+
+  function micCleanup() {
+    try { if (MIC.stream) MIC.stream.getTracks().forEach(function (x) { x.stop(); }); } catch (e) {}
+    try { if (MIC.ctx && MIC.ctx.close) MIC.ctx.close(); } catch (e) {}
+    if (MIC.timer) { clearInterval(MIC.timer); MIC.timer = 0; }
+    MIC.stream = null; MIC.ctx = null; MIC.analyser = null; MIC.buf = null;
+  }
+
+  // VAD por energia: marca cuando hubo voz y pide el corte tras VOICE_SILENCE_MS de silencio.
+  function micWatch(stream) {
     try {
-      const type = ((rec && rec.mimeType) || 'audio/webm').split(';')[0];
-      const blob = new Blob(chunks, { type: type });
-      if (!blob.size) { systemNote('No se grabó audio.'); return; }
-      if (btn) btn.classList.add('busy');
-      systemNote('Transcribiendo ' + Math.round(blob.size / 1024) + ' KB con ' + VOICE_PROVIDER + '...');
-      const fr = new FileReader();
-      fr.onload = function () {
-        const b64 = String(fr.result).split(',')[1];
-        rpc.request('_aegis/unstable/dictation/transcribe', { audio: b64, mimeType: type, provider: VOICE_PROVIDER })
-          .then(function (r) {
-            if (btn) btn.classList.remove('busy');
-            const txt = ((r && r.text) || '').trim();
-            if (!txt) { systemNote('La transcripción vino vacía.'); return; }
-            micInsert(txt);
-            systemNote('Dictado: ' + txt.slice(0, 90));
-          })
-          .catch(function (e) {
-            if (btn) btn.classList.remove('busy');
-            systemNote('Falló la transcripción (' + VOICE_PROVIDER + '): ' + String((e && e.message) || e).slice(0, 160));
-          });
-      };
-      fr.onerror = function () { if (btn) btn.classList.remove('busy'); systemNote('No pude leer el audio grabado.'); };
-      fr.readAsDataURL(blob);
-    } catch (e) {
-      if (btn) btn.classList.remove('busy');
-      systemNote('Error al procesar el audio: ' + String((e && e.message) || e).slice(0, 160));
-    }
+      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const src = ctx.createMediaStreamSource(stream);
+      const an = ctx.createAnalyser();
+      an.fftSize = 1024;
+      src.connect(an);
+      MIC.ctx = ctx; MIC.analyser = an; MIC.buf = new Float32Array(an.fftSize);
+      MIC.timer = setInterval(function () {
+        if (!MIC.analyser || !MIC.buf) return;
+        MIC.analyser.getFloatTimeDomainData(MIC.buf);
+        let sum = 0;
+        for (let i = 0; i < MIC.buf.length; i++) sum += MIC.buf[i] * MIC.buf[i];
+        const rms = Math.sqrt(sum / MIC.buf.length);
+        const now = Date.now();
+        if (now - MIC.startedAt > VOICE_MAX_MS) { micStop(); return; }
+        if (rms >= VOICE_RMS) { MIC.spoke = true; MIC.quietSince = 0; return; }
+        if (!MIC.spoke) return;
+        if (!MIC.quietSince) { MIC.quietSince = now; return; }
+        if (now - MIC.quietSince >= VOICE_SILENCE_MS) micStop();
+      }, 100);
+    } catch (e) { report('mic', 'VAD no disponible: ' + String((e && (e as any).message) || e)); }
   }
 
-  function micStart() {
-    if (micRec) { try { micRec.stop(); } catch (e) {} return; } // segundo toque: cortar y transcribir
+  function micTranscribe(blob, idx?) {
+    const i = idx || 0;
+    const provider = VOICE_PROVIDERS[i];
+    const btn = document.getElementById('btn-mic');
+    if (!provider) {
+      if (btn) btn.classList.remove('busy');
+      MIC.auto = false;
+      systemNote('No pude transcribir con ningún proveedor (revisá GROQ_API_KEY o el proveedor activo).');
+      return;
+    }
+    if (btn) btn.classList.add('busy');
+    systemNote('Transcribiendo ' + Math.round(blob.size / 1024) + ' KB con ' + provider + '…');
+    const fr = new FileReader();
+    fr.onload = function () {
+      const b64 = String(fr.result).split(',')[1];
+      const type = (blob.type || 'audio/webm').split(';')[0];
+      rpc.request('_aegis/unstable/dictation/transcribe', { audio: b64, mimeType: type, provider: provider })
+        .then(function (r) {
+          if (btn) btn.classList.remove('busy');
+          const txt = ((r && r.text) || '').trim();
+          if (!txt) { MIC.auto = false; systemNote('La transcripción vino vacía (' + provider + ').'); return; }
+          micDeliver(txt);
+        })
+        .catch(function (e) {
+          const msg = String((e && e.message) || e).slice(0, 120);
+          report('dictado', provider + ' falló: ' + msg);
+          if (i + 1 < VOICE_PROVIDERS.length) {
+            systemNote('Falló ' + provider + ' (' + msg + '). Pruebo con ' + VOICE_PROVIDERS[i + 1] + '…');
+            micTranscribe(blob, i + 1);
+            return;
+          }
+          if (btn) btn.classList.remove('busy');
+          MIC.auto = false;
+          systemNote('Falló la transcripción: ' + msg);
+        });
+    };
+    fr.onerror = function () { if (btn) btn.classList.remove('busy'); MIC.auto = false; systemNote('No pude leer el audio grabado.'); };
+    fr.readAsDataURL(blob);
+  }
+
+  // En manos libres el dictado se ENVIA; en manual se inserta en el cursor.
+  function micDeliver(txt) {
+    const auto = MIC.auto;
+    MIC.auto = false;
+    systemNote('Dictado: ' + txt.slice(0, 90));
+    if (auto && !state.busy) { sendText(txt); return; }
+    micInsert(txt);
+  }
+
+  function micStart(opts?) {
+    if (MIC.rec) { micStop(); return; }   // segundo toque: cortar y transcribir
     if (!micSecure()) { systemNote('El micrófono necesita HTTPS (o localhost). Por esta dirección el navegador no lo permite: usá https://' + location.hostname + ':3789 (la misma UI con TLS) o la URL del túnel.'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { systemNote('Este navegador no soporta grabación de audio.'); return; }
-    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+    MIC.auto = !!(opts && opts.auto);
+    MIC.spoke = false; MIC.quietSince = 0;
+    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
       .then(function (st) {
+        MIC.granted = true;
+        MIC.stream = st;
         const mt = (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) ? 'audio/webm;codecs=opus' : '';
-        micChunks = [];
-        micRec = mt ? new MediaRecorder(st, { mimeType: mt }) : new MediaRecorder(st);
-        micRec.ondataavailable = function (ev) { if (ev.data && ev.data.size) micChunks.push(ev.data); };
-        micRec.onstop = function () {
-          try { st.getTracks().forEach(function (x) { x.stop(); }); } catch (e) {}
-          micTranscribe();
+        MIC.chunks = [];
+        const rec = mt ? new MediaRecorder(st, { mimeType: mt }) : new MediaRecorder(st);
+        MIC.rec = rec;
+        MIC.startedAt = Date.now();
+        rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) MIC.chunks.push(ev.data); };
+        rec.onstop = function () {
+          const ms = Date.now() - MIC.startedAt;
+          const chunks = MIC.chunks; MIC.chunks = [];
+          MIC.rec = null;
+          micCleanup();
+          micSetState(false);
+          const blob = new Blob(chunks, { type: ((rec.mimeType || 'audio/webm').split(';')[0]) });
+          if (!blob.size) { MIC.auto = false; systemNote('No se grabó audio.'); return; }
+          if (ms < VOICE_MIN_MS) { MIC.auto = false; systemNote('Grabación muy corta (' + ms + ' ms): la descarto.'); return; }
+          micTranscribe(blob, 0);
         };
-        micRec.start();
+        rec.start();
         micSetState(true);
-        systemNote('Grabando... tocá el micrófono de nuevo para cortar y transcribir.');
+        micWatch(st);
+        if (!MIC.auto) systemNote('Grabando… tocá el micrófono para cortar, o quedate callado ~1 s y corta solo.');
       })
-      .catch(function (e) { micRec = null; micSetState(false); systemNote('No pude abrir el micrófono: ' + String((e && e.message) || e).slice(0, 140)); });
+      .catch(function (e) { MIC.rec = null; MIC.auto = false; micSetState(false); systemNote('No pude abrir el micrófono: ' + String((e && e.message) || e).slice(0, 140)); });
+  }
+
+  // --- Modo debate: conversar antes de trabajar --------------------------------------------
+  // Encendido: la sesión pasa a `chat` (el server rechaza TODA herramienta) y cada mensaje
+  // lleva una instruccion corta para discutir el plan. Cuando decis "dale" (o una de las
+  // frases de VOICE_SETTLE) vuelve a `auto` y ese mensaje ya se ejecuta.
+  var DEBATE: any = DEBATE || { on: false, prev: 'auto' };
+  var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
+  var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos; discutí el plan, marcá riesgos y hacé preguntas. Arrancás a trabajar cuando diga "dale".]';
+
+  function debateKeyFor(id) { return 'aegis.debate.' + (id || 'nuevo'); }
+  function debateLoad() {
+    if (!DEBATE) DEBATE = { on: false, prev: 'auto' };
+    try { DEBATE.on = localStorage.getItem(debateKeyFor(state.current && state.current.id)) === '1'; } catch (e) { DEBATE.on = false; }
+    debateSyncBtn();
+    return DEBATE.on;
+  }
+  function debateSyncBtn() {
+    const b = document.getElementById('btn-debate');
+    if (!b || !DEBATE) return;
+    b.classList.toggle('on', !!DEBATE.on);
+    b.textContent = DEBATE.on ? 'Debate · ON' : 'Debate';
+    b.setAttribute('aria-pressed', DEBATE.on ? 'true' : 'false');
+    b.title = DEBATE.on
+      ? 'Modo debate ENCENDIDO: el bot conversa y NO puede usar herramientas. Decí "dale" para pasar a trabajar.'
+      : 'Modo debate: discutir el plan antes de que el bot toque nada (sin herramientas).';
+  }
+  function debateCurrentMode() {
+    const m = state.current && state.current.modes;
+    return (m && (m.currentModeId || m.current_mode_id)) || 'auto';
+  }
+  async function debateSetMode(modeId) {
+    const sid = state.current && state.current.id;
+    if (!sid) return false;
+    try {
+      await rpc.request('session/set_mode', { sessionId: sid, modeId: modeId });
+      if (state.current) {
+        if (!state.current.modes) state.current.modes = {};
+        state.current.modes.currentModeId = modeId;
+      }
+      return true;
+    } catch (e) {
+      systemNote('No pude cambiar el modo a ' + modeId + ': ' + String((e && e.message) || e).slice(0, 120));
+      return false;
+    }
+  }
+  async function debateToggle() {
+    const next = !(DEBATE && DEBATE.on);
+    if (next) {
+      DEBATE.prev = debateCurrentMode();
+      if (!(await debateSetMode('chat'))) return;
+    } else if (!(await debateSetMode(DEBATE.prev || 'auto'))) return;
+    DEBATE.on = next;
+    try { localStorage.setItem(debateKeyFor(state.current && state.current.id), next ? '1' : '0'); } catch (e) {}
+    debateSyncBtn();
+    systemNote(next
+      ? 'Modo debate: hablamos el plan. El bot no puede usar herramientas hasta que digas "dale".'
+      : 'Modo trabajo: herramientas habilitadas.');
+  }
+  function debateDecorate(text) {
+    const t = String(text || '');
+    if (!DEBATE || !DEBATE.on) return t;
+    if (VOICE_SETTLE.test(t) && t.length <= 90) return t;
+    return DEBATE_PREAMBLE + '\n\n' + t;
+  }
+  async function debateSettle(text) {
+    if (!DEBATE || !DEBATE.on) return false;
+    const t = String(text || '');
+    if (!VOICE_SETTLE.test(t) || t.length > 90) return false;
+    DEBATE.on = false;
+    try { localStorage.setItem(debateKeyFor(state.current && state.current.id), '0'); } catch (e) {}
+    await debateSetMode('auto');
+    debateSyncBtn();
+    systemNote('Modo trabajo: "dale" detectado, ejecutando.');
+    return true;
+  }
+  // Manos libres: debate + lectura encendidos. Al terminar la voz del bot se reabre el micro.
+  function handsFreeOn() { return !!(DEBATE && DEBATE.on) && READ_ON; }
+  function handsFreeMaybe() {
+    if (!handsFreeOn() || state.busy || MIC.rec) return;
+    if (document.visibilityState !== 'visible') return;
+    if (!MIC.granted) return;   // el permiso se pide con el primer toque manual
+    setTimeout(function () { if (handsFreeOn() && !state.busy && !MIC.rec) micStart({ auto: true }); }, 700);
   }
 
   (function bindMic() {
     const btn = document.getElementById('btn-mic');
     if (btn) btn.addEventListener('click', function () { micStart(); });
+    const dbg = document.getElementById('btn-debate');
+    if (dbg) dbg.addEventListener('click', function () { debateToggle(); });
   })();
 
   // Cuantos chunks de contenido trajo el turno en curso. Si termina en 0 y no fue cancelado, el
@@ -2742,6 +2897,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   async function sendText(text, atts?, bubble?) {
+    await debateSettle(text);          // si dijo "dale", esto devuelve el modo a auto
+    const wire = debateDecorate(text); // en debate, el mensaje lleva la consigna
     chunksTurn = 0;
     textoDelTurno = '';
     // Turno nuevo: lo que llegue ahora lo ve el modelo aunque antes se haya rebobinado.
@@ -2755,7 +2912,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     let label = 'Respuesta completa';
     let loMandoComoIndicacion = false;
     try {
-      const res = await promptConRetry(text, atts, sid);
+      const res = await promptConRetry(wire, atts, sid);
       if (!(state.current && state.current.id === sid)) { report('adopt', 'turno terminó en ' + (sid || '?') + ' con la vista en otro chat'); return; }
       if (res && res.usage && res.usage.totalTokens != null) setUsage({ used: res.usage.totalTokens });
       stopNote(res && res.stopReason);
@@ -3681,6 +3838,17 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       item.append(btn, menu);
       wrap.appendChild(item);
     }
+    // Chip de modo debate: vive con los chips de modelo/modo y no gasta lugar en el composer.
+    const dwrap = document.createElement('div');
+    dwrap.className = 'chip-wrap';
+    const dbtn = document.createElement('button');
+    dbtn.id = 'btn-debate';
+    dbtn.type = 'button';
+    dbtn.className = 'chip debate-chip';
+    dbtn.addEventListener('click', function (e) { e.stopPropagation(); debateToggle(); });
+    dwrap.appendChild(dbtn);
+    wrap.appendChild(dwrap);
+    debateSyncBtn();
     // v52: normaliza sesiones que todavia tienen el esfuerzo dentro del id del modelo.
     migrarModeloViejo();
   }
@@ -4308,7 +4476,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     AUD.playing = true;
     a = a || new Audio(ttsUrlFor(READ.voiceName, t));
     AUD.cur = a;
-    var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); };
+    var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); if (!AUD.playing && !AUD.q.length) handsFreeMaybe(); };
     // Sin caida a la voz del dispositivo (a pedido: la del telefono suena mal). Si el server no
     // responde, esta frase se saltea y avisa, en vez de sonar con la voz vieja.
     var fallar = function () {
