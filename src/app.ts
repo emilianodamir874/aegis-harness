@@ -2923,7 +2923,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       + (extra ? ' El usuario agrega: ' + extra : '')
       + ' Si en la conversación NO hay trabajo concreto para hacer (fue solo charla), respondé exactamente SIN-PLAN y nada más.';
     DEBATE.on = false;   // el turno de cierre no lleva preambulo
+    DEBATE.closing = true;   // y NO se lee en voz alta
     await sendText(instr);
+    DEBATE.closing = false;
     const plan = String(textoDelTurno || '').trim();
     const sinPlan = !plan || /^sin[\s_-]?plan\b/i.test(plan);
     if (sinPlan) {
@@ -4756,6 +4758,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   // final=true (fin del turno): habla tambien lo que quedo sin punto final.
   function readPump(key, rawText, final?) {
     if (!READ_ON) return;
+    // El plan no se narra: ni el turno artificial de cierre ni lo que sigue al marcador.
+    if (DEBATE && DEBATE.closing) return;
+    if (/plan final/i.test(String(rawText || ''))) { audStop(); return; }
     if (READ.key !== key) { READ.key = key; READ.consumed = 0; }  // mensaje nuevo: arranca de cero
     READ.lastKey = key; READ.lastRaw = rawText;
     // El avance se mide sobre el TEXTO CRUDO del bloque, no sobre el limpio: el limpio cambia

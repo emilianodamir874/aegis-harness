@@ -3240,7 +3240,9 @@ ${a.text}
     const turns = Math.max(1, DEBATE.turns || 1);
     const instr = 'Cerrá el debate. Escribí UN solo mensaje con el plan final acordado: concreto, en imperativo, con el orden de los pasos y lo que NO hay que tocar. No menciones la discusión ni lo que descartamos, no uses herramientas y no incluyas el bloque "Para escuchar" ni encabezados de lectura (este mensaje se manda tal cual como pedido).' + (extra ? " El usuario agrega: " + extra : "") + " Si en la conversación NO hay trabajo concreto para hacer (fue solo charla), respondé exactamente SIN-PLAN y nada más.";
     DEBATE.on = false;
+    DEBATE.closing = true;
     await sendText(instr);
+    DEBATE.closing = false;
     const plan = String(textoDelTurno || "").trim();
     const sinPlan = !plan || /^sin[\s_-]?plan\b/i.test(plan);
     if (sinPlan) {
@@ -5122,6 +5124,11 @@ ${a.text}
   }
   function readPump(key, rawText, final) {
     if (!READ_ON) return;
+    if (DEBATE && DEBATE.closing) return;
+    if (/plan final/i.test(String(rawText || ""))) {
+      audStop();
+      return;
+    }
     if (READ.key !== key) {
       READ.key = key;
       READ.consumed = 0;
