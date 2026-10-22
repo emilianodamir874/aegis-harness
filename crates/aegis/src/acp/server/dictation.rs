@@ -3,7 +3,7 @@ use super::*;
 use crate::dictation::providers::transcribe_local;
 use crate::dictation::providers::{
     all_providers, is_configured, transcribe_with_model, transcribe_with_provider,
-    DictationProvider,
+    DictationProvider, TranscribeOptions,
 };
 #[cfg(feature = "local-inference")]
 use crate::dictation::whisper;
@@ -59,6 +59,8 @@ impl AegisAcpAgent {
             }
         };
 
+        let options = TranscribeOptions::from_config(config);
+
         let text = match provider {
             #[cfg(feature = "local-inference")]
             DictationProvider::Local => transcribe_local(audio_bytes).await,
@@ -71,7 +73,7 @@ impl AegisAcpAgent {
                     "m4a" => "m4a",
                     _ => "wav",
                 };
-                transcribe_with_model(audio_bytes, audio_format).await
+                transcribe_with_model(audio_bytes, audio_format, &options).await
             }
             remote => {
                 let (model_param, default_model) = dictation_transcribe_params(remote);
@@ -84,6 +86,7 @@ impl AegisAcpAgent {
                     audio_bytes,
                     extension,
                     &req.mime_type,
+                    &options,
                 )
                 .await
             }

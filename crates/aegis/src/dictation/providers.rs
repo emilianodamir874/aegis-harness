@@ -397,6 +397,62 @@ async fn parse_model_transcription_response(response: reqwest::Response) -> Resu
     Ok(text)
 }
 
+/// Pistas opcionales para la transcripcion: idioma, vocabulario y temperatura.
+#[derive(Debug, Default, Clone)]
+pub struct TranscribeOptions {
+    pub language: Option<String>,
+    pub prompt: Option<String>,
+    pub temperature: Option<f32>,
+}
+
+impl TranscribeOptions {
+    pub fn from_config(config: &Config) -> Self {
+        fn trimmed_param(config: &Config, key: &str) -> Option<String> {
+            config
+                .get_param::<String>(key)
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        }
+
+        Self {
+            language: trimmed_param(config, "VOICE_DICTATION_LANGUAGE"),
+            prompt: trimmed_param(config, "VOICE_DICTATION_PROMPT"),
+            temperature: config.get_param::<f32>("VOICE_DICTATION_TEMPERATURE").ok(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.language.is_none() && self.prompt.is_none() && self.temperature.is_none()
+    }
+}
+
+/// Nombre que usa cada API para las mismas pistas. ElevenLabs usa `language_code` y no
+/// acepta `prompt` ni `temperature`; el resto es compatible con OpenAI.
+fn option_fields(
+    provider: DictationProvider,
+    options: &TranscribeOptions,
+) -> Vec<(&'static str, String)> {
+    let mut fields = Vec::new();
+    if let Some(language) = options.language.as_deref() {
+        let key = if provider == DictationProvider::ElevenLabs {
+            "language_code"
+        } else {
+            "language"
+        };
+        fields.push((key, language.to_string()));
+    }
+    if provider != DictationProvider::ElevenLabs {
+        if let Some(prompt) = options.prompt.as_deref() {
+            fields.push(("prompt", prompt.to_string()));
+        }
+        if let Some(temperature) = options.temperature {
+            fields.push(("temperature", format!("{temperature}")));
+        }
+    }
+    fields
+}
+
 pub async fn transcribe_with_provider(
     provider: DictationProvider,
     model_param: String,
@@ -404,6 +460,7 @@ pub async fn transcribe_with_provider(
     audio_bytes: Vec<u8>,
     extension: &str,
     mime_type: &str,
+    options: &TranscribeOptions,
 ) -> Result<String> {
     let (client, endpoint_path) = build_api_client(provider)?;
 
@@ -415,9 +472,13 @@ pub async fn transcribe_with_provider(
             anyhow::anyhow!(e)
         })?;
 
-    let form = reqwest::multipart::Form::new()
-        .part("file", part)
-        .text(model_param, model_value);
+    let mut form = reqwest::multipart::Form::new().part("file", part);
+    if !model_param.is_empty() {
+        form = form.text(model_param, model_value);
+    }
+    for (key, value) in option_fields(provider, options) {
+        form = form.text(key, value);
+    }
 
     let response = client
         .request(&endpoint_path)
@@ -435,7 +496,11 @@ const MODEL_TRANSCRIPTION_TIMEOUT: Duration = Duration::from_secs(60);
 const TRANSCRIPTION_SYSTEM_PROMPT: &str =
     "Transcribe the following audio exactly as spoken. Output only the transcription text, with no commentary, labels, formatting, or explanation.";
 
-pub async fn transcribe_with_model(audio_bytes: Vec<u8>, audio_format: &str) -> Result<String> {
+pub async fn transcribe_with_model(
+    audio_bytes: Vec<u8>,
+    audio_format: &str,
+    options: &TranscribeOptions,
+) -> Result<String> {
     let config = Config::global();
 
     let provider_name = crate::config::providers::get_active_provider(config)
@@ -449,12 +514,22 @@ pub async fn transcribe_with_model(audio_bytes: Vec<u8>, audio_format: &str) -> 
     let base_url = &resolved.base_url;
     let audio_base64 = BASE64_STD.encode(&audio_bytes);
 
+    let mut instruction = String::from(TRANSCRIPTION_SYSTEM_PROMPT);
+    if let Some(language) = options.language.as_deref() {
+        instruction.push_str(&format!(
+            "\nThe speaker is speaking {language}. Transcribe in that language, keeping its spelling and punctuation."
+        ));
+    }
+    if let Some(prompt) = options.prompt.as_deref() {
+        instruction.push_str(&format!("\nVocabulary and names that may appear: {prompt}"));
+    }
+
     let request_body = serde_json::json!({
         "model": model_name,
         "messages": [{
             "role": "user",
             "content": [
-                { "type": "text", "text": TRANSCRIPTION_SYSTEM_PROMPT },
+                { "type": "text", "text": instruction },
                 {
                     "type": "input_audio",
                     "input_audio": {
@@ -702,8 +777,9 @@ fn resolve_model_native_config(
 mod tests {
     use super::{
         all_providers, build_api_client, get_provider_def, normalize_openrouter_base_url,
-        openai_dictation_target, parse_model_transcription_response, parse_transcription_response,
-        resolve_openai_base_url_target, DictationProvider, MAX_TRANSCRIPTION_ERROR_PREVIEW_BYTES,
+        openai_dictation_target, option_fields, parse_model_transcription_response,
+        parse_transcription_response, resolve_openai_base_url_target, DictationProvider,
+        TranscribeOptions, MAX_TRANSCRIPTION_ERROR_PREVIEW_BYTES,
         MAX_TRANSCRIPTION_RESPONSE_BYTES, OPENAI_VERSIONLESS_TRANSCRIPTIONS_PATH,
     };
     use test_case::test_case;
@@ -958,5 +1034,32 @@ mod tests {
         assert!(message.contains("model provider unavailable"));
         assert!(message.contains("[truncated]"));
         assert!(!message.contains(omitted_detail));
+    }
+
+    #[test]
+    fn option_fields_map_per_provider() {
+        let options = TranscribeOptions {
+            language: Some("es".to_string()),
+            prompt: Some("Aegis, paneer, Antigravity".to_string()),
+            temperature: Some(0.0),
+        };
+
+        assert_eq!(
+            option_fields(DictationProvider::OpenAI, &options),
+            vec![
+                ("language", "es".to_string()),
+                ("prompt", "Aegis, paneer, Antigravity".to_string()),
+                ("temperature", "0".to_string()),
+            ]
+        );
+
+        assert_eq!(
+            option_fields(DictationProvider::ElevenLabs, &options),
+            vec![("language_code", "es".to_string())]
+        );
+
+        let empty = TranscribeOptions::default();
+        assert!(option_fields(DictationProvider::Groq, &empty).is_empty());
+        assert!(empty.is_empty());
     }
 }
