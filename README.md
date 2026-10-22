@@ -1,5 +1,11 @@
 # aegis-web
 
+> **Nota de rutas (2026-10-22).** Las secciones fechadas 2026-10-12/13 describen el deploy cuando
+> vivía en `C:\goose-web` con el cliente bajo `ui/desktop/scripts/` y los binarios en `src\target`.
+> Nada de eso existe hoy: el deploy es este árbol, los probes y checks viven en `web\tools\`, el
+> serve se resuelve del puntero `core\state\current-version.json` y el arranque está en
+> `## Backend / auth`. Las rutas viejas se dejan como registro de lo que se midió, no como instrucción.
+
 ## Migracion TypeScript (en paralelo)
 
 `src/app.ts`, `src/skills.ts`, `src/server.ts` y `src/piper-vivo.ts` son las fuentes
@@ -276,37 +282,23 @@ WebSocket: la autenticación va como `?token=` en la URL del WS (el server lo ac
 ## Verificación
 
 ```bash
-cd C:\Aegis-Proyects\src/ui/desktop
-node scripts/aegis-web-app-check.mjs     # e2e completo: conexión, enviar+streaming, chips,
-                                         # permisos, rename, imagen, borrado, replay, móvil
-node scripts/aegis-web-viewports.mjs     # barrido 360→1920 (abre una sesión para medir los chips;
-                                         # cero desbordes horizontales)
-node scripts/aegis-web-features.mjs      # features v4: welcome vacío, adjuntos de texto + drag&drop,
-                                         # export md/json (descarga), archivar/desarchivar, slash, steering
-node scripts/aegis-web-perf.mjs          # tiempo de replay de las 3 sesiones más grandes
-node scripts/aegis-web-shots.mjs         # capturas desktop/móvil
-node scripts/aegis-web-phone-audit.mjs   # móvil 390×844: desplegables del header, costo de tipear
-                                         # (reposo / streaming, A/B del throttle) y estado del turno
-                                         # (Detener, caída del WebSocket, reconexión)
-
-# v6.2 — tecleo y turno adoptado (móvil + CPU 4x vía CDP; el backend debe estar sirviendo la app)
-node scripts/aegis-web-stream-typing.mjs    # reposo vs streaming vs recién terminado, con costo real
-                                            # de render/tecla (window.__aegisWeb.metrics)
-node scripts/aegis-web-typing-big.mjs       # sesión larga (importa una copia) + turno adoptado:
-                                            # ventana A (poll encendido) vs B (apagado)
-node scripts/aegis-web-soft-check.mjs       # refresco suave: fase tecleando (debe postergar),
-                                            # fase reposo (debe traer lo nuevo barato) y marca de
-                                            # herramientas interrumpidas
-node scripts/aegis-web-watch-probe.mjs      # trazas del poll: ticks, session/info, messageCount
-                                            # congelado en conexiones que no son dueñas del run
-node scripts/aegis-web-deadrun-live.mjs     # busca sesiones con herramientas sin resultado y
-                                            # verifica la marca; mide el refresco que trae avances
-node scripts/aegis-web-steer-settle.mjs     # steer no consumido -> reencolado + aviso + reenvío
-node scripts/aegis-web-typing-check.mjs     # adopción + Detener desde la pestaña recargada
+cd C:\Aegis-Proyects\web\tools
+node ui-audit.mjs                 # auditoría visual: viewports y capturas a C:/Users/Emiliano/tmp/ui-audit
+node ui-medir.mjs                 # medición en viewport móvil 430x900 (scroll y latencia de tecleo)
+node tabla-shots.mjs              # capturas del render real de tablas markdown, teléfono y escritorio
+node stream-typing-check.mjs      # reposo vs streaming vs recién terminado (CPU 4x; window.__aegisWeb.metrics)
+node typing-adopt-big.mjs         # sesión larga importada + turno adoptado, ventana con poll ON vs OFF
+node soft-refresh-check.mjs       # refresco suave: fase tecleando (posterga) / fase reposo (trae) + interrumpidos
+node watch-probe.mjs              # trazas del poll: ticks, session/info, messageCount, costo de cada resync
+node deadrun-live-check.mjs       # herramientas sin resultado + refresco con avance real
+node steer-settle-check.mjs       # steer no consumido -> reencolado + aviso + reenvío
+node typing-adopt-check.mjs       # adopción + Detener desde la pestaña recargada
+node client-watch-check.mjs       # contrato v6.4 session/watch sin browser (varias conexiones ACP)
+node server-hardening-check.mjs   # rutas estáticas/endpoints endurecidos, sin tocar auth.json
 ```
 
-Probes ACP crudos y utilidades en `C:/Aegis-Proyects/web/tools/` (probe2/3/4/5, ls-sessions,
-cleanup-test-sessions). Los checks se corren DESPRENDIDOS (Start-Process + log):
+Probes ACP crudos y utilidades en `C:\Aegis-Proyects\web\tools\` (probe2..probe7, ls-sessions,
+cleanup-test-sessions, stats-index). Los checks se corren DESPRENDIDOS (Start-Process + log):
 el wrapper de background mata node con "stdin is not a tty".
 
 ## Ops
