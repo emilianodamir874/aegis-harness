@@ -5186,8 +5186,11 @@ ${a.text}
     var parrafo = pend.indexOf("\n\n");
     var cut = -1;
     if (done === 0) {
-      if (parrafo > 0 && parrafo + 2 <= LIMITE) cut = parrafo + 2;
+      var coma = pend.search(/[,;:]\s/);
+      if (coma > 24) cut = coma + 2;
+      else if (parrafo > 0 && parrafo + 2 <= LIMITE) cut = parrafo + 2;
       else if (cortes.length) cut = cortes[0];
+      else if (pend.length >= 90 && pend.indexOf(" ") > 0) cut = pend.lastIndexOf(" ");
     }
     if (cut < 0) {
       for (var i = 0; i < cortes.length; i++) if (cortes[i] <= LIMITE) cut = cortes[i];
