@@ -487,7 +487,7 @@ const handler = async (req, res) => {
         res.end(JSON.stringify({ error: "unauthorized", login: "/login" }));
         return;
       }
-      const texto = String(url.searchParams.get("text") || "").slice(0, 700);
+      const texto = String(url.searchParams.get("text") || "").slice(0, 4e3);
       const motor = String(url.searchParams.get("engine") || cfg.ttsEngine || "piper");
       const voz = String(url.searchParams.get("voice") || cfg.ttsVoice || PIPER_VOZ);
       const rate = Number(url.searchParams.get("rate") || cfg.ttsRate || 1.05);

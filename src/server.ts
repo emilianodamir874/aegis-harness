@@ -549,7 +549,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         res.end(JSON.stringify({ error: 'unauthorized', login: '/login' }));
         return;
       }
-      const texto = String(url.searchParams.get('text') || '').slice(0, 700);
+      const texto = String(url.searchParams.get('text') || '').slice(0, 4000);   // el cliente manda trozos de hasta 900
       const motor = String(url.searchParams.get('engine') || cfg.ttsEngine || 'piper');
       // La voz por defecto es la de Piper; si el cliente manda una de otro motor, piperTts la
       // valida contra los modelos instalados y cae a la local.

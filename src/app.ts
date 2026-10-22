@@ -2716,7 +2716,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     MIC.auto = !!(opts && opts.auto);
     // Cualquier escucha que arranque mientras el bot habla es barge-in (aunque venga del ciclo
     // de manos libres, que reabre el micro sin pasar por audNext).
-    MIC.barge = !!(opts && opts.barge) || !!(AUD.playing && HF && HF.on);
+    MIC.barge = !!(opts && opts.barge) || !!(AUD.playing && READ_ON);
     MIC.bargeHits = 0;
     MIC.discard = false;
     MIC.spoke = false; MIC.quietSince = 0;
@@ -4744,11 +4744,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     a.onerror = fallar;
     var pr = a.play();
     if (pr && pr.catch) pr.catch(fallar);
-    // Barge-in: con manos libres, mientras suena la voz el micro tiene que estar escuchando.
-    // Si ya hay una toma abierta (del ciclo de manos libres), se la marca como barge.
-    if (HF && HF.on && document.visibilityState === 'visible') {
+    // Barge-in: mientras suena la voz, el micro queda escuchando para poder interrumpir.
+    // No depende del modo manos libres: alcanza con que la lectura este encendida. Si ya hay
+    // una toma abierta se la marca como barge; si no, se abre una (con permiso ya dado).
+    if (READ_ON && document.visibilityState === 'visible') {
       if (MIC.rec) { MIC.barge = true; MIC.bargeHits = 0; }
-      else if (MIC.granted) micStart({ auto: true, barge: true });
+      else if (!MIC.denied) micStart({ auto: true, barge: true });
     }
     audPrefetch();   // deja lista la frase siguiente
   }

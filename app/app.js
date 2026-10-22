@@ -3012,7 +3012,7 @@ ${a.text}
       return;
     }
     MIC.auto = !!(opts && opts.auto);
-    MIC.barge = !!(opts && opts.barge) || !!(AUD.playing && HF && HF.on);
+    MIC.barge = !!(opts && opts.barge) || !!(AUD.playing && READ_ON);
     MIC.bargeHits = 0;
     MIC.discard = false;
     MIC.spoke = false;
@@ -5096,11 +5096,11 @@ ${a.text}
     a.onerror = fallar;
     var pr = a.play();
     if (pr && pr.catch) pr.catch(fallar);
-    if (HF && HF.on && document.visibilityState === "visible") {
+    if (READ_ON && document.visibilityState === "visible") {
       if (MIC.rec) {
         MIC.barge = true;
         MIC.bargeHits = 0;
-      } else if (MIC.granted) micStart({ auto: true, barge: true });
+      } else if (!MIC.denied) micStart({ auto: true, barge: true });
     }
     audPrefetch();
   }

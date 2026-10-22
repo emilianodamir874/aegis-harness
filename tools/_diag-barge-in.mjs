@@ -41,6 +41,7 @@ try {
   page.on('request', (r) => { if (r.url().includes('/tts?')) tts.push(r.url()); });
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') console.log('[consola] ' + m.text().slice(0, 160)); });
   await page.goto(url + '/', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForTimeout(3500);
   for (let i = 0; i < 3 && !sid; i++) {
@@ -65,16 +66,15 @@ try {
   console.log('pedidos para un parrafo de ' + PARRAFO.length + ' chars: ' + pedidos);
   if (pedidos > 1) throw new Error('el parrafo se partio en ' + pedidos + ' pedidos');
 
-  // (b) barge: con debate (manos libres) el micro escucha mientras suena
-  await page.click('#btn-debate');
-  await page.waitForTimeout(2500);
-  // Se cierra el micro a mano para que el proximo audio lo abra en modo barge.
+  // (b) barge: con SOLO lectura encendida (sin manos libres), el micro escucha mientras suena
   await page.evaluate(() => window.__aegisWeb.micOff());
   await page.waitForTimeout(600);
   tts.length = 0;
   await page.evaluate((txt) => window.__aegisWeb.read.pump('p-2', txt), '## Para escuchar\n\nOtra frase para probar la interrupcion.\n\n');
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(2500);
   const st = await page.evaluate(() => window.__aegisWeb.bargeNow());
+  const con = await page.evaluate(() => (window.__aegisWeb.state && window.__aegisWeb.state.busy) || false);
+  console.log('busy=' + con);
   console.log('bargeNow: ' + JSON.stringify(st));
   if (!st.playing) throw new Error('el audio no esta sonando');
   if (!st.rec) throw new Error('el microfono no quedo escuchando durante la voz');
@@ -82,8 +82,6 @@ try {
 
   console.log('PASS barge-in escuchando durante la voz');
 
-  await page.click('#btn-debate');
-  await page.waitForTimeout(800);
   if (errs.length) throw new Error('errores de pagina: ' + errs.join(' | '));
 } catch (e) {
   fallo = true;
