@@ -34,7 +34,9 @@ export function readClean(s: unknown): string {
     .trim();
 }
 
-// Motor del server (Piper, voces neuronales locales).
-export function ttsUrlFor(voice: string, text: string): string {
-  return '/tts?voice=' + encodeURIComponent(voice) + '&text=' + encodeURIComponent(text);
+// Motor del server (edge o Piper). `rate` > 1 = mas rapido (el server lo traduce a length_scale
+// de Piper o al porcentaje de edge).
+export function ttsUrlFor(voice: string, text: string, rate?: number): string {
+  var r = (typeof rate === 'number' && rate > 0.5 && rate < 2) ? '&rate=' + rate.toFixed(3) : '';
+  return '/tts?voice=' + encodeURIComponent(voice) + '&text=' + encodeURIComponent(text) + r;
 }

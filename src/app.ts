@@ -4696,7 +4696,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     return READ_ON;
   }
   try { READ_ON = localStorage.getItem(readKeyFor(null)) === '1'; } catch (e) {}
-  var READ: Record<string, any> = { key: null, consumed: 0, spoken: 0, rate: 1.02, voice: null, engine: 'piper', voiceName: 'es_AR-daniela-high', fallos: 0 };
+  // 1.365 = 30% mas rapido que el 1.05 que usaba el server. Se puede cambiar sin rebuild:
+  // localStorage['aegis.ttsRate'] = '1.4'.
+  var READ_RATE = (function () { try { var v = Number(localStorage.getItem('aegis.ttsRate')); return v > 0.5 && v < 2 ? v : 1.365; } catch (e) { return 1.365; } })();
+  var READ: Record<string, any> = { key: null, consumed: 0, spoken: 0, rate: READ_RATE, voice: null, engine: 'piper', voiceName: 'es_AR-daniela-high', fallos: 0 };
   // Solo Piper (local). Se borra cualquier motor/voz guardados de antes (edge y groq quedaron sin
   // servicio) para no seguir mandando una voz que Piper no tiene en cada pedido.
   try {
@@ -4721,7 +4724,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   function audPrefetch() {
     if (AUD.pre || !AUD.q.length) return;
     var t = AUD.q[0];
-    var a = new Audio(ttsUrlFor(READ.voiceName, t));
+    var a = new Audio(ttsUrlFor(READ.voiceName, t, READ.rate));
     a.preload = 'auto';
     try { a.load(); } catch (e) {}
     AUD.pre = { t: t, a: a };
@@ -4733,7 +4736,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     AUD.pre = null;
     AUD.q.shift();
     AUD.playing = true;
-    a = a || new Audio(ttsUrlFor(READ.voiceName, t));
+    a = a || new Audio(ttsUrlFor(READ.voiceName, t, READ.rate));
     AUD.cur = a;
     var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); if (!AUD.playing && !AUD.q.length) handsFreeMaybe(); };
     // Sin caida a la voz del dispositivo (a pedido: la del telefono suena mal). Si el server no
@@ -5225,6 +5228,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   (window as any).__aegisWeb = { bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
     bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
     micOff: function () { micStop(true); },   // solo para el probe de barge-in
+    setRate: function (v) { var n = Number(v); if (n > 0.5 && n < 2) { READ.rate = n; try { localStorage.setItem('aegis.ttsRate', String(n)); } catch (e) {} readReset(true); return n; } return READ.rate; },
     goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },

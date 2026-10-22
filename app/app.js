@@ -285,8 +285,9 @@ function readBlock(t) {
 function readClean(s) {
   return String(s || "").replace(new RegExp(TICK + TICK + TICK + "[\\s\\S]*?" + TICK + TICK + TICK, "g"), " ").replace(new RegExp(TICK + "([^" + TICK + "]*)" + TICK, "g"), "$1").replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, "").replace(/^[ \t]*>[ \t]?/gm, "").replace(/[#*_~|]/g, "").replace(/\s+/g, " ").trim();
 }
-function ttsUrlFor(voice, text) {
-  return "/tts?voice=" + encodeURIComponent(voice) + "&text=" + encodeURIComponent(text);
+function ttsUrlFor(voice, text, rate) {
+  var r = typeof rate === "number" && rate > 0.5 && rate < 2 ? "&rate=" + rate.toFixed(3) : "";
+  return "/tts?voice=" + encodeURIComponent(voice) + "&text=" + encodeURIComponent(text) + r;
 }
 
 // src/app.ts
@@ -5040,7 +5041,15 @@ ${a.text}
     READ_ON = localStorage.getItem(readKeyFor(null)) === "1";
   } catch (e) {
   }
-  var READ = { key: null, consumed: 0, spoken: 0, rate: 1.02, voice: null, engine: "piper", voiceName: "es_AR-daniela-high", fallos: 0 };
+  var READ_RATE = (function() {
+    try {
+      var v = Number(localStorage.getItem("aegis.ttsRate"));
+      return v > 0.5 && v < 2 ? v : 1.365;
+    } catch (e) {
+      return 1.365;
+    }
+  })();
+  var READ = { key: null, consumed: 0, spoken: 0, rate: READ_RATE, voice: null, engine: "piper", voiceName: "es_AR-daniela-high", fallos: 0 };
   try {
     if (localStorage.getItem("aegis.ttsEngine") !== "piper") localStorage.removeItem("aegis.ttsEngine");
     localStorage.removeItem("aegis.ttsVoice");
@@ -5061,7 +5070,7 @@ ${a.text}
   function audPrefetch() {
     if (AUD.pre || !AUD.q.length) return;
     var t = AUD.q[0];
-    var a = new Audio(ttsUrlFor(READ.voiceName, t));
+    var a = new Audio(ttsUrlFor(READ.voiceName, t, READ.rate));
     a.preload = "auto";
     try {
       a.load();
@@ -5076,7 +5085,7 @@ ${a.text}
     AUD.pre = null;
     AUD.q.shift();
     AUD.playing = true;
-    a = a || new Audio(ttsUrlFor(READ.voiceName, t));
+    a = a || new Audio(ttsUrlFor(READ.voiceName, t, READ.rate));
     AUD.cur = a;
     var segir = function() {
       AUD.playing = false;
@@ -5596,6 +5605,19 @@ ${a.text}
       micStop(true);
     },
     // solo para el probe de barge-in
+    setRate: function(v) {
+      var n = Number(v);
+      if (n > 0.5 && n < 2) {
+        READ.rate = n;
+        try {
+          localStorage.setItem("aegis.ttsRate", String(n));
+        } catch (e) {
+        }
+        readReset(true);
+        return n;
+      }
+      return READ.rate;
+    },
     goalFromText,
     gpOcultoPorTexto,
     noteGoalFrom,
