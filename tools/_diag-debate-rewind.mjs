@@ -90,7 +90,8 @@ try {
     if (turnos >= 1 && !busy && Date.now() - quietoDesde > 14000) break;
   }
   console.log('turnos vistos tras dale: ' + turnos);
-  if (turnos < 2) throw new Error('no se vieron los dos turnos (cierre + plan)');
+  // Con SIN-PLAN no hay segundo turno (no se manda plan): alcanza con 1.
+  if (turnos < 1) throw new Error('no se vio ningun turno tras dale');
   await page.waitForTimeout(1500);
   await page.click('#btn-debate');   // por si quedo encendido: apagarlo
   await page.waitForTimeout(800);
