@@ -3558,3 +3558,6 @@ body { background: var(--bg); }
 /* Modo debate: chip del topbar. Encendido usa el lenguaje del boton de lectura. */
 .debate-chip { white-space: nowrap; }
 .debate-chip.on { color: #dbe6ff; background: var(--accent-soft); border-color: var(--accent-border); }
+
+/* Barge-in: el microfono escucha para interrumpir la lectura. */
+.mic-btn.barge { box-shadow: 0 0 0 2px rgba(120, 170, 255, 0.55); }

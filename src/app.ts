@@ -2604,6 +2604,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const btn = document.getElementById('btn-mic');
     if (!btn) return;
     btn.classList.toggle('rec', !!on);
+    btn.classList.toggle('barge', !!(on && MIC.barge));
     btn.title = on ? 'Grabando… tocá para cortar y transcribir' : 'Dictar por voz (corta solo cuando te quedás callado)';
   }
 
@@ -2650,7 +2651,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
           MIC.spoke = true; MIC.quietSince = 0;
           if (MIC.barge && AUD.playing) {
             MIC.bargeHits = (MIC.bargeHits || 0) + 1;
-            if (MIC.bargeHits >= 3) audStop();   // el usuario interrumpio: se corta la voz
+            if (MIC.bargeHits >= 3 && AUD.playing) {
+              report('barge', 'interrupcion: rms=' + rms.toFixed(3) + ' hits=' + MIC.bargeHits);
+              audStop();   // el usuario interrumpio: se corta la voz
+            }
           }
           return;
         }
@@ -2755,7 +2759,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
         MIC.rec = null; MIC.auto = false; micSetState(false);
         if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
           MIC.denied = true;   // no reintentar solo: el permiso lo tiene que dar el usuario
-          systemNote('El navegador bloqueó el micrófono. Habilitalo para este sitio y volvé a prender Debate.');
+          report('barge', 'permiso de microfono rechazado: ' + e.name);
+          systemNote('El navegador bloqueó el micrófono: sin permiso no puedo escucharte para interrumpir.');
           return;
         }
         systemNote('No pude abrir el micrófono: ' + String((e && e.message) || e).slice(0, 140));
@@ -4749,7 +4754,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     // una toma abierta se la marca como barge; si no, se abre una (con permiso ya dado).
     if (READ_ON && document.visibilityState === 'visible') {
       if (MIC.rec) { MIC.barge = true; MIC.bargeHits = 0; }
-      else if (!MIC.denied) micStart({ auto: true, barge: true });
+      else if (!MIC.denied) {
+        if (!MIC.bargeLog) { MIC.bargeLog = true; report('barge', 'abro el micro para interrumpir (granted=' + !!MIC.granted + ')'); }
+        micStart({ auto: true, barge: true });
+      }
     }
     audPrefetch();   // deja lista la frase siguiente
   }
@@ -4839,6 +4847,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
   function readToggle(force?) {
     READ_ON = (force === undefined) ? !READ_ON : !!force;
+    // El click es el gesto que permite pedir el microfono: se pide ahora para poder
+    // interrumpir la voz despues (sin gesto el permiso queda pendiente y nunca se abre).
+    if (READ_ON && !MIC.rec && !MIC.denied && micSecure()) micStart({ auto: true, barge: true });
     try { localStorage.setItem(readKeyFor(state.current && state.current.id), READ_ON ? '1' : '0'); } catch (e) {}
     var btn = document.getElementById('btn-read');
     if (btn) {
@@ -5211,7 +5222,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
+  (window as any).__aegisWeb = { bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
     bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
     micOff: function () { micStop(true); },   // solo para el probe de barge-in
     goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,

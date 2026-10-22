@@ -2867,6 +2867,7 @@ ${a.text}
     const btn = document.getElementById("btn-mic");
     if (!btn) return;
     btn.classList.toggle("rec", !!on);
+    btn.classList.toggle("barge", !!(on && MIC.barge));
     btn.title = on ? "Grabando… tocá para cortar y transcribir" : "Dictar por voz (corta solo cuando te quedás callado)";
   }
   function micStop(discard) {
@@ -2930,7 +2931,10 @@ ${a.text}
           MIC.quietSince = 0;
           if (MIC.barge && AUD.playing) {
             MIC.bargeHits = (MIC.bargeHits || 0) + 1;
-            if (MIC.bargeHits >= 3) audStop();
+            if (MIC.bargeHits >= 3 && AUD.playing) {
+              report("barge", "interrupcion: rms=" + rms.toFixed(3) + " hits=" + MIC.bargeHits);
+              audStop();
+            }
           }
           return;
         }
@@ -3064,7 +3068,8 @@ ${a.text}
       micSetState(false);
       if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) {
         MIC.denied = true;
-        systemNote("El navegador bloqueó el micrófono. Habilitalo para este sitio y volvé a prender Debate.");
+        report("barge", "permiso de microfono rechazado: " + e.name);
+        systemNote("El navegador bloqueó el micrófono: sin permiso no puedo escucharte para interrumpir.");
         return;
       }
       systemNote("No pude abrir el micrófono: " + String(e && e.message || e).slice(0, 140));
@@ -5100,7 +5105,13 @@ ${a.text}
       if (MIC.rec) {
         MIC.barge = true;
         MIC.bargeHits = 0;
-      } else if (!MIC.denied) micStart({ auto: true, barge: true });
+      } else if (!MIC.denied) {
+        if (!MIC.bargeLog) {
+          MIC.bargeLog = true;
+          report("barge", "abro el micro para interrumpir (granted=" + !!MIC.granted + ")");
+        }
+        micStart({ auto: true, barge: true });
+      }
     }
     audPrefetch();
   }
@@ -5189,6 +5200,7 @@ ${a.text}
   }
   function readToggle(force) {
     READ_ON = force === void 0 ? !READ_ON : !!force;
+    if (READ_ON && !MIC.rec && !MIC.denied && micSecure()) micStart({ auto: true, barge: true });
     try {
       localStorage.setItem(readKeyFor(state.current && state.current.id), READ_ON ? "1" : "0");
     } catch (e) {
@@ -5568,6 +5580,7 @@ ${a.text}
     else arrancar();
   })();
   window.__aegisWeb = {
+    bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }),
     state,
     setConfig,
     rpc,
