@@ -476,6 +476,37 @@ function backendTcpReady() {
 // ------------------------------------------------------------------- server
 piperDespertar().catch(() => {});
 
+// Microsoft Edge (edge-tts): voces neuronales gratis, sin cuenta. Se llama al CLI instalado
+// con uv; devuelve mp3. Si falla, el handler cae a Piper.
+const EDGE_EXE = 'C:/Users/Emiliano/scoop/persist/uv/tools/shims/edge-tts.exe';
+const EDGE_VOZ = 'es-AR-ElenaNeural';
+const EDGE_VOCES = new Set(['es-AR-ElenaNeural', 'es-AR-TomasNeural', 'es-MX-DaliaNeural', 'es-ES-ElviraNeural', 'es-ES-AlvaroNeural']);
+async function edgeTts(texto: string, voz: string, rate: number): Promise<Buffer> {
+  const modelo = EDGE_VOCES.has(voz) ? voz : EDGE_VOZ;
+  const pct = Math.round((Number(rate) > 0.5 && Number(rate) < 2 ? Number(rate) : 1) * 100 - 100);
+  const clave = 'edge|' + modelo + '|' + pct + '|' + texto;
+  const guardado = _ttsCache.get(clave);
+  if (guardado) return guardado;
+  const { spawn } = await import('node:child_process');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const tmp = path.join(os.tmpdir(), 'aegis-edge-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.mp3');
+  await new Promise<void>((resolve, reject) => {
+    const p = spawn(EDGE_EXE, ['--voice', modelo, '--rate=' + (pct >= 0 ? '+' : '') + pct + '%', '--text', texto, '--write-media', tmp]);
+    let err = '';
+    p.stderr.on('data', (x) => { err += x.toString(); });
+    p.on('error', reject);
+    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error('edge-tts exit ' + code + ' ' + err.slice(0, 200)))));
+  });
+  const buf = fs.readFileSync(tmp);
+  try { fs.unlinkSync(tmp); } catch (e) {}
+  if (!buf || !buf.length) throw new Error('edge-tts sin audio');
+  if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value as string);
+  _ttsCache.set(clave, buf);
+  return buf;
+}
+
 const handler = async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const url = new URL(req.url as string, 'http://localhost');
@@ -521,16 +552,28 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       const nw = Number(url.searchParams.get('nw') || (cfg as any).ttsNoiseW || 0.8);
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
       try {
-        // Los parametros engine/model se aceptan y se ignoran: la web puede seguir mandando
-        // engine=edge de una config vieja y ahora se sintetiza igual con Piper.
-        const audio = await piperTts(texto, voz, rate, ns, nw);
+        let audio: Buffer;
+        let tipo = 'audio/wav';
+        let motorUsado = 'piper';
+        if (motor === 'edge') {
+          try {
+            audio = await edgeTts(texto, String(url.searchParams.get('voice') || (cfg as any).ttsEdgeVoice || EDGE_VOZ), rate);
+            tipo = 'audio/mpeg';
+            motorUsado = 'edge';
+          } catch (e) {
+            logLine('tts.log', new Date().toISOString() + ' edge fallo: ' + String((e as Error)?.message || e).slice(0, 160) + ' -> piper\n');
+            audio = await piperTts(texto, voz, rate, ns, nw);
+          }
+        } else {
+          audio = await piperTts(texto, voz, rate, ns, nw);
+        }
         if (!audio || !audio.length) throw new Error('sin audio');
         res.writeHead(200, {
-          'content-type': 'audio/wav',
+          'content-type': tipo,
           'content-length': String(audio.length),
           'cache-control': 'no-store',
-          'x-aegis-tts-path': _caminoTts,
-          'x-aegis-tts-engine': 'piper',
+          'x-aegis-tts-path': motorUsado === 'edge' ? 'edge' : _caminoTts,
+          'x-aegis-tts-engine': motorUsado,
         });
         res.end(audio);
       } catch (err) {

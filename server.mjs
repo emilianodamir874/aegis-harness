@@ -423,6 +423,39 @@ function backendTcpReady() {
 }
 piperDespertar().catch(() => {
 });
+const EDGE_EXE = "C:/Users/Emiliano/scoop/persist/uv/tools/shims/edge-tts.exe";
+const EDGE_VOZ = "es-AR-ElenaNeural";
+const EDGE_VOCES = /* @__PURE__ */ new Set(["es-AR-ElenaNeural", "es-AR-TomasNeural", "es-MX-DaliaNeural", "es-ES-ElviraNeural", "es-ES-AlvaroNeural"]);
+async function edgeTts(texto, voz, rate) {
+  const modelo = EDGE_VOCES.has(voz) ? voz : EDGE_VOZ;
+  const pct = Math.round((Number(rate) > 0.5 && Number(rate) < 2 ? Number(rate) : 1) * 100 - 100);
+  const clave = "edge|" + modelo + "|" + pct + "|" + texto;
+  const guardado = _ttsCache.get(clave);
+  if (guardado) return guardado;
+  const { spawn } = await import("node:child_process");
+  const fs2 = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const tmp = path.join(os.tmpdir(), "aegis-edge-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".mp3");
+  await new Promise((resolve, reject) => {
+    const p = spawn(EDGE_EXE, ["--voice", modelo, "--rate=" + (pct >= 0 ? "+" : "") + pct + "%", "--text", texto, "--write-media", tmp]);
+    let err = "";
+    p.stderr.on("data", (x) => {
+      err += x.toString();
+    });
+    p.on("error", reject);
+    p.on("close", (code) => code === 0 ? resolve() : reject(new Error("edge-tts exit " + code + " " + err.slice(0, 200))));
+  });
+  const buf = fs2.readFileSync(tmp);
+  try {
+    fs2.unlinkSync(tmp);
+  } catch (e) {
+  }
+  if (!buf || !buf.length) throw new Error("edge-tts sin audio");
+  if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value);
+  _ttsCache.set(clave, buf);
+  return buf;
+}
 const handler = async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
@@ -464,14 +497,28 @@ const handler = async (req, res) => {
         return;
       }
       try {
-        const audio = await piperTts(texto, voz, rate, ns, nw);
+        let audio;
+        let tipo = "audio/wav";
+        let motorUsado = "piper";
+        if (motor === "edge") {
+          try {
+            audio = await edgeTts(texto, String(url.searchParams.get("voice") || cfg.ttsEdgeVoice || EDGE_VOZ), rate);
+            tipo = "audio/mpeg";
+            motorUsado = "edge";
+          } catch (e) {
+            logLine("tts.log", (/* @__PURE__ */ new Date()).toISOString() + " edge fallo: " + String(e?.message || e).slice(0, 160) + " -> piper\n");
+            audio = await piperTts(texto, voz, rate, ns, nw);
+          }
+        } else {
+          audio = await piperTts(texto, voz, rate, ns, nw);
+        }
         if (!audio || !audio.length) throw new Error("sin audio");
         res.writeHead(200, {
-          "content-type": "audio/wav",
+          "content-type": tipo,
           "content-length": String(audio.length),
           "cache-control": "no-store",
-          "x-aegis-tts-path": _caminoTts,
-          "x-aegis-tts-engine": "piper"
+          "x-aegis-tts-path": motorUsado === "edge" ? "edge" : _caminoTts,
+          "x-aegis-tts-engine": motorUsado
         });
         res.end(audio);
       } catch (err) {
