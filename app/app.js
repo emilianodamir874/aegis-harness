@@ -3064,7 +3064,7 @@ ${a.text}
   }
   var DEBATE = DEBATE || { on: false, prev: "auto", turns: 0, prevEffort: "" };
   var HF = { on: false };
-  var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
+  var VOICE_SETTLE = /(^|[\s,.;:¡!¿?])(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|arranquemos|vamos)(?=$|[\s,.;:!?])/i;
   var FIXED_MODELS = { open_design: "deepseek-v4.1-flash", opencode_go: "deepseek-v4.1-flash" };
   function providerNow() {
     const opts = state.current && state.current.configOptions || [];
@@ -3089,7 +3089,7 @@ ${a.text}
       return false;
     }
   }
-  var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos. Discutí el plan, marcá riesgos y hacé preguntas. Respondé corto: 2 a 4 frases, sin listas largas ni el plan completo (el plan va en el cierre). Si la charla no apunta a un trabajo concreto (solo conversar del proyecto), podés cerrar el debate escribiendo en una linea aparte: — fin del debate —. Arrancás a trabajar cuando diga "dale".]';
+  var DEBATE_PREAMBLE = '[Debate: podes LEER (read_file, grep, tree, web, skills) pero NO modificar nada: shell, edit y write estan bloqueados por el server. Discutí el plan, marcá riesgos y hacé preguntas. Respondé corto: 2 a 4 frases. Cuando ya este claro que hay que hacer, cerra el debate vos: escribi una linea "— plan final —" y debajo el plan concreto, en imperativo y con el orden de los pasos. Si es solo charla, cerra con "— fin del debate —".]';
   function debateKeyFor(id) {
     return "aegis.debate." + (id || "nuevo");
   }
@@ -3135,6 +3135,23 @@ ${a.text}
       return false;
     }
   }
+  var READ_ONLY_TOOLS = ["read_file", "grep", "tree", "read_image", "websearch__web_fetch", "websearch__web_search", "load_skill", "load", "chatrecall__chatrecall", "extensionmanager__search_available_extensions"];
+  var DEBATE_BLOCKED_TOOLS = ["shell", "edit", "write", "delegate", "scheduler__manage_schedule", "extensionmanager__manage_extensions"];
+  async function debateSetPerms(entries) {
+    try {
+      await rpc.request("_aegis/unstable/tools/permissions/set", { toolPermissions: entries });
+      return true;
+    } catch (e) {
+      report("debate", "permisos: " + String(e && e.message || e).slice(0, 140));
+      return false;
+    }
+  }
+  function debateApplyToolProfile() {
+    return debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: "never_allow" })).concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: "always_allow" }))));
+  }
+  function debateRestoreToolProfile() {
+    return debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: t === "shell" ? "ask_before" : "always_allow" })).concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: "always_allow" }))));
+  }
   async function debateSetMode(modeId) {
     const sid = state.current && state.current.id;
     if (!sid) return false;
@@ -3154,7 +3171,8 @@ ${a.text}
     const next = !(DEBATE && DEBATE.on);
     if (next) {
       DEBATE.prev = debateCurrentMode();
-      if (!await debateSetMode("chat")) return;
+      if (!await debateSetMode("auto")) return;
+      await debateApplyToolProfile();
     } else if (!await debateSetMode(DEBATE.prev || "auto")) return;
     DEBATE.on = next;
     try {
@@ -3174,6 +3192,7 @@ ${a.text}
     } else {
       HF.on = false;
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+      await debateRestoreToolProfile();
       if (MIC.rec) {
         if (MIC.spoke) micStop();
         else micStop(true);
@@ -3185,13 +3204,15 @@ ${a.text}
   function debateDecorate(text) {
     const t = String(text || "");
     if (!DEBATE || !DEBATE.on) return t;
-    if (VOICE_SETTLE.test(t) && t.length <= 90) return t;
+    if (debateIsSettle(t)) return t;
     return DEBATE_PREAMBLE + "\n\n" + t;
   }
   function debateIsSettle(text) {
     if (!DEBATE || !DEBATE.on) return false;
-    const t = String(text || "");
-    return VOICE_SETTLE.test(t) && t.length <= 90;
+    const t = String(text || "").trim();
+    if (!t || t.length > 240) return false;
+    if (/\bno\s+(\w+\s+){0,2}(dale|hacelo|ejecut\w*|arranc\w*)/i.test(t)) return false;
+    return VOICE_SETTLE.test(t);
   }
   async function debateConclude(userText) {
     const cur = state.current;
@@ -3207,6 +3228,7 @@ ${a.text}
       await debateHide(1);
       await debateSetMode("auto");
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+      await debateRestoreToolProfile();
       DEBATE.on = false;
       DEBATE.turns = 0;
       HF.on = false;
@@ -3221,6 +3243,7 @@ ${a.text}
     const ocultos = await debateHide(turns + 1);
     await debateSetMode("auto");
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+    await debateRestoreToolProfile();
     DEBATE.turns = 0;
     try {
       localStorage.setItem(debateKeyFor(cur.id), "0");
@@ -3239,12 +3262,34 @@ ${a.text}
     DEBATE.turns = 0;
     await debateSetMode("auto");
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+    await debateRestoreToolProfile();
     try {
       localStorage.setItem(debateKeyFor(state.current && state.current.id), "0");
     } catch (e) {
     }
     debateSyncBtn();
     systemNote("El bot cerró el debate: seguimos charlando, sin plan de trabajo.");
+  }
+  function debatePlanFrom(text) {
+    const t = String(text || "");
+    const m = /(?:^|\n)[^\n]*plan final[^\n]*\n([\s\S]+)$/i.exec(t);
+    return m ? m[1].trim() : "";
+  }
+  async function debateFinishWithPlan(plan) {
+    const turns = Math.max(1, DEBATE.turns || 1);
+    DEBATE.on = false;
+    const ocultos = await debateHide(turns);
+    await debateSetMode("auto");
+    if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
+    await debateRestoreToolProfile();
+    DEBATE.turns = 0;
+    try {
+      localStorage.setItem(debateKeyFor(state.current && state.current.id), "0");
+    } catch (e) {
+    }
+    debateSyncBtn();
+    systemNote("Debate cerrado (" + ocultos + " mensaje(s) fuera del contexto): mando el plan y arranco.");
+    await sendText(plan);
   }
   async function debateHide(back) {
     const cur = state.current;
@@ -3448,7 +3493,11 @@ ${a.text}
       markRun(sid, false);
       refreshSessions();
     }
-    if (DEBATE && DEBATE.on && /fin del debate/i.test(textoDelTurno)) debateAutoClose();
+    if (DEBATE && DEBATE.on) {
+      const plan = debatePlanFrom(textoDelTurno);
+      if (plan) debateFinishWithPlan(plan);
+      else if (/fin del debate/i.test(textoDelTurno)) debateAutoClose();
+    }
     handsFreeMaybe(900);
   }
   async function send() {
@@ -5073,7 +5122,7 @@ ${a.text}
     var cortes = [], mm;
     var reCut = /[.!?…](?=\s|$)/g;
     while (mm = reCut.exec(pend)) cortes.push(mm.index + 1);
-    var LIMITE = 260;
+    var LIMITE = 400;
     var cut = -1;
     if (done === 0 && cortes.length) {
       cut = cortes[0];

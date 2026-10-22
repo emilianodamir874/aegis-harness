@@ -138,16 +138,6 @@ function isTunnel(req) {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return !isPrivateIp(host);
   return true;
 }
-// Cualquier peer que no sea loopback (LAN, tailnet, VPN) exige login. El tunel de
-// Cloudflare entra por loopback y se detecta por sus cabeceras. Esto cierra el bypass
-// por "IP privada = confianza" que dejaba la UI abierta a toda la LAN.
-function needsAuth(req) {
-  const peer = String(req.socket && req.socket.remoteAddress || "").replace(/^::ffff:/, "");
-  const loopback = peer === "127.0.0.1" || peer === "::1";
-  if (!loopback) return true;
-  const h = req.headers;
-  return !!(h["cf-connecting-ip"] || h["cf-ray"] || h["cf-worker"]);
-}
 const loginFails = /* @__PURE__ */ new Map();
 function loginBlocked(ip) {
   const e = loginFails.get(ip);
@@ -327,27 +317,56 @@ async function vozPiperValida(voz) {
   return _vocesPiper.has(v) ? v : PIPER_VOZ;
 }
 let _caminoTts = "vivo";
-async function piperTts(texto, voz, rate) {
+function headroomWav(buf, objetivo = 0.84) {
+  if (!buf || buf.length < 44 || buf.toString("ascii", 0, 4) !== "RIFF") return buf;
+  const out = Buffer.from(buf);
+  let off = 12;
+  while (off + 8 <= out.length) {
+    const id = out.toString("ascii", off, off + 4);
+    const tam = out.readUInt32LE(off + 4);
+    if (id === "data") {
+      const ini = off + 8;
+      const fin = Math.min(ini + tam, out.length);
+      let pico = 0;
+      for (let i = ini; i + 1 < fin; i += 2) {
+        const v = Math.abs(out.readInt16LE(i));
+        if (v > pico) pico = v;
+      }
+      const techo = Math.round(32767 * objetivo);
+      if (pico <= techo || pico === 0) return buf;
+      const g = techo / pico;
+      for (let i = ini; i + 1 < fin; i += 2) {
+        const v = Math.max(-32768, Math.min(32767, Math.round(out.readInt16LE(i) * g)));
+        out.writeInt16LE(v, i);
+      }
+      return out;
+    }
+    off += 8 + tam + tam % 2;
+  }
+  return buf;
+}
+async function piperTts(texto, voz, rate, ns = 0.667, nw = 0.8) {
   const modelo = await vozPiperValida(voz);
   const ritmo = Number(rate) > 0.5 && Number(rate) < 2 ? 1 / Number(rate) : 1;
-  const clave = modelo + ritmo.toFixed(3) + texto;
+  const clave = modelo + ritmo.toFixed(3) + ns.toFixed(3) + nw.toFixed(3) + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
   let audio;
   try {
-    audio = await piperVivo(texto, modelo, ritmo);
+    audio = await piperVivo(texto, modelo, ritmo, ns, nw);
     _caminoTts = "vivo";
   } catch (e) {
-    audio = await piperSuelto(texto, modelo, ritmo);
+    audio = await piperSuelto(texto, modelo, ritmo, ns, nw);
     _caminoTts = "suelto";
   }
+  audio = headroomWav(audio);
   if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value);
   _ttsCache.set(clave, audio);
   return audio;
 }
-async function piperSuelto(texto, modelo, ritmo) {
+async function piperSuelto(texto, modelo, ritmo, ns = 0.667, nw = 0.8) {
   const { spawn } = await import("node:child_process");
-  const clave = modelo + "|" + ritmo.toFixed(3) + "|" + texto;
+  const clave = modelo + "|" + ritmo.toFixed(3) + "|" + ns.toFixed(3) + "|" + nw.toFixed(3) + "|" + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
   const audio = await new Promise((resolve, reject) => {
@@ -358,6 +377,10 @@ async function piperSuelto(texto, modelo, ritmo) {
       "-",
       "--length_scale",
       String(ritmo),
+      "--noise_scale",
+      String(ns),
+      "--noise_w",
+      String(nw),
       "--sentence_silence",
       "0.12",
       // pausa mas corta entre oraciones (por defecto 0.2)
@@ -424,7 +447,7 @@ const handler = async (req, res) => {
 `
     );
     if (url.pathname === "/tts" && req.method === "GET") {
-      if (needsAuth(req) && !authed(req)) {
+      if (tunneled && !authed(req)) {
         res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ error: "unauthorized", login: "/login" }));
         return;
@@ -433,13 +456,15 @@ const handler = async (req, res) => {
       const motor = String(url.searchParams.get("engine") || cfg.ttsEngine || "piper");
       const voz = String(url.searchParams.get("voice") || cfg.ttsVoice || PIPER_VOZ);
       const rate = Number(url.searchParams.get("rate") || cfg.ttsRate || 1.05);
+      const ns = Number(url.searchParams.get("ns") || 0.667);
+      const nw = Number(url.searchParams.get("nw") || 0.8);
       if (!texto) {
         res.writeHead(400, { "content-type": "text/plain" });
         res.end("falta text");
         return;
       }
       try {
-        const audio = await piperTts(texto, voz, rate);
+        const audio = await piperTts(texto, voz, rate, ns, nw);
         if (!audio || !audio.length) throw new Error("sin audio");
         res.writeHead(200, {
           "content-type": "audio/wav",
@@ -531,7 +556,7 @@ const handler = async (req, res) => {
       res.end(LOGIN_HTML_OK);
       return;
     }
-    if (needsAuth(req) && !authed(req)) {
+    if (tunneled && !authed(req)) {
       if (readsHtml(req)) {
         redirect(res, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
       } else {
@@ -747,7 +772,7 @@ const onUpgrade = (req, socket, head) => {
     socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     return;
   }
-  if (needsAuth(req) && !authed(req)) {
+  if (isTunnel(req) && !authed(req)) {
     logLine("auth.log", `${(/* @__PURE__ */ new Date()).toISOString()} upgrade BLOQUEADO ${req.headers.host} ip=${req.socket.remoteAddress}
 `);
     socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");

@@ -374,27 +374,55 @@ async function vozPiperValida(voz: string): Promise<string> {
 // (piperSuelto), que es como se hacia antes.
 let _caminoTts = 'vivo';
 
-async function piperTts(texto: string, voz: string, rate: number): Promise<Buffer> {
+// Headroom: Piper entrega picos a 0 dBFS y en el parlante del telefono eso satura.
+// Se escala a -1.5 dBFS solo si hace falta (sin tocar el volumen percibido del resto).
+function headroomWav(buf: Buffer, objetivo = 0.84): Buffer {
+  if (!buf || buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF') return buf;
+  const out = Buffer.from(buf);
+  let off = 12;
+  while (off + 8 <= out.length) {
+    const id = out.toString('ascii', off, off + 4);
+    const tam = out.readUInt32LE(off + 4);
+    if (id === 'data') {
+      const ini = off + 8;
+      const fin = Math.min(ini + tam, out.length);
+      let pico = 0;
+      for (let i = ini; i + 1 < fin; i += 2) { const v = Math.abs(out.readInt16LE(i)); if (v > pico) pico = v; }
+      const techo = Math.round(32767 * objetivo);
+      if (pico <= techo || pico === 0) return buf;
+      const g = techo / pico;
+      for (let i = ini; i + 1 < fin; i += 2) {
+        const v = Math.max(-32768, Math.min(32767, Math.round(out.readInt16LE(i) * g)));
+        out.writeInt16LE(v, i);
+      }
+      return out;
+    }
+    off += 8 + tam + (tam % 2);
+  }
+  return buf;
+}
+async function piperTts(texto: string, voz: string, rate: number, ns = 0.667, nw = 0.8): Promise<Buffer> {
   const modelo = await vozPiperValida(voz);
   const ritmo = Number(rate) > 0.5 && Number(rate) < 2 ? 1 / Number(rate) : 1;
-  const clave = modelo + ritmo.toFixed(3) + texto;
+  const clave = modelo + ritmo.toFixed(3) + ns.toFixed(3) + nw.toFixed(3) + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
   let audio;
   try {
-    audio = await piperVivo(texto, modelo, ritmo);
+    audio = await piperVivo(texto, modelo, ritmo, ns, nw);
     _caminoTts = 'vivo';
   } catch (e) {
-    audio = await piperSuelto(texto, modelo, ritmo);
+    audio = await piperSuelto(texto, modelo, ritmo, ns, nw);
     _caminoTts = 'suelto';
   }
+  audio = headroomWav(audio);
   if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value as string);
   _ttsCache.set(clave, audio);
   return audio;
 }
-async function piperSuelto(texto: string, modelo: string, ritmo: number): Promise<Buffer> {
+async function piperSuelto(texto: string, modelo: string, ritmo: number, ns = 0.667, nw = 0.8): Promise<Buffer> {
   const { spawn } = await import('node:child_process');
-  const clave = modelo + '|' + ritmo.toFixed(3) + '|' + texto;
+  const clave = modelo + '|' + ritmo.toFixed(3) + '|' + ns.toFixed(3) + '|' + nw.toFixed(3) + '|' + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
   const audio = await new Promise<Buffer>((resolve, reject) => {
@@ -403,6 +431,8 @@ async function piperSuelto(texto: string, modelo: string, ritmo: number): Promis
       '-m', PIPER_DIR + '/' + modelo + '.onnx',
       '-f', '-',
       '--length_scale', String(ritmo),
+      '--noise_scale', String(ns),
+      '--noise_w', String(nw),
       '--sentence_silence', '0.12',   // pausa mas corta entre oraciones (por defecto 0.2)
       '-q',
     ]);
@@ -487,11 +517,13 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       // valida contra los modelos instalados y cae a la local.
       const voz = String(url.searchParams.get('voice') || cfg.ttsVoice || PIPER_VOZ);
       const rate = Number(url.searchParams.get('rate') || cfg.ttsRate || 1.05);
+      const ns = Number(url.searchParams.get('ns') || 0.667);
+      const nw = Number(url.searchParams.get('nw') || 0.8);
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
       try {
         // Los parametros engine/model se aceptan y se ignoran: la web puede seguir mandando
         // engine=edge de una config vieja y ahora se sintetiza igual con Piper.
-        const audio = await piperTts(texto, voz, rate);
+        const audio = await piperTts(texto, voz, rate, ns, nw);
         if (!audio || !audio.length) throw new Error('sin audio');
         res.writeHead(200, {
           'content-type': 'audio/wav',

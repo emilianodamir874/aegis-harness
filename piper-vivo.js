@@ -16,8 +16,8 @@ function prepararDir() {
   }
   viv.dir = true;
 }
-function listo(voz, ritmo) {
-  const clave = voz + "|" + ritmo.toFixed(3);
+function listo(voz, ritmo, ns = 0.667, nw = 0.8) {
+  const clave = voz + "|" + ritmo.toFixed(3) + "|" + ns.toFixed(3) + "|" + nw.toFixed(3);
   if (viv.proc && viv.clave === clave) return viv.proc;
   if (viv.proc) {
     try {
@@ -35,6 +35,10 @@ function listo(voz, ritmo) {
     "-q",
     "--length_scale",
     String(ritmo),
+    "--noise_scale",
+    String(ns),
+    "--noise_w",
+    String(nw),
     "--sentence_silence",
     "0.12"
   ]);
@@ -54,12 +58,12 @@ async function piperDespertar(voz, ritmo) {
   const v = voz || "es_AR-daniela-high";
   const r = typeof ritmo === "number" ? ritmo : 0.98;
   try {
-    listo(v, r);
+    listo(v, r, 0.667, 0.8);
     await piperVivo("Listo.", v, r);
   } catch (e) {
   }
 }
-function piperVivo(texto, voz, ritmo) {
+function piperVivo(texto, voz, ritmo, ns = 0.667, nw = 0.8) {
   const tarea = async () => {
     if (viv.proc && Date.now() - viv.ultimo > IDLE_MS) {
       try {
@@ -68,7 +72,7 @@ function piperVivo(texto, voz, ritmo) {
       }
       viv.proc = null;
     }
-    const proc = listo(voz, ritmo);
+    const proc = listo(voz, ritmo, ns, nw);
     const antes = new Set(readdirSync(DIR).filter((f) => f.endsWith(".wav")));
     proc.stdin.write(String(texto).replace(/[\r\n]+/g, " ") + "\n");
     viv.ultimo = Date.now();
