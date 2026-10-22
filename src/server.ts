@@ -349,6 +349,7 @@ function proxyAcp(req: IncomingMessage, socket: Socket, head: Buffer) {
 
 // --- Piper: voces neuronales LOCALES (offline, sin claves, CPU). Es el motor por defecto.
 import { piperVivo, piperDespertar } from './piper-vivo.js';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 const PIPER_EXE = 'C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe';
 const PIPER_DIR = 'C:/Aegis-Proyects/core/state/piper/voices';
 // UNICO motor: Piper local. Se borraron edge-tts (Microsoft contesta 403 desde que cambio el
@@ -476,32 +477,38 @@ function backendTcpReady() {
 // ------------------------------------------------------------------- server
 piperDespertar().catch(() => {});
 
-// Microsoft Edge (edge-tts): voces neuronales gratis, sin cuenta. Se llama al CLI instalado
-// con uv; devuelve mp3. Si falla, el handler cae a Piper.
-const EDGE_EXE = 'C:/Users/Emiliano/scoop/persist/uv/tools/shims/edge-tts.exe';
+// Microsoft Edge (edge-tts): voces neuronales gratis, sin cuenta. Cliente nativo (WebSocket)
+// en vez del CLI de Python: medido 0,6-0,8 s por frase contra ~4 s del spawn. Serializado en
+// una cola porque la instancia es stateful.
 const EDGE_VOZ = 'es-AR-ElenaNeural';
 const EDGE_VOCES = new Set(['es-AR-ElenaNeural', 'es-AR-TomasNeural', 'es-MX-DaliaNeural', 'es-ES-ElviraNeural', 'es-ES-AlvaroNeural']);
+const _edge = new MsEdgeTTS();
+let _edgeVoz = '';
+let _edgeCola: Promise<unknown> = Promise.resolve();
 async function edgeTts(texto: string, voz: string, rate: number): Promise<Buffer> {
   const modelo = EDGE_VOCES.has(voz) ? voz : EDGE_VOZ;
   const pct = Math.round((Number(rate) > 0.5 && Number(rate) < 2 ? Number(rate) : 1) * 100 - 100);
   const clave = 'edge|' + modelo + '|' + pct + '|' + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
-  const { spawn } = await import('node:child_process');
-  const fs = await import('node:fs');
-  const os = await import('node:os');
-  const path = await import('node:path');
-  const tmp = path.join(os.tmpdir(), 'aegis-edge-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.mp3');
-  await new Promise<void>((resolve, reject) => {
-    const p = spawn(EDGE_EXE, ['--voice', modelo, '--rate=' + (pct >= 0 ? '+' : '') + pct + '%', '--text', texto, '--write-media', tmp]);
-    let err = '';
-    p.stderr.on('data', (x) => { err += x.toString(); });
-    p.on('error', reject);
-    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error('edge-tts exit ' + code + ' ' + err.slice(0, 200)))));
-  });
-  const buf = fs.readFileSync(tmp);
-  try { fs.unlinkSync(tmp); } catch (e) {}
-  if (!buf || !buf.length) throw new Error('edge-tts sin audio');
+  const tarea = async (): Promise<Buffer> => {
+    if (_edgeVoz !== modelo) {
+      await _edge.setMetadata(modelo, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      _edgeVoz = modelo;
+    }
+    const { audioStream } = _edge.toStream(texto, { rate: (pct >= 0 ? '+' : '') + pct + '%' });
+    const buf = await new Promise<Buffer>((resolve, reject) => {
+      const partes: Buffer[] = [];
+      audioStream.on('data', (x: Buffer) => partes.push(x));
+      audioStream.on('end', () => resolve(Buffer.concat(partes)));
+      audioStream.on('error', reject);
+    });
+    if (!buf || !buf.length) throw new Error('edge-tts sin audio');
+    return buf;
+  };
+  const encadenada = _edgeCola.then(tarea, tarea);
+  _edgeCola = encadenada.catch(() => {});
+  const buf = await encadenada;
   if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value as string);
   _ttsCache.set(clave, buf);
   return buf;

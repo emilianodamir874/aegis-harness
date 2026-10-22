@@ -296,6 +296,7 @@ function proxyAcp(req, socket, head) {
   up.end();
 }
 import { piperVivo, piperDespertar } from "./piper-vivo.js";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
 const PIPER_EXE = "C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe";
 const PIPER_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
 const PIPER_VOZ = "es_AR-daniela-high";
@@ -423,35 +424,36 @@ function backendTcpReady() {
 }
 piperDespertar().catch(() => {
 });
-const EDGE_EXE = "C:/Users/Emiliano/scoop/persist/uv/tools/shims/edge-tts.exe";
 const EDGE_VOZ = "es-AR-ElenaNeural";
 const EDGE_VOCES = /* @__PURE__ */ new Set(["es-AR-ElenaNeural", "es-AR-TomasNeural", "es-MX-DaliaNeural", "es-ES-ElviraNeural", "es-ES-AlvaroNeural"]);
+const _edge = new MsEdgeTTS();
+let _edgeVoz = "";
+let _edgeCola = Promise.resolve();
 async function edgeTts(texto, voz, rate) {
   const modelo = EDGE_VOCES.has(voz) ? voz : EDGE_VOZ;
   const pct = Math.round((Number(rate) > 0.5 && Number(rate) < 2 ? Number(rate) : 1) * 100 - 100);
   const clave = "edge|" + modelo + "|" + pct + "|" + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
-  const { spawn } = await import("node:child_process");
-  const fs2 = await import("node:fs");
-  const os = await import("node:os");
-  const path = await import("node:path");
-  const tmp = path.join(os.tmpdir(), "aegis-edge-" + Date.now() + "-" + Math.random().toString(36).slice(2) + ".mp3");
-  await new Promise((resolve, reject) => {
-    const p = spawn(EDGE_EXE, ["--voice", modelo, "--rate=" + (pct >= 0 ? "+" : "") + pct + "%", "--text", texto, "--write-media", tmp]);
-    let err = "";
-    p.stderr.on("data", (x) => {
-      err += x.toString();
+  const tarea = async () => {
+    if (_edgeVoz !== modelo) {
+      await _edge.setMetadata(modelo, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      _edgeVoz = modelo;
+    }
+    const { audioStream } = _edge.toStream(texto, { rate: (pct >= 0 ? "+" : "") + pct + "%" });
+    const buf2 = await new Promise((resolve, reject) => {
+      const partes = [];
+      audioStream.on("data", (x) => partes.push(x));
+      audioStream.on("end", () => resolve(Buffer.concat(partes)));
+      audioStream.on("error", reject);
     });
-    p.on("error", reject);
-    p.on("close", (code) => code === 0 ? resolve() : reject(new Error("edge-tts exit " + code + " " + err.slice(0, 200))));
+    if (!buf2 || !buf2.length) throw new Error("edge-tts sin audio");
+    return buf2;
+  };
+  const encadenada = _edgeCola.then(tarea, tarea);
+  _edgeCola = encadenada.catch(() => {
   });
-  const buf = fs2.readFileSync(tmp);
-  try {
-    fs2.unlinkSync(tmp);
-  } catch (e) {
-  }
-  if (!buf || !buf.length) throw new Error("edge-tts sin audio");
+  const buf = await encadenada;
   if (_ttsCache.size >= TTS_CACHE_MAX) _ttsCache.delete(_ttsCache.keys().next().value);
   _ttsCache.set(clave, buf);
   return buf;
