@@ -2840,6 +2840,7 @@ ${a.text}
   }
   var VOICE_PROVIDERS = ["groq", "model"];
   var VOICE_MIN_MS = 450, VOICE_MAX_MS = 9e4, VOICE_SILENCE_MS = 900, VOICE_RMS = 0.012;
+  var VOICE_IDLE_MS = 8e3;
   var MIC = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0 };
   function micSecure() {
     return !!window.isSecureContext;
@@ -2866,8 +2867,9 @@ ${a.text}
     btn.classList.toggle("rec", !!on);
     btn.title = on ? "Grabando… tocá para cortar y transcribir" : "Dictar por voz (corta solo cuando te quedás callado)";
   }
-  function micStop() {
+  function micStop(discard) {
     if (!MIC.rec) return;
+    if (discard) MIC.discard = true;
     try {
       MIC.rec.stop();
     } catch (e) {
@@ -2916,6 +2918,10 @@ ${a.text}
           micStop();
           return;
         }
+        if (MIC.auto && !MIC.spoke && now - MIC.startedAt > VOICE_IDLE_MS) {
+          micStop(true);
+          return;
+        }
         if (rms >= VOICE_RMS) {
           MIC.spoke = true;
           MIC.quietSince = 0;
@@ -2932,14 +2938,14 @@ ${a.text}
       report("mic", "VAD no disponible: " + String(e && e.message || e));
     }
   }
-  function micTranscribe(blob, idx) {
+  function micTranscribe(blob, idx, auto) {
     const i = idx || 0;
     const provider = VOICE_PROVIDERS[i];
     const btn = document.getElementById("btn-mic");
     if (!provider) {
       if (btn) btn.classList.remove("busy");
-      MIC.auto = false;
       systemNote("No pude transcribir con ningún proveedor (revisá GROQ_API_KEY o el proveedor activo).");
+      handsFreeMaybe(600);
       return;
     }
     if (btn) btn.classList.add("busy");
@@ -2952,34 +2958,31 @@ ${a.text}
         if (btn) btn.classList.remove("busy");
         const txt = (r && r.text || "").trim();
         if (!txt) {
-          MIC.auto = false;
           systemNote("La transcripción vino vacía (" + provider + ").");
+          handsFreeMaybe(600);
           return;
         }
-        micDeliver(txt);
+        micDeliver(txt, auto);
       }).catch(function(e) {
         const msg = String(e && e.message || e).slice(0, 120);
         report("dictado", provider + " falló: " + msg);
         if (i + 1 < VOICE_PROVIDERS.length) {
           systemNote("Falló " + provider + " (" + msg + "). Pruebo con " + VOICE_PROVIDERS[i + 1] + "…");
-          micTranscribe(blob, i + 1);
+          micTranscribe(blob, i + 1, auto);
           return;
         }
         if (btn) btn.classList.remove("busy");
-        MIC.auto = false;
         systemNote("Falló la transcripción: " + msg);
+        handsFreeMaybe(1500);
       });
     };
     fr.onerror = function() {
       if (btn) btn.classList.remove("busy");
-      MIC.auto = false;
       systemNote("No pude leer el audio grabado.");
     };
     fr.readAsDataURL(blob);
   }
-  function micDeliver(txt) {
-    const auto = MIC.auto;
-    MIC.auto = false;
+  function micDeliver(txt, auto) {
     systemNote("Dictado: " + txt.slice(0, 90));
     if (auto && !state.busy) {
       sendText(txt);
@@ -3001,6 +3004,7 @@ ${a.text}
       return;
     }
     MIC.auto = !!(opts && opts.auto);
+    MIC.discard = false;
     MIC.spoke = false;
     MIC.quietSince = 0;
     navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function(st) {
@@ -3018,21 +3022,27 @@ ${a.text}
         const ms = Date.now() - MIC.startedAt;
         const chunks = MIC.chunks;
         MIC.chunks = [];
+        const discard = MIC.discard;
+        const auto = MIC.auto;
+        MIC.discard = false;
+        MIC.auto = false;
         MIC.rec = null;
         micCleanup();
         micSetState(false);
+        if (discard) {
+          handsFreeMaybe(150);
+          return;
+        }
         const blob = new Blob(chunks, { type: (rec.mimeType || "audio/webm").split(";")[0] });
         if (!blob.size) {
-          MIC.auto = false;
           systemNote("No se grabó audio.");
           return;
         }
         if (ms < VOICE_MIN_MS) {
-          MIC.auto = false;
           systemNote("Grabación muy corta (" + ms + " ms): la descarto.");
           return;
         }
-        micTranscribe(blob, 0);
+        micTranscribe(blob, 0, auto);
       };
       rec.start();
       micSetState(true);
@@ -3042,10 +3052,16 @@ ${a.text}
       MIC.rec = null;
       MIC.auto = false;
       micSetState(false);
+      if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) {
+        MIC.denied = true;
+        systemNote("El navegador bloqueó el micrófono. Habilitalo para este sitio y volvé a prender Debate.");
+        return;
+      }
       systemNote("No pude abrir el micrófono: " + String(e && e.message || e).slice(0, 140));
     });
   }
   var DEBATE = DEBATE || { on: false, prev: "auto" };
+  var HF = { on: false };
   var VOICE_SETTLE = /^\s*(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|vamos|ok[, ]+(dale|hacelo|ejecut)|listo[, ]+(dale|hacelo))/i;
   var DEBATE_PREAMBLE = '[Debate: no uses herramientas ni edites archivos; discutí el plan, marcá riesgos y hacé preguntas. Arrancás a trabajar cuando diga "dale".]';
   function debateKeyFor(id) {
@@ -3058,6 +3074,7 @@ ${a.text}
     } catch (e) {
       DEBATE.on = false;
     }
+    if (HF) HF.on = false;
     debateSyncBtn();
     return DEBATE.on;
   }
@@ -3065,7 +3082,7 @@ ${a.text}
     const b = document.getElementById("btn-debate");
     if (!b || !DEBATE) return;
     b.classList.toggle("on", !!DEBATE.on);
-    b.textContent = DEBATE.on ? "Debate · ON" : "Debate";
+    b.textContent = DEBATE.on ? "Debate · ON" : HF && HF.on ? "Manos libres" : "Debate";
     b.setAttribute("aria-pressed", DEBATE.on ? "true" : "false");
     b.title = DEBATE.on ? 'Modo debate ENCENDIDO: el bot conversa y NO puede usar herramientas. Decí "dale" para pasar a trabajar.' : "Modo debate: discutir el plan antes de que el bot toque nada (sin herramientas).";
   }
@@ -3100,7 +3117,21 @@ ${a.text}
     } catch (e) {
     }
     debateSyncBtn();
-    systemNote(next ? 'Modo debate: hablamos el plan. El bot no puede usar herramientas hasta que digas "dale".' : "Modo trabajo: herramientas habilitadas.");
+    if (next) {
+      HF.on = true;
+      if (!READ_ON) readToggle(true);
+      systemNote('Modo debate: micrófono abierto y respuestas en voz alta. Hablá; decí "dale" para que ejecute.');
+      if (!state.busy && !AUD.playing && !AUD.q.length) micStart({ auto: true });
+      else handsFreeMaybe(800);
+    } else {
+      HF.on = false;
+      if (MIC.rec) {
+        if (MIC.spoke) micStop();
+        else micStop(true);
+      }
+      systemNote("Modo trabajo: herramientas habilitadas.");
+    }
+    debateSyncBtn();
   }
   function debateDecorate(text) {
     const t = String(text || "");
@@ -3123,19 +3154,26 @@ ${a.text}
     return true;
   }
   function handsFreeOn() {
-    return !!(DEBATE && DEBATE.on) && READ_ON;
+    return !!(HF && HF.on) && READ_ON;
   }
-  function handsFreeMaybe() {
+  function handsFreeMaybe(delay) {
     if (!handsFreeOn() || state.busy || MIC.rec) return;
     if (document.visibilityState !== "visible") return;
-    if (!MIC.granted) return;
+    if (MIC.denied) return;
+    if (AUD.playing || AUD.q.length) return;
     setTimeout(function() {
-      if (handsFreeOn() && !state.busy && !MIC.rec) micStart({ auto: true });
-    }, 700);
+      if (handsFreeOn() && !state.busy && !MIC.rec && !AUD.playing && !AUD.q.length) micStart({ auto: true });
+    }, typeof delay === "number" ? delay : 700);
   }
   (function bindMic() {
     const btn = document.getElementById("btn-mic");
     if (btn) btn.addEventListener("click", function() {
+      if (!MIC.rec && HF && HF.on) {
+        HF.on = false;
+        debateSyncBtn();
+        systemNote("Manos libres apagado. Tocá el micrófono otra vez para dictar a mano.");
+        return;
+      }
       micStart();
     });
     const dbg = document.getElementById("btn-debate");
@@ -3290,6 +3328,7 @@ ${a.text}
       markRun(sid, false);
       refreshSessions();
     }
+    handsFreeMaybe(900);
   }
   async function send() {
     const input = $("#input");
