@@ -1244,12 +1244,17 @@ impl Agent {
             )))
         })?;
         let provider_name = current_provider.get_name().to_string();
-        self.switch_provider(
-            session_id,
-            &provider_name,
-            model_config.with_thinking_effort(effort),
-        )
-        .await
+        // Algunos proveedores (opencode_go) mandan `request_params` tal cual al API: si la
+        // sesion traia un `thinking_effort` viejo, el valor tipado no se usaba y el modelo
+        // seguia razonando aunque la opcion dijera off. Se pisa el parametro crudo.
+        let model_config = model_config
+            .with_thinking_effort(effort)
+            .with_merged_request_params(HashMap::from([(
+                "thinking_effort".to_string(),
+                Value::String(effort.to_string()),
+            )]));
+        self.switch_provider(session_id, &provider_name, model_config)
+            .await
     }
 
     /// Points the session at its stored provider, falling back to the global
@@ -2019,6 +2024,24 @@ mod tests {
         assert!(persisted_thinking_effort(&agent, &session_id)
             .await
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn update_thinking_effort_overrides_a_stale_raw_param_on_the_legacy_path() {
+        let (agent, session_id, _provider, _data_dir) =
+            effort_test_agent(EffortOutcome::Unhandled).await;
+
+        agent
+            .update_thinking_effort(&session_id, "off")
+            .await
+            .unwrap();
+
+        let config = agent.model_config_for_session(&session_id).await.unwrap();
+        let params = config.request_params.unwrap_or_default();
+        assert_eq!(
+            params.get("thinking_effort").and_then(|value| value.as_str()),
+            Some("off")
+        );
     }
 
     #[tokio::test]
