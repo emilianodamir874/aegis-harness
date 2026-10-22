@@ -456,8 +456,8 @@ const handler = async (req, res) => {
       const motor = String(url.searchParams.get("engine") || cfg.ttsEngine || "piper");
       const voz = String(url.searchParams.get("voice") || cfg.ttsVoice || PIPER_VOZ);
       const rate = Number(url.searchParams.get("rate") || cfg.ttsRate || 1.05);
-      const ns = Number(url.searchParams.get("ns") || 0.667);
-      const nw = Number(url.searchParams.get("nw") || 0.8);
+      const ns = Number(url.searchParams.get("ns") || cfg.ttsNoiseScale || 0.667);
+      const nw = Number(url.searchParams.get("nw") || cfg.ttsNoiseW || 0.8);
       if (!texto) {
         res.writeHead(400, { "content-type": "text/plain" });
         res.end("falta text");

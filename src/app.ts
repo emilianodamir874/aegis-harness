@@ -2788,6 +2788,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     try { DEBATE.on = localStorage.getItem(debateKeyFor(state.current && state.current.id)) === '1'; } catch (e) { DEBATE.on = false; }
     if (HF) HF.on = false;   // el microfono se abre con un gesto (toggle), no al cargar el chat
     DEBATE.turns = 0;
+    // Si quedo el perfil de solo lectura aplicado sin debate (cierre de pestana, crash), se
+    // restaura; si el debate sigue prendido, se re-aplica.
+    try {
+      if (DEBATE.on) debateApplyToolProfile();
+      else if (localStorage.getItem('aegis.debateProfile') === '1') debateRestoreToolProfile();
+    } catch (e) {}
     debateSyncBtn();
     return DEBATE.on;
   }
@@ -2835,14 +2841,18 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       return false;
     }
   }
-  function debateApplyToolProfile() {
-    return debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: 'never_allow' }))
+  async function debateApplyToolProfile() {
+    const ok = await debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: 'never_allow' }))
       .concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: 'always_allow' }))));
+    if (ok) { try { localStorage.setItem('aegis.debateProfile', '1'); } catch (e) {} }
+    return ok;
   }
-  function debateRestoreToolProfile() {
+  async function debateRestoreToolProfile() {
     // Vuelve al perfil por defecto de permission.yaml: shell pregunta, el resto permite.
-    return debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: t === 'shell' ? 'ask_before' : 'always_allow' }))
+    const ok = await debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: t === 'shell' ? 'ask_before' : 'always_allow' }))
       .concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: 'always_allow' }))));
+    if (ok) { try { localStorage.removeItem('aegis.debateProfile'); } catch (e) {} }
+    return ok;
   }
   async function debateSetMode(modeId) {
     const sid = state.current && state.current.id;

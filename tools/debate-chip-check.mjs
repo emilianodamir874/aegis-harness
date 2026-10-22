@@ -97,8 +97,8 @@ try {
 
   const load1 = await req('session/load', { sessionId: sid, cwd, mcpServers: [] });
   const modo1 = (load1.modes && load1.modes.currentModeId) || '';
-  if (modo1 !== 'chat') throw new Error('el server no quedo en chat: ' + modo1);
-  console.log('PASS server en modo chat (sin herramientas) para ' + sid);
+  if (modo1 !== 'auto') throw new Error('el server no quedo en auto: ' + modo1);
+  console.log('PASS server en auto con perfil de solo lectura para ' + sid);
 
   await page.click('#btn-debate');
   await page.waitForTimeout(1200);

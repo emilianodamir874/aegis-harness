@@ -517,8 +517,8 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       // valida contra los modelos instalados y cae a la local.
       const voz = String(url.searchParams.get('voice') || cfg.ttsVoice || PIPER_VOZ);
       const rate = Number(url.searchParams.get('rate') || cfg.ttsRate || 1.05);
-      const ns = Number(url.searchParams.get('ns') || 0.667);
-      const nw = Number(url.searchParams.get('nw') || 0.8);
+      const ns = Number(url.searchParams.get('ns') || (cfg as any).ttsNoiseScale || 0.667);
+      const nw = Number(url.searchParams.get('nw') || (cfg as any).ttsNoiseW || 0.8);
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
       try {
         // Los parametros engine/model se aceptan y se ignoran: la web puede seguir mandando

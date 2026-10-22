@@ -3102,6 +3102,11 @@ ${a.text}
     }
     if (HF) HF.on = false;
     DEBATE.turns = 0;
+    try {
+      if (DEBATE.on) debateApplyToolProfile();
+      else if (localStorage.getItem("aegis.debateProfile") === "1") debateRestoreToolProfile();
+    } catch (e) {
+    }
     debateSyncBtn();
     return DEBATE.on;
   }
@@ -3146,11 +3151,25 @@ ${a.text}
       return false;
     }
   }
-  function debateApplyToolProfile() {
-    return debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: "never_allow" })).concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: "always_allow" }))));
+  async function debateApplyToolProfile() {
+    const ok = await debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: "never_allow" })).concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: "always_allow" }))));
+    if (ok) {
+      try {
+        localStorage.setItem("aegis.debateProfile", "1");
+      } catch (e) {
+      }
+    }
+    return ok;
   }
-  function debateRestoreToolProfile() {
-    return debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: t === "shell" ? "ask_before" : "always_allow" })).concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: "always_allow" }))));
+  async function debateRestoreToolProfile() {
+    const ok = await debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: t === "shell" ? "ask_before" : "always_allow" })).concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: "always_allow" }))));
+    if (ok) {
+      try {
+        localStorage.removeItem("aegis.debateProfile");
+      } catch (e) {
+      }
+    }
+    return ok;
   }
   async function debateSetMode(modeId) {
     const sid = state.current && state.current.id;
