@@ -266,10 +266,11 @@ Sobre la base v3, todo verificado con los checks de `ui/desktop/scripts`:
 
 ## Backend / auth
 
-`C:\Aegis-Proyects\src/target/debug/goose-serve-v2.exe serve --host 0.0.0.0 --port 3284 --platform desktop
+`C:\Aegis-Proyects\core\bin\aegis-current.exe serve --host 0.0.0.0 --port 3284 --platform desktop
 --enable-scheduler --with-builtin developer --allowed-origin http://192.168.100.34:3788
 --allowed-origin http://127.0.0.1:3788 --allowed-origin http://localhost:3788`, con
-`AEGIS_SERVER__SECRET_KEY` (de `config.json`). Los browsers no pueden setear headers en un
+`AEGIS_SERVER__SECRET_KEY` (de `config.json`). El binario no se clava aca: `scripts\start-aegis-web.ps1`
+lo resuelve del puntero `core\state\current-version.json` (fallback `core\bin\aegis-current.exe`). Los browsers no pueden setear headers en un
 WebSocket: la autenticación va como `?token=` en la URL del WS (el server lo acepta).
 
 ## Verificación

@@ -109,7 +109,7 @@ for r in c.execute("""select id, session_id, role, tokens, length(content_json),
  from messages where coalesce(tokens,0) > 0 order by tokens desc limit 5"""):
     print(f"id={r[0]} ses={r[1]} {r[2]} tok={r[3]} bytes={r[4]} | {r[5][:90]!r}")
 
-with open('C:/goose-web/tools/session-analysis.json', 'w', encoding='utf-8') as f:
+with open('C:/Aegis-Proyects/web/tools/session-analysis.json', 'w', encoding='utf-8') as f:
     json.dump(out, f, ensure_ascii=False, indent=1, default=str)
 print()
-print("JSON completo: C:/goose-web/tools/session-analysis.json")
+print("JSON completo: C:/Aegis-Proyects/web/tools/session-analysis.json")
