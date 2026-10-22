@@ -2843,7 +2843,7 @@ ${a.text}
   var VOICE_PROVIDERS = ["groq", "model"];
   var VOICE_MIN_MS = 450, VOICE_MAX_MS = 9e4, VOICE_SILENCE_MS = 900, VOICE_RMS = 0.012;
   var VOICE_IDLE_MS = 8e3;
-  var MIC = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0 };
+  var MIC = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0, barge: false, bargeHits: 0 };
   function micSecure() {
     return !!window.isSecureContext;
   }
@@ -2920,15 +2920,21 @@ ${a.text}
           micStop();
           return;
         }
-        if (MIC.auto && !MIC.spoke && now - MIC.startedAt > VOICE_IDLE_MS) {
+        if (MIC.auto && !MIC.spoke && now - MIC.startedAt > VOICE_IDLE_MS && !(MIC.barge && AUD.playing)) {
           micStop(true);
           return;
         }
-        if (rms >= VOICE_RMS) {
+        const umbral = MIC.barge && AUD.playing ? 0.03 : VOICE_RMS;
+        if (rms >= umbral) {
           MIC.spoke = true;
           MIC.quietSince = 0;
+          if (MIC.barge && AUD.playing) {
+            MIC.bargeHits = (MIC.bargeHits || 0) + 1;
+            if (MIC.bargeHits >= 3) audStop();
+          }
           return;
         }
+        MIC.bargeHits = 0;
         if (!MIC.spoke) return;
         if (!MIC.quietSince) {
           MIC.quietSince = now;
@@ -3006,6 +3012,8 @@ ${a.text}
       return;
     }
     MIC.auto = !!(opts && opts.auto);
+    MIC.barge = !!(opts && opts.barge) || !!(AUD.playing && HF && HF.on);
+    MIC.bargeHits = 0;
     MIC.discard = false;
     MIC.spoke = false;
     MIC.quietSince = 0;
@@ -5088,6 +5096,12 @@ ${a.text}
     a.onerror = fallar;
     var pr = a.play();
     if (pr && pr.catch) pr.catch(fallar);
+    if (HF && HF.on && document.visibilityState === "visible") {
+      if (MIC.rec) {
+        MIC.barge = true;
+        MIC.bargeHits = 0;
+      } else if (MIC.granted) micStart({ auto: true, barge: true });
+    }
     audPrefetch();
   }
   function audStop() {
@@ -5148,12 +5162,16 @@ ${a.text}
     var cortes = [], mm;
     var reCut = /[.!?…](?=\s|$)/g;
     while (mm = reCut.exec(pend)) cortes.push(mm.index + 1);
-    var LIMITE = 400;
+    var LIMITE = 900;
+    var parrafo = pend.indexOf("\n\n");
     var cut = -1;
-    if (done === 0 && cortes.length) {
-      cut = cortes[0];
-    } else {
+    if (done === 0) {
+      if (parrafo > 0 && parrafo + 2 <= LIMITE) cut = parrafo + 2;
+      else if (cortes.length) cut = cortes[0];
+    }
+    if (cut < 0) {
       for (var i = 0; i < cortes.length; i++) if (cortes[i] <= LIMITE) cut = cortes[i];
+      if (parrafo > 0 && parrafo + 2 <= LIMITE && parrafo + 2 > cut) cut = parrafo + 2;
       if (cut < 0) {
         if (cortes.length) cut = cortes[0];
         else if (final) cut = pend.length;
@@ -5549,47 +5567,113 @@ ${a.text}
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", arrancar, { once: true });
     else arrancar();
   })();
-  window.__aegisWeb = { state, setConfig, rpc, readBlock, readHeading, readPump, readToggle, markHiddenTail, goalFromText, gpOcultoPorTexto, noteGoalFrom, fetchGoals, renderGoals, goalsNow: function() {
-    return state.goals;
-  }, gpSetVisible, goalNow: function() {
-    return state.goal;
-  }, renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $("#meta-right"), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: {
-    on: () => READ_ON,
-    toggle: readToggle,
-    pump: readPump,
-    flush: readFlush,
-    reset: readReset,
-    live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
-    perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
-    append: (t) => streamAppend("test-msg", t, false, false),
-    draft: { save: saveDraft, load: loadDraft, key: draftKey },
-    engine: (m, v) => {
-      if (m) READ.engine = m;
-      if (v) READ.voiceName = v;
-      try {
-        localStorage.setItem("aegis.ttsEngine", READ.engine);
-        localStorage.setItem("aegis.ttsVoice", READ.voiceName);
-      } catch (e) {
-      }
-      readReset(true);
-      return READ.engine + "|" + READ.voiceName;
+  window.__aegisWeb = {
+    state,
+    setConfig,
+    rpc,
+    readBlock,
+    readHeading,
+    readPump,
+    readToggle,
+    markHiddenTail,
+    bargeNow: function() {
+      return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 };
     },
-    block: (t) => readBlock(t),
-    clean: (t) => readClean(t),
-    state: () => READ
-  }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => {
-    try {
-      rpc.ws.close();
-    } catch {
-    }
-  }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null, hubInfo: runIdFromInfo, resetMetrics: () => {
-    METRICS.renders = 0;
-    METRICS.renderMs = 0;
-    METRICS.maxRenderMs = 0;
-    METRICS.composerRuns = 0;
-    METRICS.composerMs = 0;
-    METRICS.maxComposerMs = 0;
-  }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
+    micOff: function() {
+      micStop(true);
+    },
+    // solo para el probe de barge-in
+    goalFromText,
+    gpOcultoPorTexto,
+    noteGoalFrom,
+    fetchGoals,
+    renderGoals,
+    goalsNow: function() {
+      return state.goals;
+    },
+    gpSetVisible,
+    goalNow: function() {
+      return state.goal;
+    },
+    renderGoalBar,
+    copyId: copySessionId,
+    avisoVacio: avisoTurnoVacio,
+    chunksTurn: () => chunksTurn,
+    renderUsagePublic: renderUsage,
+    metaRight: () => $("#meta-right"),
+    usageDbg: () => state.usageDbg,
+    usageState: () => state.usage,
+    usageLines: () => usageLines(),
+    usageReset: resetUsageForSession,
+    md: (t) => md(t),
+    read: {
+      on: () => READ_ON,
+      toggle: readToggle,
+      pump: readPump,
+      flush: readFlush,
+      reset: readReset,
+      live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
+      perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
+      append: (t) => streamAppend("test-msg", t, false, false),
+      draft: { save: saveDraft, load: loadDraft, key: draftKey },
+      engine: (m, v) => {
+        if (m) READ.engine = m;
+        if (v) READ.voiceName = v;
+        try {
+          localStorage.setItem("aegis.ttsEngine", READ.engine);
+          localStorage.setItem("aegis.ttsVoice", READ.voiceName);
+        } catch (e) {
+        }
+        readReset(true);
+        return READ.engine + "|" + READ.voiceName;
+      },
+      block: (t) => readBlock(t),
+      clean: (t) => readClean(t),
+      state: () => READ
+    },
+    drainRender,
+    flushRender,
+    showWelcome,
+    refreshSessions,
+    slashCommands: () => state.slash.slice(),
+    dropSocket: () => {
+      try {
+        rpc.ws.close();
+      } catch {
+      }
+    },
+    probeRun: activeRunId,
+    resync: resyncAdoptedRun,
+    adopt: adoptRun,
+    pendingSteers: loadPending,
+    stopWatch: stopRunWatch,
+    startWatch: startRunWatch,
+    watchTick: watchAdoptedRun,
+    softResync,
+    sweepTools: sweepInterruptedTools,
+    metrics: METRICS,
+    watchDbg: WATCH_DBG,
+    hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }),
+    hubWatchNow: startHubWatch,
+    hubRewatch,
+    hubWatchSession: watchSession,
+    hubUnwatch: () => state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null,
+    hubInfo: runIdFromInfo,
+    resetMetrics: () => {
+      METRICS.renders = 0;
+      METRICS.renderMs = 0;
+      METRICS.maxRenderMs = 0;
+      METRICS.composerRuns = 0;
+      METRICS.composerMs = 0;
+      METRICS.maxComposerMs = 0;
+    },
+    speedStart,
+    speedFeed: speedChunk,
+    speedFinish,
+    speedReset,
+    speedSummary,
+    turnEndNote
+  };
   if (CFG.host === "mock") window.__aegisWeb.testUi = { update: applyUpdate, usage: onAegisUpdate, rate: stepRate, pop: openUsagePop, busy: setBusy, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => {
     state.steers.set(mid, { el, text: "", atts: [] });
     paintQueuedRunBar();

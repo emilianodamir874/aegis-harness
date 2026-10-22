@@ -2582,7 +2582,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   var VOICE_PROVIDERS = ['groq', 'model'];
   var VOICE_MIN_MS = 450, VOICE_MAX_MS = 90000, VOICE_SILENCE_MS = 900, VOICE_RMS = 0.012;
   var VOICE_IDLE_MS = 8000;   // auto-escucha sin voz: descarta y vuelve a abrir (no transcribe silencio)
-  var MIC: any = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0 };
+  var MIC: any = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0, barge: false, bargeHits: 0 };
 
   function micSecure() { return !!window.isSecureContext; }
 
@@ -2639,8 +2639,22 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
         const rms = Math.sqrt(sum / MIC.buf.length);
         const now = Date.now();
         if (now - MIC.startedAt > VOICE_MAX_MS) { micStop(); return; }
-        if (MIC.auto && !MIC.spoke && now - MIC.startedAt > VOICE_IDLE_MS) { micStop(true); return; }
-        if (rms >= VOICE_RMS) { MIC.spoke = true; MIC.quietSince = 0; return; }
+        // Barge-in: mientras el bot habla el micro tiene que quedar abierto aunque no haya voz
+        // (si se cierra por inactividad, un turno largo de voz ya no se puede interrumpir).
+        if (MIC.auto && !MIC.spoke && now - MIC.startedAt > VOICE_IDLE_MS && !(MIC.barge && AUD.playing)) {
+          micStop(true); return;
+        }
+        // Con el bot hablando (barge-in) el umbral sube: el eco del parlante no debe cortar.
+        const umbral = (MIC.barge && AUD.playing) ? 0.03 : VOICE_RMS;
+        if (rms >= umbral) {
+          MIC.spoke = true; MIC.quietSince = 0;
+          if (MIC.barge && AUD.playing) {
+            MIC.bargeHits = (MIC.bargeHits || 0) + 1;
+            if (MIC.bargeHits >= 3) audStop();   // el usuario interrumpio: se corta la voz
+          }
+          return;
+        }
+        MIC.bargeHits = 0;
         if (!MIC.spoke) return;
         if (!MIC.quietSince) { MIC.quietSince = now; return; }
         if (now - MIC.quietSince >= VOICE_SILENCE_MS) micStop();
@@ -2700,6 +2714,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (!micSecure()) { systemNote('El micrófono necesita HTTPS (o localhost). Por esta dirección el navegador no lo permite: usá https://' + location.hostname + ':3789 (la misma UI con TLS) o la URL del túnel.'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { systemNote('Este navegador no soporta grabación de audio.'); return; }
     MIC.auto = !!(opts && opts.auto);
+    // Cualquier escucha que arranque mientras el bot habla es barge-in (aunque venga del ciclo
+    // de manos libres, que reabre el micro sin pasar por audNext).
+    MIC.barge = !!(opts && opts.barge) || !!(AUD.playing && HF && HF.on);
+    MIC.bargeHits = 0;
     MIC.discard = false;
     MIC.spoke = false; MIC.quietSince = 0;
     navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
@@ -4726,6 +4744,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     a.onerror = fallar;
     var pr = a.play();
     if (pr && pr.catch) pr.catch(fallar);
+    // Barge-in: con manos libres, mientras suena la voz el micro tiene que estar escuchando.
+    // Si ya hay una toma abierta (del ciclo de manos libres), se la marca como barge.
+    if (HF && HF.on && document.visibilityState === 'visible') {
+      if (MIC.rec) { MIC.barge = true; MIC.bargeHits = 0; }
+      else if (MIC.granted) micStart({ auto: true, barge: true });
+    }
     audPrefetch();   // deja lista la frase siguiente
   }
   function audStop() {
@@ -4784,12 +4808,18 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     var cortes = [], mm;
     var reCut = /[.!?…](?=\s|$)/g;
     while ((mm = reCut.exec(pend))) cortes.push(mm.index + 1);
-    var LIMITE = 400;
+    // 900 chars por trozo y se prefiere el corte de parrafo: cada corte es una sintesis
+    // separada y eso se oye como una pausa larga entre oraciones.
+    var LIMITE = 900;
+    var parrafo = pend.indexOf('\n\n');
     var cut = -1;
-    if (done === 0 && cortes.length) {
-      cut = cortes[0];
-    } else {
+    if (done === 0) {
+      if (parrafo > 0 && parrafo + 2 <= LIMITE) cut = parrafo + 2;
+      else if (cortes.length) cut = cortes[0];                   // arranca apenas hay una oracion
+    }
+    if (cut < 0) {
       for (var i = 0; i < cortes.length; i++) if (cortes[i] <= LIMITE) cut = cortes[i];
+      if (parrafo > 0 && parrafo + 2 <= LIMITE && parrafo + 2 > cut) cut = parrafo + 2;
       if (cut < 0) {
         if (cortes.length) cut = cortes[0];                      // oracion larguisima: corta igual
         else if (final) cut = pend.length;                       // cierre de turno: lo que haya
@@ -5180,7 +5210,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
+  (window as any).__aegisWeb = { state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
+    bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
+    micOff: function () { micStop(true); },   // solo para el probe de barge-in
+    goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
