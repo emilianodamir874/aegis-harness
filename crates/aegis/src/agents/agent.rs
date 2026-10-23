@@ -384,7 +384,26 @@ impl Agent {
             .session_manager
             .get_session(session_id, false)
             .await?;
-        self.config.providers.provider_for(&session).await
+        let provider = self.config.providers.provider_for(&session).await?;
+        // El ledger anota el proveedor de cada llamada con `session.provider_name`. Una sesion
+        // creada con el proveedor por defecto nunca pasaba por switch_provider, asi que la
+        // columna quedaba en NULL y el gasto no se podia atribuir. Se persiste la primera vez
+        // que se resuelve el proveedor, sin esperar a que alguien cambie de modelo.
+        if session.provider_name.is_none() {
+            let resuelto = provider.get_name().to_string();
+            if let Err(error) = self
+                .config
+                .session_manager
+                .clone()
+                .update(session_id)
+                .provider_name(&resuelto)
+                .apply()
+                .await
+            {
+                warn!("Failed to persist resolved provider name: {error}");
+            }
+        }
+        Ok(provider)
     }
 
     pub async fn model_config_for_session(
@@ -1834,6 +1853,35 @@ mod tests {
             .await
             .unwrap()
             .request_param::<String>("thinking_effort")
+    }
+
+    #[tokio::test]
+    async fn provider_resolution_persists_the_provider_name_for_the_ledger() {
+        let (agent, session, _data_dir) = tracing_test_agent_and_session().await;
+        let antes = agent
+            .config
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        assert!(
+            antes.provider_name.is_none(),
+            "el fixture ya trae provider_name: {:?}",
+            antes.provider_name
+        );
+        let proveedor = agent.provider(&session.id).await.unwrap();
+        let despues = agent
+            .config
+            .session_manager
+            .get_session(&session.id, false)
+            .await
+            .unwrap();
+        assert_eq!(
+            despues.provider_name.as_deref(),
+            Some(proveedor.get_name()),
+            "el ledger toma el proveedor de la sesion; si no se persiste al resolverlo el gasto queda sin atribuir (antes: {:?})",
+            antes.provider_name
+        );
     }
 
     #[tokio::test]
