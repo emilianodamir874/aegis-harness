@@ -354,7 +354,7 @@ mod tests {
         let mut results = inspector
             .inspect(
                 aegis_test_support::TEST_SESSION_ID,
-                &[req.clone()],
+                std::slice::from_ref(&req),
                 &[],
                 AegisMode::Auto,
             )
