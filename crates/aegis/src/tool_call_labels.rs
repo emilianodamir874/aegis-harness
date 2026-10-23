@@ -16,14 +16,22 @@ use tracing::warn;
 const TOOL_TITLE_SYSTEM_PROMPT: &str =
     "Summarize this tool call in a short lowercase phrase (3-8 words). \
      No punctuation. No quotes. Examples: reading project configuration, \
-     checking network connectivity, listing files in src directory";
+     checking network connectivity, listing files in src directory. \
+     You are labeling a tool call that already happened: never execute it, \
+     never explain it, never ask for the full arguments. The arguments are \
+     truncated on purpose; label the intent anyway.";
 const TOOL_TITLE_ARGUMENTS_MAX_LENGTH: usize = 300;
 const TOOL_CHAIN_SUMMARY_SYSTEM_PROMPT: &str =
     "Summarize this sequence of tool calls in a short lowercase phrase \
      (3-8 words). No punctuation. No quotes. \
      Examples: applied dark mode polish, scanned for security issues, \
-     refactored config loading";
+     refactored config loading. Reply with the phrase only.";
 const TOOL_CHAIN_ARGUMENTS_MAX_LENGTH: usize = 200;
+/// Un label util es corto y de una linea. El modelo a veces responde con parrafos
+/// ("no tengo herramienta de shell...") cuando los argumentos le llegan cortados, y ese
+/// texto se persistia como titulo del paso y se mostraba en la UI.
+const LABEL_MAX_CHARS: usize = 60;
+const LABEL_MAX_WORDS: usize = 10;
 const LABEL_GENERATION_MAX_ATTEMPTS: usize = 2;
 const LABEL_GENERATION_RETRY_DELAY: Duration = Duration::from_millis(150);
 
@@ -211,7 +219,7 @@ async fn complete_label(
                 .collect::<String>()
                 .trim()
                 .to_string();
-            if !label.is_empty() {
+            if label_is_usable(&label) {
                 return Some(label);
             }
         }
@@ -222,6 +230,13 @@ async fn complete_label(
     }
 
     None
+}
+
+fn label_is_usable(label: &str) -> bool {
+    !label.is_empty()
+        && !label.contains('\n')
+        && label.len() <= LABEL_MAX_CHARS
+        && label.split_whitespace().count() <= LABEL_MAX_WORDS
 }
 
 #[cfg(test)]
@@ -456,6 +471,38 @@ mod tests {
             let title = generate_with(&provider, &tool_request(json!({}))).await;
 
             assert_eq!(title.as_deref(), Some("checking network connectivity"));
+            assert_eq!(provider.call_count(), 2);
+        }
+
+        #[tokio::test]
+        async fn rejects_prose_answer_and_retries() {
+            let provider = MockProvider::new(vec![
+                Ok(Message::assistant().with_text(
+                    "I don't have a shell tool available in this conversation, so I can't run that build.",
+                )),
+                Ok(Message::assistant().with_text("running the release build")),
+            ]);
+
+            let title = generate_with(&provider, &tool_request(json!({}))).await;
+
+            assert_eq!(title.as_deref(), Some("running the release build"));
+            assert_eq!(provider.call_count(), 2);
+        }
+
+        #[tokio::test]
+        async fn returns_none_when_both_attempts_are_prose() {
+            let provider = MockProvider::new(vec![
+                Ok(Message::assistant().with_text(
+                    "Your message looks truncated, so I cannot tell what the full command is.",
+                )),
+                Ok(Message::assistant().with_text(
+                    "I can't execute that command for you, but here is what it would do:\n1. cd",
+                )),
+            ]);
+
+            let title = generate_with(&provider, &tool_request(json!({}))).await;
+
+            assert_eq!(title, None);
             assert_eq!(provider.call_count(), 2);
         }
 
