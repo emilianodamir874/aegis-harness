@@ -30,6 +30,7 @@ scheduler = ["aegis/scheduler"]
 platform-apps = ["aegis/platform-apps"]
 chat-recall = ["aegis/chat-recall"]
 acp-http = ["aegis/acp-http"]
+local-inference = ["aegis/local-inference"]
 online-model-meta = ["aegis/online-model-meta"]
 rustls-tls = [
     "dep:axum-server",
