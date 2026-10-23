@@ -1194,13 +1194,12 @@ mod tests {
     #[test]
     fn fill_stream_timing_fills_both_fields_when_stats_absent() {
         let request_started = Instant::now() - Duration::from_millis(100);
-        let first_content_at = Some(request_started + Duration::from_millis(40));
         let mut usage = usage_with_stats(None);
 
         let mut timing = StreamTiming::new(request_started);
         timing.observe(
             Some(&Message::assistant().with_text("first")),
-            first_content_at.unwrap(),
+            request_started + Duration::from_millis(40),
         );
         timing.observe(
             Some(&Message::assistant().with_text("last")),
@@ -1218,7 +1217,6 @@ mod tests {
     #[test]
     fn fill_stream_timing_preserves_provider_reported_values() {
         let request_started = Instant::now() - Duration::from_millis(100);
-        let first_content_at = Some(request_started + Duration::from_millis(25));
         let mut usage = usage_with_stats(Some(ProviderStats {
             elapsed_ms: Some(7),
             time_to_first_token_ms: Some(3),
@@ -1229,7 +1227,7 @@ mod tests {
         let mut timing = StreamTiming::new(request_started);
         timing.observe(
             Some(&Message::assistant().with_text("first")),
-            first_content_at.unwrap(),
+            request_started + Duration::from_millis(25),
         );
         timing.observe(
             Some(&Message::assistant().with_text("last")),
