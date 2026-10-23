@@ -61,7 +61,14 @@ serve de aegis en 3284. Despues del reinicio,
 mostrar «Acceso al harness». El cliente ya esta desplegado y degrada solo (oculta la seccion
 si el endpoint no existe).
 
-## UI v4 (2026-10-22): sistema visual y de interaccion
+- **Visibilidad de una sola fuente (2026-10-23).** La regla de qué mensajes se pueden mostrar
+  (`userVisible` + `session_type in user/scheduled/acp`) ahora vive en el store, como vista
+  `v_visible_messages` que crea el motor (migración 21, y también en stores nuevos).
+  `tools/search-index.mjs` la consulta y deja de duplicar el predicado; mientras el store no la
+  tenga (serve anterior a la migración) cae al predicado inline y lo dice en la salida
+  (`visibility: "view" | "inline"`). `tests/visibility.ts` compara el conteo de la vista contra el
+  predicado viejo sobre una fixture con el mismo esquema y, cuando el store real ya tiene la
+  vista, también sobre el store real en solo lectura.
 
 Rediseño completo de la capa de UI sobre la misma arquitectura (sin framework, DOM a mano,
 CSS plano). El detalle de lo que se midió y por qué está en el comentario que abre la capa

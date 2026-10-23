@@ -52,17 +52,20 @@ try {
     process.stdout.write(JSON.stringify(out));
     process.exit(0);
   }
+  const tieneVista = all("select name from sqlite_master where type = 'view' and name = 'v_visible_messages'").length > 0;
+  out.visibility = tieneVista ? "view" : "inline";
+  const FROM_MESSAGES = tieneVista ? "v_visible_messages m" : "messages m";
+  const WHERE_VISIBLE = tieneVista ? "" : "and coalesce(json_extract(m.metadata_json, '$.userVisible'), 1) != 0 and s.session_type in ('user', 'scheduled', 'acp')";
   const SELECT = `
     select m.session_id, m.role, m.created_timestamp,
            s.name, s.working_dir, s.updated_at, s.archived_at,
            snippet(messages_fts, 1, char(1), char(2), '…', 18) snip,
            bm25(messages_fts) rank
       from messages_fts
-      join messages m on m.id = messages_fts.row_id
+      join ${FROM_MESSAGES} on m.id = messages_fts.row_id
       join sessions s on s.id = m.session_id
      where messages_fts match ?
-       and coalesce(json_extract(m.metadata_json, '$.userVisible'), 1) != 0
-       and s.session_type in ('user', 'scheduled', 'acp')
+       ${WHERE_VISIBLE}
      order by rank
      limit ${ROW_CAP}`;
   const buscar = () => {
