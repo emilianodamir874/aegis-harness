@@ -3165,8 +3165,14 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let current_metadata_json = sqlx::query_scalar::<_, String>(
-            "SELECT metadata_json FROM messages WHERE message_id = ? AND session_id = ?",
+        // `message_id` no es unico: el id que devuelve el proveedor se repite cuando la misma
+        // respuesta se persiste dos veces (dos filas con "chatcmpl-…"). Leer una fila y escribir
+        // en todas contaminaba la metadata de la otra: un mensaje ya oculto por otra operacion
+        // heredaba el batch del rewind y el rollback lo volvia a mostrar (medido: hidden=3,
+        // filas afectadas=4). Se toca exactamente la fila leida, la mas nueva con ese id.
+        let (row_id, current_metadata_json): (i64, String) = sqlx::query_as(
+            "SELECT id, metadata_json FROM messages WHERE message_id = ? AND session_id = ? \
+             ORDER BY id DESC LIMIT 1",
         )
         .bind(message_id)
         .bind(session_id)
@@ -3179,14 +3185,11 @@ impl SessionStorage {
         let new_metadata = f(current_metadata);
         let metadata_json = serde_json::to_string(&new_metadata)?;
 
-        sqlx::query(
-            "UPDATE messages SET metadata_json = ? WHERE message_id = ? AND session_id = ?",
-        )
-        .bind(metadata_json)
-        .bind(message_id)
-        .bind(session_id)
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("UPDATE messages SET metadata_json = ? WHERE id = ?")
+            .bind(metadata_json)
+            .bind(row_id)
+            .execute(&mut *tx)
+            .await?;
 
         tx.commit().await?;
 
@@ -5631,6 +5634,61 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(row, (None, 7));
+    }
+
+    #[tokio::test]
+    async fn update_message_metadata_touches_only_the_newest_row_with_that_id() {
+        // `message_id` se repite cuando la misma respuesta se persiste dos veces. La actualizacion
+        // por id tocaba las dos filas y revivia metadata de otra operacion (rewind sobre compactado).
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let id = new_session(&sm).await;
+        let pool = sm.storage().pool().await.unwrap();
+
+        for _ in 0..2 {
+            sqlx::query(
+                "INSERT INTO messages (message_id, session_id, role, content_json, metadata_json, created_timestamp) \
+                 VALUES ('dup-id', ?, 'assistant', '[]', '{\"userVisible\":true,\"agentVisible\":true}', 1)",
+            )
+            .bind(&id)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+
+        sm.update_message_metadata(&id, "dup-id", |mut metadata| {
+            metadata.agent_visible = false;
+            metadata
+        })
+        .await
+        .unwrap();
+
+        let ocultos: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages WHERE message_id = 'dup-id' \
+             AND json_extract(metadata_json, '$.agentVisible') = 0",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            ocultos, 1,
+            "solo la fila mas nueva con ese message_id puede cambiar"
+        );
+
+        let nueva: i64 =
+            sqlx::query_scalar("SELECT MAX(id) FROM messages WHERE message_id = 'dup-id'")
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        let oculta_la_nueva: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages WHERE id = ? \
+             AND json_extract(metadata_json, '$.agentVisible') = 0",
+        )
+        .bind(nueva)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(oculta_la_nueva, 1, "la fila tocada es la mas nueva");
     }
 
     #[tokio::test]
