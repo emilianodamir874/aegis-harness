@@ -280,3 +280,64 @@ fn same_prompt_id_answers_twice_without_a_second_model_call() {
         );
     });
 }
+
+/// Escenario 1 del plan, mitad de transporte: el cliente abandona la peticion a mitad de turno
+/// (se dropea el future del `session/prompt` mientras el proveedor todavia esta respondiendo) y
+/// reintenta con el MISMO `_meta.promptId`. El reintento tiene que contestar sin una segunda
+/// llamada al modelo: la fixture encola UNA sola respuesta, asi que un segundo POST recibiria 417.
+#[test]
+#[serial]
+fn abandoned_prompt_is_answered_on_retry_without_a_second_model_call() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let expected = AcpServerConnection::expected_session_id();
+        let openai = OpenAiFixture::with_response_delay(
+            vec![(format!("cuarto turno{TURN_CONTEXT_OPEN}"), REPLIES)],
+            expected.clone(),
+            std::time::Duration::from_millis(1500),
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        expected.set(&session.session_id().0);
+        let session_id = session.session_id().0.to_string();
+
+        let pedido = json!({
+            "sessionId": session_id.clone(),
+            "prompt": [{ "type": "text", "text": "cuarto turno" }],
+            "_meta": { "promptId": "prompt-abandonado-1" }
+        });
+
+        // El cliente se va a mitad de turno: se dropea el future a los 200 ms.
+        let abandono = send_custom(conn.cx(), "session/prompt", pedido.clone());
+        let vencido = tokio::time::timeout(std::time::Duration::from_millis(200), abandono).await;
+        assert!(
+            vencido.is_err(),
+            "el turno tenia que seguir en vuelo al abandonarlo"
+        );
+
+        // El reintento con el mismo promptId espera al run original y devuelve su resultado.
+        let reintento = send_custom(conn.cx(), "session/prompt", pedido)
+            .await
+            .expect("el reintento tiene que contestar, no fallar con una segunda llamada");
+        assert_eq!(
+            reintento.get("stopReason").and_then(|v| v.as_str()),
+            Some("end_turn"),
+            "el reintento cierra el turno con el resultado del run original: {reintento}"
+        );
+
+        // Un solo turno de usuario en el historial: el reintento no duplico nada.
+        let rewind = send_custom(
+            conn.cx(),
+            "_aegis/unstable/session/rewind",
+            json!({ "sessionId": session_id.clone(), "back": 1 }),
+        )
+        .await
+        .expect("rewind del unico turno");
+        assert_eq!(
+            campo(&rewind, "remainingTurns"),
+            0,
+            "el prompt abandonado y reintentado deja un solo turno: {rewind}"
+        );
+    });
+}
