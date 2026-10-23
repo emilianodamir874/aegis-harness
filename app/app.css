@@ -2986,3 +2986,15 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
 .ci-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
 .ci-empty { font-size: 12px; color: var(--text-4); line-height: 1.5; }
 @media (max-width: 560px) { .ci-row { grid-template-columns: 76px minmax(0, 1fr); } }
+
+.sb-snip-role {
+  font-family: var(--mono); font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text-4); margin-right: 5px; vertical-align: 1px;
+}
+.sb-more-results {
+  display: block; width: calc(100% - 20px); margin: 4px 10px 8px; padding: 6px 10px;
+  border-radius: 8px; border: 1px dashed var(--border); background: transparent;
+  color: var(--text-3); font-size: 12px; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.sb-more-results:hover { background: var(--bg-hover); color: var(--text); border-style: solid; }

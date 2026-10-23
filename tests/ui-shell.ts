@@ -6,6 +6,18 @@ import { baseUrl, check, pass, openPage } from './lib.js';
 const url = baseUrl();
 const browser = await chromium.launch({ headless: true });
 
+// ¿El proxy vivo ya sirve /search.json? Hasta que se reinicie responde 404 y la UI oculta la
+// seccion (comportamiento cubierto en search-e2e). Cuando exista, este test exige resultados
+// reales en vez de tolerar el 404.
+let liveSearch: { ok: boolean; sessions: number } = { ok: false, sessions: 0 };
+try {
+  const r = await fetch(url + '/search.json?q=aegis&limit=5');
+  if (r.ok) {
+    const j: any = await r.json();
+    liveSearch = { ok: true, sessions: Array.isArray(j.results) ? j.results.length : 0 };
+  }
+} catch {}
+
 // Contraste WCAG de un texto contra un fondo opaco (ambos rgb/rgba ya compuestos).
 function ratio(a: number[], b: number[]): number {
   const lum = (c: number[]) => {
@@ -202,8 +214,28 @@ try {
   // search-e2e). Cualquier otro 4xx/5xx sigue siendo un fallo.
   const pendiente = bad.filter((b) => /^404 .*\/search\.json/.test(b));
   const otros = bad.filter((b) => !/^404 .*\/search\.json/.test(b));
-  if (pendiente.length) console.log('aviso: /search.json 404 (endpoint pendiente de reinicio del proxy)');
+  if (pendiente.length && !liveSearch.ok) console.log('aviso: /search.json 404 (endpoint pendiente de reinicio del proxy)');
+  if (pendiente.length && liveSearch.ok) check(false, 'el endpoint existe pero una request dio 404: ' + JSON.stringify(pendiente));
   check(otros.length === 0, 'sin HTTP >= 400: ' + JSON.stringify(otros.slice(0, 3)));
+
+  // Búsqueda en vivo (solo si el endpoint ya está desplegado): la sección tiene que traer
+  // fragmentos resaltados de verdad.
+  if (liveSearch.ok && liveSearch.sessions > 0) {
+    await page.fill('#search', 'aegis');
+    await page.waitForSelector('.sb-hit', { timeout: 10000 });
+    const vivo = await page.evaluate(() => ({
+      hits: document.querySelectorAll('.sb-hit').length,
+      marks: document.querySelectorAll('.sb-hit mark').length,
+      roles: document.querySelectorAll('.sb-snip-role').length,
+    }));
+    check(vivo.hits > 0 && vivo.marks > 0, 'búsqueda en vivo con fragmentos: ' + JSON.stringify(vivo));
+    check(vivo.roles > 0, 'los fragmentos dicen quién lo dijo');
+    await page.fill('#search', '');
+    await page.waitForTimeout(400);
+    console.log('búsqueda en vivo verificada: ' + vivo.hits + ' sesiones, ' + vivo.marks + ' marcas');
+  } else {
+    console.log('aviso: búsqueda en vivo no verificada (endpoint ausente o sin resultados)');
+  }
   // (la pagina principal se cierra despues del panel de informacion, mas abajo)
 
   // --- desborde y solapamiento del header en tres anchos

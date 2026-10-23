@@ -24,6 +24,8 @@ export type RemoteState = {
   totalMatches: number;
   truncated: boolean;
   unavailable: boolean;
+  /** tope pedido al endpoint (20 por defecto; 50 al pedir "ver más") */
+  limit?: number;
 };
 
 export const emptyRemote = (): RemoteState => ({
@@ -33,6 +35,7 @@ export const emptyRemote = (): RemoteState => ({
   totalMatches: 0,
   truncated: false,
   unavailable: false,
+  limit: 20,
 });
 
 const marks = (raw: unknown): string =>
@@ -59,7 +62,12 @@ function hitRow(s: RemoteSession, active: boolean): string {
       ? `<span class="sb-hit-badge" title="${s.titleMatch ? 'También coincide el título' : n + ' coincidencias en los mensajes'}">${n}</span>`
       : '';
   const meta = [fmtTime(s.updatedAt || ''), folder(s.cwd)].filter(Boolean).join(' · ');
-  const snippets = ms.map((m) => `<span class="sb-snip">${marks(m.snippet)}</span>`).join('');
+  // Quién dijo el fragmento: sin esto hay que abrir la sesión para saber si la coincidencia
+  // es del usuario o del agente, y en una lista de resultados eso es la mitad del contexto.
+  const rol = (r: string): string => (r === 'assistant' ? 'aegis' : 'vos');
+  const snippets = ms
+    .map((m) => `<span class="sb-snip"><span class="sb-snip-role">${rol(String(m.role || ''))}</span>${marks(m.snippet)}</span>`)
+    .join('');
   return (
     `<div class="sb-row sb-hit" data-id="${esc(s.sessionId)}">` +
     `<button class="sb-item${active ? ' active' : ''}" type="button" aria-label="${esc(s.title || 'Sesión')} — coincidencias en los mensajes">` +
@@ -91,5 +99,8 @@ export function remoteResultsHtml(st: RemoteState | null | undefined, activeId?:
   if (st.loading && !rows.length) {
     return head + '<div class="sb-remote-loading">Buscando en el contenido…</div>';
   }
-  return head + rows.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join('');
+  return head + rows.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join('') +
+    (st.truncated && !st.loading
+      ? '<button class="sb-more-results" type="button">Ver más resultados</button>'
+      : '');
 }

@@ -19,7 +19,8 @@ rediseño, sin tocar la arquitectura (TypeScript sin framework, esbuild, `app/` 
   que `stats-index`). Expone `GET /search.json?q=&limit=` y el sidebar agrega la seccion
   «En los mensajes» con fragmentos resaltados; clickear abre sesiones que no estaban en la
   pagina cargada. Reglas: todas las palabras deben aparecer (prefijos), acentos y mayusculas
-  plegados, `userVisible=false` y sesiones `sub_agent` excluidas, tope de 20 sesiones.
+  plegados, `userVisible=false` y sesiones `sub_agent` excluidas, tope de 20 sesiones
+  («Ver más resultados» pide 50) y cada fragmento indica quién lo dijo (vos / aegis).
   Medido: 70–120 ms contra el store real y 68 ms sobre 20k mensajes de fixture.
 - **Login alineado al sistema visual** (`loginPage()` en `server.ts`): misma paleta y
   tipografia, marca, error accesible (`role=alert` + `aria-invalid`), 16px en movil, safe-area

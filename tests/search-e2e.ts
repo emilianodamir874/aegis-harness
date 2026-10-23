@@ -128,6 +128,11 @@ try {
     { sessionId: 's_visible', title: 'Aegis harness', cwd: '/mock', updatedAt: new Date(Date.now() - 60000).toISOString(), _meta: { messageCount: 4 } },
   ];
   const loads: string[] = [];
+  const buscados: Array<{ q: string; limit: number }> = [];
+  const MUCHOS = [
+    { sessionId: 'm_1', title: 'Muchos uno', cwd: '/mock', updatedAt: '2026-10-20T10:00:00Z', archived: false, titleMatch: false, matches: [{ role: 'user', ts: 1, snippet: '…una coincidencia…' }] },
+    { sessionId: 'm_2', title: 'Muchos dos', cwd: '/mock', updatedAt: '2026-10-19T10:00:00Z', archived: false, titleMatch: false, matches: [{ role: 'assistant', ts: 2, snippet: '…otra coincidencia…' }] },
+  ];
   const RESULTADO = {
     query: 'revision',
     results: [
@@ -158,7 +163,14 @@ try {
     if (url.pathname === '/client-log') return route.fulfill({ status: 204, body: '' });
     if (url.pathname === '/search.json') {
       const q = (url.searchParams.get('q') || '').toLowerCase();
+      buscados.push({ q, limit: Number(url.searchParams.get('limit') || 0) });
       if (q.includes('rompe')) return route.fulfill({ status: 500, contentType: 'application/json', body: '{"_error":"boom"}' });
+      if (q.includes('muchos')) {
+        // La primera página viene truncada; "Ver más resultados" tiene que pedir limit=50.
+        const lim = Number(url.searchParams.get('limit') || 0);
+        const res = lim >= 50 ? MUCHOS : MUCHOS.slice(0, 1);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ query: q, results: res, totalSessions: res.length, totalMatches: 9, truncated: lim < 50 }) });
+      }
       if (q.includes('lento')) {
         await new Promise((ok) => setTimeout(ok, 450));
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ query: q, results: [], totalSessions: 0, totalMatches: 0, truncated: false }) });
@@ -215,6 +227,7 @@ try {
       markText: r?.querySelector('mark')?.textContent || '',
       snips: r?.querySelectorAll('.sb-snip').length || 0,
       badge: r?.querySelector('.sb-hit-badge')?.textContent || '',
+      roles: [...(r?.querySelectorAll('.sb-snip-role') || [])].map((x) => (x.textContent || '').trim()),
       emptyLocal: !!document.querySelector('#session-list > .sb-empty'),
       aria: r?.querySelector('.sb-item')?.getAttribute('aria-label') || '',
     };
@@ -224,6 +237,7 @@ try {
   assert.equal(ui.marks, 2, 'dos marcas <mark> en los snippets');
   assert.equal(ui.markText.toLowerCase(), 'revisión'.toLowerCase(), 'la marca rodea el término');
   assert.equal(ui.snips, 2, 'dos fragmentos por sesión');
+  assert.deepEqual(ui.roles, ['vos', 'aegis'], 'cada fragmento dice quién lo dijo (' + ui.roles.join(',') + ')');
   assert.equal(ui.emptyLocal, false, 'sin "sin resultados" cuando hay coincidencias en el contenido');
   assert.match(ui.head, /En los mensajes/, 'encabezado de la sección');
   assert.match(ui.head, /1/, 'contador de sesiones');
@@ -249,6 +263,18 @@ try {
   assert.equal(dupTitulo.remote, 0, 'no se repite como resultado de contenido');
   assert.equal(dupTitulo.head, false, 'sin encabezado vacio');
   console.log('PASS UI: una coincidencia solo por título no duplica la fila local');
+
+  // "Ver más resultados": si el endpoint truncó, el pie pide limit=50 y suma filas.
+  await page.fill('#search', 'muchos');
+  await page.waitForSelector('.sb-more-results', { timeout: 6000 });
+  const filasAntes = await page.evaluate(() => document.querySelectorAll('.sb-hit').length);
+  await page.click('.sb-more-results');
+  await page.waitForFunction(() => document.querySelectorAll('.sb-hit').length === 2, null, { timeout: 6000 });
+  const limites = buscados.filter((b) => b.q.includes('muchos')).map((b) => b.limit);
+  assert.equal(filasAntes, 1, 'la primera página trae una fila truncada');
+  assert.deepEqual(limites, [20, 50], 'pide 20 y después 50 (' + JSON.stringify(limites) + ')');
+  assert.equal(await page.locator('.sb-more-results').count(), 0, 'sin botón cuando ya no está truncado');
+  console.log('PASS UI: "Ver más resultados" pagina el contenido y desaparece al completar');
 
   // Sin resultados remotos: vuelve el estado vacío local.
   await page.fill('#search', 'nada-que-ver');

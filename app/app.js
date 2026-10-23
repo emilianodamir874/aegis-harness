@@ -286,7 +286,8 @@ var emptyRemote = () => ({
   sessions: [],
   totalMatches: 0,
   truncated: false,
-  unavailable: false
+  unavailable: false,
+  limit: 20
 });
 var marks = (raw) => esc(String(raw == null ? "" : raw)).replace(/\u0001/g, "<mark>").replace(/\u0002/g, "</mark>").replace(/&lt;\/?(turn-context|current-time|working-directory)[^&]*&gt;/g, "").replace(/\s+/g, " ").trim();
 var folder = (p) => {
@@ -299,7 +300,8 @@ function hitRow(s, active) {
   const n = (s.matches || []).length;
   const badge = s.titleMatch && !n ? '<span class="sb-hit-badge" title="Coincide en el título">título</span>' : n ? `<span class="sb-hit-badge" title="${s.titleMatch ? "También coincide el título" : n + " coincidencias en los mensajes"}">${n}</span>` : "";
   const meta = [fmtTime(s.updatedAt || ""), folder(s.cwd)].filter(Boolean).join(" · ");
-  const snippets = ms.map((m) => `<span class="sb-snip">${marks(m.snippet)}</span>`).join("");
+  const rol = (r) => r === "assistant" ? "aegis" : "vos";
+  const snippets = ms.map((m) => `<span class="sb-snip"><span class="sb-snip-role">${rol(String(m.role || ""))}</span>${marks(m.snippet)}</span>`).join("");
   return `<div class="sb-row sb-hit" data-id="${esc(s.sessionId)}"><button class="sb-item${active ? " active" : ""}" type="button" aria-label="${esc(s.title || "Sesión")} — coincidencias en los mensajes"><span class="sb-title"><span class="sb-name">${esc(s.title || "Sesión")}</span>${s.archived ? '<span class="sb-tag">archivada</span>' : ""}${badge}</span>` + (meta ? `<span class="sb-sub">${esc(meta)}</span>` : "") + snippets + "</button></div>";
 }
 function remoteResultsHtml(st, activeId, localIds) {
@@ -315,7 +317,7 @@ function remoteResultsHtml(st, activeId, localIds) {
   if (st.loading && !rows.length) {
     return head + '<div class="sb-remote-loading">Buscando en el contenido…</div>';
   }
-  return head + rows.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join("");
+  return head + rows.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join("") + (st.truncated && !st.loading ? '<button class="sb-more-results" type="button">Ver más resultados</button>' : "");
 }
 
 // src/app/read.ts
@@ -742,13 +744,13 @@ function ttsUrlFor(voice, text, rate) {
       void runRemoteSearch(q);
     }, 250);
   }
-  async function runRemoteSearch(q) {
+  async function runRemoteSearch(q, limit = 20) {
     const seq = ++remoteSeq;
     if (remoteAbort) remoteAbort.abort();
     const ctl = new AbortController();
     remoteAbort = ctl;
     try {
-      const r = await fetch("/search.json?q=" + encodeURIComponent(q).slice(0, 300) + "&limit=20", {
+      const r = await fetch("/search.json?q=" + encodeURIComponent(q).slice(0, 300) + "&limit=" + limit, {
         signal: ctl.signal,
         credentials: "same-origin"
       });
@@ -762,7 +764,8 @@ function ttsUrlFor(voice, text, rate) {
         sessions: Array.isArray(data && data.results) ? data.results.slice(0, 50) : [],
         totalMatches: Number(data && data.totalMatches) || 0,
         truncated: !!(data && data.truncated),
-        unavailable: false
+        unavailable: false,
+        limit
       };
     } catch (e) {
       if (seq !== remoteSeq) return;
@@ -5349,6 +5352,12 @@ ${a.text}
       insertSlash(state.slashItems[Number(it.dataset.i)]);
     });
     $("#session-list").addEventListener("click", (e) => {
+      const mas = e.target.closest(".sb-more-results");
+      if (mas) {
+        e.stopPropagation();
+        if (state.remote && state.remote.q) void runRemoteSearch(state.remote.q, 50);
+        return;
+      }
       const more = e.target.closest(".sb-more-btn");
       if (more) {
         e.stopPropagation();

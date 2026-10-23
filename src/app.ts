@@ -415,13 +415,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     remoteTimer = setTimeout(() => { void runRemoteSearch(q); }, 250);
   }
 
-  async function runRemoteSearch(q) {
+  async function runRemoteSearch(q, limit = 20) {
     const seq = ++remoteSeq;
     if (remoteAbort) remoteAbort.abort();
     const ctl = new AbortController();
     remoteAbort = ctl;
     try {
-      const r = await fetch('/search.json?q=' + encodeURIComponent(q).slice(0, 300) + '&limit=20', {
+      const r = await fetch('/search.json?q=' + encodeURIComponent(q).slice(0, 300) + '&limit=' + limit, {
         signal: ctl.signal,
         credentials: 'same-origin',
       });
@@ -436,6 +436,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
         totalMatches: Number(data && data.totalMatches) || 0,
         truncated: !!(data && data.truncated),
         unavailable: false,
+        limit,
       };
     } catch (e) {
       if (seq !== remoteSeq) return;
@@ -5007,6 +5008,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       insertSlash(state.slashItems[Number(it.dataset.i)]);
     });
     $('#session-list').addEventListener('click', (e) => {
+      const mas = e.target.closest('.sb-more-results');
+      if (mas) {
+        e.stopPropagation();
+        if (state.remote && state.remote.q) void runRemoteSearch(state.remote.q, 50);
+        return;
+      }
       const more = e.target.closest('.sb-more-btn');
       if (more) { e.stopPropagation(); loadMoreSessions(); return; }
       const arch = e.target.closest('.sb-arch-toggle');
