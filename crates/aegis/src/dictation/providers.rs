@@ -779,8 +779,8 @@ mod tests {
         all_providers, build_api_client, get_provider_def, normalize_openrouter_base_url,
         openai_dictation_target, option_fields, parse_model_transcription_response,
         parse_transcription_response, resolve_openai_base_url_target, DictationProvider,
-        TranscribeOptions, MAX_TRANSCRIPTION_ERROR_PREVIEW_BYTES,
-        MAX_TRANSCRIPTION_RESPONSE_BYTES, OPENAI_VERSIONLESS_TRANSCRIPTIONS_PATH,
+        TranscribeOptions, MAX_TRANSCRIPTION_ERROR_PREVIEW_BYTES, MAX_TRANSCRIPTION_RESPONSE_BYTES,
+        OPENAI_VERSIONLESS_TRANSCRIPTIONS_PATH,
     };
     use test_case::test_case;
     use wiremock::matchers::{method, path};

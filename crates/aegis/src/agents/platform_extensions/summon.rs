@@ -876,10 +876,10 @@ impl SummonClient {
             })
             .max_turns = Some(max_turns);
         if recipe
-                .response
-                .as_ref()
-                .and_then(|response| response.json_schema.as_ref())
-                .is_none()
+            .response
+            .as_ref()
+            .and_then(|response| response.json_schema.as_ref())
+            .is_none()
         {
             recipe.response = Some(Response {
                 json_schema: Some(serde_json::json!({

@@ -2039,7 +2039,9 @@ mod tests {
         let config = agent.model_config_for_session(&session_id).await.unwrap();
         let params = config.request_params.unwrap_or_default();
         assert_eq!(
-            params.get("thinking_effort").and_then(|value| value.as_str()),
+            params
+                .get("thinking_effort")
+                .and_then(|value| value.as_str()),
             Some("off")
         );
     }

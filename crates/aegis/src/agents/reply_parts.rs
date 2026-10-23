@@ -215,10 +215,7 @@ fn is_mergeable_assistant_chunk(message: &Message) -> bool {
         })
 }
 
-pub(crate) fn prepare_inference_tools(
-    mut tools: Vec<Tool>,
-) -> Vec<Tool> {
-
+pub(crate) fn prepare_inference_tools(mut tools: Vec<Tool>) -> Vec<Tool> {
     // Filter out tools not visible to the model per MCP Apps visibility spec.
     // Tools with `_meta.ui.visibility` that doesn't include "model" are app-only.
     tools.retain(is_tool_visible_to_model);

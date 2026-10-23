@@ -49,14 +49,12 @@ impl InferenceRequestPreparer<Session> for AegisInferenceRequestPreparer<'_> {
         conversation: &Conversation,
         input: InferenceInput,
     ) -> Result<PreparedInferenceRequest> {
-
         let aegis_mode = session.aegis_mode;
         if aegis_mode == AegisMode::SmartApprove {
             self.tool_inspection_manager
                 .apply_tool_annotations(&input.tools);
         }
-        let tools =
-            crate::agents::reply_parts::prepare_inference_tools(input.tools);
+        let tools = crate::agents::reply_parts::prepare_inference_tools(input.tools);
         let system_prompt =
             PromptManager::new().build_system_prompt(session, input.prompt_parts, aegis_mode);
         let turn = messages_since_kickoff(conversation)?;

@@ -5,10 +5,6 @@ use super::calculator_extension::ADD;
 use super::pipeline::{
     test_pipeline, MessageKind::Agent, MessageKind::ToolResponse, MessageKind::User,
 };
-use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
-use crate::config::permission::PermissionLevel;
-use crate::config::AegisMode;
-use crate::conversation::message::MessageContent;
 
 /// The compaction engine only accepts structured summary JSON; keep the mock valid.
 const SUMMARY_REPLY: &str = r#"{"user_intent": ["the conversation was summarized so the compacted session could continue"]}"#;
@@ -98,4 +94,3 @@ async fn prompt_and_skill_lifecycle() -> Result<()> {
 
     Ok(())
 }
-

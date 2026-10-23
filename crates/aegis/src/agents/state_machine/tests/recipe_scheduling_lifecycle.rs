@@ -9,12 +9,9 @@ use super::pipeline::{
 use crate::agents::extension::ExtensionConfig;
 use crate::agents::final_output_tool::{FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME};
 use crate::agents::platform_extensions::scheduler::MANAGE_SCHEDULE_TOOL_NAME_COMPLETE;
-use crate::agents::state_machine::ops_tool_approval::TOOL_EXECUTABLE_KEY;
 use crate::agents::tool_execution::CHAT_MODE_TOOL_SKIPPED_RESPONSE;
 use crate::agents::types::{RetryConfig, SuccessCheck};
-use crate::config::permission::PermissionLevel;
 use crate::config::AegisMode;
-use crate::conversation::message::MessageContent;
 use crate::recipe::build_recipe::build_recipe_from_template;
 use crate::recipe::{Recipe, Response, SubRecipe};
 

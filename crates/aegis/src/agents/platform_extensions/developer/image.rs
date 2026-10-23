@@ -184,10 +184,7 @@ async fn load_image_bytes(source: &str, working_dir: Option<&Path>) -> Result<Ve
 
 async fn load_url_bytes(url: url::Url) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
-        .user_agent(concat!(
-            "aegis/",
-            env!("CARGO_PKG_VERSION")
-        ))
+        .user_agent(concat!("aegis/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| format!("failed to create HTTP client: {error}"))?;

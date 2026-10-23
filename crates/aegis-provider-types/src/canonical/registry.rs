@@ -149,10 +149,10 @@ pub struct RemoteCatalog {
 pub async fn fetch_remote_catalog(url: &str, cache_dir: &Path) -> Result<Option<RemoteCatalog>> {
     let client = reqwest::Client::builder().build()?;
     let etag_path = cache_dir.join(ETAG_FILENAME);
-    let mut request = client.get(url).timeout(Duration::from_secs(15)).header(
-        "User-Agent",
-        "aegis/model-catalog",
-    );
+    let mut request = client
+        .get(url)
+        .timeout(Duration::from_secs(15))
+        .header("User-Agent", "aegis/model-catalog");
     if let Ok(etag) = std::fs::read_to_string(&etag_path) {
         request = request.header(IF_NONE_MATCH, etag);
     }
