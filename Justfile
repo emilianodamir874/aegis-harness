@@ -21,11 +21,11 @@ fmt:
 
 # (fork) Canonical compile gate for the aegis lib (mismas features que test-lib / CI)
 check-lib:
-    cargo check -p aegis --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
+    cargo check -p aegis --lib --no-default-features --features rustls-tls,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
 
 # (fork) Canonical compile gate for the serve binary (feature set que usa aegis-web)
 check-serve:
-    cargo check -p aegis-server --bin aegis-serve --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode
+    cargo check -p aegis-server --bin aegis-serve --no-default-features --features rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http
 
 # (fork) Compile gate for the harness INCLUDING tests
 check-tests:
@@ -41,7 +41,7 @@ ship name:
 
 # (fork) Run the aegis lib suite with CI's feature set
 test-lib:
-    cargo test -p aegis --lib --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
+    cargo test -p aegis --lib --no-default-features --features rustls-tls,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http
 
 # (fork) Provider tests (antigravity + open_design)
 test-providers:
@@ -50,7 +50,7 @@ test-providers:
 
 # (fork) Regenerate prompt_manager snapshots (they embed ~/.agents/skills)
 snap:
-    $env:INSTA_UPDATE="always"; cargo test -j 1 -p aegis --no-default-features --features rustls-tls,code-mode,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http --lib agents::prompt_manager::tests
+    $env:INSTA_UPDATE="always"; cargo test -j 1 -p aegis --no-default-features --features rustls-tls,tree-sitter,live-voice,scheduler,platform-apps,chat-recall,acp-http --lib agents::prompt_manager::tests
 
 # Run the ACP backend (harness) on 127.0.0.1:3000
 run-server:

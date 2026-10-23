@@ -22,7 +22,9 @@ use tokio::sync::{oneshot, Mutex};
 use tracing::warn;
 
 const CALLBACK_TEMPLATE: &str = include_str!("oauth_callback.html");
-const CLIENT_METADATA_URL: &str = "https://goose-docs.ai/oauth/client-metadata.json";
+// Sin sitio publico no hay documento de metadatos: el flujo usa registro
+// dinamico o un cliente pre-registrado por configuracion.
+const CLIENT_METADATA_URL: &str = "";
 const DEFAULT_OAUTH_CALLBACK_TIMEOUT_SECS: u64 = 300;
 const OAUTH_CALLBACK_TIMEOUT_ENV: &str = "AEGIS_OAUTH_CALLBACK_TIMEOUT_SECONDS";
 
@@ -271,7 +273,10 @@ fn build_authorization_request(
             }
         }
         None => {
-            request = request.with_client_metadata_url(client_metadata_url());
+            let metadata_url = client_metadata_url();
+            if !metadata_url.is_empty() {
+                request = request.with_client_metadata_url(metadata_url);
+            }
         }
     }
 
@@ -719,7 +724,11 @@ mod tests {
     }
 
     #[test]
-    fn authorization_request_uses_client_metadata_url_without_static_client() {
+    fn authorization_request_without_static_client_omits_unset_metadata_url() {
+        if std::env::var("AEGIS_MCP_OAUTH_CLIENT_METADATA_URL").is_ok() {
+            // El caso depende del entorno: con la variable puesta si se manda.
+            return;
+        }
         let request = build_authorization_request(
             "http://127.0.0.1:1234/oauth_callback".to_string(),
             None,
@@ -730,10 +739,8 @@ mod tests {
 
         assert_eq!(request.client_id, None);
         assert_eq!(request.client_secret, None);
-        assert_eq!(
-            request.client_metadata_url.as_deref(),
-            Some(CLIENT_METADATA_URL)
-        );
+        // Sin documento de metadatos configurado no se manda una URL vacia.
+        assert_eq!(request.client_metadata_url, None);
         assert!(request.scopes.is_empty());
     }
 

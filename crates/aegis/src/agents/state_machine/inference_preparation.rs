@@ -49,17 +49,6 @@ impl InferenceRequestPreparer<Session> for AegisInferenceRequestPreparer<'_> {
         conversation: &Conversation,
         input: InferenceInput,
     ) -> Result<PreparedInferenceRequest> {
-        #[cfg(feature = "code-mode")]
-        let code_execution_mode = self
-            .extension_lease
-            .lock()
-            .expect("extension lease unavailable")
-            .as_ref()
-            .is_some_and(|lease| {
-                lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME)
-            });
-        #[cfg(not(feature = "code-mode"))]
-        let code_execution_mode = false;
 
         let aegis_mode = session.aegis_mode;
         if aegis_mode == AegisMode::SmartApprove {
@@ -67,7 +56,7 @@ impl InferenceRequestPreparer<Session> for AegisInferenceRequestPreparer<'_> {
                 .apply_tool_annotations(&input.tools);
         }
         let tools =
-            crate::agents::reply_parts::prepare_inference_tools(input.tools, code_execution_mode);
+            crate::agents::reply_parts::prepare_inference_tools(input.tools);
         let system_prompt =
             PromptManager::new().build_system_prompt(session, input.prompt_parts, aegis_mode);
         let turn = messages_since_kickoff(conversation)?;

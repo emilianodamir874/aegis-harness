@@ -23,9 +23,7 @@ default = [
     "bundled-mcp",
     "chat-recall",
     "acp-http",
-    "code-mode",
 ]
-code-mode = ["aegis/code-mode"]
 tree-sitter = ["aegis/tree-sitter"]
 bundled-mcp = ["dep:aegis-mcp", "aegis-mcp/bundled-mcp"]
 scheduler = ["aegis/scheduler"]

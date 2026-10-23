@@ -25,8 +25,6 @@ use common_tests::fixtures::{
     run_test, spawn_acp_server_in_process, Connection, OpenAiFixture, PermissionDecision, Session,
     SessionData, TestConnectionConfig,
 };
-#[cfg(feature = "code-mode")]
-use common_tests::run_prompt_codemode;
 use common_tests::{
     run_close_session, run_config_mcp, run_config_option_mode_set, run_config_option_model_set,
     run_delete_session, run_fs_read_text_file_true, run_fs_write_text_file_false,
@@ -1184,12 +1182,6 @@ fn test_permission_persistence() {
 #[test]
 fn test_prompt_basic() {
     run_test(async { run_prompt_basic::<AcpServerConnection>().await });
-}
-
-#[test]
-#[cfg(feature = "code-mode")]
-fn test_prompt_codemode() {
-    run_test(async { run_prompt_codemode::<AcpServerConnection>().await });
 }
 
 #[test]

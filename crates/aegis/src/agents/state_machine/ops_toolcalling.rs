@@ -952,10 +952,6 @@ impl Operation<Session, AegisEffect> for ToolExecutionOperation {
         let mut prompt_parts = hints.load_new_hints(&session.working_dir);
 
         let lease = self.lease(session).await?;
-        #[cfg(feature = "code-mode")]
-        if lease.is_enabled(crate::agents::platform_extensions::code_execution::EXTENSION_NAME) {
-            return Ok(prompt_parts);
-        }
 
         let mut extensions = lease.instructions().await;
         extensions.retain(|extension| extension.name != crate::skills::EXTENSION_NAME);

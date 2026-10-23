@@ -875,15 +875,7 @@ impl SummonClient {
                 max_turns: None,
             })
             .max_turns = Some(max_turns);
-        // En modo codigo la superficie del modelo son los callbacks del sandbox: la receta
-        // puede declarar `response`, pero el subagente nunca podra llamar
-        // recipe__final_output. Pedirlo igual lo hacia quemar todos sus turnos.
-        let child_code_mode = subagent_config
-            .extensions
-            .iter()
-            .any(|extension| extension.name() == "code_execution");
-        if !child_code_mode
-            && recipe
+        if recipe
                 .response
                 .as_ref()
                 .and_then(|response| response.json_schema.as_ref())
