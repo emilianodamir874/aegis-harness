@@ -220,3 +220,63 @@ fn rewind_retry_and_rollback_keep_the_history_consistent() {
         );
     });
 }
+
+/// El mismo `_meta.promptId` no puede producir dos llamadas al modelo. La fixture tiene UNA sola
+/// respuesta encolada: si el segundo pedido llegara al proveedor, recibiria 417 (peticion
+/// inesperada) y el turno fallaria. Es la mitad del escenario 1 del plan que se puede probar sin
+/// simular el corte del transporte (el registro de runs ya esta cubierto por
+/// `prompt_id_owner_survives_response_handler_drop_and_retries_wait_or_replay`).
+#[test]
+#[serial]
+fn same_prompt_id_answers_twice_without_a_second_model_call() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let expected = AcpServerConnection::expected_session_id();
+        let openai = OpenAiFixture::new(
+            vec![(format!("tercer turno{TURN_CONTEXT_OPEN}"), REPLIES)],
+            expected.clone(),
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        expected.set(&session.session_id().0);
+        let session_id = session.session_id().0.to_string();
+
+        let pedido = json!({
+            "sessionId": session_id.clone(),
+            "prompt": [{ "type": "text", "text": "tercer turno" }],
+            "_meta": { "promptId": "prompt-idempotente-1" }
+        });
+
+        let primero = send_custom(conn.cx(), "session/prompt", pedido.clone())
+            .await
+            .expect("primer prompt con promptId");
+        let segundo = send_custom(conn.cx(), "session/prompt", pedido)
+            .await
+            .expect("el reintento con el mismo promptId tiene que contestar, no fallar");
+
+        assert_eq!(
+            primero, segundo,
+            "el reintento con el mismo promptId devuelve el mismo resultado"
+        );
+        assert_eq!(
+            segundo.get("stopReason").and_then(|v| v.as_str()),
+            Some("end_turn"),
+            "el reintento cierra el turno normalmente: {segundo}"
+        );
+
+        // Un unico turno de usuario: el reintento no duplico el mensaje en el historial.
+        let rewind = send_custom(
+            conn.cx(),
+            "_aegis/unstable/session/rewind",
+            json!({ "sessionId": session_id.clone(), "back": 1 }),
+        )
+        .await
+        .expect("rewind del unico turno");
+        assert_eq!(
+            campo(&rewind, "remainingTurns"),
+            0,
+            "la sesion tiene un solo turno de usuario: {rewind}"
+        );
+    });
+}
