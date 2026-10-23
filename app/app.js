@@ -3483,8 +3483,10 @@ ${a.text}
   var READ_ONLY_TOOLS = ["read_file", "grep", "tree", "read_image", "websearch__web_fetch", "websearch__web_search", "load_skill", "load", "chatrecall__chatrecall", "extensionmanager__search_available_extensions"];
   var DEBATE_BLOCKED_TOOLS = ["shell", "edit", "write", "delegate", "scheduler__manage_schedule", "extensionmanager__manage_extensions"];
   async function debateSetPerms(entries) {
+    const sid = state.current && state.current.id;
+    if (!sid) return false;
     try {
-      await rpc.request("_aegis/unstable/tools/permissions/set", { toolPermissions: entries });
+      await rpc.request("_aegis/unstable/tools/permissions/set", { toolPermissions: entries, sessionId: sid });
       return true;
     } catch (e) {
       report("debate", "permisos: " + String(e && e.message || e).slice(0, 140));
@@ -3502,7 +3504,7 @@ ${a.text}
     return ok;
   }
   async function debateRestoreToolProfile() {
-    const ok = await debateSetPerms(DEBATE_BLOCKED_TOOLS.map((t) => ({ toolName: t, permission: t === "shell" ? "ask_before" : "always_allow" })).concat(READ_ONLY_TOOLS.map((t) => ({ toolName: t, permission: "always_allow" }))));
+    const ok = await debateSetPerms([]);
     if (ok) {
       try {
         localStorage.removeItem("aegis.debateProfile");
