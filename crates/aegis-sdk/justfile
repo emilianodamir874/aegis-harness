@@ -103,7 +103,7 @@ crates-publish dry_run="true":
     while IFS= read -r crate; do \
         if [ "{{dry_run}}" = "false" ]; then \
             status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
-                --user-agent 'aegis-gdk-release (https://github.com/aaif-goose/goose)' \
+                --user-agent 'aegis-gdk-release' \
                 "https://crates.io/api/v1/crates/$crate/$version"); \
             case "$status" in \
                 200) echo "$crate $version is already published; skipping upload" ;; \

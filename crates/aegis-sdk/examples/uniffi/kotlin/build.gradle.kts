@@ -13,7 +13,7 @@ fun aegisSdkVersion(): String {
 }
 
 dependencies {
-    implementation("io.github.aaif-goose:gdk:${aegisSdkVersion()}")
+    implementation("io.github.aegis:gdk:${aegisSdkVersion()}")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
 }
 

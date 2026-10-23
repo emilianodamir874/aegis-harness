@@ -84,7 +84,7 @@ into the package, and writes the wheel to `crates/aegis-sdk/python/dist/`.
 
 ## Maven package
 
-The Maven Central artifact is published as `io.github.aaif-goose:gdk` and uses
+The Maven Central artifact is published as `io.github.aegis:gdk` and uses
 the Rust crate version from `crates/aegis-sdk/Cargo.toml`.
 
 ```bash

@@ -53,6 +53,6 @@ Or run the same flow through the aegis-sdk justfile:
 just --justfile crates/aegis-sdk/justfile kotlin
 ```
 
-The Kotlin example consumes the local Maven artifact `io.github.aaif-goose:gdk` from `mavenLocal()` and imports the generated package namespace `io.github.aaif_aegis`.
+The Kotlin example consumes the local Maven artifact `io.github.aegis:gdk` from `mavenLocal()` and imports the generated package namespace `io.github.aaif_aegis`.
 
 On newer JDKs, the example enables native access with `--enable-native-access=ALL-UNNAMED` because the GDK uses JNA to load the bundled native library.

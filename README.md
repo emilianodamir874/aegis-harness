@@ -9,13 +9,10 @@ _your native open source AI agent — desktop app, CLI, and API — for code, wo
     ><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
   <a href="https://discord.gg/n8R5VaWDAn"
     ><img src="https://img.shields.io/discord/1287729918100246654?logo=discord&logoColor=white&label=Join+Us&color=blueviolet" alt="Discord"></a>
-  <a href="https://github.com/aaif-goose/goose/actions/workflows/ci.yml"
-     ><img src="https://img.shields.io/github/actions/workflow/status/aaif-goose/goose/ci.yml?branch=main" alt="CI"></a>
   <a href="https://insights.linuxfoundation.org/project/aegis"><img src="https://insights.linuxfoundation.org/api/badge/health-score?project=aegis"></a>
   <a href="https://repology.org/project/aegis-cli/versions"><img src="https://repology.org/badge/tiny-repos/aegis-cli.svg" alt="Packaging status"></a>
 </p>
 
-<a href="https://trendshift.io/repositories/25298?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-25298" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/25298" alt="aaif-goose%2Faegis | Trendshift" width="250" height="55"/></a>
 
 </div>
 
@@ -24,31 +21,31 @@ aegis is a general-purpose AI agent that runs on your machine. Not just for code
 
 A native desktop app for macOS, Linux, and Windows. A full CLI for terminal workflows. An API to embed it anywhere. Built in Rust for performance and portability.
 
-aegis works with 15+ providers — Anthropic, OpenAI, Google, Ollama, OpenRouter, Azure, Bedrock, and more. Use API keys or your existing Claude, ChatGPT, or Gemini subscriptions via [ACP](https://goose-docs.ai/docs/guides/acp-providers). Connect to 70+ extensions via the [Model Context Protocol](https://modelcontextprotocol.io/) open standard.
+aegis works with 15+ providers — Anthropic, OpenAI, Google, Ollama, OpenRouter, Azure, Bedrock, and more. Use API keys or your existing Claude, ChatGPT, or Gemini subscriptions via ACP. Connect to 70+ extensions via the [Model Context Protocol](https://modelcontextprotocol.io/) open standard.
 
 aegis is part of the [Agentic AI Foundation (AAIF)](https://aaif.io/) at the Linux Foundation.
 
 # Get started
 
-**[Download the desktop app](https://goose-docs.ai/docs/getting-started/installation)** for macOS, Linux, and Windows.
+**Download the desktop app** for macOS, Linux, and Windows.
 
 Or install the CLI:
 
 ```bash
-curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
+curl -fsSL  | bash
 ```
 
 # Quick links
-- [Quickstart](https://goose-docs.ai/docs/quickstart)
-- [Installation](https://goose-docs.ai/docs/getting-started/installation)
-- [Tutorials](https://goose-docs.ai/docs/category/tutorials)
-- [Documentation](https://goose-docs.ai/docs/category/getting-started)
-- [Governance](https://github.com/aaif-goose/goose/blob/main/GOVERNANCE.md)
-- [Custom Distributions](https://github.com/aaif-goose/goose/blob/main/CUSTOM_DISTROS.md) — build your own aegis distro with preconfigured providers, extensions, and branding
+- Quickstart
+- Installation
+- Tutorials
+- Documentation
+- Governance
+- Custom Distributions — build your own aegis distro with preconfigured providers, extensions, and branding
 
 ## Need help?
-- [Diagnostics & Reporting](https://goose-docs.ai/docs/troubleshooting/diagnostics-and-reporting)
-- [Known Issues](https://goose-docs.ai/docs/troubleshooting/known-issues)
+- Diagnostics & Reporting
+- Known Issues
 
 # a little aegis humor 🪿
 

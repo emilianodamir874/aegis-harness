@@ -6,7 +6,7 @@
   "api_key_env": "EUROUTER_API_KEY",
   "base_url": "https://api.eurouter.ai/api/v1",
   "headers": {
-    "http-referer": "https://goose-docs.ai",
+    "http-referer": "",
     "x-eurouter-title": "aegis"
   },
   "models": [

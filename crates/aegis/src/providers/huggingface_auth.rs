@@ -21,8 +21,9 @@ pub const HUGGINGFACE_OAUTH_CACHE_PATH: &str = "huggingface/oauth/tokens.json";
 const AUTHORIZE_URL: &str = "https://huggingface.co/oauth/authorize";
 const TOKEN_URL: &str = "https://huggingface.co/oauth/token";
 const OAUTH_SCOPES: &str = "read-repos gated-repos inference-api";
-const HUGGINGFACE_OAUTH_CLIENT_METADATA_URL: &str =
-    "https://goose-docs.ai/oauth/huggingface-client-metadata.json";
+// Sin sitio publico no hay CIMD: el cliente se toma de
+// AEGIS_HUGGINGFACE_OAUTH_CLIENT_ID.
+const HUGGINGFACE_OAUTH_CLIENT_METADATA_URL: &str = "";
 // This URI must match the redirect URI in the Hugging Face CIMD metadata.
 const OAUTH_HOST: [u8; 4] = [127, 0, 0, 1];
 const OAUTH_PORT: u16 = 17863;

@@ -186,8 +186,7 @@ async fn load_url_bytes(url: url::Url) -> Result<Vec<u8>, String> {
     let client = reqwest::Client::builder()
         .user_agent(concat!(
             "aegis/",
-            env!("CARGO_PKG_VERSION"),
-            " (+https://github.com/aaif-goose/goose)"
+            env!("CARGO_PKG_VERSION")
         ))
         .timeout(Duration::from_secs(30))
         .build()

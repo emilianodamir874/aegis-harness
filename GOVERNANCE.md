@@ -175,7 +175,7 @@ This governance model may evolve as aegis grows. Any proposed modification to th
 
 ## Current Membership
 
-Core Maintainers and Maintainers are listed in the main aegis repository's [MAINTAINERS.md](https://github.com/aaif-goose/goose/blob/main/MAINTAINERS.md) file with their areas of expertise where applicable.
+Core Maintainers and Maintainers are listed in the main aegis repository's MAINTAINERS.md file with their areas of expertise where applicable.
 
 ## Summary
 

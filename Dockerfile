@@ -73,4 +73,3 @@ CMD ["--help"]
 LABEL org.opencontainers.image.title="aegis"
 LABEL org.opencontainers.image.description="aegis CLI"
 LABEL org.opencontainers.image.vendor="AAIF"
-LABEL org.opencontainers.image.source="https://github.com/aaif-goose/goose"

@@ -20,9 +20,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aaif-goose/goose"
-Repository = "https://github.com/aaif-goose/goose"
-Issues = "https://github.com/aaif-goose/goose/issues"
+Homepage = ""
+Repository = ""
+Issues = ""
 
 [tool.setuptools]
 package-dir = { "" = "src" }

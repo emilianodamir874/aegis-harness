@@ -4,7 +4,7 @@ aegis is an AI agent framework in Rust with CLI and Electron desktop interfaces.
 
 ## Contribution Workflow
 
-The issue is the source of truth for work intended for an upstream pull request. Track issue status on the [Aegis Issues board](https://github.com/orgs/aaif-goose/projects/1).
+The issue is the source of truth for work intended for an upstream pull request. Track issue status on the Aegis Issues board.
 
 - Before implementing an issue for a pull request, confirm that it is on the board with Status **Ready**.
 - Do not implement issues in **Inbox**, **Needs info**, or **Accepted / design**. Help resolve the issue discussion instead.
@@ -25,7 +25,7 @@ aegis is retiring its project-specific MCP server directory in favor of the [off
 - Treat the existing aegis directory as legacy data while registry-backed discovery and installation are implemented.
 - Changes that maintain, migrate, or remove existing directory entries are allowed when they support the migration and are within an approved issue's scope.
 
-See [Discussion #10830](https://github.com/aaif-goose/goose/discussions/10830) for the decision and migration direction.
+See Discussion #10830 (#10830) for the decision and migration direction.
 
 ## GitHub Communication
 

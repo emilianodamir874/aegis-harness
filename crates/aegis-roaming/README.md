@@ -154,7 +154,7 @@ built in, keeping iroh out of core.
 ## Browser web client
 
 The **official browser client for roam** lives in a separate repo:
-[aaif-goose/goose-mobile](https://github.com/aaif-goose/goose-mobile/tree/main/mobile-web)
+-mobile
 (`mobile-web/`). It is a pure-browser React app that connects to a
 `aegis roam share` agent — iroh compiled to wasm runs *inside the browser tab*,
 driving the agent over ACP. No Tauri, no local bridge; the tab is the roam peer.

@@ -107,7 +107,8 @@ pub(crate) fn validate_skill_name(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-const DEFAULT_AEGIS_DOCS_ROOT: &str = "https://goose-docs.ai";
+// Sin sitio publico: la raiz de docs se toma de AEGIS_DOCS_ROOT (config).
+const DEFAULT_AEGIS_DOCS_ROOT: &str = "";
 const AEGIS_DOCS_ROOT_PLACEHOLDER: &str = "{{AEGIS_DOCS_ROOT}}";
 
 /// Substitute the `{{AEGIS_DOCS_ROOT}}` placeholder in the builtin

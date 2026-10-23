@@ -1,7 +1,7 @@
 # Kotlin/JVM GDK smoke test
 
 This is a small downstream Kotlin/JVM app that consumes the Maven artifact
-`io.github.aaif-goose:gdk` from `mavenLocal()`.
+`io.github.aegis:gdk` from `mavenLocal()`.
 
 From the repository root, first build and publish the Maven artifact locally:
 

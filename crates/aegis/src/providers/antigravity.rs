@@ -534,7 +534,7 @@ impl aegis_providers::base::ProviderDescriptor for AntigravityProvider {
                     }
                 })
                 .collect(),
-            "https://github.com/aaif-goose/goose",
+            "",
             vec![ConfigKey::new_oauth(
                 "ANTIGRAVITY_TOKEN",
                 true,

@@ -8,7 +8,7 @@
   "headers": {
     "x-aimlapi-source": "agent/aegis",
     "x-aimlapi-partner-id": "part_R2KG8QMDBjtWAubVMgG0GF9L",
-    "http-referer": "https://goose-docs.ai",
+    "http-referer": "",
     "x-title": "aegis"
   },
   "catalog_provider_id": "aimlapi",
