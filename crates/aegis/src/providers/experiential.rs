@@ -28,17 +28,15 @@ pub const EXPERIENTIAL_DOC_URL: &str = "https://platform.experientiallabs.ai/doc
 pub const EXPERIENTIAL_KEYS_URL: &str = "https://platform.experientiallabs.ai/settings/api-keys";
 pub const EXPERIENTIAL_CREDITS_URL: &str = "https://platform.experientiallabs.ai/settings";
 pub const EXPERIENTIAL_DEFAULT_HOST: &str = "https://api.experientiallabs.ai";
-pub const EXPERIENTIAL_DEFAULT_MODEL: &str = "deepseek-v4.1-flash";
+/// El operador solo quiere esta variante: DeepSeek V4.1 Flash uncensored/abliterated del
+/// catalogo de Experiential. Verificado contra el gateway: tools=true, responde tool_calls y
+/// cuesta ~$0.00007 por pedido corto.
+pub const EXPERIENTIAL_DEFAULT_MODEL: &str = "deepseek-v4.1-flash-uncensored";
 
-/// Slugs verificados contra el catalogo y el llms.txt del gateway; `/v1/models` (ver
-/// `fetch_supported_models`) devuelve la lista real de la organizacion y reemplaza estos.
-pub const EXPERIENTIAL_KNOWN_MODELS: &[&str] = &[
-    EXPERIENTIAL_DEFAULT_MODEL,
-    "gpt-5.5",
-    "claude-opus-5",
-    "gemini-3.7-flash",
-    "qwen3.8-27b",
-];
+/// Lista de respaldo antes de que corra el refresco de inventario. El catalogo completo (318
+/// slugs hoy) llega igual por `GET /v1/models`; aca va solo el que el operador usa, para que el
+/// desplegable no arranque con 318 opciones.
+pub const EXPERIENTIAL_KNOWN_MODELS: &[&str] = &[EXPERIENTIAL_DEFAULT_MODEL];
 
 #[derive(serde::Serialize)]
 pub struct ExperientialProvider {
