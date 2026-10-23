@@ -364,6 +364,11 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (state.hold) return; // no pisar un editor/confirm abierto
     const list = $('#session-list');
     if (!list) return;
+    // Ids ya presentes en la lista: sirven para no repetir abajo una sesion que solo coincide
+    // por titulo (ver remoteResultsHtml).
+    const localIds = new Set<string>();
+    for (const s of state.sessions) localIds.add(s.sessionId);
+    for (const s of state.archived) localIds.add(s.sessionId);
     list.innerHTML = sessionListHtml({
       sessions: state.sessions,
       archived: state.archived,
@@ -376,7 +381,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       isDoneRecently,
       remoteCount: (state.remote && state.remote.sessions.length) || 0,
       remotePending: !!(state.remote && state.remote.loading),
-    }) + remoteResultsHtml(state.remote, (state.current && state.current.id) || null);
+    }) + remoteResultsHtml(state.remote, (state.current && state.current.id) || null, localIds);
   }
 
   // ---------- busqueda en el contenido (server) ----------

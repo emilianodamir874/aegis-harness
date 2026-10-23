@@ -164,6 +164,11 @@ try {
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ query: q, results: [], totalSessions: 0, totalMatches: 0, truncated: false }) });
       }
       if (q.includes('revision')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RESULTADO) });
+      if (q.includes('aegis')) {
+        // Coincidencia SOLO por titulo de una sesion que ya esta en la lista local: no debe
+        // aparecer dos veces.
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ query: q, results: [{ sessionId: 's_visible', title: 'Aegis harness', cwd: '/mock', updatedAt: new Date().toISOString(), archived: false, titleMatch: true, matches: [] }], totalSessions: 1, totalMatches: 0, truncated: false }) });
+      }
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ query: q, results: [], totalSessions: 0, totalMatches: 0, truncated: false }) });
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
@@ -230,6 +235,20 @@ try {
   await page.waitForFunction(() => (window as any).__aegisWeb?.state?.current?.id === 's_solo_busqueda', null, { timeout: 6000 });
   assert.ok(loads.includes('s_solo_busqueda'), 'session/load del resultado remoto');
   console.log('PASS UI: abrir un resultado que no estaba en la página carga esa sesión');
+
+  // Duplicado por titulo: la sesion ya esta en la lista local con la misma coincidencia, asi
+  // que no se repite en la seccion de mensajes.
+  await page.fill('#search', 'aegis');
+  await page.waitForTimeout(700);
+  const dupTitulo = await page.evaluate(() => ({
+    local: document.querySelectorAll('.sb-row[data-id="s_visible"]').length,
+    remote: document.querySelectorAll('.sb-hit').length,
+    head: !!document.querySelector('.sb-remote-head'),
+  }));
+  assert.equal(dupTitulo.local, 1, 'la sesion esta una vez en la lista local (' + JSON.stringify(dupTitulo) + ')');
+  assert.equal(dupTitulo.remote, 0, 'no se repite como resultado de contenido');
+  assert.equal(dupTitulo.head, false, 'sin encabezado vacio');
+  console.log('PASS UI: una coincidencia solo por título no duplica la fila local');
 
   // Sin resultados remotos: vuelve el estado vacío local.
   await page.fill('#search', 'nada-que-ver');

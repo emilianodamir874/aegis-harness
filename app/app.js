@@ -302,14 +302,20 @@ function hitRow(s, active) {
   const snippets = ms.map((m) => `<span class="sb-snip">${marks(m.snippet)}</span>`).join("");
   return `<div class="sb-row sb-hit" data-id="${esc(s.sessionId)}"><button class="sb-item${active ? " active" : ""}" type="button" aria-label="${esc(s.title || "Sesión")} — coincidencias en los mensajes"><span class="sb-title"><span class="sb-name">${esc(s.title || "Sesión")}</span>${s.archived ? '<span class="sb-tag">archivada</span>' : ""}${badge}</span>` + (meta ? `<span class="sb-sub">${esc(meta)}</span>` : "") + snippets + "</button></div>";
 }
-function remoteResultsHtml(st, activeId) {
+function remoteResultsHtml(st, activeId, localIds) {
   if (!st || st.unavailable) return "";
   if (!st.loading && !st.sessions.length) return "";
-  const head = st.loading && !st.sessions.length ? '<div class="sb-group sb-remote-head">En los mensajes</div>' : '<div class="sb-group sb-remote-head">En los mensajes' + (st.sessions.length ? `<span class="sb-count">${st.sessions.length}</span>` : "") + (st.truncated ? '<span class="sb-trunc" title="Se muestran las primeras coincidencias; afiná la búsqueda">+</span>' : "") + "</div>";
-  if (st.loading && !st.sessions.length) {
+  const rows = st.sessions.filter((s) => {
+    const hasHits = (s.matches || []).length > 0;
+    if (!hasHits && s.titleMatch && localIds && localIds.has(s.sessionId)) return false;
+    return true;
+  });
+  if (!st.loading && !rows.length) return "";
+  const head = st.loading && !rows.length ? '<div class="sb-group sb-remote-head">En los mensajes</div>' : '<div class="sb-group sb-remote-head">En los mensajes' + (rows.length ? `<span class="sb-count">${rows.length}</span>` : "") + (st.truncated ? '<span class="sb-trunc" title="Se muestran las primeras coincidencias; afiná la búsqueda">+</span>' : "") + "</div>";
+  if (st.loading && !rows.length) {
     return head + '<div class="sb-remote-loading">Buscando en el contenido…</div>';
   }
-  return head + st.sessions.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join("");
+  return head + rows.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join("");
 }
 
 // src/app/read.ts
@@ -689,6 +695,9 @@ function ttsUrlFor(voice, text, rate) {
     if (state.hold) return;
     const list = $("#session-list");
     if (!list) return;
+    const localIds = /* @__PURE__ */ new Set();
+    for (const s of state.sessions) localIds.add(s.sessionId);
+    for (const s of state.archived) localIds.add(s.sessionId);
     list.innerHTML = sessionListHtml({
       sessions: state.sessions,
       archived: state.archived,
@@ -701,7 +710,7 @@ function ttsUrlFor(voice, text, rate) {
       isDoneRecently,
       remoteCount: state.remote && state.remote.sessions.length || 0,
       remotePending: !!(state.remote && state.remote.loading)
-    }) + remoteResultsHtml(state.remote, state.current && state.current.id || null);
+    }) + remoteResultsHtml(state.remote, state.current && state.current.id || null, localIds);
   }
   let remoteTimer = 0;
   let remoteSeq = 0;

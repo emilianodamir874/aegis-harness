@@ -70,17 +70,26 @@ function hitRow(s: RemoteSession, active: boolean): string {
   );
 }
 
-export function remoteResultsHtml(st: RemoteState | null | undefined, activeId?: string | null): string {
+export function remoteResultsHtml(st: RemoteState | null | undefined, activeId?: string | null, localIds?: Set<string>): string {
   if (!st || st.unavailable) return '';
   if (!st.loading && !st.sessions.length) return '';
-  const head = st.loading && !st.sessions.length
+  // Una sesión que ya está en la lista local y solo coincide por título es la misma fila dos
+  // veces (la lista local ya la muestra). Con coincidencias en mensajes sí se muestra, porque
+  // aporta los fragmentos, que la lista local no tiene.
+  const rows = st.sessions.filter((s) => {
+    const hasHits = (s.matches || []).length > 0;
+    if (!hasHits && s.titleMatch && localIds && localIds.has(s.sessionId)) return false;
+    return true;
+  });
+  if (!st.loading && !rows.length) return '';
+  const head = st.loading && !rows.length
     ? '<div class="sb-group sb-remote-head">En los mensajes</div>'
     : '<div class="sb-group sb-remote-head">En los mensajes' +
-      (st.sessions.length ? `<span class="sb-count">${st.sessions.length}</span>` : '') +
+      (rows.length ? `<span class="sb-count">${rows.length}</span>` : '') +
       (st.truncated ? '<span class="sb-trunc" title="Se muestran las primeras coincidencias; afiná la búsqueda">+</span>' : '') +
       '</div>';
-  if (st.loading && !st.sessions.length) {
+  if (st.loading && !rows.length) {
     return head + '<div class="sb-remote-loading">Buscando en el contenido…</div>';
   }
-  return head + st.sessions.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join('');
+  return head + rows.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join('');
 }
