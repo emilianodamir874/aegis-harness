@@ -29,7 +29,20 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 20;
+pub const CURRENT_SCHEMA_VERSION: i32 = 21;
+
+/// Vista unica de visibilidad. Es la regla del motor: un mensaje se puede mostrar si el hub no
+/// lo marco como `userVisible: false` y la sesion es de usuario, programada o ACP (las sub_agent
+/// y las internas de compactacion no se listan). Los clientes consultan la vista en vez de
+/// repetir el predicado.
+pub const CREATE_VISIBLE_MESSAGES_VIEW: &str = r#"
+    CREATE VIEW IF NOT EXISTS v_visible_messages AS
+    SELECT m.*
+      FROM messages m
+      JOIN sessions s ON s.id = m.session_id
+     WHERE COALESCE(json_extract(m.metadata_json, '$.userVisible'), 1) != 0
+       AND s.session_type IN ('user', 'scheduled', 'acp')
+"#;
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
@@ -1397,6 +1410,15 @@ impl SessionStorage {
             }
         }
 
+        // Una sola semantica de visibilidad: lo que el panel y la busqueda pueden mostrar se
+        // define aca, no en cada cliente. La vista es aditiva (rollback = DROP VIEW).
+        if let Err(error) = sqlx::query(CREATE_VISIBLE_MESSAGES_VIEW)
+            .execute(&mut *tx)
+            .await
+        {
+            warn!("v_visible_messages setup skipped: {error}");
+        }
+
         tx.commit().await?;
 
         Ok(())
@@ -1941,6 +1963,13 @@ impl SessionStorage {
                         .execute(&mut **tx)
                         .await?;
                 }
+            }
+            21 => {
+                // Vista unica de visibilidad: los clientes (busqueda de la web, exportacion)
+                // dejaban de replicar `userVisible` y los tipos de sesion a mano.
+                sqlx::query(CREATE_VISIBLE_MESSAGES_VIEW)
+                    .execute(&mut **tx)
+                    .await?;
             }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
@@ -5589,7 +5618,7 @@ mod tests {
             .execute(pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE schema_version SET version = 19 WHERE version = 20")
+        sqlx::query("UPDATE schema_version SET version = 19")
             .execute(pool)
             .await
             .unwrap();
@@ -5602,6 +5631,53 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(row, (None, 7));
+    }
+
+    #[tokio::test]
+    async fn test_visible_messages_view_filters_by_session_type_and_user_visible() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let user = new_session(&sm).await;
+        let sub = sm
+            .create_session(
+                PathBuf::from("/tmp"),
+                "sub".to_string(),
+                SessionType::SubAgent,
+                AegisMode::default(),
+            )
+            .await
+            .unwrap()
+            .id;
+        let pool = sm.storage().pool().await.unwrap();
+
+        let vista: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'view' AND name = 'v_visible_messages'",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(vista, 1, "un store nuevo tiene que traer la vista");
+
+        let insertar = |session: String, visible: bool| {
+            sqlx::query(
+                "INSERT INTO messages (session_id, role, content_json, metadata_json, created_timestamp) \
+                 VALUES (?, 'assistant', '[{\"type\":\"text\",\"text\":\"hola\"}]', ?, 1)",
+            )
+            .bind(session)
+            .bind(format!("{{\"userVisible\":{visible}}}"))
+        };
+        insertar(user.clone(), true).execute(pool).await.unwrap();
+        insertar(user.clone(), false).execute(pool).await.unwrap();
+        insertar(sub, true).execute(pool).await.unwrap();
+
+        let visibles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM v_visible_messages")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            visibles, 1,
+            "la vista solo puede devolver el mensaje visible de una sesion de usuario"
+        );
     }
 
     #[tokio::test]
