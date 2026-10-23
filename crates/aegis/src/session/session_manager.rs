@@ -417,6 +417,56 @@ fn message_keyword_clause(keyword_count: usize) -> String {
     )
 }
 
+fn message_keyword_clause_fts() -> String {
+    let visible = user_visible_message_sql("mq.metadata_json");
+    format!(
+        r#"
+        EXISTS (
+            SELECT 1
+            FROM messages_fts
+            JOIN messages mq ON mq.id = messages_fts.row_id
+            WHERE mq.session_id = s.id
+              AND {visible}
+              AND messages_fts MATCH ?
+        )
+        "#
+    )
+}
+
+/// Expresion MATCH para FTS5 a partir de los terminos ya normalizados (minusculas).
+/// Cada termino se parte por lo que no sea alfanumerico o `_`, y los trozos de menos de 2
+/// caracteres se descartan: una consulta del usuario nunca llega cruda al parser de FTS5
+/// (`"`, `*`, `a:b` o `NEAR(` son errores de sintaxis). Se mantiene la semantica historica
+/// del listado: cualquier palabra alcanza (OR), no todas.
+fn fts_match_expr(terms: &[String]) -> Option<String> {
+    let parts: Vec<String> = terms
+        .iter()
+        // Se separa por lo que no sea alfanumerico en vez de pegarlo: "a:b" son dos terminos
+        // ("a" y "b"), no "ab", que seria un falso positivo.
+        .flat_map(|term| term.split(|ch: char| !(ch.is_alphanumeric() || ch == '_')))
+        .filter(|term| term.chars().count() >= 2)
+        .take(12)
+        .map(|term| format!("\"{term}\"*"))
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" OR "))
+    }
+}
+
+/// `messages_fts` lo crea la migracion 18 y lo mantienen triggers del hub. Si falta (SQLite
+/// sin FTS5 o store viejo), el listado cae al escaneo con `instr` de siempre.
+async fn messages_fts_available(pool: &Pool<Sqlite>) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages_fts'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
+        > 0
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionNameUpdate {
     pub session_id: String,
@@ -1328,6 +1378,22 @@ impl SessionStorage {
         // the inventory tables don't yet exist — which raced as
         // `no such table: provider_inventory_entries`.
         crate::providers::inventory::create_tables(&mut tx).await?;
+
+        // Indice de texto completo. La migracion 18 lo agrega a stores existentes, pero un
+        // store NUEVO no pasaba por ahi: se creaba sin `messages_fts` y el filtro por palabra
+        // del listado terminaba escaneando todos los mensajes. Idempotente y tolerante a
+        // SQLite sin FTS5 (se ignora, el listado cae al escaneo de siempre).
+        for statement in [
+            "CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(row_id UNINDEXED, text, tokenize='unicode61 remove_diacritics 2')",
+            "INSERT INTO messages_fts(row_id, text) SELECT m.id, COALESCE((SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(m.content_json) WHERE json_extract(value, '$.type') = 'text'), '') FROM messages m WHERE NOT EXISTS (SELECT 1 FROM messages_fts f WHERE f.row_id = m.id)",
+            "CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN INSERT INTO messages_fts(row_id, text) VALUES (new.id, COALESCE((SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(new.content_json) WHERE json_extract(value, '$.type') = 'text'), '')); END",
+            "CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN DELETE FROM messages_fts WHERE row_id = old.id; END",
+            "CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE OF content_json ON messages BEGIN DELETE FROM messages_fts WHERE row_id = old.id; INSERT INTO messages_fts(row_id, text) VALUES (new.id, COALESCE((SELECT group_concat(json_extract(value, '$.text'), ' ') FROM json_each(new.content_json) WHERE json_extract(value, '$.type') = 'text'), '')); END",
+        ] {
+            if let Err(error) = sqlx::query(statement).execute(&mut *tx).await {
+                warn!("messages_fts setup skipped: {error}");
+            }
+        }
 
         tx.commit().await?;
 
@@ -2417,6 +2483,15 @@ impl SessionStorage {
 
         let has_limit = query.limit.is_some();
         let keywords = keyword_terms(filters.keyword);
+        // Con el indice FTS5 la busqueda por palabra es de indice; si falta (o no queda ningun
+        // termino usable), se mantiene el escaneo historico con instr. `pool()` se resuelve
+        // aca porque el chequeo del indice necesita la conexion.
+        let pool = self.pool().await?;
+        let fts_expr = fts_match_expr(&keywords);
+        let use_fts = match &fts_expr {
+            Some(_) => messages_fts_available(pool).await,
+            None => false,
+        };
         let mut where_clauses = Vec::new();
         let mut having_clauses = Vec::new();
         let normalized_message_timestamp = normalized_message_timestamp_sql("m.created_timestamp");
@@ -2430,7 +2505,11 @@ impl SessionStorage {
             where_clauses.push("s.working_dir = ?".to_string());
         }
         if !keywords.is_empty() {
-            where_clauses.push(message_keyword_clause(keywords.len()));
+            where_clauses.push(if use_fts {
+                message_keyword_clause_fts()
+            } else {
+                message_keyword_clause(keywords.len())
+            });
         }
         if query.cursor.is_some() {
             having_clauses.push(format!(
@@ -2506,8 +2585,12 @@ impl SessionStorage {
         if let Some(working_dir) = filters.working_dir {
             q = q.bind(working_dir.to_string_lossy().to_string());
         }
-        for term in keywords {
-            q = q.bind(term);
+        if use_fts {
+            q = q.bind(fts_expr.clone().unwrap_or_default());
+        } else {
+            for term in keywords {
+                q = q.bind(term);
+            }
         }
         if let Some(cursor) = query.cursor {
             let sort_at = cursor.sort_at.timestamp();
@@ -2519,7 +2602,6 @@ impl SessionStorage {
             q = q.bind(limit as i64);
         }
 
-        let pool = self.pool().await?;
         if has_limit {
             let mut tx = pool.begin().await?;
             let mut sessions = q.fetch_all(&mut *tx).await?;
@@ -4532,6 +4614,112 @@ mod tests {
 
         assert_eq!(ids, vec![target]);
         assert!(page.next_cursor.is_none());
+    }
+
+    #[test]
+    fn fts_match_expr_sanitizes_user_input() {
+        let expr = |q: &str| fts_match_expr(&keyword_terms(Some(q)));
+        assert_eq!(expr("revision"), Some("\"revision\"*".to_string()));
+        assert_eq!(
+            expr("Revisión del A52"),
+            Some("\"revisión\"* OR \"del\"* OR \"a52\"*".to_string())
+        );
+        // Todo simbolos o terminos de un solo caracter: no se arma expresion (cae a instr).
+        assert_eq!(expr("* \" a:b"), None);
+        assert_eq!(expr("x"), None);
+        assert_eq!(expr(""), None);
+        // La palabra dentro de NEAR( sobrevive saneada: se busca "near", no se ejecuta sintaxis.
+        assert_eq!(expr("* \" a:b NEAR("), Some("\"near\"*".to_string()));
+        // El underscore es parte del termino (build_typescript), los dos puntos separan.
+        assert_eq!(
+            expr("build_typescript"),
+            Some("\"build_typescript\"*".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_list_keyword_matches_accents() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let target = create_session_for_list_with_message(
+            &sm,
+            "/tmp/session-list",
+            "Revisión de estado del A52",
+        )
+        .await;
+        create_session_for_list_with_message(&sm, "/tmp/session-list", "Plan the mobile release")
+            .await;
+
+        let types = [SessionType::User];
+        if !messages_fts_available(sm.storage.pool().await.unwrap()).await {
+            eprintln!("SQLite sin FTS5 en este entorno: se omite la verificacion de acentos");
+            return;
+        }
+        for query in ["revision", "REVISIÓN", "revisión"] {
+            let page = sm
+                .list_sessions_paged(SessionListPageQuery {
+                    filters: SessionListFilters {
+                        types: Some(&types),
+                        keyword: Some(query),
+                        only_sessions_with_messages: true,
+                        ..Default::default()
+                    },
+                    cursor: None,
+                    page_size: 10,
+                    include_last_message_snippet: false,
+                })
+                .await
+                .unwrap();
+            let ids = page
+                .sessions
+                .iter()
+                .map(|session| session.id.clone())
+                .collect::<Vec<_>>();
+            assert_eq!(ids, vec![target.clone()], "consulta {query}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_session_list_keyword_falls_back_without_fts_index() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let target = create_session_for_list_with_message(
+            &sm,
+            "/tmp/session-list",
+            "Discuss Postgres migrations",
+        )
+        .await;
+
+        // Store sin FTS5 (o migracion no aplicada): el listado tiene que seguir funcionando
+        // con el escaneo de siempre.
+        if messages_fts_available(sm.storage.pool().await.unwrap()).await {
+            sqlx::query("DROP TABLE messages_fts")
+                .execute(sm.storage.pool().await.unwrap())
+                .await
+                .unwrap();
+        }
+
+        let types = [SessionType::User];
+        let page = sm
+            .list_sessions_paged(SessionListPageQuery {
+                filters: SessionListFilters {
+                    types: Some(&types),
+                    keyword: Some("postgres"),
+                    only_sessions_with_messages: true,
+                    ..Default::default()
+                },
+                cursor: None,
+                page_size: 10,
+                include_last_message_snippet: false,
+            })
+            .await
+            .unwrap();
+        let ids = page
+            .sessions
+            .iter()
+            .map(|session| session.id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec![target]);
     }
 
     #[tokio::test]
