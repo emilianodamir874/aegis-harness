@@ -3107,7 +3107,7 @@ ${a.text}
       }
     }
   }
-  var VOICE_PROVIDERS = ["groq", "model"];
+  var VOICE_PROVIDERS = ["local"];
   var VOICE_MIN_MS = 450, VOICE_MAX_MS = 9e4, VOICE_SILENCE_MS = 900, VOICE_RMS = 0.012;
   var VOICE_IDLE_MS = 8e3;
   var MIC = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0, barge: false, bargeHits: 0 };
@@ -3224,7 +3224,7 @@ ${a.text}
     const btn = document.getElementById("btn-mic");
     if (!provider) {
       if (btn) btn.classList.remove("busy");
-      systemNote("No pude transcribir con ningún proveedor (revisá GROQ_API_KEY o el proveedor activo).");
+      systemNote("No pude transcribir: no hay motor de dictado local disponible.");
       handsFreeMaybe(600);
       return;
     }
@@ -3246,11 +3246,6 @@ ${a.text}
       }).catch(function(e) {
         const msg = String(e && e.message || e).slice(0, 120);
         report("dictado", provider + " falló: " + msg);
-        if (i + 1 < VOICE_PROVIDERS.length) {
-          systemNote("Falló " + provider + " (" + msg + "). Pruebo con " + VOICE_PROVIDERS[i + 1] + "…");
-          micTranscribe(blob, i + 1, auto);
-          return;
-        }
         if (btn) btn.classList.remove("busy");
         systemNote("Falló la transcripción: " + msg);
         handsFreeMaybe(1500);
