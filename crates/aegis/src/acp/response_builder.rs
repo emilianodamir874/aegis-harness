@@ -181,22 +181,67 @@ fn clave_obligatoria_faltante(
         .map(|clave| clave.name.clone())
 }
 
+/// El proveedor declara claves secretas y ninguna tiene valor, sin flujo OAuth: no hay forma de
+/// que funcione, asi que no se ofrece. Los que no declaran credenciales (servidores locales,
+/// proveedores por CLI) y los que se autentican por OAuth quedan afuera de esta regla.
+fn sin_credenciales_declaradas(
+    claves: &[aegis_providers::base::ConfigKey],
+    esta_presente: impl Fn(&str) -> bool,
+) -> bool {
+    if claves.iter().any(|clave| clave.oauth_flow) {
+        return false;
+    }
+    let secretas: Vec<_> = claves.iter().filter(|clave| clave.secret).collect();
+    if secretas.is_empty() {
+        return false;
+    }
+    secretas.iter().all(|clave| !esta_presente(&clave.name))
+}
+
 async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOptionEntry> {
+    // La lista explicita manda: un proveedor que esta en AEGIS_VISIBLE_PROVIDERS se ofrece aunque
+    // las heuristicas de credenciales no puedan verlo (claves en archivos privados, tokens OAuth).
+    let permitidos: Option<std::collections::HashSet<String>> = crate::config::Config::global()
+        .get_param::<String>("AEGIS_VISIBLE_PROVIDERS")
+        .ok()
+        .filter(|valor| !valor.trim().is_empty())
+        .map(|visibles| {
+            visibles
+                .split(',')
+                .map(|nombre| nombre.trim().to_string())
+                .filter(|nombre| !nombre.is_empty())
+                .collect::<std::collections::HashSet<String>>()
+        })
+        .filter(|permitidos| !permitidos.is_empty());
+
     let mut providers = crate::providers::providers()
         .await
         .into_iter()
         .filter(|(metadata, _)| {
-            let falta = clave_obligatoria_faltante(&metadata.config_keys, |nombre| {
-                match Config::global().get_secret::<String>(nombre) {
-                    Ok(valor) => !valor.trim().is_empty(),
-                    Err(_) => false,
-                }
-            });
-            if let Some(clave) = falta {
+            let tiene = |nombre: &str| match Config::global().get_secret::<String>(nombre) {
+                Ok(valor) => !valor.trim().is_empty(),
+                Err(_) => false,
+            };
+            // Una clave obligatoria ausente esconde siempre, incluso si el proveedor esta en la
+            // lista: la lista rescata credenciales que no viven en config, no inventa una clave.
+            if let Some(clave) = clave_obligatoria_faltante(&metadata.config_keys, tiene) {
                 tracing::debug!(
                     provider = %metadata.name,
                     clave = %clave,
                     "proveedor oculto del desplegable: falta una clave obligatoria"
+                );
+                return false;
+            }
+            let en_lista = permitidos
+                .as_ref()
+                .is_some_and(|permitidos| permitidos.contains(&metadata.name));
+            if en_lista {
+                return true;
+            }
+            if sin_credenciales_declaradas(&metadata.config_keys, tiene) {
+                tracing::debug!(
+                    provider = %metadata.name,
+                    "proveedor oculto del desplegable: no tiene ninguna de sus claves declaradas"
                 );
                 return false;
             }
@@ -210,26 +255,12 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOp
     providers.sort_by(|left, right| left.id.cmp(&right.id));
     providers.dedup_by(|left, right| left.id == right.id);
 
-    // (2026-10-13) El desplegable de providers ofrece de todo y el servidor despues rechaza
-    // los que no tienen credenciales. El flag `configured` del inventario no sirve para
-    // filtrarlos (solo 12 providers declaran un chequeo propio; el resto cae en un default
-    // que devuelve true aunque falte la API key). Con AEGIS_VISIBLE_PROVIDERS definido
-    // (lista separada por comas) se ofrecen solo esos; sin la clave, nada cambia.
-    let visibles = crate::config::Config::global()
-        .get_param::<String>("AEGIS_VISIBLE_PROVIDERS")
-        .ok()
-        .filter(|valor| !valor.trim().is_empty());
-    if let Some(visibles) = visibles {
-        let permitidos: std::collections::HashSet<String> = visibles
-            .split(',')
-            .map(|nombre| nombre.trim().to_string())
-            .filter(|nombre| !nombre.is_empty())
-            .collect();
-        if !permitidos.is_empty() {
-            providers.retain(|provider| {
-                permitidos.contains(&provider.id) || current_provider == Some(provider.id.as_str())
-            });
-        }
+    // (2026-10-13) Con AEGIS_VISIBLE_PROVIDERS definido (lista separada por comas) se ofrecen
+    // solo esos; sin la clave se usan las heuristicas de credenciales de arriba.
+    if let Some(permitidos) = permitidos.as_ref() {
+        providers.retain(|provider| {
+            permitidos.contains(&provider.id) || current_provider == Some(provider.id.as_str())
+        });
     }
 
     if let Some(current_provider) = current_provider {
@@ -623,6 +654,31 @@ mod tests {
             Some("API_KEY".to_string())
         );
     }
+    #[test]
+    fn sin_credenciales_declaradas_esconde_solo_lo_que_declara_claves() {
+        // Declara una clave secreta y no hay valor: se oculta.
+        assert!(sin_credenciales_declaradas(
+            &[clave("OPENROUTER_API_KEY", false, true, false)],
+            |_| false
+        ));
+        // Con la clave presente, se ofrece.
+        assert!(!sin_credenciales_declaradas(
+            &[clave("OPENROUTER_API_KEY", false, true, false)],
+            |nombre| nombre == "OPENROUTER_API_KEY"
+        ));
+        // OAuth: puede tener tokens fuera de config, no se oculta por heuristicas.
+        assert!(!sin_credenciales_declaradas(
+            &[clave("ANTIGRAVITY_TOKEN", true, true, true)],
+            |_| false
+        ));
+        // Sin claves secretas declaradas (servidores locales, CLIs) no aplica.
+        assert!(!sin_credenciales_declaradas(
+            &[clave("OLLAMA_HOST", false, false, false)],
+            |_| false
+        ));
+        assert!(!sin_credenciales_declaradas(&[], |_| false));
+    }
+
     use super::super::provider::THINKING_EFFORT_PARAM;
     use super::*;
     use aegis_providers::thinking::ThinkingEffortOption;

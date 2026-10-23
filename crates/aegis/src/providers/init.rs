@@ -19,6 +19,7 @@ use super::{
     codex_acp::CodexAcpProvider,
     copilot_acp::CopilotAcpProvider,
     cursor_agent::CursorAgentProvider,
+    experiential::ExperientialProvider,
     gcpvertexai::GcpVertexAIProvider,
     gemini_cli::GeminiCliProvider,
     gemini_oauth::GeminiOAuthProvider,
@@ -194,6 +195,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         registry.register::<SnowflakeProviderDef>(false);
         registry
             .register_with_inventory::<TetrateProvider>(true, Some(registrations::refresh_only()));
+        registry.register_with_inventory::<ExperientialProvider>(
+            true,
+            Some(registrations::refresh_only()),
+        );
         registry.register_with_inventory::<XaiProvider>(false, Some(registrations::refresh_only()));
         registry.register_with_inventory::<XaiOAuthProvider>(
             true,
@@ -590,6 +595,7 @@ mod tests {
             "tetrate",
             "xai",
             "xai_oauth",
+            "experiential",
         ] {
             let entry = get_from_registry(provider_name)
                 .await
