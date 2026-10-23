@@ -555,6 +555,55 @@ mod tests {
         );
     }
     #[test]
+    fn late_watcher_replays_from_the_run_start_not_from_the_beginning() {
+        let hub = super::SessionHub::new();
+        for cursor in 1..=3 {
+            hub.publish(
+                "s",
+                "session/update",
+                &json!({"event":cursor}),
+                EventKind::Normal,
+                None,
+            );
+        }
+        // Arranca el run: un watcher que llega con `since: null` tiene que recibir desde aca.
+        let start = json!({"sessionId":"s","update":{"sessionUpdate":"session_info_update","_meta":{"aegis":{"activeRunId":"run-1"}}}});
+        hub.publish("s", "session/update", &start, EventKind::RunStart, None);
+        for cursor in 4..=5 {
+            hub.publish(
+                "s",
+                "session/update",
+                &json!({"event":cursor}),
+                EventKind::Normal,
+                None,
+            );
+        }
+
+        let sessions = hub.state.lock().unwrap();
+        let log = &sessions.get("s").unwrap().log;
+        let (replay, gap) = log.replay(None);
+        assert!(!gap, "con el ring intacto no puede haber gap");
+        assert_eq!(
+            replay.len(),
+            3,
+            "un watcher tardio recibe el arranque del run y lo que vino despues, no los eventos previos"
+        );
+        assert_eq!(
+            replay[0].pointer("/params/update/_meta/aegis/activeRunId"),
+            Some(&json!("run-1")),
+            "el primero del replay es el marcador de arranque: {}",
+            replay[0]
+        );
+        assert_eq!(
+            replay[1].pointer("/params/_meta/aegis/cursor"),
+            Some(&json!(5))
+        );
+        assert_eq!(
+            replay[2].pointer("/params/_meta/aegis/cursor"),
+            Some(&json!(6))
+        );
+    }
+    #[test]
     fn abandoned_run_emits_one_terminal_marker_and_never_clears_replacement() {
         let hub = super::SessionHub::new();
         let start = json!({"sessionId":"s","update":{"sessionUpdate":"session_info_update","_meta":{"aegis":{"activeRunId":"run-1"}}}});
