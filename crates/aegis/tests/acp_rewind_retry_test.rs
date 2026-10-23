@@ -106,6 +106,14 @@ fn rewind_retry_and_rollback_keep_the_history_consistent() {
             "el rewind devuelve el texto del turno para reeditar: {rewind}"
         );
 
+        //
+        // Ojo con los conteos: `hidden` cuenta los mensajes que el rewind apago en la conversacion
+        // que leyo, y `restored` cuenta filas que volvieron a encenderse. No coinciden cuando dos
+        // filas comparten message_id (la respuesta del proveedor trae el mismo id y
+        // update_message_metadata actualiza por message_id): un asistente ya oculto por otra
+        // operacion hereda el batch del rewind y el rollback lo vuelve a mostrar. Medido con el
+        // binario de prueba: hidden=3, filas con el batch=4. Por eso se exige restored >= hidden
+        // y que un segundo unrewind devuelva 0, no igualdad exacta.
         // ---- rollback: es exactamente lo que hace on_retry_last_turn si el cambio de perfil falla
         let unrewind = send_custom(
             conn.cx(),
