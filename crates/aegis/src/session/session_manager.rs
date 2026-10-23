@@ -419,14 +419,16 @@ fn message_keyword_clause(keyword_count: usize) -> String {
 
 fn message_keyword_clause_fts() -> String {
     let visible = user_visible_message_sql("mq.metadata_json");
+    // Subconsulta NO correlacionada a proposito: con EXISTS el MATCH se reevalua por cada
+    // sesion y una consulta de palabras comunes se iba a 25 s (medido contra el store real).
+    // Asi el indice se recorre una sola vez y el resto es un IN por id.
     format!(
         r#"
-        EXISTS (
-            SELECT 1
+        s.id IN (
+            SELECT mq.session_id
             FROM messages_fts
             JOIN messages mq ON mq.id = messages_fts.row_id
-            WHERE mq.session_id = s.id
-              AND {visible}
+            WHERE {visible}
               AND messages_fts MATCH ?
         )
         "#
