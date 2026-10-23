@@ -534,6 +534,52 @@ proceso hijo `node --experimental-sqlite` para no bloquear el event loop. El pan
 `src/stats.ts` y se autoinyecta como `app/stats.js` (boton "Gasto" en la barra lateral).
 El costo sale del ledger; los modelos sin precio asignado aparecen con costo 0 y un aviso.
 
+### «vs plan» (2026-10-23)
+
+El numero que ya existia no cambia: sigue siendo el **costo estimado** por catalogo de precios
+(`prices.json`), y es una **valuacion, no una factura**. Lo que se agrega es la lectura que
+importa: cuanto valio a tarifa API lo consumido contra lo que se paga por el plan del proveedor.
+
+- El plan se declara en `config.json` (no versionado), bloque `plans`, una entrada por valor de
+  `usage_ledger.provider`:
+
+  ```json
+  "plans": {
+    "chatgpt_codex": { "monthly_usd": 20, "label": "ChatGPT", "note": "Plus" },
+    "opencode_go":   { "monthly_usd": 0,  "label": "OpenCode Go", "note": "" },
+    "open_design":   { "monthly_usd": 0,  "label": "Open Design", "note": "" },
+    "antigravity":   { "monthly_usd": 0,  "label": "Antigravity", "note": "" }
+  }
+  ```
+
+- `monthly_usd` **0 o ausente = ese proveedor no se compara**. La columna de plan queda vacia y no
+  se calcula diferencia: no se inventan precios.
+- `delta = consumo estimado - plan del periodo`. **Positivo = le ganaste al plan ese monto** (el
+  consumo a tarifa API valio mas que lo que pagaste); negativo = el plan salio mas caro que el
+  consumo. El panel lo muestra con signo y color, y una linea de resumen: «contra planes: +USD X a
+  favor» / «-USD X en contra».
+- El periodo manda: si el rango elegido no es un mes calendario, el plan se **prorratea por dia**
+  (`monthly_usd * dias del rango / dias del mes`) y el subtitulo lo dice. `planWindow` en la salida
+  de `stats-index` publica `periodDays`, `daysInMonth`, `factor` y `prorated`.
+- Los planes declarados sin consumo aparecen igual (delta negativo completo): saber que un plan se
+  paga y no se usa es parte de la lectura.
+- Las filas sin `provider` (la columna existe desde la migracion v20) **no se reparten a ojo**: se
+  muestran aparte como «sin proveedor: N llamadas». Ojo: hoy esa bolsa no es solo historica — hay
+  trafico actual que llega con `provider` nulo porque `session.provider_name` viene `None`
+  (`crates/aegis/src/agents/state_machine/usage.rs:63`). Hasta que eso se arregle en el harness, la
+  comparacion cubre solo lo que el ledger si atribuye.
+- Salida nueva de `tools/stats-index.mjs`: `byProvider: [{ provider, label, calls, tokens,
+  estimatedUsd, costKnownCalls, planUsd, deltaUsd, note }]`, `unknownProvider: { calls,
+  estimatedUsd, tokens, costKnownCalls } | null`, `vsPlan: { providers, declared, estimatedUsd,
+  planUsd, deltaUsd }` y `planWindow`. Los planes se leen de `config.json` (o de `AEGIS_WEB_CONFIG`,
+  que usan las pruebas) y **solo se emiten los campos del plan**: `secretKey` nunca sale del
+  proceso.
+- Verificacion: `tests/stats-plan.ts` (suite `stats-plan`) crea un ledger de fixture con dos
+  proveedores (uno con plan, otro sin), un plan sin consumo, filas con `provider` nulo y un periodo
+  parcial de 7 dias; `tests/gasto.ts` comprueba que la seccion y sus columnas se renderizan. Contra
+  el store real, los totales por proveedor de `stats-index` coinciden al ultimo decimal con la
+  consulta SQL hecha a mano sobre el mismo rango (`window.since`/`window.until`).
+
 ## Herramientas y pruebas en TypeScript (2026-10-18)
 
 Ya no queda codigo escrito a mano en JS. Los cuatro modulos de la app y las dos herramientas de

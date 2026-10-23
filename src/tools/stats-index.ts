@@ -9,10 +9,19 @@
 // server no tenga que distinguir ENOENT de datos vacios.
 //
 // Migrado de tools/stats-index.mjs a TypeScript el 2026-10-18. La salida JSON es identica.
+//
+// «vs plan» (2026-10-23): ademas del costo estimado por catalogo, el panel muestra cuanto valio a
+// tarifa API el consumo contra lo que se paga por el plan del proveedor. El plan es una propiedad
+// del proveedor y del periodo (web/config.json -> plans), no de la llamada: el ledger ya guarda
+// provider y cost_source, no hace falta una columna nueva. Si monthly_usd es 0 o falta, ese
+// proveedor no se compara (no se inventan precios).
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const DB = process.env.AEGIS_SESSIONS_DB || 'C:/Aegis-Proyects/state/data/sessions/sessions.db';
+// Config de la web (planes declarados). Los tests apuntan AEGIS_WEB_CONFIG a una fixture.
+const CONFIG = process.env.AEGIS_WEB_CONFIG || fileURLToPath(new URL('../config.json', import.meta.url));
 
 const argv = process.argv.slice(2);
 const argNum = (name: string): number | null => {
@@ -164,6 +173,101 @@ try {
        from (select session_id, count(distinct model) n from usage_ledger ${W} group by 1)`,
     ...wp,
   );
+
+  // ---------- vs plan ----------
+  // Planes declarados a mano en config.json. Solo se emiten los campos del plan: el archivo tiene
+  // secretKey y nunca sale del proceso.
+  type PlanCfg = { monthly_usd: number; label: string; note: string };
+  const planes: Record<string, PlanCfg> = (() => {
+    try {
+      if (!existsSync(CONFIG)) return {};
+      const cfg = JSON.parse(readFileSync(CONFIG, 'utf8')) as any;
+      const raw = cfg && typeof cfg.plans === 'object' && cfg.plans ? cfg.plans : {};
+      const limpio: Record<string, PlanCfg> = {};
+      for (const k of Object.keys(raw)) {
+        const v = raw[k] || {};
+        limpio[k] = {
+          monthly_usd: Number(v.monthly_usd) || 0,
+          label: String(v.label || k),
+          note: String(v.note || ''),
+        };
+      }
+      return limpio;
+    } catch {
+      return {};
+    }
+  })();
+
+  // Prorrateo: el plan es mensual, el rango del panel no. factor = dias del rango / dias del mes.
+  const hasta = Math.floor(Date.now() / 1000);
+  const desde = since || (t.first_ts ? Number(t.first_ts) : hasta);
+  const diasRango = Math.max(1, (hasta - desde) / 86400);
+  const ahora = new Date();
+  const diasDelMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).getDate();
+  const factor = diasRango / diasDelMes;
+  out.planWindow = { periodDays: diasRango, daysInMonth: diasDelMes, factor, prorated: Math.abs(diasRango - diasDelMes) > 0.5 };
+
+  // La atribucion sale de usage_ledger.provider (existe desde la migracion v20). Las filas
+  // anteriores no se reparten a ojo: van a unknownProvider.
+  const porProv = all(
+    `select coalesce(nullif(trim(provider),''),'') p,
+            count(*) calls,
+            coalesce(sum(input_tokens),0) + coalesce(sum(output_tokens),0) tokens,
+            coalesce(sum(cost),0) est,
+            sum(case when cost is not null then 1 else 0 end) cost_known
+       from usage_ledger ${W}
+      group by 1 order by est desc`,
+    ...wp,
+  );
+
+  const filas: any[] = [];
+  let desconocido: Record<string, any> | null = null;
+  for (const r of porProv) {
+    if (!r.p) {
+      desconocido = { calls: r.calls, estimatedUsd: r.est, tokens: r.tokens, costKnownCalls: r.cost_known || 0 };
+      continue;
+    }
+    const plan = planes[r.p];
+    const planUsd = plan && plan.monthly_usd > 0 ? plan.monthly_usd * factor : null;
+    filas.push({
+      provider: r.p,
+      label: plan ? plan.label : r.p,
+      calls: r.calls,
+      tokens: r.tokens,
+      estimatedUsd: r.est,
+      costKnownCalls: r.cost_known || 0,
+      planUsd,
+      deltaUsd: planUsd == null ? null : r.est - planUsd,
+      note: plan ? plan.note : '',
+    });
+  }
+  // Un plan declarado sin consumo igual se muestra: su delta es negativo (el plan costo mas).
+  for (const p of Object.keys(planes)) {
+    if (filas.some((f) => f.provider === p)) continue;
+    const planUsd = planes[p].monthly_usd > 0 ? planes[p].monthly_usd * factor : null;
+    filas.push({
+      provider: p,
+      label: planes[p].label,
+      calls: 0,
+      tokens: 0,
+      estimatedUsd: 0,
+      costKnownCalls: 0,
+      planUsd,
+      deltaUsd: planUsd == null ? null : -planUsd,
+      note: planes[p].note,
+    });
+  }
+  out.byProvider = filas;
+  out.unknownProvider = desconocido;
+
+  const conPlan = filas.filter((f) => f.planUsd != null);
+  out.vsPlan = {
+    providers: conPlan.length,
+    declared: Object.keys(planes).filter((p) => planes[p].monthly_usd > 0).length,
+    estimatedUsd: conPlan.reduce((a, f) => a + f.estimatedUsd, 0),
+    planUsd: conPlan.reduce((a, f) => a + (f.planUsd as number), 0),
+    deltaUsd: conPlan.reduce((a, f) => a + (f.deltaUsd as number), 0),
+  };
 
   db.close();
   process.stdout.write(JSON.stringify(out));

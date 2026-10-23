@@ -33,6 +33,9 @@
     ".st-model b{font-weight:550}",
     ".st-mini{height:2px;border-radius:2px;background:var(--accent);opacity:.38;max-width:100%}",
     ".st-warn{font-size:11.5px;color:var(--warn);margin-top:8px;line-height:1.5}",
+    ".st-plan-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin-top:10px;font-size:13px}",
+    ".st-plan-line b{font-weight:600;font-variant-numeric:tabular-nums}",
+    ".st-plan-line span{font-size:11.5px;color:var(--text-4)}",
     ".st-foot{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11.5px;color:var(--text-4);margin-top:18px;border-top:1px solid var(--border);padding-top:12px;line-height:1.5}",
     ".st-err{color:var(--danger);font-size:12.5px;white-space:pre-wrap}",
     ".st-empty{padding:26px 8px;text-align:center;color:var(--text-3);font-size:13px}",
@@ -80,6 +83,11 @@
     return String(s == null ? "" : s).replace(/[&<>"]/g, function(c) {
       return c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;";
     });
+  }
+  function usdDelta(v) {
+    if (v == null || !isFinite(v)) return "—";
+    if (Math.abs(v) < 5e-3) return "empate";
+    return (v > 0 ? "+" : "−") + usd(Math.abs(v));
   }
   function build() {
     var st = document.createElement("style");
@@ -214,12 +222,37 @@
       return '<div class="b" style="height:' + h + 'px" title="' + esc(p.d) + " · " + esc(usd(p.cost)) + " · " + p.calls + " llamadas · " + esc(tok(p.input + p.output)) + ' tokens"></div>';
     }).join("") + '</div><div class="st-axis"><span>' + esc(serie[0] ? serie[0].d : "") + "</span><span>pico " + esc(usd(max)) + "</span><span>" + esc(serie[serie.length - 1] ? serie[serie.length - 1].d : "") + "</span></div>";
   }
+  function seccionPlan(d) {
+    var filas = d.byProvider || [];
+    var vp = d.vsPlan || { providers: 0, declared: 0, estimatedUsd: 0, planUsd: 0, deltaUsd: 0 };
+    var pw = d.planWindow || {};
+    var detalle = pw.prorated ? "plan prorrateado: " + Math.round(pw.periodDays) + " de " + pw.daysInMonth + " días" : "plan del mes completo";
+    var h = '<div class="st-sec">Contra el plan <small>consumo valuado a tarifa API vs lo que pagás</small></div>';
+    if (!filas.length) return h + '<div class="st-empty">Sin datos en el período.</div>';
+    h += '<table class="st-t"><thead><tr><th>Proveedor</th><th class="st-hide-sm">Llamadas</th><th>Consumo estimado</th><th>Plan del período</th><th>Diferencia</th></tr></thead><tbody>';
+    filas.forEach(function(f) {
+      var col = f.deltaUsd == null ? "" : ' style="color:' + (f.deltaUsd >= 0 ? "var(--ok)" : "var(--danger)") + '"';
+      h += '<tr><td><span class="st-model"><b>' + esc(f.label || f.provider) + "</b>" + (f.note ? '<span style="font-size:11px;color:var(--text-4)">' + esc(f.note) + "</span>" : "") + '</span></td><td class="st-hide-sm" data-label="Llamadas">' + tok(f.calls) + '</td><td data-label="Consumo estimado">' + esc(usd(f.estimatedUsd)) + '</td><td data-label="Plan del período">' + (f.planUsd == null ? "—" : esc(usd(f.planUsd))) + '</td><td data-label="Diferencia"' + col + ">" + esc(usdDelta(f.deltaUsd)) + "</td></tr>";
+    });
+    h += "</tbody></table>";
+    if (!vp.declared) {
+      h += '<div class="st-warn">Declará el plan en config.json (bloque «plans»): sin monthly_usd no se calcula la diferencia.</div>';
+    } else {
+      var favor = (vp.deltaUsd || 0) >= 0;
+      h += '<div class="st-plan-line">contra planes: <b>' + esc(usdDelta(vp.deltaUsd)) + "</b> " + (favor ? "a favor" : "en contra") + " <span>" + esc(usd(vp.estimatedUsd)) + " de consumo vs " + esc(usd(vp.planUsd)) + " de plan · " + esc(detalle) + "</span></div>";
+    }
+    var up = d.unknownProvider;
+    if (up && up.calls) {
+      h += '<div class="st-warn">sin proveedor: ' + tok(up.calls) + " llamadas (" + esc(usd(up.estimatedUsd)) + "). El ledger no registró el proveedor en esas filas, así que no se pueden comparar contra un plan.</div>";
+    }
+    return h;
+  }
   function render(d) {
     var t = d.totals || {};
     var box = node().querySelector("#st-body-content");
     sub("rango: " + (d.days ? "últimos " + d.days + " días" : "todo el historial") + " · " + t.calls + " llamadas · " + t.sessions + " sesiones");
     var kpis = [
-      { k: "Gasto", v: usd(t.cost), s: t.withCostCalls + " llamadas con costo" },
+      { k: "Costo estimado", v: usd(t.cost), s: t.withCostCalls + " llamadas con costo" },
       { k: "Llamadas", v: tok(t.calls), s: t.sessions + " sesiones" },
       { k: "Entrada", v: tok(t.input), s: "cache hit " + pct(t.cacheHitPct) },
       { k: "Salida", v: tok(t.output), s: "media " + tok(t.avgTokensPerCall) + "/llamada" },
@@ -229,6 +262,7 @@
     var html = '<div class="st-kpis">' + kpis.map(function(x) {
       return '<div class="st-kpi"><div class="k">' + esc(x.k) + '</div><div class="v">' + esc(x.v) + '</div><div class="s">' + esc(x.s) + "</div></div>";
     }).join("") + "</div>";
+    html += seccionPlan(d);
     html += '<div class="st-sec">Gasto por día <small>costo por día en el rango</small></div>' + barras(d.daily || []);
     var modelos = (d.models || []).slice(0, 12);
     var maxCost = 0;
@@ -262,7 +296,7 @@
     var fuentes = (d.costSources || []).map(function(s) {
       return esc(s.source) + ": " + s.calls;
     }).join(" · ");
-    html += '<div class="st-foot"><span>percentiles por llamada: p50 ' + esc(usd(d.percentiles && d.percentiles.p50)) + " · p95 " + esc(usd(d.percentiles && d.percentiles.p95)) + " · máx " + esc(usd(d.percentiles && d.percentiles.max)) + "</span><span>origen del costo — " + fuentes + "</span><span>sesiones con más de un modelo: " + (d.modelMix && d.modelMix.multi || 0) + " de " + (d.modelMix && d.modelMix.sessions || 0) + "</span><span>generado " + esc(fecha(Math.floor(new Date(d.generatedAt).getTime() / 1e3))) + "</span></div>";
+    html += '<div class="st-foot"><span>percentiles por llamada: p50 ' + esc(usd(d.percentiles && d.percentiles.p50)) + " · p95 " + esc(usd(d.percentiles && d.percentiles.p95)) + " · máx " + esc(usd(d.percentiles && d.percentiles.max)) + "</span><span>origen del costo — " + fuentes + "</span><span>costo estimado por catálogo de precios: es valuación, no factura</span><span>sesiones con más de un modelo: " + (d.modelMix && d.modelMix.multi || 0) + " de " + (d.modelMix && d.modelMix.sessions || 0) + "</span><span>generado " + esc(fecha(Math.floor(new Date(d.generatedAt).getTime() / 1e3))) + "</span></div>";
     box.innerHTML = html;
   }
   function button() {

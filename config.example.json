@@ -12,5 +12,12 @@
     "_nota_path_root": "AEGIS_PATH_ROOT no lo aplica el serve (server.mjs solo usa AEGIS_VERSION). El store sale del default del binario: %APPDATA%\\Aegis\\aegis",
     "AEGIS_WORKING_DIR": "<directorio de trabajo del agente>"
   },
-  "cwd": "<directorio de trabajo>"
+  "cwd": "<directorio de trabajo>",
+  "_nota_plans": "Planes por proveedor para la vista «vs plan» del panel Gasto. monthly_usd es lo que pagas por mes (0 o ausente = no se compara, no se inventan precios). Las claves son el valor de usage_ledger.provider: chatgpt_codex, opencode_go, open_design, antigravity. Si el rango elegido no es un mes calendario el plan se prorratea por dia (monthly_usd x dias del rango / dias del mes).",
+  "plans": {
+    "chatgpt_codex": { "monthly_usd": 0, "label": "ChatGPT", "note": "" },
+    "opencode_go": { "monthly_usd": 0, "label": "OpenCode Go", "note": "" },
+    "open_design": { "monthly_usd": 0, "label": "Open Design", "note": "" },
+    "antigravity": { "monthly_usd": 0, "label": "Antigravity", "note": "" }
+  }
 }

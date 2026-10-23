@@ -1,6 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 const DB = process.env.AEGIS_SESSIONS_DB || "C:/Aegis-Proyects/state/data/sessions/sessions.db";
+const CONFIG = process.env.AEGIS_WEB_CONFIG || fileURLToPath(new URL("../config.json", import.meta.url));
 const argv = process.argv.slice(2);
 const argNum = (name) => {
   const i = argv.indexOf(name);
@@ -128,6 +130,88 @@ try {
        from (select session_id, count(distinct model) n from usage_ledger ${W} group by 1)`,
     ...wp
   );
+  const planes = (() => {
+    try {
+      if (!existsSync(CONFIG)) return {};
+      const cfg = JSON.parse(readFileSync(CONFIG, "utf8"));
+      const raw = cfg && typeof cfg.plans === "object" && cfg.plans ? cfg.plans : {};
+      const limpio = {};
+      for (const k of Object.keys(raw)) {
+        const v = raw[k] || {};
+        limpio[k] = {
+          monthly_usd: Number(v.monthly_usd) || 0,
+          label: String(v.label || k),
+          note: String(v.note || "")
+        };
+      }
+      return limpio;
+    } catch {
+      return {};
+    }
+  })();
+  const hasta = Math.floor(Date.now() / 1e3);
+  const desde = since || (t.first_ts ? Number(t.first_ts) : hasta);
+  const diasRango = Math.max(1, (hasta - desde) / 86400);
+  const ahora = /* @__PURE__ */ new Date();
+  const diasDelMes = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).getDate();
+  const factor = diasRango / diasDelMes;
+  out.planWindow = { periodDays: diasRango, daysInMonth: diasDelMes, factor, prorated: Math.abs(diasRango - diasDelMes) > 0.5 };
+  const porProv = all(
+    `select coalesce(nullif(trim(provider),''),'') p,
+            count(*) calls,
+            coalesce(sum(input_tokens),0) + coalesce(sum(output_tokens),0) tokens,
+            coalesce(sum(cost),0) est,
+            sum(case when cost is not null then 1 else 0 end) cost_known
+       from usage_ledger ${W}
+      group by 1 order by est desc`,
+    ...wp
+  );
+  const filas = [];
+  let desconocido = null;
+  for (const r of porProv) {
+    if (!r.p) {
+      desconocido = { calls: r.calls, estimatedUsd: r.est, tokens: r.tokens, costKnownCalls: r.cost_known || 0 };
+      continue;
+    }
+    const plan = planes[r.p];
+    const planUsd = plan && plan.monthly_usd > 0 ? plan.monthly_usd * factor : null;
+    filas.push({
+      provider: r.p,
+      label: plan ? plan.label : r.p,
+      calls: r.calls,
+      tokens: r.tokens,
+      estimatedUsd: r.est,
+      costKnownCalls: r.cost_known || 0,
+      planUsd,
+      deltaUsd: planUsd == null ? null : r.est - planUsd,
+      note: plan ? plan.note : ""
+    });
+  }
+  for (const p of Object.keys(planes)) {
+    if (filas.some((f) => f.provider === p)) continue;
+    const planUsd = planes[p].monthly_usd > 0 ? planes[p].monthly_usd * factor : null;
+    filas.push({
+      provider: p,
+      label: planes[p].label,
+      calls: 0,
+      tokens: 0,
+      estimatedUsd: 0,
+      costKnownCalls: 0,
+      planUsd,
+      deltaUsd: planUsd == null ? null : -planUsd,
+      note: planes[p].note
+    });
+  }
+  out.byProvider = filas;
+  out.unknownProvider = desconocido;
+  const conPlan = filas.filter((f) => f.planUsd != null);
+  out.vsPlan = {
+    providers: conPlan.length,
+    declared: Object.keys(planes).filter((p) => planes[p].monthly_usd > 0).length,
+    estimatedUsd: conPlan.reduce((a, f) => a + f.estimatedUsd, 0),
+    planUsd: conPlan.reduce((a, f) => a + f.planUsd, 0),
+    deltaUsd: conPlan.reduce((a, f) => a + f.deltaUsd, 0)
+  };
   db.close();
   process.stdout.write(JSON.stringify(out));
 } catch (e) {

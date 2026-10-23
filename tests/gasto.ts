@@ -29,6 +29,29 @@ try {
   check((p1.modelRows || 0) > 0, 'filas de modelos/sesiones: ' + p1.modelRows);
   check(/percentiles/.test(p1.foot || ''), 'pie con percentiles');
 
+  // «vs plan»: la seccion existe siempre; con planes declarados muestra la linea de resumen y
+  // sin planes muestra el aviso de configurarlo. Nunca inventa precios.
+  const plan = await page.evaluate(() => {
+    const secs = [...document.querySelectorAll('.st-sec')].map((s) => (s.textContent || '').trim());
+    const linea = document.querySelector('.st-plan-line');
+    const warns = [...document.querySelectorAll('.st-warn')].map((w) => (w.textContent || '').trim()).join(' | ');
+    const tablaPlan = [...document.querySelectorAll('table.st-t')].find((t) => /Plan del per/i.test(t.textContent || ''));
+    return {
+      sec: secs.some((s) => /^Contra el plan/.test(s)),
+      linea: linea ? linea.textContent : '',
+      warns,
+      columnas: tablaPlan ? [...tablaPlan.querySelectorAll('thead th')].map((th) => (th.textContent || '').trim()) : [],
+      filas: tablaPlan ? tablaPlan.querySelectorAll('tbody tr').length : 0,
+    };
+  });
+  check(plan.sec, 'seccion «Contra el plan» presente');
+  check(plan.filas > 0, 'tabla vs plan con filas: ' + plan.filas);
+  check(plan.columnas.join('|').includes('Consumo estimado') && plan.columnas.join('|').includes('Diferencia'), 'columnas vs plan: ' + plan.columnas.join('|'));
+  check(
+    /contra planes:/.test(plan.linea) || /Declar. el plan en config\.json/.test(plan.warns),
+    'vs plan: linea de resumen o aviso de configuracion: ' + plan.linea + ' / ' + plan.warns.slice(0, 160),
+  );
+
   // cambio de rango 30d -> 7d
   const sub30 = p1.sub || '';
   await page.click('#st-seg button[data-days="7"]');
