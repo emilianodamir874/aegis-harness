@@ -6,6 +6,7 @@ import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
 import { remoteResultsHtml, emptyRemote } from './app/search';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
+import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -2929,27 +2930,25 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     }
     if (btn) btn.classList.add('busy');
     systemNote('Transcribiendo ' + Math.round(blob.size / 1024) + ' KB con ' + provider + '…');
-    const fr = new FileReader();
-    fr.onload = function () {
-      const b64 = String(fr.result).split(',')[1];
-      const type = (blob.type || 'audio/webm').split(';')[0];
-      rpc.request('_aegis/unstable/dictation/transcribe', { audio: b64, mimeType: type, provider: provider })
-        .then(function (r) {
-          if (btn) btn.classList.remove('busy');
-          const txt = ((r && r.text) || '').trim();
-          if (!txt) { systemNote('La transcripción vino vacía (' + provider + ').'); handsFreeMaybe(600); return; }
-          micDeliver(txt, auto);
-        })
-        .catch(function (e) {
-          const msg = String((e && e.message) || e).slice(0, 120);
-          report('dictado', provider + ' falló: ' + msg);
-          if (btn) btn.classList.remove('busy');
-          systemNote('Falló la transcripción: ' + msg);
-          handsFreeMaybe(1500);
-        });
-    };
-    fr.onerror = function () { if (btn) btn.classList.remove('busy'); systemNote('No pude leer el audio grabado.'); };
-    fr.readAsDataURL(blob);
+    // El motor local decodifica con symphonia, que no tiene decoder de Opus: el webm/opus que
+    // produce MediaRecorder se convierte a WAV 16 kHz mono en el navegador (src/app/audio-wav.ts).
+    // Sin esto el turno moria en "Internal error" (Failed to create audio decoder) y el dictado
+    // no funcionaba en Chrome/Android, que es justo donde esta el microfono.
+    blobToWav16k(blob).then(function (wav) {
+      const b64 = bytesToBase64(wav);
+      return rpc.request('_aegis/unstable/dictation/transcribe', { audio: b64, mimeType: 'audio/wav', provider: provider });
+    }).then(function (r) {
+      if (btn) btn.classList.remove('busy');
+      const txt = ((r && r.text) || '').trim();
+      if (!txt) { systemNote('La transcripción vino vacía (' + provider + ').'); handsFreeMaybe(600); return; }
+      micDeliver(txt, auto);
+    }).catch(function (e) {
+      const msg = String((e && e.message) || e).slice(0, 140);
+      report('dictado', provider + ' falló: ' + msg);
+      if (btn) btn.classList.remove('busy');
+      systemNote('Falló la transcripción: ' + msg);
+      handsFreeMaybe(1500);
+    });
   }
 
   // En manos libres el dictado se ENVIA; en manual se inserta en el cursor.

@@ -7,6 +7,9 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const entries = [
   // bundle: la app tiene modulos propios en src/app/*.ts (esbuild los inlina en app.js)
   { entry: 'src/app.ts', output: 'app/app.js', options: { format: 'esm', platform: 'browser', bundle: true } },
+  // Se emite aparte para que las pruebas de navegador puedan importar el convertidor de audio real
+  // (app.ts ya lo lleva inlineado en su bundle) y probar MediaRecorder -> WAV sin duplicar codigo.
+  { entry: 'src/app/audio-wav.ts', output: 'app/audio-wav.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/skills.ts', output: 'app/skills.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/stats.ts', output: 'app/stats.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/server.ts', output: 'server.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
