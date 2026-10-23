@@ -549,10 +549,17 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const body = row.querySelector('.sb-item');
     if (row.querySelector('.sb-confirm')) return;
     state.hold = 'confirm';
+    row.classList.add('confirming');
     (body as HTMLElement).style.display = 'none';
     const c = document.createElement('div');
     c.className = 'sb-confirm';
-    c.innerHTML = '<span>¿Borrar sesión?</span><button class="ym">Sí</button><button class="nn">No</button>';
+    c.innerHTML = '<span class="sb-confirm-t">¿Borrar sesión?</span><button class="ym">Sí</button><button class="nn">No</button>';
+    // Con el titulo: borrar sin ver cual era el riesgo real de la X por fila.
+    const nombre = (findSession(id) && findSession(id).title) || 'esta sesión';
+    (c.querySelector('.sb-confirm-t') as HTMLElement).textContent = '¿Borrar «' + nombre + '»?';
+    (c.querySelector('.sb-confirm-t') as HTMLElement).title = nombre;
+    (c.querySelector('.ym') as HTMLElement).textContent = 'Borrar';
+    (c.querySelector('.nn') as HTMLElement).textContent = 'Cancelar';
     row.appendChild(c);
     c.querySelector('.nn').addEventListener('click', (e) => { e.stopPropagation(); state.hold = null; renderList(); });
     c.querySelector('.ym').addEventListener('click', async (e) => {

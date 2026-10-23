@@ -867,10 +867,16 @@ function ttsUrlFor(voice, text, rate) {
     const body = row.querySelector(".sb-item");
     if (row.querySelector(".sb-confirm")) return;
     state.hold = "confirm";
+    row.classList.add("confirming");
     body.style.display = "none";
     const c = document.createElement("div");
     c.className = "sb-confirm";
-    c.innerHTML = '<span>¿Borrar sesión?</span><button class="ym">Sí</button><button class="nn">No</button>';
+    c.innerHTML = '<span class="sb-confirm-t">¿Borrar sesión?</span><button class="ym">Sí</button><button class="nn">No</button>';
+    const nombre = findSession(id) && findSession(id).title || "esta sesión";
+    c.querySelector(".sb-confirm-t").textContent = "¿Borrar «" + nombre + "»?";
+    c.querySelector(".sb-confirm-t").title = nombre;
+    c.querySelector(".ym").textContent = "Borrar";
+    c.querySelector(".nn").textContent = "Cancelar";
     row.appendChild(c);
     c.querySelector(".nn").addEventListener("click", (e) => {
       e.stopPropagation();
