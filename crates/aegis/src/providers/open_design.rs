@@ -124,7 +124,13 @@ impl ProviderDef for OpenDesignProvider {
         tls_config: Option<TlsConfig>,
     ) -> BoxFuture<'static, Result<Self::Provider>> {
         Box::pin(async move {
-            let key: String = Config::global().get_secret("OPEN_DESIGN_API_KEY")?;
+            let key: String = Config::global()
+                .get_secret("OPEN_DESIGN_API_KEY")
+                .map_err(|_| {
+                    anyhow::anyhow!(
+                        "Open Design no esta configurado: falta OPEN_DESIGN_API_KEY (ponela en secrets.yaml o en Ajustes > proveedores)"
+                    )
+                })?;
             if key.trim().is_empty() {
                 bail!("OPEN_DESIGN_API_KEY is empty; configure the Open Design provider first");
             }

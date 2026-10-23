@@ -163,10 +163,45 @@ struct ProviderOptionEntry {
     label: String,
 }
 
+/// Falta una clave obligatoria para que el proveedor funcione.
+///
+/// El desplegable ofrecia todo el registro y el servidor rechazaba despues los que no tenian
+/// credenciales (el flag `configured` del inventario solo lo implementan 12 proveedores; el resto
+/// devuelve true aunque falte la API key). La metadata de cada proveedor si declara sus claves:
+/// si una es obligatoria, secreta y no es OAuth, su ausencia alcanza para no ofrecerlo. Las OAuth
+/// (antigravity, chatgpt_codex) y las opcionales (opencode_go) quedan siempre.
+fn clave_obligatoria_faltante(
+    claves: &[aegis_providers::base::ConfigKey],
+    esta_presente: impl Fn(&str) -> bool,
+) -> Option<String> {
+    claves
+        .iter()
+        .filter(|clave| clave.required && clave.secret && !clave.oauth_flow)
+        .find(|clave| !esta_presente(&clave.name))
+        .map(|clave| clave.name.clone())
+}
+
 async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOptionEntry> {
     let mut providers = crate::providers::providers()
         .await
         .into_iter()
+        .filter(|(metadata, _)| {
+            let falta = clave_obligatoria_faltante(&metadata.config_keys, |nombre| {
+                match Config::global().get_secret::<String>(nombre) {
+                    Ok(valor) => !valor.trim().is_empty(),
+                    Err(_) => false,
+                }
+            });
+            if let Some(clave) = falta {
+                tracing::debug!(
+                    provider = %metadata.name,
+                    clave = %clave,
+                    "proveedor oculto del desplegable: falta una clave obligatoria"
+                );
+                return false;
+            }
+            true
+        })
         .map(|(metadata, _)| ProviderOptionEntry {
             id: metadata.name,
             label: metadata.display_name,
@@ -546,6 +581,48 @@ pub(super) fn send_session_setup_notifications(
 
 #[cfg(test)]
 mod tests {
+
+    fn clave(
+        nombre: &str,
+        required: bool,
+        secret: bool,
+        oauth: bool,
+    ) -> aegis_providers::base::ConfigKey {
+        let mut clave = aegis_providers::base::ConfigKey::new(nombre, required, secret, None, true);
+        clave.oauth_flow = oauth;
+        clave
+    }
+
+    #[test]
+    fn una_clave_obligatoria_ausente_esconde_el_proveedor() {
+        let claves = vec![clave("OPEN_DESIGN_API_KEY", true, true, false)];
+        assert_eq!(
+            clave_obligatoria_faltante(&claves, |_| false),
+            Some("OPEN_DESIGN_API_KEY".to_string())
+        );
+        assert_eq!(clave_obligatoria_faltante(&claves, |_| true), None);
+    }
+
+    #[test]
+    fn oauth_y_claves_opcionales_no_esconden_el_proveedor() {
+        // antigravity y chatgpt_codex declaran su token como OAuth: por config no se puede saber
+        // si estan listos, asi que no se ocultan.
+        let oauth = vec![clave("ANTIGRAVITY_TOKEN", true, true, true)];
+        assert_eq!(clave_obligatoria_faltante(&oauth, |_| false), None);
+        // opencode_go declara su API key como opcional.
+        let opcional = vec![clave("OPENCODE_GO_API_KEY", false, true, false)];
+        assert_eq!(clave_obligatoria_faltante(&opcional, |_| false), None);
+        assert_eq!(clave_obligatoria_faltante(&[], |_| false), None);
+        // con una OAuth presente y una obligatoria ausente, gana la que falta.
+        let mixto = vec![
+            clave("OAUTH_TOKEN", true, true, true),
+            clave("API_KEY", true, true, false),
+        ];
+        assert_eq!(
+            clave_obligatoria_faltante(&mixto, |nombre| nombre == "OAUTH_TOKEN"),
+            Some("API_KEY".to_string())
+        );
+    }
     use super::super::provider::THINKING_EFFORT_PARAM;
     use super::*;
     use aegis_providers::thinking::ThinkingEffortOption;
