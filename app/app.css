@@ -2970,6 +2970,7 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
   color: var(--text-4); opacity: 0; transition: opacity var(--dur-fast) var(--ease);
 }
 .title-wrap:hover .title-caret, .title-wrap:focus-visible .title-caret, .title-wrap[aria-expanded="true"] .title-caret { opacity: 1; }
+@media (hover: none) { .title-caret { opacity: 0.45; } }
 
 .chat-info {
   position: absolute; z-index: 62; width: min(420px, calc(100vw - 24px));
