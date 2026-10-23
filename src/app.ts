@@ -381,6 +381,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const t = document.createElement('div');
     t.className = 'toast' + (kind ? ' ' + kind : '');
     t.textContent = msg;
+    // Anuncio para lectores de pantalla (acciones que no mueven el foco).
+    t.setAttribute('role', kind === 'err' ? 'alert' : 'status');
+    t.setAttribute('aria-live', kind === 'err' ? 'assertive' : 'polite');
     document.body.appendChild(t);
     requestAnimationFrame(() => t.classList.add('show'));
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 250); }, kind === 'err' ? 4200 : 2600);
@@ -392,9 +395,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     closeMenus(); closeRowMenus();
     const menu = document.createElement('div');
     menu.className = 'menu row-menu';
-    const entry = (label, fn) => {
+    const entry = (label, fn, kind?) => {
       const b = document.createElement('button');
-      b.className = 'menu-row'; b.type = 'button';
+      b.className = 'menu-row' + (kind ? ' ' + kind : ''); b.type = 'button'; b.setAttribute('role', 'menuitem');
       b.innerHTML = `<span>${label}</span>`;
       b.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); fn(); });
       menu.appendChild(b);
@@ -405,6 +408,10 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     entry('Exportar como JSON', () => exportSession(id, 'json'));
     if (archived) entry('Desarchivar', () => unarchiveSession(id));
     else entry('Archivar', () => archiveSession(id));
+    // Borrar vive SOLO aca (con confirmacion en la fila): antes era una X en cada
+    // fila y en tactil quedaba a un toque de distancia.
+    menu.appendChild(Object.assign(document.createElement('div'), { className: 'menu-sep' }));
+    entry('Borrar sesión…', () => askDelete(id), 'danger');
     document.body.appendChild(menu);
     openMenu(btn, menu);
   }
@@ -706,9 +713,29 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     else arrancar();
   })();
 
+  // Contexto del chat vacio: donde va a trabajar y con que modelo. Evita el
+  // primer mensaje de prueba "¿en qué carpeta estás?".
+  function renderWelcomeMeta() {
+    const el = $('#welcome-meta');
+    if (!el) return;
+    const cwd = (state.current && state.current.cwd) || CFG.cwd || '';
+    const chips = document.querySelectorAll('#chips .chip-wrap');
+    let modelo = CFG.defaultModel || '';
+    for (const w of chips) {
+      if (w.getAttribute('data-opt') === 'model') { const c = w.querySelector('.chip'); if (c && c.textContent) modelo = c.textContent.trim(); }
+    }
+    const dflt = document.getElementById('default-model-chip');
+    if (!modelo && dflt && dflt.textContent) modelo = dflt.textContent.trim();
+    const parts = [];
+    if (cwd) parts.push('<span class="wm" title="' + esc(cwd) + '"><span class="wm-k">carpeta</span>' + esc(baseName(cwd)) + '</span>');
+    if (modelo) parts.push('<span class="wm"><span class="wm-k">modelo</span>' + esc(modelo) + '</span>');
+    el.innerHTML = parts.join('');
+    el.hidden = !parts.length;
+  }
   function showWelcome(mode, title?) {
     const w = $('#welcome');
     if (!w) return;
+    renderWelcomeMeta();
     state.welcomeMode = mode || 'new';
     const h1 = $('#welcome-h1');
     const sub = w.querySelector('.welcome-sub');
@@ -1400,7 +1427,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const cmd = tc.rawInput && (tc.rawInput.command || tc.rawInput.path) ? String(tc.rawInput.command || tc.rawInput.path) : '';
     const showCmd = cmd && !String(tc.title || '').includes(cmd.slice(0, 32));
     el.innerHTML =
-      '<div class="perm-head">🔐 Aegis pide permiso para usar una herramienta</div>' +
+      '<div class="perm-head"><svg class="perm-ico" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.2" y="8.6" width="11.6" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8.6V6.4a3 3 0 0 1 6 0v2.2" stroke="currentColor" stroke-width="1.5"/></svg>Aegis pide permiso para usar una herramienta</div>' +
       `<div class="perm-tool">${esc(tc.title || tc.kind || 'Herramienta')}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ''}</div>` +
       '<div class="perm-btns"></div>';
     const btns = el.querySelector('.perm-btns');
@@ -2301,6 +2328,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (!runStart) runStart = performance.now();
     paintRunBar();
     speedStart();
+    $('#messages')?.setAttribute('aria-busy', 'true');
     clearInterval(runTick);
     runTick = setInterval(paintRunBar, 250);
   }
@@ -2311,6 +2339,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     clearTimeout(cancelTimer); cancelTimer = 0;
     runStart = 0;
     speedReset();
+    $('#messages')?.setAttribute('aria-busy', 'false');
     if (bar) { bar.hidden = true; bar.classList.remove('done', 'cancelling'); }
     paintQueuedRunBar();
     $('#btn-stop').disabled = false;
@@ -2327,6 +2356,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     paintQueuedRunBar();
     $('#runbar-time').textContent = fmtElapsed(ms);
     speedFinish();
+    $('#messages')?.setAttribute('aria-busy', 'false');
     $('#btn-stop').disabled = false;
     clearTimeout(runDoneTimer);
     runDoneTimer = setTimeout(() => { bar.hidden = true; bar.classList.remove('done'); updateMetaHints(); }, 6000);
@@ -4062,6 +4092,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       item.dataset.opt = opt.id;
       const btn = document.createElement('button');
       btn.className = 'chip';
+      btn.type = 'button';
+      btn.setAttribute('aria-haspopup', 'menu');
+      btn.setAttribute('aria-expanded', 'false');
       const cur = opt.options.find((o) => o.value === opt.currentValue) || opt.options[0];
       btn.textContent = (cur && (cur.name || cur.value)) || opt.name || opt.id;
       btn.title = opt.name || opt.id;
@@ -4071,6 +4104,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       for (const o of opt.options) {
         const row = document.createElement('button');
         row.className = 'menu-row' + (o.value === opt.currentValue ? ' sel' : '');
+        row.type = 'button';
+        row.setAttribute('role', 'menuitem');
         row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
         row.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -4106,7 +4141,42 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   // Los menús se mueven al <body> al abrirse (patrón portal) y se posicionan
   // con coordenadas fijas: inmunes a contenedores con overflow, máscaras
   // (el scroll de chips en móvil) o contextos de apilado intermedios.
+  // v4 teclado: role=menu/menuitem, foco en la primera opcion al abrir,
+  // flechas/Home/End para recorrer, Esc devuelve el foco al disparador.
+  let menuTrigger: HTMLElement | null = null;
+  function menuItems(menu: HTMLElement): HTMLElement[] {
+    return [...menu.querySelectorAll<HTMLElement>('.menu-row:not([disabled])')];
+  }
+  function wireMenuKeys(menu: HTMLElement) {
+    if (menu.dataset.keys === '1') return;
+    menu.dataset.keys = '1';
+    menu.addEventListener('keydown', (e: KeyboardEvent) => {
+      const items = menuItems(menu);
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      const move = (n: number) => {
+        e.preventDefault();
+        items[(i + n + items.length) % items.length].focus();
+      };
+      if (e.key === 'ArrowDown') move(1);
+      else if (e.key === 'ArrowUp') move(-1);
+      else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+      else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+      else if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        // La fila abre un menu efimero (se recrea en cada apertura): se descarta.
+        if (menu.classList.contains('row-menu')) menu.remove();
+        else menu.hidden = true;
+        if (menuTrigger && menuTrigger.isConnected) menuTrigger.focus();
+      }
+    });
+  }
   function openMenu(btn, menu) {
+    menuTrigger = btn instanceof HTMLElement ? btn : null;
+    menu.setAttribute('role', 'menu');
+    wireMenuKeys(menu);
+    if (menuTrigger) menuTrigger.setAttribute('aria-expanded', 'true');
     const r = btn.getBoundingClientRect();
     if (menu.parentElement !== document.body) document.body.appendChild(menu);
     menu.hidden = false; // medir con el menú ya visible (si no, offsetHeight = 0)
@@ -4126,10 +4196,25 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (left + anchoMenu > window.innerWidth - margen) left = Math.max(margen, window.innerWidth - margen - anchoMenu);
     menu.style.left = Math.round(left) + 'px';
     menu.style.right = 'auto';
+    // Con teclado, el foco entra al menu (sin scrollear la pagina).
+    if (inputByKeyboard) {
+      const first = menuItems(menu)[0];
+      if (first) first.focus({ preventScroll: true });
+    }
+    if (menuTrigger) menuTrigger.setAttribute('aria-haspopup', 'menu');
     menuOpenedAt = Date.now();
   }
   let menuOpenedAt = 0;
-  const closeMenus = () => document.querySelectorAll<HTMLElement>('.menu').forEach((m) => (m.hidden = true));
+  const closeMenus = () => {
+    document.querySelectorAll<HTMLElement>('.menu').forEach((m) => { m.hidden = true; });
+    document.querySelectorAll<HTMLElement>('[aria-expanded="true"][aria-haspopup="menu"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+    menuTrigger = null;
+  };
+  // Modalidad del ultimo input: solo movemos el foco adentro del menu cuando se
+  // abrio con teclado, para no robarle el foco al composer con el mouse.
+  let inputByKeyboard = false;
+  window.addEventListener('keydown', () => { inputByKeyboard = true; }, true);
+  window.addEventListener('pointerdown', () => { inputByKeyboard = false; }, true);
   document.addEventListener('click', closeMenus);
   window.addEventListener('resize', closeMenus);
   window.addEventListener(
@@ -4186,6 +4271,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 
   // ---------- adjuntos ----------
   function renderAttachments() {
+    syncSendState();
     const box = $('#attachments');
     box.innerHTML = '';
     if (!state.attachments.length) { box.hidden = true; return; }
@@ -4415,14 +4501,32 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   }
 
   // ---------- títulos / estado ----------
+  const baseName = (p) => {
+    const s = String(p == null ? '' : p).replace(/[\\/]+$/, '');
+    const parts = s.split(/[\\/]/);
+    return parts[parts.length - 1] || s;
+  };
+  // El header dice en que carpeta trabaja el chat (cwd de la sesion): en un
+  // harness que edita archivos, "donde estoy" es la pregunta mas frecuente.
   function updateTitle() {
     $('#chat-title').textContent = (state.current && state.current.title) || 'Nuevo chat';
+    $('#chat-title').title = ($('#chat-title').textContent || '') + (state.current && state.current.id ? ' · ' + state.current.id : '');
+    const sub = $('#chat-sub');
+    if (sub) {
+      const cwd = (state.current && state.current.cwd) || CFG.cwd || '';
+      sub.textContent = cwd ? baseName(cwd) : '';
+      sub.title = cwd;
+      sub.hidden = !cwd;
+    }
     document.title = ((state.current && state.current.title) || 'Aegis') + ' · Aegis web';
   }
   function setStatus(kind, text) {
     const dot = $('#conn-dot');
     dot.className = 'dot' + (kind ? ' ' + kind : '');
     $('#conn-text').textContent = text;
+    // Cambios de conexion: se anuncian una sola vez por texto nuevo.
+    const sr = $('#sr-status');
+    if (sr && sr.textContent !== text) sr.textContent = text;
   }
 
   // ---------- drawer ----------
@@ -4440,7 +4544,18 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   const FIELD_SIZING = (typeof CSS !== 'undefined' && CSS.supports && CSS.supports('field-sizing', 'content'));
   let lastSizeAt = 0;
   let lastComposerLines = -1;
+  // El boton de enviar refleja si hay algo para mandar (texto o adjuntos): antes
+  // quedaba siempre encendido y el click no hacia nada.
+  function syncSendState() {
+    const b = document.getElementById('btn-send') as HTMLButtonElement | null;
+    const i = document.getElementById('input') as HTMLTextAreaElement | null;
+    if (!b || !i) return;
+    const has = !!i.value.trim() || (Array.isArray(state.attachments) && state.attachments.length > 0);
+    b.disabled = !has;
+    b.setAttribute('aria-disabled', has ? 'false' : 'true');
+  }
   function autosize(force?) {
+    syncSendState();
     const t = $('#input');
     lastComposerValue = t.value; // lo que ya procesamos (usado por scheduleComposer)
     if (FIELD_SIZING) return;
@@ -4617,6 +4732,36 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     $('#file-input').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
 
     $('#search').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); });
+    // Teclado en la lista: flechas recorren las sesiones, Home/End van a los extremos.
+    // Con 300+ sesiones, tabular fila por fila no es una opcion.
+    $('#session-list').addEventListener('keydown', (e) => {
+      const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+      if (!keys.includes(e.key)) return;
+      const items = [...document.querySelectorAll<HTMLElement>('#session-list .sb-item')];
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      let next = i;
+      if (e.key === 'ArrowDown') next = i < 0 ? 0 : Math.min(items.length - 1, i + 1);
+      else if (e.key === 'ArrowUp') next = i < 0 ? items.length - 1 : Math.max(0, i - 1);
+      else if (e.key === 'Home') next = 0;
+      else next = items.length - 1;
+      e.preventDefault();
+      items[next].focus();
+    });
+    $('#search').addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        const first = document.querySelector<HTMLElement>('#session-list .sb-item');
+        if (first) { e.preventDefault(); first.focus(); }
+        return;
+      }
+      if (e.key === 'Escape' && $('#search').value) {
+        e.preventDefault();
+        e.stopPropagation();
+        $('#search').value = '';
+        state.filter = '';
+        renderList();
+      }
+    });
     $('#slash-menu').addEventListener('click', (e) => {
       const it = e.target.closest('.slash-item');
       if (!it) return;
@@ -4658,7 +4803,13 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
         if (sm && !sm.hidden) { sm.hidden = true; return; }
         if ($('#sidebar').classList.contains('open')) closeDrawer();
       }
-      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k') {
+      // Nuevo chat desde el teclado (el title del boton lo anuncia).
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && String(e.key).toLowerCase() === 'o') {
+        e.preventDefault();
+        newSession();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && String(e.key).toLowerCase() === 'k') {
         e.preventDefault();
         const sb = $('#sidebar');
         if (window.innerWidth <= 880 && !sb.classList.contains('open')) openDrawer();
@@ -4668,6 +4819,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 
     window.addEventListener('resize', autosize);
     wireDropzone();
+    syncSendState(); // estado inicial (borrador guardado o vacio)
   }
 
   // Superficie de depuración (LAN, un solo usuario): inspeccionar estado desde la consola

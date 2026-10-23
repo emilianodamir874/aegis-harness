@@ -218,23 +218,33 @@ var md = (text) => {
 };
 
 // src/app/sessions.ts
+var KEBAB = '<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false"><circle cx="8" cy="3.2" r="1.4" fill="currentColor"/><circle cx="8" cy="8" r="1.4" fill="currentColor"/><circle cx="8" cy="12.8" r="1.4" fill="currentColor"/></svg>';
 function sessionRow(s, o) {
   const meta = s._meta || {};
   const n = meta.messageCount;
-  const sub = `${n != null ? n + " · " : ""}${fmtTime(s.updatedAt || meta.createdAt)}`;
+  const stamp = fmtTime(s.updatedAt || meta.createdAt);
+  const bits = [];
+  if (n != null) bits.push(n === 1 ? "1 mensaje" : n + " mensajes");
+  if (stamp) bits.push(stamp);
+  const sub = bits.join(" · ");
+  const title = s.title || "Sesión";
   const active = o.active ? " active" : "";
   const arch = o.archived;
-  return `<div class="sb-row" data-id="${esc(s.sessionId)}"${arch ? ' data-arch="1"' : ""}><button class="sb-item${active}${arch ? " arch" : ""}"><div class="sb-title">${o.running ? '<span class="sb-run-dot" title="en produccion ahora">&#9679;</span>' : ""}${o.done ? '<span class="sb-done-dot" title="termino hace un momento">&#10004;</span>' : ""}${esc(s.title || "Sesión")}${arch ? '<span class="sb-tag">archivada</span>' : ""}</div><div class="sb-sub">${sub}</div></button><button class="sb-rename" title="Renombrar" aria-label="Renombrar">✎</button><button class="sb-more" title="Más acciones" aria-label="Más acciones">⋮</button><button class="sb-del" title="Borrar sesión" aria-label="Borrar sesión">✕</button></div>`;
+  const dot = o.running ? '<span class="sb-dot sb-run-dot" title="En producción ahora" aria-hidden="true"></span>' : o.done ? '<span class="sb-dot sb-done-dot" title="Terminó hace un momento" aria-hidden="true"></span>' : "";
+  const stateText = o.running ? " — en producción" : o.done ? " — terminó hace un momento" : "";
+  const label = esc(title + (arch ? " (archivada)" : "") + stateText + (sub ? " — " + sub : ""));
+  return `<div class="sb-row" data-id="${esc(s.sessionId)}"${arch ? ' data-arch="1"' : ""}><button class="sb-item${active}${arch ? " arch" : ""}" type="button"${o.active ? ' aria-current="true"' : ""} aria-label="${label}" title="${esc(title)}"><span class="sb-title">${dot}<span class="sb-name">${esc(title)}</span>${arch ? '<span class="sb-tag">archivada</span>' : ""}</span><span class="sb-sub">${esc(sub)}</span></button><button class="sb-more" type="button" title="Acciones de la sesión" aria-label="Acciones de ${esc(title)}" aria-haspopup="menu" aria-expanded="false">${KEBAB}</button></div>`;
 }
 var updatedAt = (s) => s.updatedAt || s._meta && s._meta.createdAt || "";
 var ts = (s) => Date.parse(updatedAt(s)) || 0;
+var norm = (v) => String(v == null ? "" : v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 function sessionListHtml(st) {
-  const q = st.filter.trim().toLowerCase();
-  const match = (s) => !q || String(s.title || "").toLowerCase().includes(q);
+  const q = norm(st.filter.trim());
+  const match = (s) => !q || norm(s.title).includes(q) || norm(s.sessionId).includes(q);
   const items = st.sessions.filter(match).sort((a, b) => ts(b) - ts(a));
   const arch = st.archived.filter(match).sort((a, b) => ts(b) - ts(a));
   if (!items.length && !arch.length) {
-    return `<div class="sb-empty">${st.sessions.length || st.archived.length ? "Sin resultados" : "Sin sesiones todavía"}</div>`;
+    return `<div class="sb-empty">${st.sessions.length || st.archived.length ? "Sin resultados para «" + esc(st.filter.trim()) + "»" : "Sin sesiones todavía"}</div>`;
   }
   const row = (s, archived) => sessionRow(s, {
     archived,
@@ -247,7 +257,7 @@ function sessionListHtml(st) {
   for (const s of items) {
     const group = dayLabel(updatedAt(s));
     if (group !== lastGroup) {
-      html += `<div class="sb-group">${group}</div>`;
+      html += `<div class="sb-group" role="presentation">${group}</div>`;
       lastGroup = group;
     }
     html += row(s, false);
@@ -258,11 +268,11 @@ function sessionListHtml(st) {
   }
   if (arch.length || st.archived.length) {
     if (st.showArchived) {
-      html += `<div class="sb-group">Archivadas</div>`;
+      html += `<div class="sb-group" role="presentation">Archivadas</div>`;
       html += arch.length ? arch.map((s) => row(s, true)).join("") : `<div class="sb-empty">Ninguna coincide con la búsqueda.</div>`;
-      html += `<button class="sb-arch-toggle open" type="button"><span class="caret">▶</span> Ocultar archivadas</button>`;
+      html += `<button class="sb-arch-toggle open" type="button"><span class="caret">▸</span> Ocultar archivadas</button>`;
     } else {
-      html += `<button class="sb-arch-toggle" type="button"><span class="caret">▶</span> Ver archivadas (${st.archived.length})</button>`;
+      html += `<button class="sb-arch-toggle" type="button"><span class="caret">▸</span> Ver archivadas (${st.archived.length})</button>`;
     }
   }
   return html;
@@ -661,6 +671,8 @@ function ttsUrlFor(voice, text, rate) {
     const t = document.createElement("div");
     t.className = "toast" + (kind ? " " + kind : "");
     t.textContent = msg;
+    t.setAttribute("role", kind === "err" ? "alert" : "status");
+    t.setAttribute("aria-live", kind === "err" ? "assertive" : "polite");
     document.body.appendChild(t);
     requestAnimationFrame(() => t.classList.add("show"));
     setTimeout(() => {
@@ -674,10 +686,11 @@ function ttsUrlFor(voice, text, rate) {
     closeRowMenus();
     const menu = document.createElement("div");
     menu.className = "menu row-menu";
-    const entry = (label, fn) => {
+    const entry = (label, fn, kind) => {
       const b = document.createElement("button");
-      b.className = "menu-row";
+      b.className = "menu-row" + (kind ? " " + kind : "");
       b.type = "button";
+      b.setAttribute("role", "menuitem");
       b.innerHTML = `<span>${label}</span>`;
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -692,6 +705,8 @@ function ttsUrlFor(voice, text, rate) {
     entry("Exportar como JSON", () => exportSession(id, "json"));
     if (archived) entry("Desarchivar", () => unarchiveSession(id));
     else entry("Archivar", () => archiveSession(id));
+    menu.appendChild(Object.assign(document.createElement("div"), { className: "menu-sep" }));
+    entry("Borrar sesión…", () => askDelete(id), "danger");
     document.body.appendChild(menu);
     openMenu(btn, menu);
   }
@@ -1027,9 +1042,30 @@ function ttsUrlFor(voice, text, rate) {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", arrancar, { once: true });
     else arrancar();
   })();
+  function renderWelcomeMeta() {
+    const el = $("#welcome-meta");
+    if (!el) return;
+    const cwd = state.current && state.current.cwd || CFG.cwd || "";
+    const chips = document.querySelectorAll("#chips .chip-wrap");
+    let modelo = CFG.defaultModel || "";
+    for (const w of chips) {
+      if (w.getAttribute("data-opt") === "model") {
+        const c = w.querySelector(".chip");
+        if (c && c.textContent) modelo = c.textContent.trim();
+      }
+    }
+    const dflt = document.getElementById("default-model-chip");
+    if (!modelo && dflt && dflt.textContent) modelo = dflt.textContent.trim();
+    const parts = [];
+    if (cwd) parts.push('<span class="wm" title="' + esc(cwd) + '"><span class="wm-k">carpeta</span>' + esc(baseName(cwd)) + "</span>");
+    if (modelo) parts.push('<span class="wm"><span class="wm-k">modelo</span>' + esc(modelo) + "</span>");
+    el.innerHTML = parts.join("");
+    el.hidden = !parts.length;
+  }
   function showWelcome(mode, title) {
     const w = $("#welcome");
     if (!w) return;
+    renderWelcomeMeta();
     state.welcomeMode = mode || "new";
     const h1 = $("#welcome-h1");
     const sub = w.querySelector(".welcome-sub");
@@ -1698,7 +1734,7 @@ function ttsUrlFor(voice, text, rate) {
     el.className = "perm";
     const cmd = tc.rawInput && (tc.rawInput.command || tc.rawInput.path) ? String(tc.rawInput.command || tc.rawInput.path) : "";
     const showCmd = cmd && !String(tc.title || "").includes(cmd.slice(0, 32));
-    el.innerHTML = `<div class="perm-head">🔐 Aegis pide permiso para usar una herramienta</div><div class="perm-tool">${esc(tc.title || tc.kind || "Herramienta")}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ""}</div><div class="perm-btns"></div>`;
+    el.innerHTML = `<div class="perm-head"><svg class="perm-ico" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.2" y="8.6" width="11.6" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8.6V6.4a3 3 0 0 1 6 0v2.2" stroke="currentColor" stroke-width="1.5"/></svg>Aegis pide permiso para usar una herramienta</div><div class="perm-tool">${esc(tc.title || tc.kind || "Herramienta")}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ""}</div><div class="perm-btns"></div>`;
     const btns = el.querySelector(".perm-btns");
     const labels = {
       allow_once: ["Permitir una vez", "primary"],
@@ -2577,6 +2613,7 @@ function ttsUrlFor(voice, text, rate) {
     if (!runStart) runStart = performance.now();
     paintRunBar();
     speedStart();
+    $("#messages")?.setAttribute("aria-busy", "true");
     clearInterval(runTick);
     runTick = setInterval(paintRunBar, 250);
   }
@@ -2590,6 +2627,7 @@ function ttsUrlFor(voice, text, rate) {
     cancelTimer = 0;
     runStart = 0;
     speedReset();
+    $("#messages")?.setAttribute("aria-busy", "false");
     if (bar) {
       bar.hidden = true;
       bar.classList.remove("done", "cancelling");
@@ -2611,6 +2649,7 @@ function ttsUrlFor(voice, text, rate) {
     paintQueuedRunBar();
     $("#runbar-time").textContent = fmtElapsed(ms);
     speedFinish();
+    $("#messages")?.setAttribute("aria-busy", "false");
     $("#btn-stop").disabled = false;
     clearTimeout(runDoneTimer);
     runDoneTimer = setTimeout(() => {
@@ -4362,6 +4401,9 @@ ${a.text}
       item.dataset.opt = opt.id;
       const btn = document.createElement("button");
       btn.className = "chip";
+      btn.type = "button";
+      btn.setAttribute("aria-haspopup", "menu");
+      btn.setAttribute("aria-expanded", "false");
       const cur = opt.options.find((o) => o.value === opt.currentValue) || opt.options[0];
       btn.textContent = cur && (cur.name || cur.value) || opt.name || opt.id;
       btn.title = opt.name || opt.id;
@@ -4372,6 +4414,8 @@ ${a.text}
       for (const o of opt.options) {
         const row = document.createElement("button");
         row.className = "menu-row" + (o.value === opt.currentValue ? " sel" : "");
+        row.type = "button";
+        row.setAttribute("role", "menuitem");
         row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
         row.addEventListener("click", async (e) => {
           e.stopPropagation();
@@ -4404,7 +4448,43 @@ ${a.text}
     debateSyncBtn();
     migrarModeloViejo();
   }
+  let menuTrigger = null;
+  function menuItems(menu) {
+    return [...menu.querySelectorAll(".menu-row:not([disabled])")];
+  }
+  function wireMenuKeys(menu) {
+    if (menu.dataset.keys === "1") return;
+    menu.dataset.keys = "1";
+    menu.addEventListener("keydown", (e) => {
+      const items = menuItems(menu);
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement);
+      const move = (n) => {
+        e.preventDefault();
+        items[(i + n + items.length) % items.length].focus();
+      };
+      if (e.key === "ArrowDown") move(1);
+      else if (e.key === "ArrowUp") move(-1);
+      else if (e.key === "Home") {
+        e.preventDefault();
+        items[0].focus();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        items[items.length - 1].focus();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (menu.classList.contains("row-menu")) menu.remove();
+        else menu.hidden = true;
+        if (menuTrigger && menuTrigger.isConnected) menuTrigger.focus();
+      }
+    });
+  }
   function openMenu(btn, menu) {
+    menuTrigger = btn instanceof HTMLElement ? btn : null;
+    menu.setAttribute("role", "menu");
+    wireMenuKeys(menu);
+    if (menuTrigger) menuTrigger.setAttribute("aria-expanded", "true");
     const r = btn.getBoundingClientRect();
     if (menu.parentElement !== document.body) document.body.appendChild(menu);
     menu.hidden = false;
@@ -4419,10 +4499,28 @@ ${a.text}
     if (left + anchoMenu > window.innerWidth - margen) left = Math.max(margen, window.innerWidth - margen - anchoMenu);
     menu.style.left = Math.round(left) + "px";
     menu.style.right = "auto";
+    if (inputByKeyboard) {
+      const first = menuItems(menu)[0];
+      if (first) first.focus({ preventScroll: true });
+    }
+    if (menuTrigger) menuTrigger.setAttribute("aria-haspopup", "menu");
     menuOpenedAt = Date.now();
   }
   let menuOpenedAt = 0;
-  const closeMenus = () => document.querySelectorAll(".menu").forEach((m) => m.hidden = true);
+  const closeMenus = () => {
+    document.querySelectorAll(".menu").forEach((m) => {
+      m.hidden = true;
+    });
+    document.querySelectorAll('[aria-expanded="true"][aria-haspopup="menu"]').forEach((b) => b.setAttribute("aria-expanded", "false"));
+    menuTrigger = null;
+  };
+  let inputByKeyboard = false;
+  window.addEventListener("keydown", () => {
+    inputByKeyboard = true;
+  }, true);
+  window.addEventListener("pointerdown", () => {
+    inputByKeyboard = false;
+  }, true);
   document.addEventListener("click", closeMenus);
   window.addEventListener("resize", closeMenus);
   window.addEventListener(
@@ -4476,6 +4574,7 @@ ${a.text}
     }
   }
   function renderAttachments() {
+    syncSendState();
     const box = $("#attachments");
     box.innerHTML = "";
     if (!state.attachments.length) {
@@ -4705,14 +4804,29 @@ ${a.text}
     }
     return false;
   }
+  const baseName = (p) => {
+    const s = String(p == null ? "" : p).replace(/[\\/]+$/, "");
+    const parts = s.split(/[\\/]/);
+    return parts[parts.length - 1] || s;
+  };
   function updateTitle() {
     $("#chat-title").textContent = state.current && state.current.title || "Nuevo chat";
+    $("#chat-title").title = ($("#chat-title").textContent || "") + (state.current && state.current.id ? " · " + state.current.id : "");
+    const sub = $("#chat-sub");
+    if (sub) {
+      const cwd = state.current && state.current.cwd || CFG.cwd || "";
+      sub.textContent = cwd ? baseName(cwd) : "";
+      sub.title = cwd;
+      sub.hidden = !cwd;
+    }
     document.title = (state.current && state.current.title || "Aegis") + " · Aegis web";
   }
   function setStatus(kind, text) {
     const dot = $("#conn-dot");
     dot.className = "dot" + (kind ? " " + kind : "");
     $("#conn-text").textContent = text;
+    const sr = $("#sr-status");
+    if (sr && sr.textContent !== text) sr.textContent = text;
   }
   const openDrawer = () => {
     $("#sidebar").classList.add("open");
@@ -4728,7 +4842,16 @@ ${a.text}
   const FIELD_SIZING = typeof CSS !== "undefined" && CSS.supports && CSS.supports("field-sizing", "content");
   let lastSizeAt = 0;
   let lastComposerLines = -1;
+  function syncSendState() {
+    const b = document.getElementById("btn-send");
+    const i = document.getElementById("input");
+    if (!b || !i) return;
+    const has = !!i.value.trim() || Array.isArray(state.attachments) && state.attachments.length > 0;
+    b.disabled = !has;
+    b.setAttribute("aria-disabled", has ? "false" : "true");
+  }
   function autosize(force) {
+    syncSendState();
     const t = $("#input");
     lastComposerValue = t.value;
     if (FIELD_SIZING) return;
@@ -4937,6 +5060,37 @@ ${a.text}
       state.filter = e.target.value;
       renderList();
     });
+    $("#session-list").addEventListener("keydown", (e) => {
+      const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
+      if (!keys.includes(e.key)) return;
+      const items = [...document.querySelectorAll("#session-list .sb-item")];
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement);
+      let next = i;
+      if (e.key === "ArrowDown") next = i < 0 ? 0 : Math.min(items.length - 1, i + 1);
+      else if (e.key === "ArrowUp") next = i < 0 ? items.length - 1 : Math.max(0, i - 1);
+      else if (e.key === "Home") next = 0;
+      else next = items.length - 1;
+      e.preventDefault();
+      items[next].focus();
+    });
+    $("#search").addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        const first = document.querySelector("#session-list .sb-item");
+        if (first) {
+          e.preventDefault();
+          first.focus();
+        }
+        return;
+      }
+      if (e.key === "Escape" && $("#search").value) {
+        e.preventDefault();
+        e.stopPropagation();
+        $("#search").value = "";
+        state.filter = "";
+        renderList();
+      }
+    });
     $("#slash-menu").addEventListener("click", (e) => {
       const it = e.target.closest(".slash-item");
       if (!it) return;
@@ -5000,7 +5154,12 @@ ${a.text}
         }
         if ($("#sidebar").classList.contains("open")) closeDrawer();
       }
-      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "k") {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && String(e.key).toLowerCase() === "o") {
+        e.preventDefault();
+        newSession();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && String(e.key).toLowerCase() === "k") {
         e.preventDefault();
         const sb = $("#sidebar");
         if (window.innerWidth <= 880 && !sb.classList.contains("open")) openDrawer();
@@ -5010,6 +5169,7 @@ ${a.text}
     });
     window.addEventListener("resize", autosize);
     wireDropzone();
+    syncSendState();
   }
   var READ_ON = false;
   function readKeyFor(id) {

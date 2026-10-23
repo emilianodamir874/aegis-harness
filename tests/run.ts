@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const suites = ['client-regressions.mjs', 'server-regressions.mjs', 'ui-mobile.mjs', 'gasto.mjs'];
+const suites = ['client-regressions.mjs', 'server-regressions.mjs', 'ui-mobile.mjs', 'ui-shell.mjs', 'gasto.mjs'];
 if (process.env.AEGIS_TEST_SMOKE === '1') suites.push('reload-smoke.mjs', 'rewind-regen.mjs', 'dedup-prompt.mjs');
 
 const results: Array<{ suite: string; code: number | null; ms: number }> = [];

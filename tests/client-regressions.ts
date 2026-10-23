@@ -101,13 +101,17 @@ try {
   console.log('PASS borradores por chat y unwatch anterior al alternar A/B');
 
   // Un error de borrado conserva la fila, muestra la causa y permite reintentar.
-  await page.locator(`.sb-row[data-id="${B}"] .sb-del`).click();
-  await page.locator(`.sb-row[data-id="${B}"] .sb-confirm .ym`).click();
+  // v4: borrar vive en el menu de la fila (⋯), no en un icono por fila.
+  const borrarDesdeMenu = async () => {
+    await page.locator(`.sb-row[data-id="${B}"] .sb-more`).click();
+    await page.locator('body > .menu.row-menu .menu-row.danger').click();
+    await page.locator(`.sb-row[data-id="${B}"] .sb-confirm .ym`).click();
+  };
+  await borrarDesdeMenu();
   await page.waitForFunction(() => (document.querySelector('#messages')?.textContent || '').includes('No se pudo borrar: denegado'));
   if (await page.locator(`.sb-row[data-id="${B}"]`).count() !== 1 || await page.locator('.sb-confirm').count()) throw new Error('borrado fallido ocultó la sesión o dejó confirmación bloqueada');
   failDelete = false;
-  await page.locator(`.sb-row[data-id="${B}"] .sb-del`).click();
-  await page.locator(`.sb-row[data-id="${B}"] .sb-confirm .ym`).click();
+  await borrarDesdeMenu();
   await page.locator(`.sb-row[data-id="${B}"]`).waitFor({ state: 'detached' });
   if (!requests.some(r => r.method === 'session/delete' && r.params?.sessionId === B)) throw new Error('delete no usó el ID de B');
   // El mock de session/list conserva B deliberadamente: el test no crea ni borra nada real.

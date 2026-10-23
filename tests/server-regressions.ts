@@ -2,15 +2,19 @@
 // Desde web/: npx esbuild tests/server-regressions.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/server-regressions.mjs && node node_modules/.cache/server-regressions.mjs
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { build } from 'esbuild';
 
-const dir = await mkdtemp(join(tmpdir(), 'aegis-server-regressions-'));
+// v4: la copia aislada vive dentro de node_modules/.cache (no en tmpdir) para que
+// el server resuelva sus dependencias reales (msedge-tts) igual que en produccion.
+// Sigue aislada: directorio propio, puerto efimero, config/auth de prueba.
+const cache = resolve('node_modules/.cache');
+await mkdir(cache, { recursive: true });
+const dir = await mkdtemp(join(cache, 'server-regressions-'));
 let child: ChildProcess | undefined;
 try {
   // bundle:false keeps the local piper import pointing to our inert stub, not the real process.

@@ -6,6 +6,43 @@
 > serve se resuelve del puntero `core\state\current-version.json` y el arranque está en
 > `## Backend / auth`. Las rutas viejas se dejan como registro de lo que se midió, no como instrucción.
 
+## UI v4 (2026-10-22): sistema visual y de interaccion
+
+Rediseño completo de la capa de UI sobre la misma arquitectura (sin framework, DOM a mano,
+CSS plano). El detalle de lo que se midió y por qué está en el comentario que abre la capa
+`SISTEMA v4` al final de `app/app.css` y en los encabezados de `src/skills.ts` / `src/stats.ts`.
+
+- **Tokens únicos.** Un solo bloque `:root` (se eliminó el `:root` duplicado del rediseño
+  anterior). Paleta cálida ya desplegada, con escala derivada: `--bg-input`, `--bg-hover`,
+  `--bg-active`, `--line-strong`, `--on-accent`, `--shadow-pop`, `--measure`, `--dur-fast`, `--ease`.
+  `--text-4` subió de 0.44 a 0.56 para que la metadata de 11px cumpla AA sobre el fondo.
+- **Tipografía.** El cuerpo de las respuestas deja el serif (16px/1.72) y usa la sans de la UI
+  a 15px/1.65; el serif queda solo en el saludo. Código y metadatos en mono con
+  `font-variant-numeric: tabular-nums` donde hay números.
+- **Medida y alineación.** Mensajes, composer, goalbar y menú de comandos comparten
+  `--measure` (760px): el composer queda alineado con el texto.
+- **Filas de sesión.** Una sola acción (⋯) reservada en el layout; renombrar / exportar /
+  archivar / copiar ID / **borrar con confirmación** viven en ese menú. Flechas, Home/End
+  recorren la lista; Esc limpia el buscador. La búsqueda ignora acentos y también matchea el id.
+- **Header.** `h1` = título del chat + subtítulo con la carpeta de trabajo (cwd) y el id en el
+  `title`. Se fue el chip duplicado de modelo por defecto; el modelo aparece en la bienvenida.
+- **Paneles.** Skills y Gasto comparten el chrome `.xpanel*` (header, buscador, cierre,
+  botones, foco atrapado, Esc, `role=dialog aria-modal`). Skills suma buscador, contador en la
+  barra lateral, filas con descripción envuelta y un editor en dos pasos. Gasto usa los tokens
+  de la app (antes traía su propia paleta con fallbacks).
+- **Teclado y AT.** `role=menu`/`menuitem` con foco inicial y devolución del foco al disparador,
+  `aria-expanded` en chips, `aria-busy` en la conversación durante un turno, toasts con
+  `role=status`, anuncio de conexión en una región `sr-only`, enlace "Saltar al compositor".
+- **Feedback.** El botón de enviar se deshabilita si no hay texto ni adjuntos. `prefers-reduced-motion`
+  desactiva animaciones y transiciones.
+
+Verificación: `npm run typecheck && npm test` (5 suites: `client-regressions`, `server-regressions`,
+`ui-mobile`, `ui-shell`, `gasto`). `tests/ui-shell.ts` cubre jerarquía, acciones por fila, menús con
+teclado, panel de Skills, contraste de metadata y desborde/solapamiento a 1440/768/390.
+`tools/ui-shots.mjs` captura antes/después con métricas del shell.
+Deploy de los estáticos: `node tools/build-typescript.mjs` y copiar
+`dist-ts/app/{app,skills,stats}.js` a `app/` (CSS y HTML se editan directamente en `app/`).
+
 ## Migracion TypeScript (en paralelo)
 
 `src/app.ts`, `src/skills.ts`, `src/server.ts` y `src/piper-vivo.ts` son las fuentes

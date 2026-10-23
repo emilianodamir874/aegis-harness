@@ -15,7 +15,7 @@ const entries = [
   { entry: 'src/tools/stats-index.ts', output: 'tools/stats-index.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/lib.ts', output: 'tests/lib.js', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/ui-mobile.ts', output: 'tests/ui-mobile.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
-  { entry: 'tests/gasto.ts', output: 'tests/gasto.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
+  { entry: 'tests/ui-shell.ts', output: 'tests/ui-shell.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },  { entry: 'tests/gasto.ts', output: 'tests/gasto.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/client-regressions.ts', output: 'tests/client-regressions.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/server-regressions.ts', output: 'tests/server-regressions.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/reload-smoke.ts', output: 'tests/reload-smoke.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
