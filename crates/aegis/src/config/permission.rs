@@ -1,4 +1,4 @@
-use crate::config::paths::Paths;
+﻿use crate::config::paths::Paths;
 use fs2::FileExt;
 use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
@@ -37,6 +37,9 @@ pub struct PermissionConfig {
 pub struct PermissionManager {
     config_path: PathBuf,
     permission_map: RwLock<HashMap<String, PermissionConfig>>,
+    /// Permisos explicitos por sesion (solo memoria). Es lo que usa el modo debate: gana sobre
+    /// permission.yaml y sobre el modo, y desaparece al cerrar el debate o al reiniciar el serve.
+    session_overrides: RwLock<HashMap<String, HashMap<String, PermissionLevel>>>,
 }
 
 // Constants representing specific permission categories
@@ -56,6 +59,7 @@ impl PermissionManager {
         PermissionManager {
             config_path: permission_path,
             permission_map: RwLock::new(permission_map),
+            session_overrides: RwLock::new(HashMap::new()),
         }
     }
 
@@ -191,6 +195,42 @@ impl PermissionManager {
                     .push(principal_name.to_string()),
             }
         });
+    }
+
+    /// Permiso explicito para una sesion puntual. Gana sobre el mapa persistido y sobre el modo:
+    /// es lo que permite que debatir bloquee shell/edit/write sin tocar permission.yaml ni
+    /// afectar a las demas sesiones, al CLI ni a los jobs programados.
+    pub fn session_permission(&self, session_id: &str, tool_name: &str) -> Option<PermissionLevel> {
+        self.session_overrides
+            .read()
+            .unwrap()
+            .get(session_id)
+            .and_then(|tools| tools.get(tool_name).cloned())
+    }
+
+    /// Reemplaza los overrides de la sesion. Una lista vacia los borra: apagar el debate no deja
+    /// rastro ni aunque el proceso muera en el medio.
+    pub fn set_session_permissions<I>(&self, session_id: &str, entries: I)
+    where
+        I: IntoIterator<Item = (String, PermissionLevel)>,
+    {
+        let tools: HashMap<String, PermissionLevel> = entries.into_iter().collect();
+        let mut overrides = self.session_overrides.write().unwrap();
+        if tools.is_empty() {
+            overrides.remove(session_id);
+        } else {
+            overrides.insert(session_id.to_string(), tools);
+        }
+    }
+
+    /// Borra los overrides de una sesion.
+    pub fn clear_session_permissions(&self, session_id: &str) {
+        self.session_overrides.write().unwrap().remove(session_id);
+    }
+
+    /// Cuantos overrides por sesion hay ahora mismo (tests y diagnostico).
+    pub fn session_override_count(&self) -> usize {
+        self.session_overrides.read().unwrap().len()
     }
 
     fn mutate_permission_map<F>(&self, mutation: F)

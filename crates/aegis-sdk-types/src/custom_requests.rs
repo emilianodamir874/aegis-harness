@@ -2460,6 +2460,11 @@ pub struct ToolPermissionEntry {
 #[serde(rename_all = "camelCase")]
 pub struct SetToolPermissionsRequest {
     pub tool_permissions: Vec<ToolPermissionEntry>,
+    /// Cuando viene, los permisos valen solo para esa sesion y se guardan en memoria: no se
+    /// escribe permission.yaml. Lista vacia = borra los overrides de la sesion. Sin el campo se
+    /// mantiene el comportamiento viejo (global y persistente).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]

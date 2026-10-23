@@ -25,7 +25,8 @@ impl AegisAcpAgent {
             .into_iter()
             .map(|tool| {
                 let permission = permission_manager
-                    .get_user_permission(&tool.name)
+                    .session_permission(session_id, &tool.name)
+                    .or_else(|| permission_manager.get_user_permission(&tool.name))
                     .or_else(|| {
                         if aegis_mode == AegisMode::SmartApprove {
                             permission_manager.get_smart_approve_permission(&tool.name)
@@ -156,6 +157,25 @@ impl AegisAcpAgent {
         req: SetToolPermissionsRequest,
     ) -> Result<SetToolPermissionsResponse, agent_client_protocol::Error> {
         let permission_manager = self.permission_manager();
+
+        // Con sessionId el pedido es por sesion (modo debate): solo memoria, sin tocar
+        // permission.yaml, y una lista vacia borra los overrides de esa sesion.
+        if let Some(session_id) = req.session_id.as_deref() {
+            let mut entries = Vec::with_capacity(req.tool_permissions.len());
+            for entry in &req.tool_permissions {
+                entries.push((
+                    entry.tool_name.clone(),
+                    match entry.permission {
+                        ToolPermissionLevel::AlwaysAllow => PermissionLevel::AlwaysAllow,
+                        ToolPermissionLevel::AskBefore => PermissionLevel::AskBefore,
+                        ToolPermissionLevel::NeverAllow => PermissionLevel::NeverAllow,
+                    },
+                ));
+            }
+            permission_manager.set_session_permissions(session_id, entries);
+            return Ok(SetToolPermissionsResponse {});
+        }
+
         for entry in &req.tool_permissions {
             let level = match entry.permission {
                 ToolPermissionLevel::AlwaysAllow => PermissionLevel::AlwaysAllow,

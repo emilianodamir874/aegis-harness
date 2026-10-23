@@ -158,10 +158,21 @@ impl ToolInspector for PermissionInspector {
 
                 let action = match aegis_mode {
                     AegisMode::Chat => continue,
-                    AegisMode::Auto => InspectionAction::Allow,
+                    // Auto no consultaba permisos: el modo debate necesita que un override de
+                    // sesion pueda negar aunque el modo sea auto (y que no toque a otras sesiones).
+                    AegisMode::Auto => match permission_manager
+                        .session_permission(session_id, tool_name)
+                    {
+                        Some(PermissionLevel::NeverAllow) => InspectionAction::Deny,
+                        Some(PermissionLevel::AskBefore) => InspectionAction::RequireApproval(None),
+                        _ => InspectionAction::Allow,
+                    },
                     AegisMode::Approve | AegisMode::SmartApprove => {
                         // 1. Check user-defined permission first
-                        if let Some(level) = permission_manager.get_user_permission(tool_name) {
+                        if let Some(level) = permission_manager
+                            .session_permission(session_id, tool_name)
+                            .or_else(|| permission_manager.get_user_permission(tool_name))
+                        {
                             match level {
                                 PermissionLevel::AlwaysAllow => InspectionAction::Allow,
                                 PermissionLevel::NeverAllow => InspectionAction::Deny,
@@ -317,6 +328,49 @@ mod tests {
             results.remove(0).action,
             pm.get_smart_approve_permission("tool"),
         )
+    }
+
+    // El modo debate apoya el bloqueo en overrides de sesion: en Auto tienen que negar igual,
+    // el permiso global no se toca y otra sesion no queda afectada.
+    #[tokio::test]
+    async fn session_override_denies_in_auto_mode_without_touching_other_sessions() {
+        let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
+        pm.set_session_permissions(
+            aegis_test_support::TEST_SESSION_ID,
+            [("tool".to_string(), PermissionLevel::NeverAllow)],
+        );
+        let session_manager = Arc::new(crate::session::SessionManager::new(
+            tempfile::tempdir().unwrap().keep(),
+        ));
+        let inspector =
+            PermissionInspector::new(Arc::clone(&pm), Default::default(), session_manager);
+        let req = ToolRequest {
+            id: "req".into(),
+            tool_call: Ok(CallToolRequestParams::new("tool").with_arguments(object!({}))),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        let mut results = inspector
+            .inspect(
+                aegis_test_support::TEST_SESSION_ID,
+                &[req.clone()],
+                &[],
+                AegisMode::Auto,
+            )
+            .await
+            .unwrap();
+        assert_eq!(results.remove(0).action, InspectionAction::Deny);
+        assert_eq!(pm.get_user_permission("tool"), None);
+
+        let mut otros = inspector
+            .inspect("otra-sesion", &[req], &[], AegisMode::Auto)
+            .await
+            .unwrap();
+        assert_eq!(otros.remove(0).action, InspectionAction::Allow);
+
+        pm.clear_session_permissions(aegis_test_support::TEST_SESSION_ID);
+        assert_eq!(pm.session_override_count(), 0);
     }
 
     #[test_case(AegisMode::Auto, false, None, InspectionAction::Allow; "auto_allows")]
