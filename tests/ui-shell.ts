@@ -90,7 +90,11 @@ try {
   check(last, 'End va a la ultima sesion');
   await page.keyboard.press('Home');
   check(await page.evaluate(() => document.activeElement === document.querySelector('#session-list .sb-item')), 'Home vuelve a la primera');
-  await page.fill('#search', 'zzzz-no-existe');
+  // Token aleatorio por corrida: el buscador tambien indexa lo que el agente escribe, asi que
+  // una cadena fija ("zzzz-no-existe") puede existir en el store y el test dejaria de probar
+  // el caso vacio.
+  const sinResultados = 'zq' + Math.random().toString(36).slice(2, 10);
+  await page.fill('#search', sinResultados);
   await page.waitForTimeout(150);
   // La busqueda en el contenido es asincrona: el estado vacio aparece cuando la consulta
   // se asienta (no mientras esta buscando). Se espera en vez de asumir que es inmediato.
