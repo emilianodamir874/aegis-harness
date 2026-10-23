@@ -514,6 +514,23 @@ pub fn stream_from_single_message(message: Message, usage: ProviderUsage) -> Mes
     Box::pin(stream)
 }
 
+/// Antepone un mensaje de aviso al stream del proveedor. Se usa cuando el turno tiene algo que
+/// decir antes de la respuesta (por ejemplo, que el modelo descarto adjuntos que no puede ver):
+/// el aviso no lleva usage y no corta el turno.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn stream_with_leading_notice(notice: Message, stream: MessageStream) -> MessageStream {
+    use futures::StreamExt;
+    let aviso = futures::stream::once(async move { Ok::<_, ProviderError>((Some(notice), None)) });
+    Box::pin(aviso.chain(stream))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn stream_with_leading_notice(notice: Message, stream: MessageStream) -> MessageStream {
+    use futures::StreamExt;
+    let aviso = futures::stream::once(async move { Ok::<_, ProviderError>((Some(notice), None)) });
+    Box::pin(aviso.chain(stream))
+}
+
 /// Base trait for AI providers (OpenAI, Anthropic, etc)
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]

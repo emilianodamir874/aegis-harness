@@ -815,6 +815,23 @@ impl Provider for OpenAiProvider {
                 declared_model.and_then(|m| m.thinking_preservation_format);
             let supports_vision = self.vision_support(model_config).unwrap_or_default();
 
+            // Con supports_vision=false el formateador descarta los bloques image en silencio y
+            // el turno sigue como si no hubiera adjunto. Se cuentan para avisarlo (log + aviso
+            // en el stream del turno) en vez de perder el adjunto sin decirlo.
+            let imagenes_descartadas = if supports_vision {
+                0
+            } else {
+                count_image_blocks(messages)
+            };
+            if imagenes_descartadas > 0 {
+                tracing::warn!(
+                    provider = %self.name,
+                    model = %model_config.model_name,
+                    descartadas = imagenes_descartadas,
+                    "el modelo no acepta imagenes: se descartan los adjuntos del turno"
+                );
+            }
+
             let mut payload = create_request_with_options(
                 model_config,
                 system,
@@ -853,7 +870,19 @@ impl Provider for OpenAiProvider {
                     let _ = log.error(e);
                 })?;
 
-            if self.supports_streaming {
+            let aviso = (imagenes_descartadas > 0).then(|| {
+                Message::assistant().with_system_notification(
+                    crate::conversation::message::SystemNotificationType::ProgressMessage,
+                    format!(
+                        "modelo {} no acepta imagenes: {} adjunto{} descartado{}",
+                        model_config.model_name,
+                        imagenes_descartadas,
+                        if imagenes_descartadas == 1 { "" } else { "s" },
+                        if imagenes_descartadas == 1 { "" } else { "s" },
+                    ),
+                )
+            });
+            let stream = if self.supports_streaming {
                 stream_openai_compat(response, log)
             } else {
                 let json: serde_json::Value = read_json_response(response).await?;
@@ -876,9 +905,28 @@ impl Provider for OpenAiProvider {
                 )?;
 
                 Ok(super::base::stream_from_single_message(message, usage))
+            }?;
+            match aviso {
+                Some(aviso) => Ok(super::base::stream_with_leading_notice(aviso, stream)),
+                None => Ok(stream),
             }
         }
     }
+}
+
+/// Cuenta los bloques de imagen del turno. Sirve para avisar cuando el modelo no puede verlos:
+/// el formateador los descarta y sin este conteo el adjunto desaparece en silencio.
+fn count_image_blocks(messages: &[Message]) -> usize {
+    messages
+        .iter()
+        .flat_map(|message| message.content.iter())
+        .filter(|content| {
+            matches!(
+                content,
+                crate::conversation::message::MessageContent::Image(_)
+            )
+        })
+        .count()
 }
 
 /// Merges a model's declared `request_params` into an already-built payload.
@@ -1022,6 +1070,51 @@ mod tests {
     use super::*;
     use crate::api_client::AuthMethod;
     use serde_json::json;
+    #[test]
+    fn count_image_blocks_counts_images_and_ignores_text() {
+        let solo_texto = Message::user().with_text("hola");
+        let una_imagen = Message::user()
+            .with_text("mira")
+            .with_image("QUJD", "image/png");
+        let dos = Message::user()
+            .with_image("QUJD", "image/png")
+            .with_image("REVG", "image/jpeg");
+        assert_eq!(count_image_blocks(&[solo_texto]), 0);
+        assert_eq!(count_image_blocks(&[una_imagen]), 1);
+        assert_eq!(count_image_blocks(&[dos]), 2);
+        assert_eq!(count_image_blocks(&[]), 0);
+    }
+
+    #[test]
+    fn request_without_vision_drops_the_image_payload() {
+        let mensajes = vec![Message::user()
+            .with_text("mira")
+            .with_image("QUJD", "image/png")];
+        let modelo = ModelConfig::new("deepseek-v4.1-flash");
+        let payload = create_request_with_options(
+            &modelo,
+            "sistema",
+            &mensajes,
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+            OpenAiFormatOptions {
+                supports_vision: false,
+                ..Default::default()
+            },
+        )
+        .expect("payload");
+        let texto = payload.to_string();
+        assert!(
+            !texto.contains("image_url"),
+            "sin vision no puede viajar image_url: {texto}"
+        );
+        assert_eq!(
+            count_image_blocks(&mensajes),
+            1,
+            "el conteo es lo que se avisa al turno"
+        );
+    }
 
     fn make_provider(name: &str) -> OpenAiProvider {
         OpenAiProvider {
