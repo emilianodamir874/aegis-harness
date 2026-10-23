@@ -4,6 +4,7 @@ import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, stepRate, COMPACT_RATIO, com
 import { toolIconSvg } from './app/icons';
 import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
+import { remoteResultsHtml, emptyRemote } from './app/search';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 (() => {
   'use strict';
@@ -73,7 +74,6 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     filter: '',
     booted: false,
     attachments: [],
-    permCard: null, // {id, el}
     hold: null, // 'rename' | 'confirm' — pausa re-renders mientras hay UI inline abierta
     runId: null, // id del run activo del server (para steering)
     adopted: false,
@@ -97,6 +97,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     hubWatchSid: null, // sesión a la que está enganchada esta conexión
     hubWatchers: null, // watcherCount que reportó el server (hint de UI)
     hubReplay: false, // true mientras se aplica el replay de un watch
+    remote: emptyRemote(), // coincidencias en el contenido (/search.json)
   };
 
   // ---------- RPC / WS ----------
@@ -373,7 +374,148 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       activeId: (state.current && state.current.id) || null,
       isRunning,
       isDoneRecently,
+      remoteCount: (state.remote && state.remote.sessions.length) || 0,
+      remotePending: !!(state.remote && state.remote.loading),
+    }) + remoteResultsHtml(state.remote, (state.current && state.current.id) || null);
+  }
+
+  // ---------- busqueda en el contenido (server) ----------
+  // El filtro del sidebar es local e instantaneo (titulos de las sesiones ya cargadas).
+  // Con 2+ caracteres se consulta /search.json, que busca en los MENSAJES con el indice
+  // FTS5 de sessions.db. Respuesta vieja nunca pisa a la nueva (seq) y el fetch se aborta
+  // al cambiar la consulta.
+  let remoteTimer = 0;
+  let remoteSeq = 0;
+  let remoteAbort: AbortController | null = null;
+
+  function resetRemote() {
+    clearTimeout(remoteTimer);
+    remoteSeq++;
+    if (remoteAbort) { remoteAbort.abort(); remoteAbort = null; }
+    if (state.remote.q || state.remote.sessions.length || state.remote.loading) {
+      state.remote = emptyRemote();
+      renderList();
+    }
+  }
+
+  function scheduleRemoteSearch() {
+    const q = String(state.filter || '').trim();
+    clearTimeout(remoteTimer);
+    if (q.length < 2) { resetRemote(); return; }
+    if (q !== state.remote.q) {
+      // Otra consulta: lo anterior ya no aplica (no mostrar resultados de la busqueda previa).
+      state.remote = { ...emptyRemote(), q, loading: true };
+      renderList();
+    }
+    remoteTimer = setTimeout(() => { void runRemoteSearch(q); }, 250);
+  }
+
+  async function runRemoteSearch(q) {
+    const seq = ++remoteSeq;
+    if (remoteAbort) remoteAbort.abort();
+    const ctl = new AbortController();
+    remoteAbort = ctl;
+    try {
+      const r = await fetch('/search.json?q=' + encodeURIComponent(q).slice(0, 300) + '&limit=20', {
+        signal: ctl.signal,
+        credentials: 'same-origin',
+      });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const data = await r.json();
+      if (seq !== remoteSeq) return;
+      if (data && data._error) throw new Error(String(data._error));
+      state.remote = {
+        q,
+        loading: false,
+        sessions: Array.isArray(data && data.results) ? data.results.slice(0, 50) : [],
+        totalMatches: Number(data && data.totalMatches) || 0,
+        truncated: !!(data && data.truncated),
+        unavailable: false,
+      };
+    } catch (e) {
+      if (seq !== remoteSeq) return;
+      // Proxy sin el endpoint todavia, o el indice fallo: no se muestra la seccion y el
+      // filtro local sigue andando. No es un error de la app, no se reporta.
+      state.remote = { ...emptyRemote(), q, unavailable: true };
+    }
+    renderList();
+  }
+
+  // ---------- informacion de la conversacion (header) ----------
+  // Lo que se necesita LEYENDO un chat: id (para pegarlo en logs/comandos), carpeta completa,
+  // fechas, cantidad de mensajes y exportar. Renombrar/archivar/borrar siguen en la fila del
+  // sidebar: son gestion, y borrar no gana nada por estar al lado del titulo.
+  const chatInfoOpen = () => { const p = $('#chat-info'); return !!p && !p.hidden; };
+
+  function renderChatInfo() {
+    const body = $('#ci-body') as HTMLElement | null;
+    if (!body) return;
+    const cur = state.current;
+    if (!cur || !cur.id) {
+      body.innerHTML = '<div class="ci-empty">Todavía no hay una conversación abierta.</div>';
+      return;
+    }
+    const entry = findSession(cur.id);
+    const meta = (entry && entry._meta) || {};
+    const arch = state.archived.find((s) => s.sessionId === cur.id);
+    const n = meta.messageCount;
+    const fila = (k, v, title?) =>
+      `<div class="ci-row"><span class="ci-k">${esc(k)}</span><span class="ci-v"${title ? ` title="${esc(title)}"` : ''}>${esc(v)}</span></div>`;
+    // Fecha y hora en una sola expresion (antes se mostraba "22/10 · 2026-10-22").
+    const fechaHora = (iso?: string): string => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso).slice(0, 16).replace('T', ' ');
+      const p = (n: number) => String(n).padStart(2, '0');
+      return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const partes = [];
+    partes.push(fila('id', cur.id));
+    if (cur.cwd) partes.push(fila('carpeta', cur.cwd, cur.cwd));
+    if (n != null) partes.push(fila('mensajes', String(n)));
+    if (meta.createdAt) partes.push(fila('creada', fechaHora(meta.createdAt)));
+    if (entry && entry.updatedAt) partes.push(fila('actualizada', fechaHora(entry.updatedAt)));
+    if (arch) partes.push(fila('estado', 'archivada'));
+    body.innerHTML =
+      '<div class="ci-meta">' + partes.join('') + '</div>' +
+      '<div class="ci-actions">' +
+      `<button class="xbtn" type="button" data-ci="copy-id">Copiar ID</button>` +
+      (cur.cwd ? '<button class="xbtn" type="button" data-ci="copy-path">Copiar ruta</button>' : '') +
+      '<button class="xbtn" type="button" data-ci="export-md">Exportar Markdown</button>' +
+      '</div>';
+    body.querySelectorAll<HTMLButtonElement>('[data-ci]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const what = b.getAttribute('data-ci');
+        if (what === 'copy-id') copySessionId(cur.id);
+        else if (what === 'copy-path' && cur.cwd) copyText(String(cur.cwd)).then((ok) => toast(ok ? 'Ruta copiada.' : 'No se pudo copiar.', ok ? '' : 'err'));
+        else if (what === 'export-md') exportSession(cur.id, 'markdown');
+      });
     });
+  }
+
+  function setChatInfo(v) {
+    const p = $('#chat-info');
+    const btn = $('#btn-chat-info');
+    if (!p) return;
+    if (v) {
+      renderChatInfo();
+      // Se ancla debajo del header real (en movil el header crece con la fila de chips) y
+      // alineado con el titulo, sin salirse del viewport.
+      const bar = document.querySelector('.topbar') as HTMLElement | null;
+      const top = Math.round((bar ? bar.getBoundingClientRect().bottom : 54) + 6);
+      const w = Math.min(420, window.innerWidth - 24);
+      const anchor = window.innerWidth > 880 && btn ? btn.getBoundingClientRect().left : 8;
+      const left = Math.max(8, Math.min(anchor, window.innerWidth - w - 8));
+      p.style.top = top + 'px';
+      p.style.width = w + 'px';
+      p.style.left = Math.round(left) + 'px';
+    }
+    p.hidden = !v;
+    if (btn) btn.setAttribute('aria-expanded', String(!!v));
+    if (v) {
+      const first = $('#ci-close');
+      if (first) first.focus({ preventScroll: true });
+    }
   }
 
   // ---------- acciones por sesión (menú de fila, archivar, exportar) ----------
@@ -1424,19 +1566,53 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     return true;
   }
 
+  // Tarjetas de permiso vivas, por id de request. Sirven para no duplicar la tarjeta si el
+  // hub reenvia el pedido y para expirarlas cuando el turno termina sin respuesta.
+  const permCards = new Map<string, { el: HTMLElement; answered: boolean }>();
+
+  function permMarkAnswered(el: HTMLElement, text: string) {
+    el.classList.add('answered');
+    el.querySelectorAll<HTMLButtonElement>('.pb').forEach((b) => { b.disabled = true; });
+    let ans = el.querySelector<HTMLElement>('.perm-answer');
+    if (!ans) {
+      ans = document.createElement('div');
+      ans.className = 'perm-answer';
+      ans.setAttribute('role', 'status');
+      ans.setAttribute('aria-live', 'polite');
+      el.appendChild(ans);
+    }
+    ans.textContent = text;
+  }
+
+  // El turno termino: una tarjeta sin responder ya no se puede contestar (el hub cerro el
+  // pedido). Se marca y se deshabilitan los botones para no dejar controles muertos.
+  function expirePermCards(reason: string) {
+    for (const [key, c] of permCards) {
+      if (!c.answered && c.el.isConnected) permMarkAnswered(c.el, 'Sin respuesta: ' + reason);
+      permCards.delete(key);
+    }
+  }
+
   function showPermCard(m) {
     hideWelcome();
     noteRunActivity();
     const p = m.params || {};
     const tc = p.toolCall || {};
+    const key = String(m.id);
+    const previa = permCards.get(key);
+    if (previa && previa.el.isConnected) return; // mismo pedido reenviado: una sola tarjeta
     const el = document.createElement('div');
     el.className = 'perm';
+    el.setAttribute('role', 'group');
+    el.setAttribute('aria-label', 'Aegis pide permiso para usar una herramienta');
     const cmd = tc.rawInput && (tc.rawInput.command || tc.rawInput.path) ? String(tc.rawInput.command || tc.rawInput.path) : '';
     const showCmd = cmd && !String(tc.title || '').includes(cmd.slice(0, 32));
+    const etiqueta = String(tc.title || tc.kind || 'Herramienta');
     el.innerHTML =
       '<div class="perm-head"><svg class="perm-ico" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.2" y="8.6" width="11.6" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8.6V6.4a3 3 0 0 1 6 0v2.2" stroke="currentColor" stroke-width="1.5"/></svg>Aegis pide permiso para usar una herramienta</div>' +
-      `<div class="perm-tool">${esc(tc.title || tc.kind || 'Herramienta')}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ''}</div>` +
-      '<div class="perm-btns"></div>';
+      `<div class="perm-tool">${esc(etiqueta)}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ''}</div>` +
+      '<div class="perm-btns"></div>' +
+      `<div class="sr-only" role="status">Aegis pide permiso para ${esc(etiqueta)}. Elegí una opción.</div>`;
     const btns = el.querySelector('.perm-btns');
     const labels = {
       allow_once: ['Permitir una vez', 'primary'],
@@ -1448,23 +1624,47 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     const candidates = [...(p.options || [])].sort(
       (a, b) => (order.indexOf(a.optionId) + 1 || 9) - (order.indexOf(b.optionId) + 1 || 9)
     );
+    const answer = (opt, label) => {
+      const card = permCards.get(key);
+      if (card && card.answered) return; // doble click / doble tap: un solo envio
+      // Sin socket no se puede responder: no marcar como respondido algo que no salio.
+      if (!rpc.ws || rpc.ws.readyState !== 1) {
+        let ans = el.querySelector<HTMLElement>('.perm-answer');
+        if (!ans) {
+          ans = document.createElement('div');
+          ans.className = 'perm-answer';
+          ans.setAttribute('role', 'status');
+          ans.setAttribute('aria-live', 'polite');
+          el.appendChild(ans);
+        }
+        ans.textContent = 'Sin conexión: reintentá cuando vuelva.';
+        return;
+      }
+      rpc.respond(m.id, { outcome: { outcome: 'selected', optionId: opt.optionId } });
+      if (card) card.answered = true;
+      permMarkAnswered(el, 'Respondido: ' + label);
+      el.querySelectorAll<HTMLButtonElement>('.pb').forEach((b) => { b.disabled = true; });
+    };
     for (const opt of candidates) {
       const [label, cls] = labels[opt.optionId] || [opt.name || opt.optionId, ''];
       const b = document.createElement('button');
+      b.type = 'button';
       b.className = 'pb ' + cls;
       b.textContent = label;
-      b.addEventListener('click', () => {
-        rpc.respond(m.id, { outcome: { outcome: 'selected', optionId: opt.optionId } });
-        el.classList.add('answered');
-        btns.querySelectorAll('button').forEach((x) => (x.disabled = true));
-        const ans = document.createElement('div');
-        ans.className = 'perm-answer';
-        ans.textContent = 'Respuesta: ' + label;
-        el.appendChild(ans);
-      });
+      b.addEventListener('click', () => answer(opt, label));
       btns.appendChild(b);
     }
+    permCards.set(key, { el, answered: false });
     msgWrap().appendChild(el);
+
+    // Foco: si el usuario no esta escribiendo, va al primer boton (la tarjeta es lo unico
+    // accionable y el turno esta bloqueado esperando). Si esta escribiendo, no se le roba.
+    const input = document.getElementById('input') as HTMLTextAreaElement | null;
+    const escribiendo = !!input && document.activeElement === input && input.value.trim().length > 0;
+    if (!escribiendo) {
+      const first = btns.querySelector<HTMLButtonElement>('button');
+      if (first) first.focus({ preventScroll: true });
+    }
 
     scrollBottom(true);
   }
@@ -2021,6 +2221,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     state.msgs.clear();
     state.tools.clear();
     state.attachments = [];
+    permCards.clear(); // las tarjetas de permiso viven en el DOM de la sesion anterior
     state.runId = null;
     state.adopted = false;
     liveRunRevision++;
@@ -2352,6 +2553,9 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     $('#btn-stop').disabled = false;
   }
   function runBarDone(text, ms) {
+    // El turno termino: cualquier permiso sin responder queda sin efecto (el hub ya cerro el
+    // pedido). Sin esto quedaban botones vivos que no hacian nada.
+    if (permCards.size) expirePermCards('el turno terminó sin respuesta.');
     const bar = $('#runbar');
     clearInterval(runTick); runTick = 0;
     clearTimeout(cancelTimer); cancelTimer = 0;
@@ -2642,6 +2846,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     if (!btn) return;
     btn.classList.toggle('rec', !!on);
     btn.classList.toggle('barge', !!(on && MIC.barge));
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     btn.title = on ? 'Grabando… tocá para cortar y transcribir' : 'Dictar por voz (corta solo cuando te quedás callado)';
   }
 
@@ -4518,6 +4723,8 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
   function updateTitle() {
     $('#chat-title').textContent = (state.current && state.current.title) || 'Nuevo chat';
     $('#chat-title').title = ($('#chat-title').textContent || '') + (state.current && state.current.id ? ' · ' + state.current.id : '');
+    // Cambiar de conversacion cierra el panel de informacion de la anterior.
+    if (chatInfoOpen()) setChatInfo(false);
     const sub = $('#chat-sub');
     if (sub) {
       const cwd = (state.current && state.current.cwd) || CFG.cwd || '';
@@ -4671,6 +4878,25 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 
   function wire() {
     wireChatFont();
+    // Info de la conversacion: abre con click/teclado, cierra con Esc o click afuera y
+    // devuelve el foco al titulo.
+    const infoBtn = $('#btn-chat-info');
+    const infoPop = $('#chat-info');
+    if (infoBtn && infoPop) {
+      infoBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setChatInfo(!chatInfoOpen());
+      });
+      $('#ci-close').addEventListener('click', () => { setChatInfo(false); infoBtn.focus({ preventScroll: true }); });
+      document.addEventListener('pointerdown', (e) => {
+        if (!chatInfoOpen()) return;
+        if (infoPop.contains(e.target as Node) || infoBtn.contains(e.target as Node)) return;
+        setChatInfo(false);
+      });
+      infoPop.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.stopPropagation(); setChatInfo(false); infoBtn.focus({ preventScroll: true }); }
+      });
+    }
     // delegación en mensajes: copiar código / copiar mensaje / expandir tool
     $('#messages').addEventListener('click', (e) => {
       const cc = e.target.closest('.copy-code');
@@ -4738,7 +4964,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     $('#btn-attach').addEventListener('click', () => $('#file-input').click());
     $('#file-input').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
 
-    $('#search').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); });
+    $('#search').addEventListener('input', (e) => { state.filter = e.target.value; renderList(); scheduleRemoteSearch(); });
     // Teclado en la lista: flechas recorren las sesiones, Home/End van a los extremos.
     // Con 300+ sesiones, tabular fila por fila no es una opcion.
     $('#session-list').addEventListener('keydown', (e) => {
@@ -4767,6 +4993,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
         $('#search').value = '';
         state.filter = '';
         renderList();
+        resetRemote();
       }
     });
     $('#slash-menu').addEventListener('click', (e) => {
@@ -4794,7 +5021,12 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
       if (!item) return;
       const id = item.parentElement.dataset.id;
       const entry = findSession(id);
-      if (entry && (!state.current || state.current.id !== id)) openSession(entry);
+      if (state.current && state.current.id === id) { closeDrawer(); return; }
+      if (entry) { openSession(entry); return; }
+      // Coincidencia en el contenido de una sesion que no esta en la pagina cargada: se abre
+      // con lo minimo que devuelve el indice (id, titulo, cwd) y session/load trae el resto.
+      const remoto = (state.remote.sessions || []).find((s) => s.sessionId === id);
+      if (remoto) openSession({ sessionId: id, title: remoto.title, cwd: remoto.cwd } as any);
       else closeDrawer();
     });
 
@@ -5035,6 +5267,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
     var b = document.getElementById('btn-read');
     if (!b) return false;
     b.classList.toggle('on', READ_ON);
+    b.setAttribute('aria-pressed', READ_ON ? 'true' : 'false');
     b.title = READ_ON
       ? 'Lectura en voz alta ENCENDIDA: se lee el bloque «Para escuchar» en vivo. Tocá para apagar.'
       : 'Leer en voz alta: lee SOLO el bloque «Para escuchar» de cada respuesta, en vivo mientras llega';

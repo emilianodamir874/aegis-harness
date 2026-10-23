@@ -67,6 +67,10 @@ export type ListState = {
   activeId?: string | null;
   isRunning: (id: string) => boolean;
   isDoneRecently: (id: string) => boolean;
+  /** coincidencias en el contenido: van en su propia seccion, no cuentan como "sin resultados" */
+  remoteCount?: number;
+  /** hay una busqueda en el contenido en curso: tampoco corresponde decir "sin resultados" */
+  remotePending?: boolean;
 };
 
 const updatedAt = (s: SessionEntry): string => s.updatedAt || (s._meta && s._meta.createdAt) || '';
@@ -85,6 +89,9 @@ export function sessionListHtml(st: ListState): string {
   const items = st.sessions.filter(match).sort((a, b) => ts(b) - ts(a));
   const arch = st.archived.filter(match).sort((a, b) => ts(b) - ts(a));
   if (!items.length && !arch.length) {
+    // Si hay coincidencias en el contenido, la seccion remota habla por si sola: un
+    // "sin resultados" arriba de resultados reales se contradice.
+    if (st.remoteCount || st.remotePending) return '';
     return `<div class="sb-empty">${st.sessions.length || st.archived.length ? 'Sin resultados para «' + esc(st.filter.trim()) + '»' : 'Sin sesiones todavía'}</div>`;
   }
   const row = (s: SessionEntry, archived: boolean) =>

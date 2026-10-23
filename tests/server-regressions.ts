@@ -95,6 +95,37 @@ try {
   assert.equal(safeLogin.headers.get('location'), '/', 'backslash redirect should fall back to root');
   assert.match(safeLogin.headers.get('set-cookie') || '', /^gw_auth=/);
   console.log('PASS login: foreign Origin 403; valid dummy login /\\evil.example redirects to /');
+
+  // ---- pagina de acceso v4: markup, estado de error y preservacion del "next"
+  const loginGet = await fetch(base + '/login?next=' + encodeURIComponent('/?s=20261022_78'));
+  const loginHtml = await loginGet.text();
+  assert.equal(loginGet.status, 200, 'GET /login 200');
+  assert.match(loginHtml, /Acceso al harness/, 'login: titulo nuevo');
+  assert.match(loginHtml, /--accent: #d97757/, 'login: usa la paleta de la app (v4)');
+  assert.match(loginHtml, /id="password"[^>]*required/, 'login: campo de contrasena obligatorio');
+  assert.match(loginHtml, /autocomplete="current-password"/, 'login: password managers');
+  assert.match(loginHtml, /action="\/login\?next=%2F%3Fs%3D20261022_78"/, 'login: el next viaja en el action');
+  assert.doesNotMatch(loginHtml, /(src|href)="https?:\/\//, 'login: no carga recursos externos');
+  assert.doesNotMatch(loginHtml, /<script/, 'login: sin scripts');
+  assert.match(loginGet.headers.get('content-security-policy') || '', /default-src 'none'/, 'login: CSP restrictiva intacta');
+
+  const loginBad = await fetch(base + '/login?next=' + encodeURIComponent('/?s=1'), {
+    method: 'POST',
+    headers: { Origin: base, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ password: 'no-es-la-clave' }),
+    redirect: 'manual',
+  });
+  const badHtml = await loginBad.text();
+  assert.equal(loginBad.status, 401, 'login incorrecto: 401');
+  assert.match(badHtml, /id="err" role="alert"/, 'login incorrecto: error anunciado a lectores');
+  assert.match(badHtml, /aria-invalid="true"/, 'login incorrecto: input marcado invalido');
+  assert.match(badHtml, /action="\/login\?next=%2F%3Fs%3D1"/, 'login incorrecto: conserva el next');
+
+  const inyectado = await fetch(base + '/login?next=' + encodeURIComponent('/"><img src=x onerror=alert(1)>'));
+  const inyHtml = await inyectado.text();
+  assert.ok(!inyHtml.includes('<img'), 'login: el next no inyecta markup');
+  assert.match(inyHtml, /action="\/login\?next=%2F%22%3E%3Cimg/, 'login: el next va escapado en el action');
+  console.log('PASS login v4: markup, paleta, CSP, error accesible, next preservado y escapado');
 } finally {
   if (child && child.exitCode === null) {
     const stopped = new Promise<void>(ok => child!.once('exit', () => ok()));

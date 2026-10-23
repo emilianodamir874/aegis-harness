@@ -17,6 +17,6 @@
                     "src/server.ts",
                     "src/piper-vivo.ts",
                     "src/tools/goals-index.ts",
-                    "src/tools/stats-index.ts"
+                    "src/tools/stats-index.ts",
                 ]
 }

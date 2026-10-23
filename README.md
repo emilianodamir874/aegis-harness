@@ -6,6 +6,60 @@
 > serve se resuelve del puntero `core\state\current-version.json` y el arranque está en
 > `## Backend / auth`. Las rutas viejas se dejan como registro de lo que se midió, no como instrucción.
 
+## Cierre de integracion (2026-10-23): busqueda, login, permisos, media y contexto
+
+Segunda tanda sobre la base `beb49d6`. Cierra los huecos funcionales que quedaban fuera del
+rediseño, sin tocar la arquitectura (TypeScript sin framework, esbuild, `app/` estatico).
+
+- **Busqueda de texto completo en los mensajes.** `session/list` tiene contrato para esto
+  (`_meta.query`), pero medido contra el store real (86k mensajes) **no respondio en 240 s**:
+  el hub escanea con `instr(LOWER(json_extract(...)))` y bloquea el pool. La base ya mantiene
+  el indice FTS5 `messages_fts` (triggers del hub, `unicode61 remove_diacritics 2`), asi que
+  `tools/search-index.mjs` lo consulta en un proceso aparte y en solo lectura (mismo patron
+  que `stats-index`). Expone `GET /search.json?q=&limit=` y el sidebar agrega la seccion
+  «En los mensajes» con fragmentos resaltados; clickear abre sesiones que no estaban en la
+  pagina cargada. Reglas: todas las palabras deben aparecer (prefijos), acentos y mayusculas
+  plegados, `userVisible=false` y sesiones `sub_agent` excluidas, tope de 20 sesiones.
+  Medido: 70–120 ms contra el store real y 68 ms sobre 20k mensajes de fixture.
+- **Login alineado al sistema visual** (`loginPage()` en `server.ts`): misma paleta y
+  tipografia, marca, error accesible (`role=alert` + `aria-invalid`), 16px en movil, safe-area
+  y `prefers-reduced-motion`. El CSP se mantiene igual (`default-src 'none'`, estilos
+  inline), por eso el CSS sigue embebido: es requisito de seguridad, no deuda. Ademas el
+  `next` viaja en el `action`, asi que despues del login se vuelve a la pantalla pedida
+  (antes siempre caia en `/`).
+- **Permisos**: la tarjeta ahora deduplica por id de request, expira cuando el turno termina
+  (`Expirar sin respuesta`), no roba el foco si hay un borrador en curso, anuncia con
+  `role=status`, y si el socket esta caido no falsea «respondido» (deja reintentar).
+- **Lectura y microfono**: `aria-pressed` real en `#btn-read` y `#btn-mic` (antes quedaba
+  fijo en `false`). Tests nuevos cubren pedido de TTS por bloque, corte, apagado, fallo del
+  server, dictado completo (grabar → transcribir por RPC → insertar texto → liberar pistas),
+  permiso denegado y navegador sin soporte.
+- **Panel de informacion de la conversacion**: el titulo del header es un boton que abre
+  id, carpeta completa, mensajes, creada/actualizada y estado, con «Copiar ID», «Copiar ruta»
+  y «Exportar Markdown». Renombrar/archivar/borrar siguen en la fila del sidebar: son
+  gestion, y borrar no gana nada al lado del titulo.
+
+Tests: `npm test` corre ahora **9 suites** (`client-regressions`, `server-regressions`,
+`search-index`, `search-e2e`, `permission-e2e`, `media-e2e`, `ui-mobile`, `ui-shell`, `gasto`).
+`search-e2e` levanta un proxy aislado con `server.ts` real y una fixture; `media-e2e` sirve la
+app en 127.0.0.1 (contexto seguro) con micro falso y `/tts` mockeado; `permission-e2e` usa el
+bundle real y el shape ACP real (`session/request_permission` como request del servidor).
+
+**Deploy pendiente de reinicio.** `server.mjs` y `tools/search-index.mjs` ya estan en el arbol,
+pero el proceso vivo sigue con el codigo anterior: `/search.json` responde 404 y `/login`
+sirve la pagina vieja hasta reiniciar el proxy. Es a proposito (no se corta el stream de la
+sesion en curso). Para publicarlo, en una ventana sin trabajo activo:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\Aegis-Proyects\web\scripts\restart-node.ps1
+```
+
+Ese script reinicia **solo** el node del puerto web (verifica `web=` al final); no toca el
+serve de aegis en 3284. Despues del reinicio,
+`curl http://127.0.0.1:3788/search.json?q=revision` debe devolver `results`, y `/login` debe
+mostrar «Acceso al harness». El cliente ya esta desplegado y degrada solo (oculta la seccion
+si el endpoint no existe).
+
 ## UI v4 (2026-10-22): sistema visual y de interaccion
 
 Rediseño completo de la capa de UI sobre la misma arquitectura (sin framework, DOM a mano,

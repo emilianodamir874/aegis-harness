@@ -244,6 +244,7 @@ function sessionListHtml(st) {
   const items = st.sessions.filter(match).sort((a, b) => ts(b) - ts(a));
   const arch = st.archived.filter(match).sort((a, b) => ts(b) - ts(a));
   if (!items.length && !arch.length) {
+    if (st.remoteCount || st.remotePending) return "";
     return `<div class="sb-empty">${st.sessions.length || st.archived.length ? "Sin resultados para «" + esc(st.filter.trim()) + "»" : "Sin sesiones todavía"}</div>`;
   }
   const row = (s, archived) => sessionRow(s, {
@@ -276,6 +277,39 @@ function sessionListHtml(st) {
     }
   }
   return html;
+}
+
+// src/app/search.ts
+var emptyRemote = () => ({
+  q: "",
+  loading: false,
+  sessions: [],
+  totalMatches: 0,
+  truncated: false,
+  unavailable: false
+});
+var marks = (raw) => esc(String(raw == null ? "" : raw)).replace(/\u0001/g, "<mark>").replace(/\u0002/g, "</mark>").replace(/&lt;\/?(turn-context|current-time|working-directory)[^&]*&gt;/g, "").replace(/\s+/g, " ").trim();
+var folder = (p) => {
+  const s = String(p || "").replace(/[\\/]+$/, "");
+  const parts = s.split(/[\\/]/);
+  return parts[parts.length - 1] || "";
+};
+function hitRow(s, active) {
+  const ms = (s.matches || []).slice(0, 2);
+  const n = (s.matches || []).length;
+  const badge = s.titleMatch && !n ? '<span class="sb-hit-badge" title="Coincide en el título">título</span>' : n ? `<span class="sb-hit-badge" title="${s.titleMatch ? "También coincide el título" : n + " coincidencias en los mensajes"}">${n}</span>` : "";
+  const meta = [fmtTime(s.updatedAt || ""), folder(s.cwd)].filter(Boolean).join(" · ");
+  const snippets = ms.map((m) => `<span class="sb-snip">${marks(m.snippet)}</span>`).join("");
+  return `<div class="sb-row sb-hit" data-id="${esc(s.sessionId)}"><button class="sb-item${active ? " active" : ""}" type="button" aria-label="${esc(s.title || "Sesión")} — coincidencias en los mensajes"><span class="sb-title"><span class="sb-name">${esc(s.title || "Sesión")}</span>${s.archived ? '<span class="sb-tag">archivada</span>' : ""}${badge}</span>` + (meta ? `<span class="sb-sub">${esc(meta)}</span>` : "") + snippets + "</button></div>";
+}
+function remoteResultsHtml(st, activeId) {
+  if (!st || st.unavailable) return "";
+  if (!st.loading && !st.sessions.length) return "";
+  const head = st.loading && !st.sessions.length ? '<div class="sb-group sb-remote-head">En los mensajes</div>' : '<div class="sb-group sb-remote-head">En los mensajes' + (st.sessions.length ? `<span class="sb-count">${st.sessions.length}</span>` : "") + (st.truncated ? '<span class="sb-trunc" title="Se muestran las primeras coincidencias; afiná la búsqueda">+</span>' : "") + "</div>";
+  if (st.loading && !st.sessions.length) {
+    return head + '<div class="sb-remote-loading">Buscando en el contenido…</div>';
+  }
+  return head + st.sessions.map((s) => hitRow(s, !!activeId && s.sessionId === activeId)).join("");
 }
 
 // src/app/read.ts
@@ -355,8 +389,6 @@ function ttsUrlFor(voice, text, rate) {
     filter: "",
     booted: false,
     attachments: [],
-    permCard: null,
-    // {id, el}
     hold: null,
     // 'rename' | 'confirm' — pausa re-renders mientras hay UI inline abierta
     runId: null,
@@ -391,8 +423,10 @@ function ttsUrlFor(voice, text, rate) {
     // sesión a la que está enganchada esta conexión
     hubWatchers: null,
     // watcherCount que reportó el server (hint de UI)
-    hubReplay: false
+    hubReplay: false,
     // true mientras se aplica el replay de un watch
+    remote: emptyRemote()
+    // coincidencias en el contenido (/search.json)
   };
   const rpc = {
     ws: null,
@@ -664,8 +698,131 @@ function ttsUrlFor(voice, text, rate) {
       showArchived: state.showArchived,
       activeId: state.current && state.current.id || null,
       isRunning,
-      isDoneRecently
+      isDoneRecently,
+      remoteCount: state.remote && state.remote.sessions.length || 0,
+      remotePending: !!(state.remote && state.remote.loading)
+    }) + remoteResultsHtml(state.remote, state.current && state.current.id || null);
+  }
+  let remoteTimer = 0;
+  let remoteSeq = 0;
+  let remoteAbort = null;
+  function resetRemote() {
+    clearTimeout(remoteTimer);
+    remoteSeq++;
+    if (remoteAbort) {
+      remoteAbort.abort();
+      remoteAbort = null;
+    }
+    if (state.remote.q || state.remote.sessions.length || state.remote.loading) {
+      state.remote = emptyRemote();
+      renderList();
+    }
+  }
+  function scheduleRemoteSearch() {
+    const q = String(state.filter || "").trim();
+    clearTimeout(remoteTimer);
+    if (q.length < 2) {
+      resetRemote();
+      return;
+    }
+    if (q !== state.remote.q) {
+      state.remote = { ...emptyRemote(), q, loading: true };
+      renderList();
+    }
+    remoteTimer = setTimeout(() => {
+      void runRemoteSearch(q);
+    }, 250);
+  }
+  async function runRemoteSearch(q) {
+    const seq = ++remoteSeq;
+    if (remoteAbort) remoteAbort.abort();
+    const ctl = new AbortController();
+    remoteAbort = ctl;
+    try {
+      const r = await fetch("/search.json?q=" + encodeURIComponent(q).slice(0, 300) + "&limit=20", {
+        signal: ctl.signal,
+        credentials: "same-origin"
+      });
+      if (!r.ok) throw new Error("http " + r.status);
+      const data = await r.json();
+      if (seq !== remoteSeq) return;
+      if (data && data._error) throw new Error(String(data._error));
+      state.remote = {
+        q,
+        loading: false,
+        sessions: Array.isArray(data && data.results) ? data.results.slice(0, 50) : [],
+        totalMatches: Number(data && data.totalMatches) || 0,
+        truncated: !!(data && data.truncated),
+        unavailable: false
+      };
+    } catch (e) {
+      if (seq !== remoteSeq) return;
+      state.remote = { ...emptyRemote(), q, unavailable: true };
+    }
+    renderList();
+  }
+  const chatInfoOpen = () => {
+    const p = $("#chat-info");
+    return !!p && !p.hidden;
+  };
+  function renderChatInfo() {
+    const body = $("#ci-body");
+    if (!body) return;
+    const cur = state.current;
+    if (!cur || !cur.id) {
+      body.innerHTML = '<div class="ci-empty">Todavía no hay una conversación abierta.</div>';
+      return;
+    }
+    const entry = findSession(cur.id);
+    const meta = entry && entry._meta || {};
+    const arch = state.archived.find((s) => s.sessionId === cur.id);
+    const n = meta.messageCount;
+    const fila = (k, v, title) => `<div class="ci-row"><span class="ci-k">${esc(k)}</span><span class="ci-v"${title ? ` title="${esc(title)}"` : ""}>${esc(v)}</span></div>`;
+    const fechaHora = (iso) => {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso).slice(0, 16).replace("T", " ");
+      const p = (n2) => String(n2).padStart(2, "0");
+      return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    };
+    const partes = [];
+    partes.push(fila("id", cur.id));
+    if (cur.cwd) partes.push(fila("carpeta", cur.cwd, cur.cwd));
+    if (n != null) partes.push(fila("mensajes", String(n)));
+    if (meta.createdAt) partes.push(fila("creada", fechaHora(meta.createdAt)));
+    if (entry && entry.updatedAt) partes.push(fila("actualizada", fechaHora(entry.updatedAt)));
+    if (arch) partes.push(fila("estado", "archivada"));
+    body.innerHTML = '<div class="ci-meta">' + partes.join("") + `</div><div class="ci-actions"><button class="xbtn" type="button" data-ci="copy-id">Copiar ID</button>` + (cur.cwd ? '<button class="xbtn" type="button" data-ci="copy-path">Copiar ruta</button>' : "") + '<button class="xbtn" type="button" data-ci="export-md">Exportar Markdown</button></div>';
+    body.querySelectorAll("[data-ci]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const what = b.getAttribute("data-ci");
+        if (what === "copy-id") copySessionId(cur.id);
+        else if (what === "copy-path" && cur.cwd) copyText(String(cur.cwd)).then((ok) => toast(ok ? "Ruta copiada." : "No se pudo copiar.", ok ? "" : "err"));
+        else if (what === "export-md") exportSession(cur.id, "markdown");
+      });
     });
+  }
+  function setChatInfo(v) {
+    const p = $("#chat-info");
+    const btn = $("#btn-chat-info");
+    if (!p) return;
+    if (v) {
+      renderChatInfo();
+      const bar = document.querySelector(".topbar");
+      const top = Math.round((bar ? bar.getBoundingClientRect().bottom : 54) + 6);
+      const w = Math.min(420, window.innerWidth - 24);
+      const anchor = window.innerWidth > 880 && btn ? btn.getBoundingClientRect().left : 8;
+      const left = Math.max(8, Math.min(anchor, window.innerWidth - w - 8));
+      p.style.top = top + "px";
+      p.style.width = w + "px";
+      p.style.left = Math.round(left) + "px";
+    }
+    p.hidden = !v;
+    if (btn) btn.setAttribute("aria-expanded", String(!!v));
+    if (v) {
+      const first = $("#ci-close");
+      if (first) first.focus({ preventScroll: true });
+    }
   }
   function toast(msg, kind) {
     const t = document.createElement("div");
@@ -1731,16 +1888,44 @@ function ttsUrlFor(voice, text, rate) {
     state.resyncing = false;
     return true;
   }
+  const permCards = /* @__PURE__ */ new Map();
+  function permMarkAnswered(el, text) {
+    el.classList.add("answered");
+    el.querySelectorAll(".pb").forEach((b) => {
+      b.disabled = true;
+    });
+    let ans = el.querySelector(".perm-answer");
+    if (!ans) {
+      ans = document.createElement("div");
+      ans.className = "perm-answer";
+      ans.setAttribute("role", "status");
+      ans.setAttribute("aria-live", "polite");
+      el.appendChild(ans);
+    }
+    ans.textContent = text;
+  }
+  function expirePermCards(reason) {
+    for (const [key, c] of permCards) {
+      if (!c.answered && c.el.isConnected) permMarkAnswered(c.el, "Sin respuesta: " + reason);
+      permCards.delete(key);
+    }
+  }
   function showPermCard(m) {
     hideWelcome();
     noteRunActivity();
     const p = m.params || {};
     const tc = p.toolCall || {};
+    const key = String(m.id);
+    const previa = permCards.get(key);
+    if (previa && previa.el.isConnected) return;
     const el = document.createElement("div");
     el.className = "perm";
+    el.setAttribute("role", "group");
+    el.setAttribute("aria-label", "Aegis pide permiso para usar una herramienta");
     const cmd = tc.rawInput && (tc.rawInput.command || tc.rawInput.path) ? String(tc.rawInput.command || tc.rawInput.path) : "";
     const showCmd = cmd && !String(tc.title || "").includes(cmd.slice(0, 32));
-    el.innerHTML = `<div class="perm-head"><svg class="perm-ico" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.2" y="8.6" width="11.6" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8.6V6.4a3 3 0 0 1 6 0v2.2" stroke="currentColor" stroke-width="1.5"/></svg>Aegis pide permiso para usar una herramienta</div><div class="perm-tool">${esc(tc.title || tc.kind || "Herramienta")}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ""}</div><div class="perm-btns"></div>`;
+    const etiqueta = String(tc.title || tc.kind || "Herramienta");
+    el.innerHTML = `<div class="perm-head"><svg class="perm-ico" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.2" y="8.6" width="11.6" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8.6V6.4a3 3 0 0 1 6 0v2.2" stroke="currentColor" stroke-width="1.5"/></svg>Aegis pide permiso para usar una herramienta</div><div class="perm-tool">${esc(etiqueta)}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ""}</div><div class="perm-btns"></div><div class="sr-only" role="status">Aegis pide permiso para ${esc(etiqueta)}. Elegí una opción.</div>`;
     const btns = el.querySelector(".perm-btns");
     const labels = {
       allow_once: ["Permitir una vez", "primary"],
@@ -1752,23 +1937,45 @@ function ttsUrlFor(voice, text, rate) {
     const candidates = [...p.options || []].sort(
       (a, b) => (order.indexOf(a.optionId) + 1 || 9) - (order.indexOf(b.optionId) + 1 || 9)
     );
+    const answer = (opt, label) => {
+      const card = permCards.get(key);
+      if (card && card.answered) return;
+      if (!rpc.ws || rpc.ws.readyState !== 1) {
+        let ans = el.querySelector(".perm-answer");
+        if (!ans) {
+          ans = document.createElement("div");
+          ans.className = "perm-answer";
+          ans.setAttribute("role", "status");
+          ans.setAttribute("aria-live", "polite");
+          el.appendChild(ans);
+        }
+        ans.textContent = "Sin conexión: reintentá cuando vuelva.";
+        return;
+      }
+      rpc.respond(m.id, { outcome: { outcome: "selected", optionId: opt.optionId } });
+      if (card) card.answered = true;
+      permMarkAnswered(el, "Respondido: " + label);
+      el.querySelectorAll(".pb").forEach((b) => {
+        b.disabled = true;
+      });
+    };
     for (const opt of candidates) {
       const [label, cls] = labels[opt.optionId] || [opt.name || opt.optionId, ""];
       const b = document.createElement("button");
+      b.type = "button";
       b.className = "pb " + cls;
       b.textContent = label;
-      b.addEventListener("click", () => {
-        rpc.respond(m.id, { outcome: { outcome: "selected", optionId: opt.optionId } });
-        el.classList.add("answered");
-        btns.querySelectorAll("button").forEach((x) => x.disabled = true);
-        const ans = document.createElement("div");
-        ans.className = "perm-answer";
-        ans.textContent = "Respuesta: " + label;
-        el.appendChild(ans);
-      });
+      b.addEventListener("click", () => answer(opt, label));
       btns.appendChild(b);
     }
+    permCards.set(key, { el, answered: false });
     msgWrap().appendChild(el);
+    const input = document.getElementById("input");
+    const escribiendo = !!input && document.activeElement === input && input.value.trim().length > 0;
+    if (!escribiendo) {
+      const first = btns.querySelector("button");
+      if (first) first.focus({ preventScroll: true });
+    }
     scrollBottom(true);
   }
   function setPill(msg) {
@@ -2319,6 +2526,7 @@ function ttsUrlFor(voice, text, rate) {
     state.msgs.clear();
     state.tools.clear();
     state.attachments = [];
+    permCards.clear();
     state.runId = null;
     state.adopted = false;
     liveRunRevision++;
@@ -2642,6 +2850,7 @@ function ttsUrlFor(voice, text, rate) {
     $("#btn-stop").disabled = false;
   }
   function runBarDone(text, ms) {
+    if (permCards.size) expirePermCards("el turno terminó sin respuesta.");
     const bar = $("#runbar");
     clearInterval(runTick);
     runTick = 0;
@@ -2914,6 +3123,7 @@ ${a.text}
     if (!btn) return;
     btn.classList.toggle("rec", !!on);
     btn.classList.toggle("barge", !!(on && MIC.barge));
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
     btn.title = on ? "Grabando… tocá para cortar y transcribir" : "Dictar por voz (corta solo cuando te quedás callado)";
   }
   function micStop(discard) {
@@ -4818,6 +5028,7 @@ ${a.text}
   function updateTitle() {
     $("#chat-title").textContent = state.current && state.current.title || "Nuevo chat";
     $("#chat-title").title = ($("#chat-title").textContent || "") + (state.current && state.current.id ? " · " + state.current.id : "");
+    if (chatInfoOpen()) setChatInfo(false);
     const sub = $("#chat-sub");
     if (sub) {
       const cwd = state.current && state.current.cwd || CFG.cwd || "";
@@ -4973,6 +5184,30 @@ ${a.text}
   }
   function wire() {
     wireChatFont();
+    const infoBtn = $("#btn-chat-info");
+    const infoPop = $("#chat-info");
+    if (infoBtn && infoPop) {
+      infoBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        setChatInfo(!chatInfoOpen());
+      });
+      $("#ci-close").addEventListener("click", () => {
+        setChatInfo(false);
+        infoBtn.focus({ preventScroll: true });
+      });
+      document.addEventListener("pointerdown", (e) => {
+        if (!chatInfoOpen()) return;
+        if (infoPop.contains(e.target) || infoBtn.contains(e.target)) return;
+        setChatInfo(false);
+      });
+      infoPop.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          setChatInfo(false);
+          infoBtn.focus({ preventScroll: true });
+        }
+      });
+    }
     $("#messages").addEventListener("click", (e) => {
       const cc = e.target.closest(".copy-code");
       if (cc) {
@@ -5065,6 +5300,7 @@ ${a.text}
     $("#search").addEventListener("input", (e) => {
       state.filter = e.target.value;
       renderList();
+      scheduleRemoteSearch();
     });
     $("#session-list").addEventListener("keydown", (e) => {
       const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
@@ -5095,6 +5331,7 @@ ${a.text}
         $("#search").value = "";
         state.filter = "";
         renderList();
+        resetRemote();
       }
     });
     $("#slash-menu").addEventListener("click", (e) => {
@@ -5139,7 +5376,16 @@ ${a.text}
       if (!item) return;
       const id = item.parentElement.dataset.id;
       const entry = findSession(id);
-      if (entry && (!state.current || state.current.id !== id)) openSession(entry);
+      if (state.current && state.current.id === id) {
+        closeDrawer();
+        return;
+      }
+      if (entry) {
+        openSession(entry);
+        return;
+      }
+      const remoto = (state.remote.sessions || []).find((s) => s.sessionId === id);
+      if (remoto) openSession({ sessionId: id, title: remoto.title, cwd: remoto.cwd });
       else closeDrawer();
     });
     document.querySelectorAll(".sug").forEach(
@@ -5401,6 +5647,7 @@ ${a.text}
     var b = document.getElementById("btn-read");
     if (!b) return false;
     b.classList.toggle("on", READ_ON);
+    b.setAttribute("aria-pressed", READ_ON ? "true" : "false");
     b.title = READ_ON ? "Lectura en voz alta ENCENDIDA: se lee el bloque «Para escuchar» en vivo. Tocá para apagar." : "Leer en voz alta: lee SOLO el bloque «Para escuchar» de cada respuesta, en vivo mientras llega";
     if (READ_ON) readVoicePick();
     try {

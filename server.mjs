@@ -73,6 +73,40 @@ async function statsIndex(days) {
   statsCache = /* @__PURE__ */ new Map([[clave, { at: Date.now(), body }]]);
   return body;
 }
+const searchCache = /* @__PURE__ */ new Map();
+const SEARCH_TTL_MS = 15e3;
+const SEARCH_MAX_ENTRIES = 40;
+async function searchIndex(queryRaw, limit) {
+  const query = String(queryRaw || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+  const clave = limit + "|" + query.toLowerCase();
+  const previo = searchCache.get(clave);
+  if (previo && Date.now() - previo.at < SEARCH_TTL_MS) return previo.body;
+  let body;
+  if (!query) {
+    body = JSON.stringify({ query: "", results: [], totalSessions: 0, totalMatches: 0, truncated: false });
+  } else {
+    try {
+      const { execFile } = await import("node:child_process");
+      const args = ["--experimental-sqlite", join(DIR, "tools", "search-index.mjs"), "--query", query, "--limit", String(limit)];
+      body = await new Promise((ok) => {
+        execFile(
+          process.execPath,
+          args,
+          { timeout: 2e4, maxBuffer: 8 * 1024 * 1024 },
+          (err, stdout) => ok(err && !stdout ? JSON.stringify({ _error: String(err.message) }) : stdout)
+        );
+      });
+    } catch (e) {
+      body = JSON.stringify({ _error: String(e && e.message || e) });
+    }
+  }
+  searchCache.set(clave, { at: Date.now(), body });
+  if (searchCache.size > SEARCH_MAX_ENTRIES) {
+    const sobran = [...searchCache.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, searchCache.size - SEARCH_MAX_ENTRIES);
+    for (const [k] of sobran) searchCache.delete(k);
+  }
+  return body;
+}
 const AUTH_FILE = join(DIR, "auth.json");
 let auth = null;
 try {
@@ -153,34 +187,78 @@ function noteLoginFail(ip) {
   if (!e || Date.now() - e.at > 6e4) loginFails.set(ip, { n: 1, at: Date.now() });
   else e.n += 1;
 }
-const LOGIN_PAGE = `<!doctype html>
+function loginPage(variant, next) {
+  const error = variant === "bad" ? '<p class="err" id="err" role="alert">Contraseña incorrecta. Probá de nuevo.</p>' : variant === "blocked" ? '<p class="err" id="err" role="alert">Demasiados intentos. Esperá un minuto antes de reintentar.</p>' : "";
+  const invalid = error ? ' aria-invalid="true" aria-describedby="err"' : "";
+  const action = "/login?next=" + encodeURIComponent(safeNext(next));
+  return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0d0d0e"><title>Aegis · acceso</title>
+<meta name="theme-color" content="#1e1d1b"><meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex"><title>Aegis · acceso</title>
 <style>
- :root { color-scheme: dark; }
- body { margin:0; min-height:100dvh; display:grid; place-items:center; background:#0d0d0e; color:#e8e8ea;
-        font:15px/1.45 -apple-system,Segoe UI,Roboto,sans-serif; }
- form { width:min(92vw,340px); background:#161618; border:1px solid #242427; border-radius:14px; padding:22px; }
- h1 { margin:0 0 4px; font-size:17px; } .sub { margin:0 0 18px; color:#9a9aa2; font-size:12.5px; }
- input { width:100%; box-sizing:border-box; padding:11px 12px; border-radius:9px; border:1px solid #2c2c31;
-         background:#101012; color:#e8e8ea; font-size:16px; }
- button { margin-top:12px; width:100%; padding:11px; border:0; border-radius:9px; background:#0053fd;
-          color:#fff; font-size:15px; font-weight:600; }
- .err { color:#ff8080; font-size:12.5px; margin-top:10px; }
- .hint { color:#6f6f77; font-size:11.5px; margin-top:14px; }
+  :root {
+    color-scheme: dark;
+    --bg: #1e1d1b; --card: #262523; --border: rgba(245, 244, 239, 0.10);
+    --text: #f2f1ec; --text-2: rgba(242, 241, 236, 0.78); --text-3: rgba(242, 241, 236, 0.60);
+    --accent: #d97757; --accent-strong: #e58c6c; --on-accent: #21140f; --danger: #e5828c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center;
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  form {
+    width: min(100%, 360px); background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px 22px 20px; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; color: var(--text); }
+  .brand svg { display: block; }
+  .brand b { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .chip {
+    font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3);
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 4px; line-height: 1.4;
+  }
+  h1 { margin: 0 0 4px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .sub { margin: 0 0 16px; color: var(--text-3); font-size: 12.5px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
+    background: #191816; color: var(--text); font-size: 16px; font-family: inherit;
+  }
+  input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  input[aria-invalid="true"] { border-color: rgba(229, 130, 140, 0.55); }
+  input[aria-invalid="true"]:focus-visible { outline-color: var(--danger); }
+  button {
+    margin-top: 14px; width: 100%; padding: 10px; border: 0; border-radius: 9px;
+    background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600; font-size: 14.5px;
+    cursor: pointer; touch-action: manipulation;
+  }
+  button:hover { background: var(--accent-strong); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .err { margin: 10px 0 0; color: var(--danger); font-size: 12.5px; }
+  .hint { margin: 14px 0 0; color: var(--text-3); font-size: 11.5px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style></head>
-<body><form method="post" action="/login" autocomplete="off">
- <h1>Aegis web</h1>
- <p class="sub">Acceso por el tunel de Cloudflare</p>
- <input type="password" name="password" placeholder="Contrasena" autofocus required>
- <button type="submit">Entrar</button>
- __ERR__
- <p class="hint">La sesion queda guardada 30 dias en este dispositivo.</p>
-</form></body></html>`;
-const LOGIN_HTML_OK = LOGIN_PAGE.replace("__ERR__", "");
-const LOGIN_HTML_ERR = LOGIN_PAGE.replace("__ERR__", '<div class="err">Contrasena incorrecta.</div>');
-const LOGIN_HTML_BLOCK = LOGIN_PAGE.replace("__ERR__", '<div class="err">Demasiados intentos. Espera un minuto.</div>');
+<body>
+<form method="post" action="${action}" autocomplete="off">
+  <div class="brand">
+    <svg viewBox="0 0 128 128" width="18" height="18" aria-hidden="true"><circle cx="64" cy="66" r="36" fill="none" stroke="currentColor" stroke-width="13" stroke-dasharray="196 30" stroke-linecap="round" transform="rotate(-110 64 66)"/><circle cx="46" cy="34" r="13" fill="currentColor"/></svg>
+    <b>Aegis</b><span class="chip">web</span>
+  </div>
+  <h1>Acceso al harness</h1>
+  <p class="sub">Estás entrando por el túnel de Cloudflare.</p>
+  <label for="password">Contraseña</label>
+  <input id="password" type="password" name="password" placeholder="Contraseña" autocomplete="current-password" autofocus required${invalid}>
+  <button type="submit">Entrar</button>
+  ${error}
+  <p class="hint">La sesión queda guardada 30 días en este dispositivo.</p>
+</form>
+</body></html>`;
+}
 function safeNext(next) {
   const n = String(next || "/");
   if (!n.startsWith("/") || n.startsWith("//") || /[\\\x00-\x1f\x7f]/.test(n) || /%5c/i.test(n)) return "/";
@@ -569,7 +647,7 @@ const handler = async (req, res) => {
         }
         if (loginBlocked(ip)) {
           res.writeHead(429, { "content-type": "text/html; charset=utf-8", ...SEC_LOGIN });
-          res.end(LOGIN_HTML_BLOCK);
+          res.end(loginPage("blocked", null));
           return;
         }
         let body2 = "";
@@ -585,7 +663,7 @@ const handler = async (req, res) => {
           logLine("auth.log", `${(/* @__PURE__ */ new Date()).toISOString()} login FALLO ip=${ip} tunnel=${tunneled}
 `);
           res.writeHead(401, { "content-type": "text/html; charset=utf-8", ...SEC_LOGIN });
-          res.end(LOGIN_HTML_ERR);
+          res.end(loginPage("bad", url.searchParams.get("next")));
           return;
         }
         loginFails.delete(ip);
@@ -602,7 +680,7 @@ const handler = async (req, res) => {
         return;
       }
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", ...SEC_LOGIN });
-      res.end(LOGIN_HTML_OK);
+      res.end(loginPage("ok", url.searchParams.get("next")));
       return;
     }
     if (tunneled && !authed(req)) {
@@ -677,6 +755,14 @@ ${Buffer.concat(chunks).toString("utf8")}
     }
     if (url.pathname === "/goals.json") {
       const body2 = await goalsIndex(url.searchParams.get("sid") || "");
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
+      res.end(body2);
+      return;
+    }
+    if (url.pathname === "/search.json") {
+      const q = url.searchParams.get("q") || "";
+      const lim = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") || 20) || 20));
+      const body2 = await searchIndex(q, lim);
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
       res.end(body2);
       return;

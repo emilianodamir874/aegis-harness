@@ -62,10 +62,11 @@
         <button id="btn-menu" class="icon-btn only-mobile" type="button" aria-label="Abrir menú de sesiones" aria-controls="sidebar">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
-        <div class="title-wrap">
+        <button id="btn-chat-info" class="title-wrap" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="chat-info" title="Información de esta conversación">
           <h1 id="chat-title" class="chat-title">Nuevo chat</h1>
           <div id="chat-sub" class="chat-sub" hidden></div>
-        </div>
+          <svg class="title-caret" width="12" height="12" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <div id="chips" class="chips" role="group" aria-label="Proveedor, modo y modelo del chat"></div>
         <div class="topbar-actions">
           <button id="btn-chat-font" class="icon-btn" type="button" aria-label="Tamaño de letra" title="Tamaño de letra del chat" aria-expanded="false" aria-controls="chat-font-pop">Aa</button>
@@ -81,6 +82,14 @@
         <button id="chat-font-plus" type="button" aria-label="Aumentar letra">+</button>
         <output id="chat-font-value" for="chat-font-range"></output>
         <button id="chat-font-reset" type="button">Restablecer</button>
+      </div>
+
+      <div id="chat-info" class="chat-info" role="dialog" aria-labelledby="ci-title" hidden>
+        <div class="ci-head">
+          <span id="ci-title" class="ci-title">Esta conversación</span>
+          <button id="ci-close" class="xpanel-close" type="button" aria-label="Cerrar información">✕</button>
+        </div>
+        <div id="ci-body" class="ci-body"></div>
       </div>
 
       <div id="messages" class="messages" role="log" aria-label="Conversación" tabindex="0">
