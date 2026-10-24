@@ -277,11 +277,15 @@ async fn list_provider_entries(current_provider: Option<&str>) -> Vec<ProviderOp
         }
     }
 
+    // El alias "Aegis (Default)" solo se ofrece cuando no hay lista explicita: con
+    // AEGIS_VISIBLE_PROVIDERS el operador decidio la lista exacta y no quiere entradas extra.
     let mut entries = Vec::with_capacity(providers.len() + 1);
-    entries.push(ProviderOptionEntry {
-        id: DEFAULT_PROVIDER_ID.to_string(),
-        label: DEFAULT_PROVIDER_LABEL.to_string(),
-    });
+    if permitidos.is_none() {
+        entries.push(ProviderOptionEntry {
+            id: DEFAULT_PROVIDER_ID.to_string(),
+            label: DEFAULT_PROVIDER_LABEL.to_string(),
+        });
+    }
     entries.extend(providers);
     entries
 }
