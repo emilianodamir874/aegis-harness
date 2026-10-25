@@ -1,5 +1,5 @@
 use super::api_client::{ApiClient, AuthMethod};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef, ProviderMetadata};
 use super::openai_compatible::{
     handle_response_openai_compat, handle_status, map_http_error_to_provider_error,
     stream_openai_compat,
@@ -37,6 +37,27 @@ pub const EXPERIENTIAL_DEFAULT_MODEL: &str = "deepseek-v4.1-flash-uncensored";
 /// slugs hoy) llega igual por `GET /v1/models`; aca va solo el que el operador usa, para que el
 /// desplegable no arranque con 318 opciones.
 pub const EXPERIENTIAL_KNOWN_MODELS: &[&str] = &[EXPERIENTIAL_DEFAULT_MODEL];
+
+/// Ventana declarada para la familia DeepSeek V4.1 Flash. El catalogo del gateway no publica
+/// limites por modelo y el default del harness es 128k, que compacta esta familia mucho antes de
+/// lo necesario. Se declara 1M redondo: si el modelo real admitiera 1.048.576, quedarse 48k corto
+/// solo hace compactar un poco antes, mientras que declarar de mas haria que un pedido se pase del
+/// limite real y vuelva 400 en medio del turno.
+const EXPERIENTIAL_CONTEXT_LIMIT: usize = 1_000_000;
+
+fn context_limit_for(model_name: &str) -> Option<usize> {
+    model_name
+        .starts_with("deepseek-v4.1-flash")
+        .then_some(EXPERIENTIAL_CONTEXT_LIMIT)
+}
+
+fn resolve_context_limit(model: &str, override_limit: Option<usize>) -> usize {
+    if let Some(limit) = override_limit.or_else(|| context_limit_for(model)) {
+        return limit;
+    }
+    aegis_providers::context_limit::ContextLimitResolver::new(EXPERIENTIAL_PROVIDER_NAME)
+        .resolve_local(model, None)
+}
 
 #[derive(serde::Serialize)]
 pub struct ExperientialProvider {
@@ -123,12 +144,19 @@ impl ExperientialProvider {
 
 impl aegis_providers::base::ProviderDescriptor for ExperientialProvider {
     fn metadata() -> ProviderMetadata {
-        ProviderMetadata::new(
+        let models = EXPERIENTIAL_KNOWN_MODELS
+            .iter()
+            .map(|name| match context_limit_for(name) {
+                Some(limit) => ModelInfo::new(*name).with_context_limit(limit),
+                None => ModelInfo::new(*name),
+            })
+            .collect();
+        ProviderMetadata::with_models(
             EXPERIENTIAL_PROVIDER_NAME,
             "Experiential Labs",
             "Gateway OpenAI-compatible: todos los modelos con una sola clave (BYOK o creditos)",
             EXPERIENTIAL_DEFAULT_MODEL,
-            EXPERIENTIAL_KNOWN_MODELS.to_vec(),
+            models,
             EXPERIENTIAL_DOC_URL,
             vec![
                 ConfigKey::new("EXPERIENTIAL_API_KEY", true, true, None, true),
@@ -159,6 +187,10 @@ impl ProviderDef for ExperientialProvider {
 impl Provider for ExperientialProvider {
     fn get_name(&self) -> &str {
         &self.name
+    }
+
+    async fn get_context_limit(&self, model: &str, override_limit: Option<usize>) -> usize {
+        resolve_context_limit(model, override_limit)
     }
 
     async fn stream(
@@ -300,5 +332,45 @@ mod tests {
             .expect("la clave obligatoria tiene que estar declarada");
         assert!(key.required, "EXPERIENTIAL_API_KEY debe ser obligatoria");
         assert!(key.secret, "EXPERIENTIAL_API_KEY debe ser secreta");
+    }
+
+    #[test]
+    fn deepseek_v41_flash_family_declares_one_million() {
+        assert_eq!(
+            context_limit_for(EXPERIENTIAL_DEFAULT_MODEL),
+            Some(EXPERIENTIAL_CONTEXT_LIMIT)
+        );
+        assert_eq!(
+            context_limit_for("deepseek-v4.1-flash"),
+            Some(EXPERIENTIAL_CONTEXT_LIMIT)
+        );
+        assert_eq!(context_limit_for("kimi-k2.6"), None);
+    }
+
+    #[test]
+    fn context_limit_prefers_override_then_declared_then_default() {
+        assert_eq!(
+            resolve_context_limit(EXPERIENTIAL_DEFAULT_MODEL, Some(64_000)),
+            64_000
+        );
+        assert_eq!(
+            resolve_context_limit(EXPERIENTIAL_DEFAULT_MODEL, None),
+            EXPERIENTIAL_CONTEXT_LIMIT
+        );
+        assert_eq!(
+            resolve_context_limit("kimi-k2.6", None),
+            aegis_providers::model::DEFAULT_CONTEXT_LIMIT
+        );
+    }
+
+    #[test]
+    fn metadata_declares_one_million_for_default_model() {
+        let metadata = ExperientialProvider::metadata();
+        let info = metadata
+            .known_models
+            .iter()
+            .find(|m| m.name == EXPERIENTIAL_DEFAULT_MODEL)
+            .expect("el modelo por defecto tiene que estar en el catalogo declarado");
+        assert_eq!(info.context_limit, Some(EXPERIENTIAL_CONTEXT_LIMIT));
     }
 }
