@@ -365,6 +365,15 @@ impl Agent {
             session_manager.clone(),
         )));
 
+        // Sandbox por workspace: escritura fuera del root y comandos destructivos piden permiso
+        // aunque la tool este en always_allow. Antes del inspector de permisos para que su
+        // RequireApproval gane sobre un Allow.
+        tool_inspection_manager.add_inspector(Box::new(
+            crate::security::workspace_sandbox::WorkspaceSandboxInspector::new(
+                session_manager.clone(),
+            ),
+        ));
+
         // Add permission inspector (medium-high priority)
         tool_inspection_manager.add_inspector(Box::new(PermissionInspector::new(
             permission_manager,
