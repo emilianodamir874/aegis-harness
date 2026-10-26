@@ -6109,4 +6109,36 @@ mod tests {
         // Y sin prefijo verbatim, que es lo que hacía aparecer duplicados.
         assert!(!roleplay.root.starts_with(r"\\?\"));
     }
+
+    #[test]
+    fn canonical_working_dir_resolves_relative_segments_and_drops_verbatim_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        let project = temp_dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+
+        let resolved = canonical_working_dir(project.clone());
+
+        assert_eq!(
+            canonical_working_dir(project.join(".").join("..").join("project")),
+            resolved,
+            "`.` y `..` se resuelven antes de guardar la ruta"
+        );
+        assert!(
+            !resolved.to_string_lossy().starts_with(r"\\?\"),
+            "sin prefijo verbatim: {}",
+            resolved.display()
+        );
+        assert_eq!(
+            canonical_working_dir(resolved.clone()),
+            resolved,
+            "normalizar dos veces da la misma ruta"
+        );
+
+        let missing = temp_dir.path().join("no-existe");
+        assert_eq!(
+            canonical_working_dir(missing.clone()),
+            missing,
+            "si no se puede canonicalizar se conserva la ruta original"
+        );
+    }
 }
