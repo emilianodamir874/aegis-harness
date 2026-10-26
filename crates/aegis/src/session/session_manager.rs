@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use tracing::{info, warn};
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 21;
+pub const CURRENT_SCHEMA_VERSION: i32 = 22;
 
 /// Vista unica de visibilidad. Es la regla del motor: un mensaje se puede mostrar si el hub no
 /// lo marco como `userVisible: false` y la sesion es de usuario, programada o ACP (las sub_agent
@@ -1406,6 +1406,16 @@ impl SessionStorage {
         .execute(&mut *tx)
         .await?;
 
+        // Registro de workspaces (tanda 4). En un store nuevo queda vacío hasta que se cree la
+        // primera sesión; en un store existente lo siembra la migración 22 desde `project_id`
+        // y `create_session` mantiene `last_used_at` al día.
+        sqlx::query(crate::session::workspaces::CREATE_WORKSPACES_TABLE)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(crate::session::workspaces::CREATE_WORKSPACES_INDEX)
+            .execute(&mut *tx)
+            .await?;
+
         // Create the inventory tables inside the same transaction so that a
         // second SessionStorage opening the same DB file never observes a
         // committed schema_version (and thus takes the migration path) while
@@ -1548,6 +1558,13 @@ impl SessionStorage {
         .bind(session.aegis_mode.to_string())
         .execute(&mut *tx)
         .await?;
+
+        let imported_root = session.working_dir.to_string_lossy().to_string();
+        if let Err(error) =
+            crate::session::workspaces::touch_workspace(&mut tx, &imported_root).await
+        {
+            warn!("Workspace not registered for an imported session: {error}");
+        }
 
         tx.commit().await?;
 
@@ -2011,6 +2028,20 @@ impl SessionStorage {
                     .execute(&mut **tx)
                     .await?;
             }
+            22 => {
+                // Registro de workspaces: la raiz de trabajo pasa a ser una entidad del store
+                // (nombre, pin, defaults, ultimo uso) en vez de una cadena repetida en cada
+                // sesion. Se siembra desde `project_id`, que desde v21 vale el working_dir
+                // canonico, con MAX(updated_at) como ultimo uso real.
+                sqlx::query(crate::session::workspaces::CREATE_WORKSPACES_TABLE)
+                    .execute(&mut **tx)
+                    .await?;
+                sqlx::query(crate::session::workspaces::CREATE_WORKSPACES_INDEX)
+                    .execute(&mut **tx)
+                    .await?;
+                let seeded = crate::session::workspaces::seed_from_sessions(&mut *tx).await?;
+                info!("  V Registro de workspaces sembrado: {seeded} raices");
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }
@@ -2085,6 +2116,16 @@ impl SessionStorage {
         .bind(aegis_mode.to_string())
         .fetch_one(&mut *tx)
         .await?;
+
+        // Alta en el registro de workspaces, en la misma transaccion que la sesion: la fila
+        // existe si y solo si existe la sesion que la uso. Un fallo aca no puede tumbar la
+        // creacion de la sesion; se registra y se sigue.
+        let session_root = working_dir.to_string_lossy().to_string();
+        if let Err(error) =
+            crate::session::workspaces::touch_workspace(&mut tx, &session_root).await
+        {
+            warn!("Workspace not registered for {working_dir:?}: {error}");
+        }
 
         tx.commit().await?;
         Ok(session)
@@ -2211,6 +2252,10 @@ impl SessionStorage {
         if let Some(session_type) = builder.session_type {
             q = q.bind(session_type.to_string());
         }
+        let workspace_root = builder
+            .working_dir
+            .as_ref()
+            .map(|wd| wd.to_string_lossy().to_string());
         if let Some(wd) = builder.working_dir {
             q = q.bind(wd.to_string_lossy().to_string());
         }
@@ -2288,6 +2333,14 @@ impl SessionStorage {
 
         if result.rows_affected() == 0 {
             return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
+        }
+
+        // Un cambio de `working_dir` registra ese destino en el mismo commit: si la sesión se
+        // movió, el workspace al que se movió existe.
+        if let Some(root) = workspace_root {
+            if let Err(error) = crate::session::workspaces::touch_workspace(&mut tx, &root).await {
+                warn!("Workspace not registered for {root:?}: {error}");
+            }
         }
 
         tx.commit().await?;
@@ -5967,5 +6020,78 @@ mod tests {
 
         let stored = sm.get_session(&id, true).await.unwrap();
         assert_eq!(stored.conversation.unwrap().messages().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn create_session_registers_workspace_and_moves_last_used_at() {
+        let temp_dir = TempDir::new().unwrap();
+        let store = temp_dir.path().join("store");
+        let project_a = temp_dir.path().join("Aegis");
+        let project_b_root = temp_dir.path().join("ROLEPLAY AI");
+        fs::create_dir_all(&project_a).unwrap();
+        fs::create_dir_all(&project_b_root).unwrap();
+
+        let sm = SessionManager::new(store);
+        sm.create_session(
+            project_a.clone(),
+            "en Aegis".to_string(),
+            SessionType::User,
+            AegisMode::default(),
+        )
+        .await
+        .unwrap();
+
+        let pool = sm.storage().pool().await.unwrap().clone();
+        sqlx::query("UPDATE workspaces SET last_used_at = '2020-01-01 00:00:00'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let second = sm
+            .create_session(
+                project_b_root.clone(),
+                "en ROLEPLAY".to_string(),
+                SessionType::User,
+                AegisMode::default(),
+            )
+            .await
+            .unwrap();
+
+        // Misma carpeta con otra ortografía (`\.`) no crea una fila nueva.
+        sm.create_session(
+            project_a.join("."),
+            "en Aegis otra vez".to_string(),
+            SessionType::User,
+            AegisMode::default(),
+        )
+        .await
+        .unwrap();
+
+        let rows = crate::session::workspaces::list_workspaces(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2, "una fila por raíz canónica: {rows:?}");
+
+        let aegis = rows
+            .iter()
+            .find(|w| w.root.ends_with("Aegis"))
+            .expect("workspace de Aegis");
+        assert_eq!(aegis.name, "Aegis");
+        assert_eq!(aegis.pinned, 0);
+        assert_eq!(aegis.defaults, "{}");
+        assert!(
+            aegis.last_used_at.as_deref().unwrap() > "2020-01-01 00:00:00",
+            "el alta de sesión adelanta last_used_at: {aegis:?}"
+        );
+
+        let roleplay = rows
+            .iter()
+            .find(|w| w.root.ends_with("ROLEPLAY AI"))
+            .expect("workspace de ROLEPLAY AI");
+        assert_eq!(roleplay.name, "ROLEPLAY AI");
+        // El workspace al que pertenece la sesión es el que se registró.
+        assert_eq!(second.project_id.as_deref(), Some(roleplay.root.as_str()));
+        // Y sin prefijo verbatim, que es lo que hacía aparecer duplicados.
+        assert!(!roleplay.root.starts_with(r"\\?\"));
     }
 }
