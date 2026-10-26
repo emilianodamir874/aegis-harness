@@ -12,7 +12,7 @@ import https from 'node:https';
 import net from 'node:net';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { readFile, appendFile, mkdir, stat, opendir } from 'node:fs/promises';
+import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename } from 'node:fs/promises';
 import zlib from 'node:zlib';
 import { join, extname, normalize, resolve, dirname, basename, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +31,43 @@ function wsInside(path: string): boolean {
     const r = root.toLowerCase();
     return target === r || target.startsWith(r.endsWith(sep) ? r : r + sep);
   });
+}
+
+// Defaults por workspace (modelo, esfuerzo, modo) persistidos del lado del server para que
+// sobrevivan a otro navegador o al telefono. Archivo plano: son preferencias de UI, no estado
+// del harness.
+const WS_DEFAULTS_FILE = join(process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state', 'config', 'workspaces.defaults.json');
+
+async function readWsDefaults(): Promise<Record<string, unknown>> {
+  try {
+    const raw = await readFile(WS_DEFAULTS_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeWsDefaults(data: Record<string, unknown>): Promise<void> {
+  const tmp = WS_DEFAULTS_FILE + '.tmp';
+  await writeFile(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
+  await rename(tmp, WS_DEFAULTS_FILE);
+}
+
+function wsDefaultsKey(path: string): string {
+  return resolve(path).toLowerCase();
+}
+
+async function readJsonBody(req: IncomingMessage, maxBytes = 65536): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) throw new Error('body too large');
+    chunks.push(chunk as Buffer);
+  }
+  if (!chunks.length) return null;
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
 async function workspaceList(raw: string): Promise<string> {
@@ -880,6 +917,39 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       logLine('client.log', `--- ${new Date().toISOString()} ${ip}\n${Buffer.concat(chunks).toString('utf8')}\n`);
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // Defaults por workspace: GET devuelve todo, POST { root, defaults } hace upsert de uno.
+    if (url.pathname === '/ws/defaults') {
+      if (req.method === 'POST') {
+        try {
+          const body = (await readJsonBody(req)) as { root?: string; defaults?: unknown } | null;
+          const root = body && typeof body.root === 'string' ? body.root : '';
+          if (!root || !wsInside(root)) {
+            res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+            res.end(JSON.stringify({ error: 'root fuera de las raices permitidas' }));
+            return;
+          }
+          const data = await readWsDefaults();
+          const key = wsDefaultsKey(root);
+          if (body && body.defaults && typeof body.defaults === 'object') {
+            data[key] = { root: resolve(root), defaults: body.defaults, updatedAt: new Date().toISOString() };
+          } else {
+            delete data[key];
+          }
+          await writeWsDefaults(data);
+          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ ok: true, key }));
+        } catch (e) {
+          res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ error: String((e as Error)?.message || e) }));
+        }
+        return;
+      }
+      const data = await readWsDefaults();
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
+      res.end(JSON.stringify(data));
       return;
     }
 

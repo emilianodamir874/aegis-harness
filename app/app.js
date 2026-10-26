@@ -2627,6 +2627,39 @@ async function blobToWav16k(blob) {
     finishStream();
     runBarHide();
   }
+  let wsDefaults = {};
+  let wsDefaultsSaveTimer = null;
+  function wsKey(path) {
+    return String(path).replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+  }
+  function wsDefaultsFor(path) {
+    if (!path) return null;
+    const k = wsKey(path);
+    const hit = wsDefaults[k];
+    return hit && typeof hit === "object" ? hit.defaults || null : null;
+  }
+  async function loadWsDefaults() {
+    try {
+      const res = await fetch("/ws/defaults", { credentials: "same-origin" });
+      const data = await res.json();
+      if (data && typeof data === "object") wsDefaults = data;
+    } catch (e) {
+      wsDefaults = {};
+    }
+  }
+  function saveWsDefaults(path, defaults) {
+    if (!path) return;
+    clearTimeout(wsDefaultsSaveTimer);
+    wsDefaultsSaveTimer = setTimeout(() => {
+      fetch("/ws/defaults", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ root: path, defaults })
+      }).catch(() => {
+      });
+    }, 800);
+  }
   function workspaceRecents(limit) {
     const seen = /* @__PURE__ */ new Map();
     const list = Array.isArray(state.sessions) ? state.sessions : [];
@@ -2645,6 +2678,13 @@ async function blobToWav16k(blob) {
     return parts.length ? parts[parts.length - 1] : String(p);
   }
   function openWorkspacePicker() {
+    loadWsDefaults().then(() => {
+      if (!$("#ws-picker")?.hidden) renderWsRows();
+    }).catch(() => {
+    });
+    renderWsRows();
+  }
+  function renderWsRows() {
     const pop = $("#ws-picker");
     const body = $("#ws-body");
     const input = $("#ws-input");
@@ -2655,6 +2695,12 @@ async function blobToWav16k(blob) {
     for (const r of workspaceRecents(6)) {
       if (current && r.cwd.toLowerCase() === current.toLowerCase()) continue;
       rows.push({ cwd: r.cwd, label: wsName(r.cwd), meta: r.cwd });
+    }
+    for (const row of rows) {
+      const d = wsDefaultsFor(row.cwd);
+      if (d && (d.model || d.provider)) {
+        row.meta = row.meta + "  ·  " + [d.provider, d.model].filter(Boolean).join(" / ");
+      }
     }
     body.innerHTML = rows.length ? rows.map((r) => '<button class="ws-row" type="button" data-ws="' + esc(r.cwd) + '"><span class="ws-name">' + esc(r.label) + '</span><span class="ws-path">' + esc(r.meta) + "</span></button>").join("") : '<p class="ws-empty">Todavía no hay carpetas usadas.</p>';
     if (input) input.value = localStorage.getItem("gweb.ws") || current || "";
@@ -2708,7 +2754,7 @@ async function blobToWav16k(blob) {
   }
   async function newSession(workspace) {
     const targetCwd = workspace || CFG.cwd || void 0;
-    state.pendingConfig = leerPendientes(targetCwd);
+    state.pendingConfig = { ...leerPendientes(targetCwd), ...wsDefaultsFor(targetCwd || "") || {} };
     if (!rpc.ready) {
       systemNote("Sin conexión con el backend - reintentando.");
       return;
@@ -4698,7 +4744,10 @@ ${a.text}
     }
     try {
       const cwd = state.current && state.current.cwd;
-      if (cwd) localStorage.setItem(pendientesKey(cwd), JSON.stringify(state.pendingConfig || {}));
+      if (cwd) {
+        localStorage.setItem(pendientesKey(cwd), JSON.stringify(state.pendingConfig || {}));
+        saveWsDefaults(cwd, state.pendingConfig || {});
+      }
     } catch (e) {
     }
   }

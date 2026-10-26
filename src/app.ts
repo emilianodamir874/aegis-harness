@@ -2251,6 +2251,44 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   }
 
   // --- selector de carpeta al iniciar chat (2026-10-26) ---
+  // Defaults por workspace guardados en el server (sobreviven a otro navegador/telefono).
+  let wsDefaults: Record<string, any> = {};
+  let wsDefaultsSaveTimer: any = null;
+
+  function wsKey(path: string): string {
+    return String(path).replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+  }
+
+  function wsDefaultsFor(path: string): any {
+    if (!path) return null;
+    const k = wsKey(path);
+    const hit = wsDefaults[k];
+    return hit && typeof hit === 'object' ? (hit.defaults || null) : null;
+  }
+
+  async function loadWsDefaults(): Promise<void> {
+    try {
+      const res = await fetch('/ws/defaults', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data && typeof data === 'object') wsDefaults = data;
+    } catch (e) {
+      wsDefaults = {};
+    }
+  }
+
+  function saveWsDefaults(path: string, defaults: any): void {
+    if (!path) return;
+    clearTimeout(wsDefaultsSaveTimer);
+    wsDefaultsSaveTimer = setTimeout(() => {
+      fetch('/ws/defaults', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ root: path, defaults }),
+      }).catch(() => {});
+    }, 800);
+  }
+
   function workspaceRecents(limit: number): { cwd: string; when: string }[] {
     const seen = new Map<string, { cwd: string; when: string }>();
     const list: any[] = Array.isArray((state as any).sessions) ? (state as any).sessions : [];
@@ -2271,6 +2309,11 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   }
 
   function openWorkspacePicker(): void {
+    loadWsDefaults().then(() => { if (!$('#ws-picker')?.hidden) renderWsRows(); }).catch(() => {});
+    renderWsRows();
+  }
+
+  function renderWsRows(): void {
     const pop = $('#ws-picker');
     const body = $('#ws-body');
     const input = $('#ws-input') as HTMLInputElement | null;
@@ -2281,6 +2324,12 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     for (const r of workspaceRecents(6)) {
       if (current && r.cwd.toLowerCase() === current.toLowerCase()) continue;
       rows.push({ cwd: r.cwd, label: wsName(r.cwd), meta: r.cwd });
+    }
+    for (const row of rows) {
+      const d = wsDefaultsFor(row.cwd);
+      if (d && (d.model || d.provider)) {
+        row.meta = row.meta + '  ·  ' + [d.provider, d.model].filter(Boolean).join(' / ');
+      }
     }
     body.innerHTML = rows.length
       ? rows.map((r) =>
@@ -2352,8 +2401,9 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 
   async function newSession(workspace?: string) {
     const targetCwd = workspace || CFG.cwd || undefined;
-    // defaults del workspace elegido (modelo/esfuerzo) antes de aplicar pendientes
-    state.pendingConfig = leerPendientes(targetCwd);
+    // defaults del workspace elegido (modelo/esfuerzo) antes de aplicar pendientes:
+    // lo guardado en el server gana sobre el localStorage de este navegador
+    state.pendingConfig = { ...leerPendientes(targetCwd), ...(wsDefaultsFor(targetCwd || '') || {}) };
     if (!rpc.ready) { systemNote('Sin conexión con el backend - reintentando.'); return; }
     clearTimeout(draftTimer);
     saveDraft(); detachRunView(); // si había un turno en curso, sigue corriendo en el server
@@ -4329,7 +4379,10 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     try { localStorage.setItem('aegis.pendingConfig', JSON.stringify(state.pendingConfig || {})); } catch (e) {}
     try {
       const cwd = state.current && state.current.cwd;
-      if (cwd) localStorage.setItem(pendientesKey(cwd), JSON.stringify(state.pendingConfig || {}));
+      if (cwd) {
+        localStorage.setItem(pendientesKey(cwd), JSON.stringify(state.pendingConfig || {}));
+        saveWsDefaults(cwd, state.pendingConfig || {});
+      }
     } catch (e) {}
   }
   async function aplicarPendientes(sessionId) {
