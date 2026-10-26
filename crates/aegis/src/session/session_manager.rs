@@ -1578,6 +1578,27 @@ impl SessionStorage {
             info!("All migrations complete");
         }
 
+        // project_id existia como columna y nunca se poblo: 310 de 310 sesiones la tenian en
+        // NULL al 2026-10-26. Se completa con el working_dir sin el prefijo verbatim de Windows,
+        // para que la agrupacion por proyecto (y la memoria del operador) tenga clave estable.
+        sqlx::query(
+            r#"
+            UPDATE sessions
+               SET project_id = CASE
+                     WHEN working_dir LIKE '\\?\%' THEN SUBSTR(working_dir, 5)
+                     ELSE working_dir
+                   END
+             WHERE project_id IS NULL
+               AND working_dir IS NOT NULL
+            "#,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id)")
+            .execute(&mut *tx)
+            .await?;
+
         tx.commit().await?;
         Ok(())
     }
@@ -2050,8 +2071,8 @@ impl SessionStorage {
 
         let session = sqlx::query_as(
             r#"
-                INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, aegis_mode)
-                VALUES (? || '_' || CAST(? AS TEXT), ?, FALSE, ?, ?, '{}', ?)
+                INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, project_id, extension_data, aegis_mode)
+                VALUES (? || '_' || CAST(? AS TEXT), ?, FALSE, ?, ?, ?, '{}', ?)
                 RETURNING *
                 "#,
         )
@@ -2059,6 +2080,7 @@ impl SessionStorage {
         .bind(next_index)
         .bind(&name)
         .bind(session_type.to_string())
+        .bind(&*working_dir.to_string_lossy())
         .bind(&*working_dir.to_string_lossy())
         .bind(aegis_mode.to_string())
         .fetch_one(&mut *tx)
