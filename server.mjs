@@ -885,6 +885,67 @@ ${Buffer.concat(chunks).toString("utf8")}
       res.end(JSON.stringify(data2));
       return;
     }
+    if (url.pathname === "/outbox.json") {
+      const OUTBOX_DIR = join(DIR, "outbox");
+      const name = url.searchParams.get("name") || "";
+      const preview = url.searchParams.get("preview") === "1";
+      if (preview && name) {
+        const safe = name.replace(/[\\/]/g, "");
+        const target = join(OUTBOX_DIR, safe);
+        if (!target.startsWith(OUTBOX_DIR)) {
+          res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({ error: "nombre invalido" }));
+          return;
+        }
+        try {
+          const info = await stat(target);
+          if (info.size > 2e6) {
+            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+            res.end(JSON.stringify({ name: safe, tooLarge: true, bytes: info.size }));
+            return;
+          }
+          const body2 = await readFile(target);
+          const ext = extname(safe).toLowerCase();
+          const binary = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip"].includes(ext);
+          res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({
+            name: safe,
+            bytes: info.size,
+            ext,
+            binary,
+            text: binary ? "" : body2.toString("utf8"),
+            dataUrl: binary ? "data:application/octet-stream;base64," + body2.toString("base64") : ""
+          }));
+        } catch (e) {
+          res.writeHead(404, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({ error: String(e && e.message || e) }));
+        }
+        return;
+      }
+      const items = [];
+      try {
+        const dir = await opendir(OUTBOX_DIR);
+        for await (const entry of dir) {
+          if (!entry.isFile()) continue;
+          try {
+            const info = await stat(join(OUTBOX_DIR, entry.name));
+            items.push({
+              name: entry.name,
+              bytes: info.size,
+              mtime: info.mtime.toISOString(),
+              ext: extname(entry.name).toLowerCase(),
+              url: "/dl/" + encodeURIComponent(entry.name)
+            });
+          } catch {
+          }
+        }
+      } catch {
+      }
+      items.sort((a, b) => a.mtime < b.mtime ? 1 : -1);
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+      res.end(JSON.stringify({ dir: OUTBOX_DIR, items }));
+      return;
+    }
     if (url.pathname === "/memory.json") {
       if (req.method === "POST") {
         try {

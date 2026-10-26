@@ -1015,6 +1015,72 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
 
+    // Artefactos: lo que el agente deja en web/outbox, con tamaño y preview acotado.
+    // El link de descarga ya existia (/dl/<nombre>); esto solo lo hace visible y previsualizable.
+    if (url.pathname === '/outbox.json') {
+      const OUTBOX_DIR = join(DIR, 'outbox');
+      const name = url.searchParams.get('name') || '';
+      const preview = url.searchParams.get('preview') === '1';
+      if (preview && name) {
+        const safe = name.replace(/[\\/]/g, '');
+        const target = join(OUTBOX_DIR, safe);
+        if (!target.startsWith(OUTBOX_DIR)) {
+          res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ error: 'nombre invalido' }));
+          return;
+        }
+        try {
+          const info = await stat(target);
+          if (info.size > 2_000_000) {
+            res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+            res.end(JSON.stringify({ name: safe, tooLarge: true, bytes: info.size }));
+            return;
+          }
+          const body = await readFile(target);
+          const ext = extname(safe).toLowerCase();
+          const binary = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.zip'].includes(ext);
+          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({
+            name: safe,
+            bytes: info.size,
+            ext,
+            binary,
+            text: binary ? '' : body.toString('utf8'),
+            dataUrl: binary ? 'data:application/octet-stream;base64,' + body.toString('base64') : '',
+          }));
+        } catch (e) {
+          res.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ error: String(((e as Error) && (e as Error).message) || e) }));
+        }
+        return;
+      }
+      const items: Array<{ name: string; bytes: number; mtime: string; ext: string; url: string }> = [];
+      try {
+        const dir = await opendir(OUTBOX_DIR);
+        for await (const entry of dir) {
+          if (!entry.isFile()) continue;
+          try {
+            const info = await stat(join(OUTBOX_DIR, entry.name));
+            items.push({
+              name: entry.name,
+              bytes: info.size,
+              mtime: info.mtime.toISOString(),
+              ext: extname(entry.name).toLowerCase(),
+              url: '/dl/' + encodeURIComponent(entry.name),
+            });
+          } catch {
+            // un archivo que desaparecio entre opendir y stat no rompe la lista
+          }
+        }
+      } catch {
+        // sin outbox todavia: lista vacia
+      }
+      items.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+      res.end(JSON.stringify({ dir: OUTBOX_DIR, items }));
+      return;
+    }
+
     // Memoria del operador (panel): GET lista, POST confirma, rechaza, fija, agrega o consolida.
     if (url.pathname === '/memory.json') {
       if (req.method === 'POST') {
