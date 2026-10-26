@@ -6,6 +6,7 @@ pub mod apps;
 pub mod chatrecall;
 pub mod developer;
 pub mod ext_manager;
+pub mod memory;
 #[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
@@ -174,6 +175,20 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 client_factory: |ctx| Some(Box::new(websearch::WebSearchClient::new(ctx).unwrap())),
             },
         );
+        map.insert(
+            memory::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: memory::EXTENSION_NAME,
+                display_name: "Operator Memory",
+                description:
+                    "Memoria durable del operador: hechos, preferencias y decisiones que sobreviven a la sesion",
+                default_enabled: true,
+                unprefixed_tools: false,
+                hidden: false,
+                client_factory: |ctx| Some(Box::new(memory::MemoryClient::new(ctx).unwrap())),
+            },
+        );
+
         map.insert(
             tom::EXTENSION_NAME,
             PlatformExtensionDef {
