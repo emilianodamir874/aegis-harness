@@ -1,4 +1,8 @@
 [target.x86_64-pc-windows-msvc]
+# Linker lld (LLVM de scoop): medido en esta maquina, relink en caliente 11,7 s contra 34,1 s con el
+# linker del toolchain. Ruta absoluta a proposito: si el PATH cambia (servicio, tarea programada),
+# el build no se rompe. Para volver atras: borrar la linea `linker`.
+linker = "C:\\Users\\Emiliano\\scoop\\apps\\llvm\\current\\bin\\lld-link.exe"
 rustflags = ["-C", "link-args=/FORCE:MULTIPLE /STACK:8388608"]
 
 [target.aarch64-pc-windows-msvc]
