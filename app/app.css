@@ -3023,3 +3023,26 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
 .perm-diff-head{padding:6px 10px;font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--fg-dim,#93a2b8);border-bottom:1px solid var(--line-strong,rgba(255,255,255,.12))}
 .perm-diff-body{margin:0;padding:8px 10px;max-height:260px;overflow:auto;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre}
 .perm-diff-note{padding:8px 10px;color:var(--fg-dim,#93a2b8);font-size:12px}
+
+/* M11 - movil de una mano: targets de 44 px, composer con safe-area y sheet de sesiones.
+   Solo aplica por debajo de 760 px; en escritorio no cambia nada. */
+@media (max-width: 760px) {
+  .composer-wrap { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .composer button, .composer-meta button, .perm button, .ctx-meter,
+  .sidebar button, .menu button, .welcome button, .aegis-onboard button {
+    min-height: 44px; min-width: 44px;
+  }
+  .composer-meta .aegis-mode { min-width: auto; padding: 0 12px; }
+  .ctx-meter { min-height: 30px; }
+  .sidebar { max-height: min(76vh, 640px); }
+  .sidebar .row, .sidebar li { min-height: 44px; }
+  .tool-card summary, .perm, .aegis-mem .fact, .aegis-art .item {
+    min-height: 44px;
+  }
+  .aegis-mem, .aegis-art, .aegis-pal { border-radius: 14px; }
+  .aegis-art { grid-template-columns: 1fr; }
+  .aegis-art .list { max-height: 34vh; border-right: 0; border-bottom: 1px solid rgba(255,255,255,.07); }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}
