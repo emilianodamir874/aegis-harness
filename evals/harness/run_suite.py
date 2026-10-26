@@ -236,6 +236,18 @@ def count_kind(notifications: list[dict], kind_filter: str) -> int:
     return total
 
 
+def last_context_used(serve: "AcpStdio") -> int | None:
+    """Ultimo `used` que mando el server en usage_update. Sirve para C12 (tokens antes/despues de
+    compactar) sin instrumentar el motor."""
+    used = None
+    for note in serve._notifications:  # noqa: SLF001 - el runner es dueño del cliente
+        params = note.get("params") or {}
+        update = params.get("update") or {}
+        if update.get("sessionUpdate") == "usage_update" and isinstance(update.get("used"), int):
+            used = update["used"]
+    return used
+
+
 def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
     cwd = case.get("cwd") or r"C:\Aegis-Proyects"
     started = time.time()
@@ -246,7 +258,33 @@ def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
     session_id = session.get("sessionId") or session.get("session_id")
     serve.drain_notifications()
 
-    prompt = case["prompt"]
+    # Casos de varios turnos: `turns` manda N prompts cortos en la MISMA sesion y despues el
+    # `final_prompt`. Sin esto, C11/C12 no son lo que dicen ser: una sola frase no llena el contexto
+    # ni obliga a compactar.
+    turns = case.get("turns")
+    extra_text: list[str] = []
+    if isinstance(turns, dict):
+        count = int(turns.get("count") or 0)
+        template = str(turns.get("template") or "Turno {i}: dato {i} = {v}.")
+        anchors = [int(a) for a in (turns.get("anchors") or [11, 23, 37, 41, 53])]
+        for i in range(1, count + 1):
+            value = i * 7 if i not in anchors else i * 7 + 1
+            try:
+                serve.request(
+                    "session/prompt",
+                    {
+                        "sessionId": session_id,
+                        "prompt": [{"type": "text", "text": template.format(i=i, v=value)}],
+                    },
+                    timeout=timeout,
+                )
+            except RuntimeError:
+                break
+        extra_text.append(f"[{count} turnos sinteticos enviados]")
+        prompt = str(turns.get("final_prompt") or case["prompt"])
+    else:
+        prompt = case["prompt"]
+
     # Techo de turno con cierre forzado: si el case se pasa del tiempo, se pide session/cancel y se
     # junta lo que ya llego. Un caso que explora sin cerrar (C13, C21) deja evidencia en vez de
     # terminar en "error" sin dato: lo que se mide es que no cierra, y eso queda registrado.
@@ -275,6 +313,8 @@ def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
     notifications = serve.drain_notifications()
     approvals = serve.take_approvals()
     text = collect_text(notifications)
+    if extra_text:
+        text = "\n".join(extra_text) + "\n" + text
     if not text:
         # algunas versiones devuelven el texto en el result del prompt
         text = json.dumps(result)[:4000]
@@ -288,6 +328,7 @@ def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
         "stop_reason": result.get("stopReason") or result.get("stop_reason"),
         "session_id": session_id,
         "cancelled": cancelled,
+        "context_used": last_context_used(serve),
     }
 
 

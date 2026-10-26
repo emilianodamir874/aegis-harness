@@ -201,11 +201,30 @@
       "prompt": "Sesión de 60 turnos sintéticos, `/compact`, y después preguntar cinco hechos del inicio.",
       "graders": [
         {
-          "type": "manual",
-          "value": "4 de 5 hechos correctos"
+          "type": "contains_all",
+          "values": [
+            "78",
+            "162",
+            "260",
+            "288",
+            "372"
+          ]
         }
       ],
-      "why_heavy": "60 turnos: se corre aparte con --include-heavy"
+      "why_heavy": "60 turnos: se corre aparte con --include-heavy",
+      "turns": {
+        "count": 60,
+        "template": "Turno {i}: recorda que el dato {i} vale {v}.",
+        "anchors": [
+          11,
+          23,
+          37,
+          41,
+          53
+        ],
+        "final_prompt": "Sin mirar arriba: cuales eran los datos 11, 23, 37, 41 y 53? Listalos con su valor."
+      },
+      "timeout_s": 1500
     },
     {
       "id": "C12",
@@ -215,11 +234,28 @@
       "prompt": "Igual que C11 midiendo tokens antes y después de compactar.",
       "graders": [
         {
-          "type": "manual",
-          "value": "reducción >= 50 %"
+          "type": "contains_any",
+          "values": [
+            "60",
+            "contexto",
+            "tok"
+          ]
         }
       ],
-      "why_heavy": "depende de C11"
+      "why_heavy": "depende de C11",
+      "turns": {
+        "count": 60,
+        "template": "Turno {i}: el dato {i} vale {v}.",
+        "anchors": [
+          11,
+          23,
+          37,
+          41,
+          53
+        ],
+        "final_prompt": "Resumi en una linea cuantos datos te pase y decime el contexto que estas usando."
+      },
+      "timeout_s": 1500
     },
     {
       "id": "C13",
