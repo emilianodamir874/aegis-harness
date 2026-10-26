@@ -2998,3 +2998,23 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .sb-more-results:hover { background: var(--bg-hover); color: var(--text); border-style: solid; }
+
+/* selector de carpeta al iniciar chat (2026-10-26) */
+.ws-picker { width: 340px; max-width: calc(100vw - 24px); }
+.ws-row {
+  display: block; width: 100%; text-align: left; padding: 8px 10px; margin: 0 0 2px;
+  border-radius: 9px; background: transparent; border: 1px solid transparent;
+  color: var(--text); cursor: pointer;
+}
+.ws-row:hover, .ws-row:focus-visible { background: var(--bg-hover); border-color: var(--border-soft); }
+.ws-name { display: block; font-weight: 600; font-size: 13px; }
+.ws-path {
+  display: block; font-family: var(--mono); font-size: 11px; color: var(--text-4);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-actions { display: flex; gap: 6px; padding: 8px 10px 10px; }
+.ws-actions input {
+  flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 12px; padding: 6px 8px;
+}
+.ws-empty { color: var(--text-4); font-size: 12px; padding: 6px 10px; margin: 0; }

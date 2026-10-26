@@ -609,7 +609,9 @@ async function blobToWav16k(blob) {
             const m = err && err.message ? err.message : String(err);
             const ya = m.indexOf("[metodo: ") >= 0;
             if (err && typeof err === "object") {
-              err.message = ya ? m : m + " [metodo: " + method + "]";
+              const detalle = err.data == null ? "" : String(err.data).slice(0, 200);
+              const base = ya ? m : m + " [metodo: " + method + "]";
+              err.message = detalle && !base.includes(detalle) ? base + ": " + detalle : base;
               rej(err);
             } else rej(new Error(ya ? m : m + " [metodo: " + method + "]"));
           }
@@ -2625,7 +2627,51 @@ async function blobToWav16k(blob) {
     finishStream();
     runBarHide();
   }
-  async function newSession() {
+  function workspaceRecents(limit) {
+    const seen = /* @__PURE__ */ new Map();
+    const list = Array.isArray(state.sessions) ? state.sessions : [];
+    for (const s of list) {
+      const cwd = s && s.cwd ? String(s.cwd) : "";
+      if (!cwd) continue;
+      const key = cwd.replace(/^\\\\\?\\/, "").replace(/[\\/]+$/, "").toLowerCase();
+      const when = s.updatedAt || "";
+      const prev = seen.get(key);
+      if (!prev || when > prev.when) seen.set(key, { cwd, when });
+    }
+    return [...seen.values()].sort((a, b) => a.when < b.when ? 1 : -1).slice(0, limit);
+  }
+  function wsName(p) {
+    const parts = String(p).split(/[\\/]+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : String(p);
+  }
+  function openWorkspacePicker() {
+    const pop = $("#ws-picker");
+    const body = $("#ws-body");
+    const input = $("#ws-input");
+    if (!pop || !body) return;
+    const rows = [];
+    const current = CFG.cwd || "";
+    if (current) rows.push({ cwd: current, label: "Carpeta por defecto", meta: current });
+    for (const r of workspaceRecents(6)) {
+      if (current && r.cwd.toLowerCase() === current.toLowerCase()) continue;
+      rows.push({ cwd: r.cwd, label: wsName(r.cwd), meta: r.cwd });
+    }
+    body.innerHTML = rows.length ? rows.map((r) => '<button class="ws-row" type="button" data-ws="' + esc(r.cwd) + '"><span class="ws-name">' + esc(r.label) + '</span><span class="ws-path">' + esc(r.meta) + "</span></button>").join("") : '<p class="ws-empty">Todavía no hay carpetas usadas.</p>';
+    if (input) input.value = localStorage.getItem("gweb.ws") || current || "";
+    pop.hidden = false;
+    if (input) setTimeout(() => input.focus(), 0);
+  }
+  function closeWorkspacePicker() {
+    const pop = $("#ws-picker");
+    if (pop) pop.hidden = true;
+  }
+  function startSessionIn(cwd) {
+    closeWorkspacePicker();
+    if (cwd) localStorage.setItem("gweb.ws", cwd);
+    newSession(cwd);
+  }
+  async function newSession(workspace) {
+    const targetCwd = workspace || CFG.cwd || void 0;
     if (!rpc.ready) {
       systemNote("Sin conexión con el backend - reintentando.");
       return;
@@ -2634,13 +2680,13 @@ async function blobToWav16k(blob) {
     saveDraft();
     detachRunView();
     try {
-      const res = await rpc.request("session/new", { cwd: CFG.cwd || void 0, mcpServers: [] });
+      const res = await rpc.request("session/new", { cwd: targetCwd, mcpServers: [] });
       if (state.hubWatchSid) {
         const prev = state.hubWatchSid;
         state.hubWatchSid = null;
         await hubUnwatch(prev);
       }
-      state.current = { id: res.sessionId, title: "Nuevo chat", cwd: CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
+      state.current = { id: res.sessionId, title: "Nuevo chat", cwd: targetCwd || CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
       await aplicarPendientes(res.sessionId);
       resetTransient();
       clearMessages();
@@ -3314,7 +3360,7 @@ ${a.text}
       }
       micDeliver(txt, auto);
     }).catch(function(e) {
-      const msg = String(e && e.message || e).slice(0, 140);
+      const msg = String(e && e.message || e).slice(0, 240);
       report("dictado", provider + " falló: " + msg);
       if (btn) btn.classList.remove("busy");
       systemNote("Falló la transcripción: " + msg);
@@ -5317,7 +5363,34 @@ ${a.text}
       const tool = e.target.closest(".tool.has-content");
       if (tool) tool.classList.toggle("open");
     });
-    $("#btn-new").addEventListener("click", () => newSession());
+    $("#btn-new").addEventListener("click", () => openWorkspacePicker());
+    const wsPop = $("#ws-picker");
+    if (wsPop) {
+      wsPop.addEventListener("click", (e) => {
+        const row = e.target && e.target.closest ? e.target.closest(".ws-row") : null;
+        if (row) startSessionIn(row.getAttribute("data-ws") || "");
+      });
+      const wsCancel = $("#ws-cancel");
+      if (wsCancel) wsCancel.addEventListener("click", closeWorkspacePicker);
+      const wsGo = $("#ws-go");
+      if (wsGo) wsGo.addEventListener("click", () => {
+        const el = $("#ws-input");
+        startSessionIn((el && el.value ? el.value : "").trim());
+      });
+      const wsInput = $("#ws-input");
+      if (wsInput) wsInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          startSessionIn(wsInput.value.trim());
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !wsPop.hidden) {
+          e.stopPropagation();
+          closeWorkspacePicker();
+        }
+      }, true);
+    }
     $("#btn-menu").addEventListener("click", openDrawer);
     $("#overlay").addEventListener("click", closeDrawer);
     $("#btn-close-drawer").addEventListener("click", closeDrawer);

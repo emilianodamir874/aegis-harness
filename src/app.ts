@@ -204,7 +204,11 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
             const ya = m.indexOf("[metodo: ") >= 0;
             // Mantener code/data del JSON-RPC para distinguir method not found y run activo.
             if (err && typeof err === 'object') {
-              err.message = ya ? m : m + " [metodo: " + method + "]";
+              // El servidor manda el motivo real en data (p. ej. "Model file not found: ...").
+              // Sin esto la UI solo mostraba "Internal error" y no habia forma de diagnosticar.
+              const detalle = err.data == null ? '' : String(err.data).slice(0, 200);
+              const base = ya ? m : m + " [metodo: " + method + "]";
+              err.message = detalle && !base.includes(detalle) ? base + ": " + detalle : base;
               rej(err);
             } else rej(new Error(ya ? m : m + " [metodo: " + method + "]"));
           },
@@ -2246,14 +2250,69 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     runBarHide();
   }
 
-  async function newSession() {
+  // --- selector de carpeta al iniciar chat (2026-10-26) ---
+  function workspaceRecents(limit: number): { cwd: string; when: string }[] {
+    const seen = new Map<string, { cwd: string; when: string }>();
+    const list: any[] = Array.isArray((state as any).sessions) ? (state as any).sessions : [];
+    for (const s of list) {
+      const cwd = s && s.cwd ? String(s.cwd) : '';
+      if (!cwd) continue;
+      const key = cwd.replace(/^\\\\\?\\/, '').replace(/[\\/]+$/, '').toLowerCase();
+      const when = s.updatedAt || '';
+      const prev = seen.get(key);
+      if (!prev || when > prev.when) seen.set(key, { cwd, when });
+    }
+    return [...seen.values()].sort((a, b) => (a.when < b.when ? 1 : -1)).slice(0, limit);
+  }
+
+  function wsName(p: string): string {
+    const parts = String(p).split(/[\\/]+/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : String(p);
+  }
+
+  function openWorkspacePicker(): void {
+    const pop = $('#ws-picker');
+    const body = $('#ws-body');
+    const input = $('#ws-input') as HTMLInputElement | null;
+    if (!pop || !body) return;
+    const rows: { cwd: string; label: string; meta: string }[] = [];
+    const current = CFG.cwd || '';
+    if (current) rows.push({ cwd: current, label: 'Carpeta por defecto', meta: current });
+    for (const r of workspaceRecents(6)) {
+      if (current && r.cwd.toLowerCase() === current.toLowerCase()) continue;
+      rows.push({ cwd: r.cwd, label: wsName(r.cwd), meta: r.cwd });
+    }
+    body.innerHTML = rows.length
+      ? rows.map((r) =>
+          '<button class="ws-row" type="button" data-ws="' + esc(r.cwd) + '">' +
+          '<span class="ws-name">' + esc(r.label) + '</span>' +
+          '<span class="ws-path">' + esc(r.meta) + '</span></button>').join('')
+      : '<p class="ws-empty">Todavía no hay carpetas usadas.</p>';
+    if (input) input.value = localStorage.getItem('gweb.ws') || current || '';
+    (pop as HTMLElement).hidden = false;
+    if (input) setTimeout(() => input.focus(), 0);
+  }
+
+  function closeWorkspacePicker(): void {
+    const pop = $('#ws-picker');
+    if (pop) (pop as HTMLElement).hidden = true;
+  }
+
+  function startSessionIn(cwd: string): void {
+    closeWorkspacePicker();
+    if (cwd) localStorage.setItem('gweb.ws', cwd);
+    newSession(cwd);
+  }
+
+  async function newSession(workspace?: string) {
+    const targetCwd = workspace || CFG.cwd || undefined;
     if (!rpc.ready) { systemNote('Sin conexión con el backend - reintentando.'); return; }
     clearTimeout(draftTimer);
     saveDraft(); detachRunView(); // si había un turno en curso, sigue corriendo en el server
     try {
-      const res = await rpc.request('session/new', { cwd: CFG.cwd || undefined, mcpServers: [] });
+      const res = await rpc.request('session/new', { cwd: targetCwd, mcpServers: [] });
       if (state.hubWatchSid) { const prev = state.hubWatchSid; state.hubWatchSid = null; await hubUnwatch(prev); }
-      state.current = { id: res.sessionId, title: 'Nuevo chat', cwd: CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
+      state.current = { id: res.sessionId, title: 'Nuevo chat', cwd: targetCwd || CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
       // Si el usuario eligio modelo/esfuerzo antes de crear el chat, se aplica ahora.
       await aplicarPendientes(res.sessionId);
       resetTransient();
@@ -2943,7 +3002,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       if (!txt) { systemNote('La transcripción vino vacía (' + provider + ').'); handsFreeMaybe(600); return; }
       micDeliver(txt, auto);
     }).catch(function (e) {
-      const msg = String((e && e.message) || e).slice(0, 140);
+      const msg = String((e && e.message) || e).slice(0, 240);
       report('dictado', provider + ' falló: ' + msg);
       if (btn) btn.classList.remove('busy');
       systemNote('Falló la transcripción: ' + msg);
@@ -4933,7 +4992,29 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       if (tool) tool.classList.toggle('open');
     });
 
-    $('#btn-new').addEventListener('click', () => newSession()); // con turno en curso: detachRunView adentro (el run sigue en el server)
+    $('#btn-new').addEventListener('click', () => openWorkspacePicker()); // selector de carpeta (2026-10-26)
+    const wsPop = $('#ws-picker');
+    if (wsPop) {
+      wsPop.addEventListener('click', (e: any) => {
+        const row = e.target && e.target.closest ? e.target.closest('.ws-row') : null;
+        if (row) startSessionIn(row.getAttribute('data-ws') || '');
+      });
+      const wsCancel = $('#ws-cancel');
+      if (wsCancel) wsCancel.addEventListener('click', closeWorkspacePicker);
+      const wsGo = $('#ws-go');
+      if (wsGo) wsGo.addEventListener('click', () => {
+        const el = $('#ws-input') as HTMLInputElement | null;
+        startSessionIn((el && el.value ? el.value : '').trim());
+      });
+      const wsInput = $('#ws-input') as HTMLInputElement | null;
+      if (wsInput) wsInput.addEventListener('keydown', (e: any) => {
+        if (e.key === 'Enter') { e.preventDefault(); startSessionIn(wsInput.value.trim()); }
+      });
+      document.addEventListener('keydown', (e: any) => {
+        if (e.key === 'Escape' && !(wsPop as HTMLElement).hidden) { e.stopPropagation(); closeWorkspacePicker(); }
+      }, true);
+    }
+    // con turno en curso: detachRunView adentro (el run sigue en el server)
     $('#btn-menu').addEventListener('click', openDrawer);
     $('#overlay').addEventListener('click', closeDrawer);
     $('#btn-close-drawer').addEventListener('click', closeDrawer);
