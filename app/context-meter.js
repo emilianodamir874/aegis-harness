@@ -248,6 +248,41 @@ function toggleMap(anchor) {
   close.textContent = "Cerrar";
   close.addEventListener("click", closeMap);
   foot.append(compact, close);
+  const models = Object.keys(prices).filter((key) => !key.startsWith("_"));
+  if (models.length) {
+    const row = document.createElement("div");
+    row.className = "foot";
+    row.style.width = "100%";
+    const select = document.createElement("select");
+    select.style.cssText = "flex:1;min-width:0;font:inherit;color:inherit;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 6px";
+    const actual = modelLabel(usage || {});
+    for (const key of models) {
+      const option = document.createElement("option");
+      option.value = key.split("/").slice(1).join("/") || key;
+      option.textContent = key;
+      if (option.value === actual) option.selected = true;
+      select.appendChild(option);
+    }
+    const aplicar = document.createElement("button");
+    aplicar.textContent = "Aplicar modelo";
+    aplicar.addEventListener("click", async () => {
+      const rpc = window.__aegisWeb?.rpc;
+      const state = window.__aegisWeb?.state || {};
+      const sid = state.current?.id;
+      if (!rpc || !sid) return;
+      aplicar.disabled = true;
+      try {
+        await rpc.request("session/set_config_option", { sessionId: sid, configId: "model", valueId: select.value });
+        closeMap();
+      } catch (error) {
+        aplicar.textContent = "falló: " + String(error.message || error).slice(0, 40);
+      } finally {
+        aplicar.disabled = false;
+      }
+    });
+    row.append(select, aplicar);
+    map.appendChild(row);
+  }
   map.appendChild(foot);
   document.body.appendChild(map);
   const rect = anchor.getBoundingClientRect();
