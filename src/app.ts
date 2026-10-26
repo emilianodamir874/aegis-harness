@@ -1604,6 +1604,126 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     }
   }
 
+  // Diff de lineas por LCS acotado: alcanza para revisar un write/edit antes de aprobarlo y no
+  // arrastra una dependencia nueva. Arriba de 400x400 lineas cae a un resumen con conteos.
+  function lineDiff(antes, despues) {
+    const a = String(antes || '').split('\n');
+    const b = String(despues || '').split('\n');
+    if (a.length > 400 || b.length > 400) {
+      return { lines: null, resumen: a.length + ' lineas -> ' + b.length + ' lineas (demasiado grande para diff linea a linea)' };
+    }
+    const n = a.length;
+    const m = b.length;
+    const dp = new Array(n + 1);
+    for (let i = 0; i <= n; i++) dp[i] = new Uint16Array(m + 1);
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const out = [];
+    let i = 0;
+    let j = 0;
+    let quitadas = 0;
+    let puestas = 0;
+    while (i < n && j < m && out.length < 400) {
+      if (a[i] === b[j]) {
+        out.push(' ' + a[i]);
+        i++;
+        j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        out.push('-' + a[i]);
+        quitadas++;
+        i++;
+      } else {
+        out.push('+' + b[j]);
+        puestas++;
+        j++;
+      }
+    }
+    while (i < n && out.length < 400) {
+      out.push('-' + a[i]);
+      quitadas++;
+      i++;
+    }
+    while (j < m && out.length < 400) {
+      out.push('+' + b[j]);
+      puestas++;
+      j++;
+    }
+    return { lines: out, resumen: '+' + puestas + ' / -' + quitadas };
+  }
+
+  async function renderWriteDiff(cardEl, toolCall) {
+    const ri = (toolCall && toolCall.rawInput) || {};
+    const kind = String(toolCall && (toolCall.kind || toolCall.title) || '').toLowerCase();
+    const escribe = /write|edit|str_replace/.test(kind);
+    const ruta = ri.path || ri.file_path;
+    if (!escribe || !ruta) return;
+    let propuesto = null;
+    if (typeof ri.content === 'string') propuesto = ri.content;
+    else if (typeof ri.file_text === 'string') propuesto = ri.file_text;
+    if (propuesto == null && (typeof ri.old_string === 'string' || typeof ri.new_string === 'string')) {
+      propuesto = { replace: [ri.old_string || '', ri.new_string || ''] };
+    }
+    if (propuesto == null) return;
+    const box = document.createElement('div');
+    box.className = 'perm-diff';
+    box.setAttribute('role', 'region');
+    box.setAttribute('aria-label', 'Cambios propuestos');
+    box.textContent = 'Leyendo el archivo actual...';
+    cardEl.insertBefore(box, cardEl.querySelector('.perm-btns'));
+    try {
+      const resp = await fetch('/file.json?path=' + encodeURIComponent(String(ruta)), { cache: 'no-store' });
+      const data = await resp.json();
+      if (!data || data.exists === false) {
+        if (propuesto && typeof propuesto === 'object') {
+          box.textContent = 'El archivo no existe: no se puede calcular el diff del reemplazo.';
+          return;
+        }
+        const nuevo = lineDiff('', propuesto);
+        box.textContent = '';
+        const head = document.createElement('div');
+        head.className = 'perm-diff-head';
+        head.textContent = 'Archivo nuevo (' + nuevo.resumen + ')';
+        const pre = document.createElement('pre');
+        pre.className = 'perm-diff-body';
+        pre.textContent = (nuevo.lines || []).slice(0, 200).join('\n');
+        box.append(head, pre);
+        return;
+      }
+      const actual = String(data.text || '');
+      let destino = propuesto;
+      if (propuesto && typeof propuesto === 'object' && Array.isArray(propuesto.replace)) {
+        const [viejo, nuevo] = propuesto.replace;
+        if (viejo && !actual.includes(viejo)) {
+          box.textContent = 'El texto a reemplazar no esta en el archivo actual: el diff no aplica tal cual.';
+          return;
+        }
+        destino = viejo ? actual.replace(viejo, nuevo) : actual + nuevo;
+      }
+      const diff = lineDiff(actual, destino);
+      box.textContent = '';
+      const head = document.createElement('div');
+      head.className = 'perm-diff-head';
+      head.textContent = String(ruta) + ' \u00b7 ' + diff.resumen + (data.sha256 ? ' \u00b7 sha ' + String(data.sha256).slice(0, 8) : '');
+      box.appendChild(head);
+      if (!diff.lines) {
+        const nota = document.createElement('div');
+        nota.className = 'perm-diff-note';
+        nota.textContent = diff.resumen;
+        box.appendChild(nota);
+        return;
+      }
+      const pre = document.createElement('pre');
+      pre.className = 'perm-diff-body';
+      pre.textContent = diff.lines.slice(0, 200).join('\n');
+      box.appendChild(pre);
+    } catch (e) {
+      box.textContent = 'No pude leer el archivo para el diff: ' + String((e && e.message) || e);
+    }
+  }
+
   function showPermCard(m) {
     hideWelcome();
     noteRunActivity();
@@ -1624,6 +1744,11 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       `<div class="perm-tool">${esc(etiqueta)}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ''}</div>` +
       '<div class="perm-btns"></div>' +
       `<div class="sr-only" role="status">Aegis pide permiso para ${esc(etiqueta)}. Elegí una opción.</div>`;
+    // M4: revision de diff antes de aplicar. Si la herramienta escribe, se pide el estado actual
+    // del archivo a /file.json y se muestra que queda distinto. El server manda el hash; si el
+    // archivo cambio despues del diff, el bloque lo avisa en vez de mentir.
+    void renderWriteDiff(el, tc);
+
     const btns = el.querySelector('.perm-btns');
     const labels = {
       allow_once: ['Permitir una vez', 'primary'],

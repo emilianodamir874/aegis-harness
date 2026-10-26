@@ -3018,3 +3018,8 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
   border-radius: 8px; color: var(--text); font-family: var(--mono); font-size: 12px; padding: 6px 8px;
 }
 .ws-empty { color: var(--text-4); font-size: 12px; padding: 6px 10px; margin: 0; }
+
+.perm-diff{margin:8px 0 10px;border:1px solid var(--line-strong,rgba(255,255,255,.12));border-radius:8px;overflow:hidden;background:var(--bg-input,rgba(0,0,0,.25))}
+.perm-diff-head{padding:6px 10px;font:12px/1.4 ui-monospace,Consolas,monospace;color:var(--fg-dim,#93a2b8);border-bottom:1px solid var(--line-strong,rgba(255,255,255,.12))}
+.perm-diff-body{margin:0;padding:8px 10px;max-height:260px;overflow:auto;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre}
+.perm-diff-note{padding:8px 10px;color:var(--fg-dim,#93a2b8);font-size:12px}

@@ -1995,6 +1995,122 @@ async function blobToWav16k(blob) {
       permCards.delete(key);
     }
   }
+  function lineDiff(antes, despues) {
+    const a = String(antes || "").split("\n");
+    const b = String(despues || "").split("\n");
+    if (a.length > 400 || b.length > 400) {
+      return { lines: null, resumen: a.length + " lineas -> " + b.length + " lineas (demasiado grande para diff linea a linea)" };
+    }
+    const n = a.length;
+    const m = b.length;
+    const dp = new Array(n + 1);
+    for (let i2 = 0; i2 <= n; i2++) dp[i2] = new Uint16Array(m + 1);
+    for (let i2 = n - 1; i2 >= 0; i2--) {
+      for (let j2 = m - 1; j2 >= 0; j2--) {
+        dp[i2][j2] = a[i2] === b[j2] ? dp[i2 + 1][j2 + 1] + 1 : Math.max(dp[i2 + 1][j2], dp[i2][j2 + 1]);
+      }
+    }
+    const out = [];
+    let i = 0;
+    let j = 0;
+    let quitadas = 0;
+    let puestas = 0;
+    while (i < n && j < m && out.length < 400) {
+      if (a[i] === b[j]) {
+        out.push(" " + a[i]);
+        i++;
+        j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        out.push("-" + a[i]);
+        quitadas++;
+        i++;
+      } else {
+        out.push("+" + b[j]);
+        puestas++;
+        j++;
+      }
+    }
+    while (i < n && out.length < 400) {
+      out.push("-" + a[i]);
+      quitadas++;
+      i++;
+    }
+    while (j < m && out.length < 400) {
+      out.push("+" + b[j]);
+      puestas++;
+      j++;
+    }
+    return { lines: out, resumen: "+" + puestas + " / -" + quitadas };
+  }
+  async function renderWriteDiff(cardEl, toolCall) {
+    const ri = toolCall && toolCall.rawInput || {};
+    const kind = String(toolCall && (toolCall.kind || toolCall.title) || "").toLowerCase();
+    const escribe = /write|edit|str_replace/.test(kind);
+    const ruta = ri.path || ri.file_path;
+    if (!escribe || !ruta) return;
+    let propuesto = null;
+    if (typeof ri.content === "string") propuesto = ri.content;
+    else if (typeof ri.file_text === "string") propuesto = ri.file_text;
+    if (propuesto == null && (typeof ri.old_string === "string" || typeof ri.new_string === "string")) {
+      propuesto = { replace: [ri.old_string || "", ri.new_string || ""] };
+    }
+    if (propuesto == null) return;
+    const box = document.createElement("div");
+    box.className = "perm-diff";
+    box.setAttribute("role", "region");
+    box.setAttribute("aria-label", "Cambios propuestos");
+    box.textContent = "Leyendo el archivo actual...";
+    cardEl.insertBefore(box, cardEl.querySelector(".perm-btns"));
+    try {
+      const resp = await fetch("/file.json?path=" + encodeURIComponent(String(ruta)), { cache: "no-store" });
+      const data = await resp.json();
+      if (!data || data.exists === false) {
+        if (propuesto && typeof propuesto === "object") {
+          box.textContent = "El archivo no existe: no se puede calcular el diff del reemplazo.";
+          return;
+        }
+        const nuevo = lineDiff("", propuesto);
+        box.textContent = "";
+        const head2 = document.createElement("div");
+        head2.className = "perm-diff-head";
+        head2.textContent = "Archivo nuevo (" + nuevo.resumen + ")";
+        const pre2 = document.createElement("pre");
+        pre2.className = "perm-diff-body";
+        pre2.textContent = (nuevo.lines || []).slice(0, 200).join("\n");
+        box.append(head2, pre2);
+        return;
+      }
+      const actual = String(data.text || "");
+      let destino = propuesto;
+      if (propuesto && typeof propuesto === "object" && Array.isArray(propuesto.replace)) {
+        const [viejo, nuevo] = propuesto.replace;
+        if (viejo && !actual.includes(viejo)) {
+          box.textContent = "El texto a reemplazar no esta en el archivo actual: el diff no aplica tal cual.";
+          return;
+        }
+        destino = viejo ? actual.replace(viejo, nuevo) : actual + nuevo;
+      }
+      const diff = lineDiff(actual, destino);
+      box.textContent = "";
+      const head = document.createElement("div");
+      head.className = "perm-diff-head";
+      head.textContent = String(ruta) + " · " + diff.resumen + (data.sha256 ? " · sha " + String(data.sha256).slice(0, 8) : "");
+      box.appendChild(head);
+      if (!diff.lines) {
+        const nota = document.createElement("div");
+        nota.className = "perm-diff-note";
+        nota.textContent = diff.resumen;
+        box.appendChild(nota);
+        return;
+      }
+      const pre = document.createElement("pre");
+      pre.className = "perm-diff-body";
+      pre.textContent = diff.lines.slice(0, 200).join("\n");
+      box.appendChild(pre);
+    } catch (e) {
+      box.textContent = "No pude leer el archivo para el diff: " + String(e && e.message || e);
+    }
+  }
   function showPermCard(m) {
     hideWelcome();
     noteRunActivity();
@@ -2011,6 +2127,7 @@ async function blobToWav16k(blob) {
     const showCmd = cmd && !String(tc.title || "").includes(cmd.slice(0, 32));
     const etiqueta = String(tc.title || tc.kind || "Herramienta");
     el.innerHTML = `<div class="perm-head"><svg class="perm-ico" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.2" y="8.6" width="11.6" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8.6V6.4a3 3 0 0 1 6 0v2.2" stroke="currentColor" stroke-width="1.5"/></svg>Aegis pide permiso para usar una herramienta</div><div class="perm-tool">${esc(etiqueta)}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ""}</div><div class="perm-btns"></div><div class="sr-only" role="status">Aegis pide permiso para ${esc(etiqueta)}. Elegí una opción.</div>`;
+    void renderWriteDiff(el, tc);
     const btns = el.querySelector(".perm-btns");
     const labels = {
       allow_once: ["Permitir una vez", "primary"],
