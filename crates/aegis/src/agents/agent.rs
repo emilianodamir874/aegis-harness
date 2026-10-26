@@ -728,6 +728,7 @@ impl Agent {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             tool_inspection_manager: &self.tool_inspection_manager,
+            permission_manager: Arc::clone(&self.config.permission_manager),
             context_limit,
         };
         let status_operation =

@@ -208,6 +208,24 @@ impl PermissionManager {
             .and_then(|tools| tools.get(tool_name).cloned())
     }
 
+    /// Igual que `session_permission` pero tolera el prefijo de extension. El cliente pide el
+    /// override por nombre corto ("write") y las tools viajan como "developer__write": sin esto el
+    /// bloqueo por sesion no aplicaba a ninguna tool de extension (el modo debate lo tenia mudo).
+    pub fn session_permission_for_tool(
+        &self,
+        session_id: &str,
+        tool_name: &str,
+    ) -> Option<PermissionLevel> {
+        if let Some(level) = self.session_permission(session_id, tool_name) {
+            return Some(level);
+        }
+        let short = tool_name.rsplit("__").next().unwrap_or(tool_name);
+        if short != tool_name {
+            return self.session_permission(session_id, short);
+        }
+        None
+    }
+
     /// Reemplaza los overrides de la sesion. Una lista vacia los borra: apagar el debate no deja
     /// rastro ni aunque el proceso muera en el medio.
     pub fn set_session_permissions<I>(&self, session_id: &str, entries: I)
@@ -412,6 +430,32 @@ mod tests {
         assert_eq!(
             manager.get_user_permission("tool6"),
             Some(PermissionLevel::NeverAllow)
+        );
+    }
+
+    #[test]
+    fn session_override_matches_namespaced_tool_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let manager = PermissionManager::new(dir.path().to_path_buf());
+        manager.set_session_permissions(
+            "s1",
+            vec![("write".to_string(), PermissionLevel::NeverAllow)],
+        );
+        assert_eq!(
+            manager.session_permission_for_tool("s1", "developer__write"),
+            Some(PermissionLevel::NeverAllow)
+        );
+        assert_eq!(
+            manager.session_permission_for_tool("s1", "write"),
+            Some(PermissionLevel::NeverAllow)
+        );
+        assert_eq!(
+            manager.session_permission_for_tool("s1", "developer__read_file"),
+            None
+        );
+        assert_eq!(
+            manager.session_permission_for_tool("otra", "developer__write"),
+            None
         );
     }
 

@@ -181,6 +181,7 @@ impl TestPipeline {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
             tool_inspection_manager: &self.tool_inspection_manager,
+            permission_manager: Arc::clone(&self.permission_manager),
             context_limit: self.model_config.context_limit(),
         };
         let status_operation = Arc::new(StatusOperation::new(

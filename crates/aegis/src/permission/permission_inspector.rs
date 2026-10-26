@@ -161,7 +161,7 @@ impl ToolInspector for PermissionInspector {
                     // Auto no consultaba permisos: el modo debate necesita que un override de
                     // sesion pueda negar aunque el modo sea auto (y que no toque a otras sesiones).
                     AegisMode::Auto => match permission_manager
-                        .session_permission(session_id, tool_name)
+                        .session_permission_for_tool(session_id, tool_name)
                     {
                         Some(PermissionLevel::NeverAllow) => InspectionAction::Deny,
                         Some(PermissionLevel::AskBefore) => InspectionAction::RequireApproval(None),
@@ -170,7 +170,7 @@ impl ToolInspector for PermissionInspector {
                     AegisMode::Approve | AegisMode::SmartApprove => {
                         // 1. Check user-defined permission first
                         if let Some(level) = permission_manager
-                            .session_permission(session_id, tool_name)
+                            .session_permission_for_tool(session_id, tool_name)
                             .or_else(|| permission_manager.get_user_permission(tool_name))
                         {
                             match level {

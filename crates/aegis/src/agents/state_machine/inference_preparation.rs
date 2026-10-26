@@ -3,6 +3,7 @@
 use crate::agents::extension_manager::{ExtensionLease, ExtensionManager};
 use crate::agents::state_machine::awaits_tool_responses;
 use crate::agents::PromptManager;
+use crate::config::permission::{PermissionLevel, PermissionManager};
 use crate::config::AegisMode;
 use crate::session::Session;
 use crate::tool_inspection::ToolInspectionManager;
@@ -18,7 +19,21 @@ pub struct AegisInferenceRequestPreparer<'a> {
     pub(crate) extension_manager: Arc<ExtensionManager>,
     pub(crate) extension_lease: Arc<StdMutex<Option<Arc<ExtensionLease>>>>,
     pub(crate) tool_inspection_manager: &'a ToolInspectionManager,
+    pub(crate) permission_manager: Arc<PermissionManager>,
     pub(crate) context_limit: usize,
+}
+
+/// Saca del set las tools que la sesion tiene en `never_allow`. No es cosmetico: un modo plan que
+/// solo bloquea deja al modelo gastando el turno intentando escribir; sin la tool en el set, ni lo
+/// intenta. El nombre puede venir con prefijo de extension, por eso se consulta la variante tolerante.
+pub fn filter_denied_tools(
+    tools: Vec<rmcp::model::Tool>,
+    denied: impl Fn(&str) -> bool,
+) -> Vec<rmcp::model::Tool> {
+    tools
+        .into_iter()
+        .filter(|tool| !denied(tool.name.as_ref()))
+        .collect()
 }
 
 #[async_trait]
@@ -54,7 +69,13 @@ impl InferenceRequestPreparer<Session> for AegisInferenceRequestPreparer<'_> {
             self.tool_inspection_manager
                 .apply_tool_annotations(&input.tools);
         }
-        let tools = crate::agents::reply_parts::prepare_inference_tools(input.tools);
+        let session_id = session.id.to_string();
+        let tools_libres = filter_denied_tools(input.tools, |name| {
+            self.permission_manager
+                .session_permission_for_tool(&session_id, name)
+                == Some(PermissionLevel::NeverAllow)
+        });
+        let tools = crate::agents::reply_parts::prepare_inference_tools(tools_libres);
         let system_prompt =
             PromptManager::new().build_system_prompt(session, input.prompt_parts, aegis_mode);
         let turn = messages_since_kickoff(conversation)?;
