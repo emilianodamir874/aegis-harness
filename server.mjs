@@ -1,14 +1,174 @@
+// src/server.ts
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { readFile, appendFile, mkdir, stat } from "node:fs/promises";
+import { readFile, appendFile, mkdir, stat, opendir } from "node:fs/promises";
 import zlib from "node:zlib";
-import { join, extname, normalize } from "node:path";
+import { join, extname, normalize, resolve, dirname, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-const DIR = fileURLToPath(new URL(".", import.meta.url));
-const gzipCache = /* @__PURE__ */ new Map();
+
+// src/piper-vivo.ts
+import { spawn } from "node:child_process";
+import { mkdirSync, readdirSync, statSync, readFileSync, unlinkSync } from "node:fs";
+var EXE = "C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe";
+var VOZ_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
+var DIR = "C:/Aegis-Proyects/tmp/piper-vivo";
+var IDLE_MS = 5 * 60 * 1e3;
+var TIMEOUT_MS = 3e4;
+var viv = { proc: null, clave: "", cola: Promise.resolve(), ultimo: 0, dir: false };
+var dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+function prepararDir() {
+  if (viv.dir) return;
+  mkdirSync(DIR, { recursive: true });
+  try {
+    for (const f of readdirSync(DIR)) if (f.endsWith(".wav")) unlinkSync(DIR + "/" + f);
+  } catch (e) {
+  }
+  viv.dir = true;
+}
+function listo(voz, ritmo, ns = 0.667, nw = 0.8) {
+  const clave = voz + "|" + ritmo.toFixed(3) + "|" + ns.toFixed(3) + "|" + nw.toFixed(3);
+  if (viv.proc && viv.clave === clave) return viv.proc;
+  if (viv.proc) {
+    try {
+      viv.proc.kill();
+    } catch (e) {
+    }
+    viv.proc = null;
+  }
+  prepararDir();
+  const proc = spawn(EXE, [
+    "-m",
+    VOZ_DIR + "/" + voz + ".onnx",
+    "-d",
+    DIR,
+    "-q",
+    "--length_scale",
+    String(ritmo),
+    "--noise_scale",
+    String(ns),
+    "--noise_w",
+    String(nw),
+    "--sentence_silence",
+    "0.12"
+  ]);
+  proc.stdout.on("data", () => {
+  });
+  proc.stderr.on("data", () => {
+  });
+  proc.on("exit", () => {
+    if (viv.proc === proc) viv.proc = null;
+  });
+  viv.proc = proc;
+  viv.clave = clave;
+  viv.ultimo = Date.now();
+  return proc;
+}
+async function piperDespertar(voz, ritmo) {
+  const v = voz || "es_AR-daniela-high";
+  const r = typeof ritmo === "number" ? ritmo : 0.98;
+  try {
+    listo(v, r, 0.667, 0.8);
+    await piperVivo("Listo.", v, r);
+  } catch (e) {
+  }
+}
+function piperVivo(texto, voz, ritmo, ns = 0.667, nw = 0.8) {
+  const tarea = async () => {
+    if (viv.proc && Date.now() - viv.ultimo > IDLE_MS) {
+      try {
+        viv.proc.kill();
+      } catch (e) {
+      }
+      viv.proc = null;
+    }
+    const proc = listo(voz, ritmo, ns, nw);
+    const antes = new Set(readdirSync(DIR).filter((f) => f.endsWith(".wav")));
+    proc.stdin.write(String(texto).replace(/[\r\n]+/g, " ") + "\n");
+    viv.ultimo = Date.now();
+    const t0 = Date.now();
+    while (Date.now() - t0 < TIMEOUT_MS) {
+      const nuevas = readdirSync(DIR).filter((f) => f.endsWith(".wav") && !antes.has(f));
+      if (nuevas.length) {
+        const ruta = DIR + "/" + nuevas[0];
+        const a = statSync(ruta).size;
+        await dormir(60);
+        if (a > 1e3 && a === statSync(ruta).size) {
+          const buf = readFileSync(ruta);
+          try {
+            unlinkSync(ruta);
+          } catch (e) {
+          }
+          return buf;
+        }
+      }
+      await dormir(15);
+    }
+    try {
+      proc.kill();
+    } catch (e) {
+    }
+    if (viv.proc === proc) viv.proc = null;
+    throw new Error("piper vivo sin respuesta en " + TIMEOUT_MS + " ms");
+  };
+  const encadenada = viv.cola.then(tarea, tarea);
+  viv.cola = encadenada.catch(() => {
+  });
+  return encadenada;
+}
+
+// src/server.ts
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
+var WS_ROOTS = (process.env.AEGIS_WORKSPACE_ROOTS || "C:\\Aegis-Proyects;C:\\Users\\Emiliano").split(";").map((s) => s.trim()).filter(Boolean).map((s) => resolve(s));
+function wsInside(path) {
+  const target = resolve(path).toLowerCase();
+  return WS_ROOTS.some((root) => {
+    const r = root.toLowerCase();
+    return target === r || target.startsWith(r.endsWith(sep) ? r : r + sep);
+  });
+}
+async function workspaceList(raw) {
+  try {
+    if (!raw) {
+      const entries2 = [];
+      for (const root of WS_ROOTS) {
+        try {
+          const st = await stat(root);
+          if (st.isDirectory()) entries2.push({ path: root, name: basename(root) || root });
+        } catch {
+        }
+      }
+      return JSON.stringify({ path: "", parent: null, entries: entries2 });
+    }
+    const target = resolve(raw);
+    if (!wsInside(target)) {
+      return JSON.stringify({ path: target, parent: null, entries: [], error: "fuera de las raices permitidas" });
+    }
+    const entries = [];
+    const dir = await opendir(target);
+    for await (const entry of dir) {
+      if (entries.length >= 200) break;
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.name === "target") continue;
+      entries.push({ path: join(target, entry.name), name: entry.name });
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name, "es"));
+    const up = dirname(target);
+    const parent = up !== target && wsInside(up) ? up : null;
+    return JSON.stringify({ path: target, parent, entries });
+  } catch (e) {
+    return JSON.stringify({
+      path: raw,
+      parent: null,
+      entries: [],
+      error: String(e?.message || e)
+    });
+  }
+}
+var DIR2 = fileURLToPath(new URL(".", import.meta.url));
+var gzipCache = /* @__PURE__ */ new Map();
 function gzipBuf(buf, key) {
   const hit = gzipCache.get(key);
   if (hit) return hit;
@@ -17,16 +177,16 @@ function gzipBuf(buf, key) {
   gzipCache.set(key, out);
   return out;
 }
-const cfg = JSON.parse(await readFile(join(DIR, "config.json"), "utf8"));
-const APP = join(DIR, "app");
-const OUTBOX = join(DIR, "outbox");
+var cfg = JSON.parse(await readFile(join(DIR2, "config.json"), "utf8"));
+var APP = join(DIR2, "app");
+var OUTBOX = join(DIR2, "outbox");
 await mkdir(OUTBOX, { recursive: true }).catch(() => {
 });
-await mkdir(join(DIR, "logs"), { recursive: true }).catch(() => {
+await mkdir(join(DIR2, "logs"), { recursive: true }).catch(() => {
 });
-const logLine = (file, line) => appendFile(join(DIR, "logs", file), line).catch(() => {
+var logLine = (file, line) => appendFile(join(DIR2, "logs", file), line).catch(() => {
 });
-let goalsCache = /* @__PURE__ */ new Map();
+var goalsCache = /* @__PURE__ */ new Map();
 async function goalsIndex(sid) {
   const clave = sid || "";
   const previo = goalsCache.get(clave);
@@ -34,7 +194,7 @@ async function goalsIndex(sid) {
   let body;
   try {
     const { execFile } = await import("node:child_process");
-    const args = ["--experimental-sqlite", join(DIR, "tools", "goals-index.mjs")];
+    const args = ["--experimental-sqlite", join(DIR2, "tools", "goals-index.mjs")];
     if (clave) args.push(clave);
     body = await new Promise((ok) => {
       execFile(
@@ -50,7 +210,7 @@ async function goalsIndex(sid) {
   goalsCache = /* @__PURE__ */ new Map([[clave, { at: Date.now(), body }]]);
   return body;
 }
-let statsCache = /* @__PURE__ */ new Map();
+var statsCache = /* @__PURE__ */ new Map();
 async function statsIndex(days) {
   const clave = String(days || 0);
   const previo = statsCache.get(clave);
@@ -58,7 +218,7 @@ async function statsIndex(days) {
   let body;
   try {
     const { execFile } = await import("node:child_process");
-    const args = ["--experimental-sqlite", join(DIR, "tools", "stats-index.mjs"), "--days", clave];
+    const args = ["--experimental-sqlite", join(DIR2, "tools", "stats-index.mjs"), "--days", clave];
     body = await new Promise((ok) => {
       execFile(
         process.execPath,
@@ -73,9 +233,9 @@ async function statsIndex(days) {
   statsCache = /* @__PURE__ */ new Map([[clave, { at: Date.now(), body }]]);
   return body;
 }
-const searchCache = /* @__PURE__ */ new Map();
-const SEARCH_TTL_MS = 15e3;
-const SEARCH_MAX_ENTRIES = 40;
+var searchCache = /* @__PURE__ */ new Map();
+var SEARCH_TTL_MS = 15e3;
+var SEARCH_MAX_ENTRIES = 40;
 async function searchIndex(queryRaw, limit) {
   const query = String(queryRaw || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
   const clave = limit + "|" + query.toLowerCase();
@@ -87,7 +247,7 @@ async function searchIndex(queryRaw, limit) {
   } else {
     try {
       const { execFile } = await import("node:child_process");
-      const args = ["--experimental-sqlite", join(DIR, "tools", "search-index.mjs"), "--query", query, "--limit", String(limit)];
+      const args = ["--experimental-sqlite", join(DIR2, "tools", "search-index.mjs"), "--query", query, "--limit", String(limit)];
       body = await new Promise((ok) => {
         execFile(
           process.execPath,
@@ -107,15 +267,15 @@ async function searchIndex(queryRaw, limit) {
   }
   return body;
 }
-const AUTH_FILE = join(DIR, "auth.json");
-let auth = null;
+var AUTH_FILE = join(DIR2, "auth.json");
+var auth = null;
 try {
   auth = JSON.parse((await readFile(AUTH_FILE, "utf8")).replace(/^\uFEFF/, ""));
 } catch {
 }
-const COOKIE = "gw_auth";
-const COOKIE_TTL_MS = 30 * 24 * 3600 * 1e3;
-const HMAC_KEY = String(cfg.secretKey || "aegis-web") + "|" + String(cfg.authStamp || "v1");
+var COOKIE = "gw_auth";
+var COOKIE_TTL_MS = 30 * 24 * 3600 * 1e3;
+var HMAC_KEY = String(cfg.secretKey || "aegis-web") + "|" + String(cfg.authStamp || "v1");
 function sign(exp) {
   return crypto.createHmac("sha256", HMAC_KEY).update(`gw|${exp}`).digest("base64url");
 }
@@ -146,7 +306,7 @@ function parseCookies(header) {
 function authed(req) {
   return verifyToken(parseCookies(req.headers.cookie)[COOKIE]);
 }
-const PRIVATE_V4 = [
+var PRIVATE_V4 = [
   /^10\./,
   /^192\.168\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
@@ -172,7 +332,7 @@ function isTunnel(req) {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return !isPrivateIp(host);
   return true;
 }
-const loginFails = /* @__PURE__ */ new Map();
+var loginFails = /* @__PURE__ */ new Map();
 function loginBlocked(ip) {
   const e = loginFails.get(ip);
   if (!e) return false;
@@ -188,14 +348,14 @@ function noteLoginFail(ip) {
   else e.n += 1;
 }
 function loginPage(variant, next) {
-  const error = variant === "bad" ? '<p class="err" id="err" role="alert">Contraseña incorrecta. Probá de nuevo.</p>' : variant === "blocked" ? '<p class="err" id="err" role="alert">Demasiados intentos. Esperá un minuto antes de reintentar.</p>' : "";
+  const error = variant === "bad" ? '<p class="err" id="err" role="alert">Contrase\xF1a incorrecta. Prob\xE1 de nuevo.</p>' : variant === "blocked" ? '<p class="err" id="err" role="alert">Demasiados intentos. Esper\xE1 un minuto antes de reintentar.</p>' : "";
   const invalid = error ? ' aria-invalid="true" aria-describedby="err"' : "";
   const action = "/login?next=" + encodeURIComponent(safeNext(next));
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1e1d1b"><meta name="color-scheme" content="dark">
-<meta name="robots" content="noindex"><title>Aegis · acceso</title>
+<meta name="robots" content="noindex"><title>Aegis \xB7 acceso</title>
 <style>
   :root {
     color-scheme: dark;
@@ -250,12 +410,12 @@ function loginPage(variant, next) {
     <b>Aegis</b><span class="chip">web</span>
   </div>
   <h1>Acceso al harness</h1>
-  <p class="sub">Estás entrando por el túnel de Cloudflare.</p>
-  <label for="password">Contraseña</label>
-  <input id="password" type="password" name="password" placeholder="Contraseña" autocomplete="current-password" autofocus required${invalid}>
+  <p class="sub">Est\xE1s entrando por el t\xFAnel de Cloudflare.</p>
+  <label for="password">Contrase\xF1a</label>
+  <input id="password" type="password" name="password" placeholder="Contrase\xF1a" autocomplete="current-password" autofocus required${invalid}>
   <button type="submit">Entrar</button>
   ${error}
-  <p class="hint">La sesión queda guardada 30 días en este dispositivo.</p>
+  <p class="hint">La sesi\xF3n queda guardada 30 d\xEDas en este dispositivo.</p>
 </form>
 </body></html>`;
 }
@@ -300,7 +460,7 @@ function configFor(req) {
     host: proxied ? host : `${cfg.publicHost}:${cfg.servePort}`
   };
 }
-const MIME = {
+var MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
@@ -318,11 +478,11 @@ const MIME = {
   ".map": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8"
 };
-const SEC = {
+var SEC = {
   "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; base-uri 'none'; form-action 'none'",
   "x-content-type-options": "nosniff"
 };
-const SEC_LOGIN = {
+var SEC_LOGIN = {
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'",
   "x-content-type-options": "nosniff"
 };
@@ -373,14 +533,12 @@ function proxyAcp(req, socket, head) {
   });
   up.end();
 }
-import { piperVivo, piperDespertar } from "./piper-vivo.js";
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
-const PIPER_EXE = "C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe";
-const PIPER_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
-const PIPER_VOZ = "es_AR-daniela-high";
-const _ttsCache = /* @__PURE__ */ new Map();
-const TTS_CACHE_MAX = 24;
-let _vocesPiper = null;
+var PIPER_EXE = "C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe";
+var PIPER_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
+var PIPER_VOZ = "es_AR-daniela-high";
+var _ttsCache = /* @__PURE__ */ new Map();
+var TTS_CACHE_MAX = 24;
+var _vocesPiper = null;
 async function vozPiperValida(voz) {
   const fss = await import("node:fs");
   try {
@@ -395,7 +553,7 @@ async function vozPiperValida(voz) {
   const v = String(voz || "").replace(/[^A-Za-z0-9_.-]/g, "");
   return _vocesPiper.has(v) ? v : PIPER_VOZ;
 }
-let _caminoTts = "vivo";
+var _caminoTts = "vivo";
 function headroomWav(buf, objetivo = 0.84) {
   if (!buf || buf.length < 44 || buf.toString("ascii", 0, 4) !== "RIFF") return buf;
   const out = Buffer.from(buf);
@@ -444,12 +602,12 @@ async function piperTts(texto, voz, rate, ns = 0.667, nw = 0.8) {
   return audio;
 }
 async function piperSuelto(texto, modelo, ritmo, ns = 0.667, nw = 0.8) {
-  const { spawn } = await import("node:child_process");
+  const { spawn: spawn2 } = await import("node:child_process");
   const clave = modelo + "|" + ritmo.toFixed(3) + "|" + ns.toFixed(3) + "|" + nw.toFixed(3) + "|" + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
-  const audio = await new Promise((resolve, reject) => {
-    const p = spawn(PIPER_EXE, [
+  const audio = await new Promise((resolve2, reject) => {
+    const p = spawn2(PIPER_EXE, [
       "-m",
       PIPER_DIR + "/" + modelo + ".onnx",
       "-f",
@@ -476,7 +634,7 @@ async function piperSuelto(texto, modelo, ritmo, ns = 0.667, nw = 0.8) {
       const buf = Buffer.concat(partes);
       if (code !== 0) return reject(new Error("piper exit " + code + " " + err.slice(0, 200)));
       if (!buf || buf.length < 100) return reject(new Error("piper sin audio: " + err.slice(0, 150)));
-      resolve(buf);
+      resolve2(buf);
     });
     p.stdin.write(String(texto));
     p.stdin.end();
@@ -486,14 +644,14 @@ async function piperSuelto(texto, modelo, ritmo, ns = 0.667, nw = 0.8) {
   return audio;
 }
 function backendTcpReady() {
-  return new Promise((resolve) => {
+  return new Promise((resolve2) => {
     const socket = net.connect({ host: "127.0.0.1", port: Number(cfg.servePort) });
     let finished = false;
     const done = (ready) => {
       if (finished) return;
       finished = true;
       socket.destroy();
-      resolve(ready);
+      resolve2(ready);
     };
     socket.setTimeout(800, () => done(false));
     socket.once("connect", () => done(true));
@@ -502,11 +660,11 @@ function backendTcpReady() {
 }
 piperDespertar().catch(() => {
 });
-const EDGE_VOZ = "es-AR-ElenaNeural";
-const EDGE_VOCES = /* @__PURE__ */ new Set(["es-AR-ElenaNeural", "es-AR-TomasNeural", "es-MX-DaliaNeural", "es-ES-ElviraNeural", "es-ES-AlvaroNeural"]);
-const _edge = new MsEdgeTTS();
-let _edgeVoz = "";
-let _edgeCola = Promise.resolve();
+var EDGE_VOZ = "es-AR-ElenaNeural";
+var EDGE_VOCES = /* @__PURE__ */ new Set(["es-AR-ElenaNeural", "es-AR-TomasNeural", "es-MX-DaliaNeural", "es-ES-ElviraNeural", "es-ES-AlvaroNeural"]);
+var _edge = new MsEdgeTTS();
+var _edgeVoz = "";
+var _edgeCola = Promise.resolve();
 async function edgeTts(texto, voz, rate) {
   const modelo = EDGE_VOCES.has(voz) ? voz : EDGE_VOZ;
   const pct = Math.round((Number(rate) > 0.5 && Number(rate) < 2 ? Number(rate) : 1) * 100 - 100);
@@ -519,10 +677,10 @@ async function edgeTts(texto, voz, rate) {
       _edgeVoz = modelo;
     }
     const { audioStream } = _edge.toStream(texto, { rate: (pct >= 0 ? "+" : "") + pct + "%" });
-    const buf2 = await new Promise((resolve, reject) => {
+    const buf2 = await new Promise((resolve2, reject) => {
       const partes = [];
       audioStream.on("data", (x) => partes.push(x));
-      audioStream.on("end", () => resolve(Buffer.concat(partes)));
+      audioStream.on("end", () => resolve2(Buffer.concat(partes)));
       audioStream.on("error", reject);
     });
     if (!buf2 || !buf2.length) throw new Error("edge-tts sin audio");
@@ -536,7 +694,7 @@ async function edgeTts(texto, voz, rate) {
   _ttsCache.set(clave, buf);
   return buf;
 }
-const handler = async (req, res) => {
+var handler = async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
     const ip = req.socket.remoteAddress || "?";
@@ -701,7 +859,7 @@ const handler = async (req, res) => {
       }
       const chunks = [];
       let bytes = 0;
-      const received = await new Promise((resolve) => {
+      const received = await new Promise((resolve2) => {
         let settled = false;
         const finish = (ok) => {
           if (settled) return;
@@ -711,7 +869,7 @@ const handler = async (req, res) => {
           req.off("aborted", onAborted);
           req.off("error", onAborted);
           req.setTimeout(0);
-          resolve(ok);
+          resolve2(ok);
         };
         const onData = (chunk) => {
           bytes += chunk.length;
@@ -742,10 +900,16 @@ ${Buffer.concat(chunks).toString("utf8")}
       res.end();
       return;
     }
+    if (url.pathname === "/ws/list") {
+      const body2 = await workspaceList(url.searchParams.get("path") || "");
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
+      res.end(body2);
+      return;
+    }
     if (url.pathname === "/prices.json") {
       let body2 = "{}";
       try {
-        body2 = await readFile(join(DIR, "prices.json"), "utf8");
+        body2 = await readFile(join(DIR2, "prices.json"), "utf8");
       } catch (e) {
         body2 = JSON.stringify({ _error: String(e && e.message || e) });
       }
@@ -890,8 +1054,8 @@ ${Buffer.concat(chunks).toString("utf8")}
     res.end(String(err));
   }
 };
-const server = http.createServer(handler);
-const onUpgrade = (req, socket, head) => {
+var server = http.createServer(handler);
+var onUpgrade = (req, socket, head) => {
   let url;
   try {
     url = new URL(req.url, "http://localhost");
@@ -916,15 +1080,15 @@ const onUpgrade = (req, socket, head) => {
   proxyAcp(req, socket, head);
 };
 server.on("upgrade", onUpgrade);
-const port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
+var port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
 server.listen(port, "0.0.0.0", () => {
   console.log(`[aegis-web] UI:      http://${cfg.publicHost}:${port}   (LAN)`);
   console.log(`[aegis-web] UI:      http://127.0.0.1:${port}          (local)`);
   console.log(`[aegis-web] backend: ws://${cfg.publicHost}:${cfg.servePort}/acp   (directo, LAN)`);
   console.log(`[aegis-web] tunel:   wss://<host>/acp proxeado a 127.0.0.1:${cfg.servePort}  (login: ${auth ? "auth.json" : "SIN auth.json -> tunel cerrado"})`);
 });
-const tlsDir = process.env.AEGIS_WEB_TLS_DIR || cfg.tlsDir || "";
-const httpsPort = Number(process.env.AEGIS_WEB_HTTPS_PORT || cfg.httpsPort || 3789);
+var tlsDir = process.env.AEGIS_WEB_TLS_DIR || cfg.tlsDir || "";
+var httpsPort = Number(process.env.AEGIS_WEB_HTTPS_PORT || cfg.httpsPort || 3789);
 if (tlsDir) {
   const crtPath = join(tlsDir, "server.crt");
   const keyPath = join(tlsDir, "server.key");

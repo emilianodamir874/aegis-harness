@@ -12,10 +12,66 @@ import https from 'node:https';
 import net from 'node:net';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { readFile, appendFile, mkdir, stat } from 'node:fs/promises';
+import { readFile, appendFile, mkdir, stat, opendir } from 'node:fs/promises';
 import zlib from 'node:zlib';
-import { join, extname, normalize } from 'node:path';
+import { join, extname, normalize, resolve, dirname, basename, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Raices donde el selector de workspace puede navegar. Configurable por AEGIS_WORKSPACE_ROOTS
+// (lista separada por ';'). Fuera de estas raices no se lista nada.
+const WS_ROOTS: string[] = (process.env.AEGIS_WORKSPACE_ROOTS || 'C:\\Aegis-Proyects;C:\\Users\\Emiliano')
+  .split(';')
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((s) => resolve(s));
+
+function wsInside(path: string): boolean {
+  const target = resolve(path).toLowerCase();
+  return WS_ROOTS.some((root) => {
+    const r = root.toLowerCase();
+    return target === r || target.startsWith(r.endsWith(sep) ? r : r + sep);
+  });
+}
+
+async function workspaceList(raw: string): Promise<string> {
+  try {
+    if (!raw) {
+      const entries: { path: string; name: string }[] = [];
+      for (const root of WS_ROOTS) {
+        try {
+          const st = await stat(root);
+          if (st.isDirectory()) entries.push({ path: root, name: basename(root) || root });
+        } catch {
+          // raiz inexistente: se omite
+        }
+      }
+      return JSON.stringify({ path: '', parent: null, entries });
+    }
+    const target = resolve(raw);
+    if (!wsInside(target)) {
+      return JSON.stringify({ path: target, parent: null, entries: [], error: 'fuera de las raices permitidas' });
+    }
+    const entries: { path: string; name: string }[] = [];
+    const dir = await opendir(target);
+    for await (const entry of dir) {
+      if (entries.length >= 200) break;
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'target') continue;
+      entries.push({ path: join(target, entry.name), name: entry.name });
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    const up = dirname(target);
+    const parent = up !== target && wsInside(up) ? up : null;
+    return JSON.stringify({ path: target, parent, entries });
+  } catch (e) {
+    return JSON.stringify({
+      path: raw,
+      parent: null,
+      entries: [],
+      error: String((e as Error)?.message || e),
+    });
+  }
+}
 
 const DIR = fileURLToPath(new URL('.', import.meta.url));
 
@@ -824,6 +880,14 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       logLine('client.log', `--- ${new Date().toISOString()} ${ip}\n${Buffer.concat(chunks).toString('utf8')}\n`);
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // Carpetas para el selector de workspace: navegacion limitada a raices permitidas.
+    if (url.pathname === '/ws/list') {
+      const body = await workspaceList(url.searchParams.get('path') || '');
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
+      res.end(body);
       return;
     }
 
