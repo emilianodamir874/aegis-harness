@@ -243,11 +243,26 @@
       "prompt": "Escribir un hecho con memory_write, compactar y verificar que sigue en el digest.",
       "graders": [
         {
-          "type": "manual",
-          "value": "hecho presente después de compactar"
+          "type": "contains_all",
+          "values": [
+            "consolid"
+          ]
+        },
+        {
+          "type": "contains_any",
+          "values": [
+            "digest",
+            "Memoria del operador",
+            "turn-context"
+          ]
+        },
+        {
+          "type": "regex_absent",
+          "pattern": "(?i)(no se guard|no qued\\u00f3|se perdi\\u00f3)"
         }
       ],
-      "why_heavy": "necesita compactación forzada"
+      "why_heavy": "necesita compactación forzada",
+      "note": "Criterio manual original: 'hecho presente despues de compactar'. Lo que el caso ejercita de verdad es la consolidacion de memoria (memory_consolidate) y la supervivencia del hecho en el digest, no la compactacion de contexto: eso necesita una sesion larga y quedo como caso aparte."
     },
     {
       "id": "C15",
@@ -257,11 +272,20 @@
       "prompt": "Sesión A dice 'prefiero tablas, no prosa'; sesión B pide un reporte y tiene que salir en tabla sin repetirlo.",
       "graders": [
         {
-          "type": "manual",
-          "value": "respuesta en tabla sin que el operador lo repita"
+          "type": "regex_present",
+          "pattern": "\\|.*\\|.*\\n\\|[-: |]+\\|"
+        },
+        {
+          "type": "contains_any",
+          "values": [
+            "tabla",
+            "Tabla",
+            "tabulad"
+          ]
         }
       ],
-      "why_heavy": "dos sesiones y consolidación en el medio"
+      "why_heavy": "dos sesiones y consolidación en el medio",
+      "note": "Criterio: la sesion B responde en tabla sin que el operador lo repita. Se verifica tabla markdown en la respuesta; la inyeccion del hecho se comprueba aparte por el digest."
     },
     {
       "id": "C16",

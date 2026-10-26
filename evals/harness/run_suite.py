@@ -23,7 +23,9 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
+import tempfile
 import sys
 import threading
 import time
@@ -46,12 +48,62 @@ PERMISSION_ASKS = [
 ]
 
 
+def isolated_env() -> tuple[dict, Path]:
+    """Store aparte para la corrida: cada caso crea una sesion y no queremos ensuciar el store vivo
+    (medido: ~15 sesiones por corrida). Copia config.yaml, secrets.yaml y permission.yaml para que
+    los proveedores funcionen igual; el resto del store nace vacio."""
+    root = Path(tempfile.mkdtemp(prefix="aegis-eval-"))
+    (root / "config").mkdir(parents=True, exist_ok=True)
+    fuente = Path(os.environ.get("AEGIS_PATH_ROOT", r"C:\Aegis-Proyects\state")) / "config"
+    for nombre in ("config.yaml", "secrets.yaml", "permission.yaml"):
+        origen = fuente / nombre
+        if origen.exists():
+            shutil.copy2(origen, root / "config" / nombre)
+    env = dict(os.environ)
+    env["AEGIS_PATH_ROOT"] = str(root)
+    env["AEGIS_DISABLE_KEYRING"] = "1"
+    return env, root
+
+
+SKIP_DIRS = {".git", "target", "node_modules", "state", "dist-ts", ".venv", "__pycache__", ".idea"}
+
+
+def snapshot_tree(root: Path, limit: int = 40000) -> dict[str, tuple[float, int]]:
+    """Foto de (mtime, tamano) por archivo, para medir que toco un caso. Se saltea lo que cambia solo
+    (target, node_modules, el store) para que el conteo signifique algo."""
+    snap: dict[str, tuple[float, int]] = {}
+    if not root.exists():
+        return snap
+    for base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for name in files:
+            path = Path(base) / name
+            try:
+                st = path.stat()
+            except OSError:
+                continue
+            snap[str(path.relative_to(root))] = (st.st_mtime, st.st_size)
+            if len(snap) >= limit:
+                return snap
+    return snap
+
+
+def changed_files(before: dict, after: dict) -> list[str]:
+    out = [p for p, meta in after.items() if before.get(p) != meta]
+    out.extend(p for p in before if p not in after)
+    return sorted(out)
+
+
+ISOLATED_ENV: dict | None = None
+
+
 class AcpStdio:
     """Cliente ACP minimo sobre stdin/stdout de `aegis-serve --stdio`."""
 
-    def __init__(self, binary: Path):
+    def __init__(self, binary: Path, env: dict | None = None):
         self.proc = subprocess.Popen(
             [str(binary), "--stdio"],
+            env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -184,6 +236,7 @@ def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
     cwd = case.get("cwd") or r"C:\Aegis-Proyects"
     started = time.time()
     timeout = float(case.get("timeout_s") or timeout)
+    before = snapshot_tree(Path(cwd))
     session = serve.request("session/new", {"cwd": cwd, "mcpServers": []}, timeout=120)
     session_id = session.get("sessionId") or session.get("session_id")
     serve.drain_notifications()
@@ -205,6 +258,7 @@ def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
         "thinking_chars": len(collect_text(notifications, "agent_thought_chunk")),
         "tool_calls": count_kind(notifications, "tool_call"),
         "approvals": len(approvals),
+        "changed_files": changed_files(before, snapshot_tree(Path(cwd))),
         "wall_s": round(time.time() - started, 2),
         "stop_reason": result.get("stopReason") or result.get("stop_reason"),
         "session_id": session_id,
@@ -259,6 +313,10 @@ def grade(case: dict, answer: str, context: dict | None = None) -> list[dict]:
             )
             ok = asked or words
             detail = f"approvals={grader.get('_ctx', {}).get('approvals', 0)}"
+        elif gtype == "diff_files_max":
+            tocados = context.get("changed_files") or []
+            ok = len(tocados) <= int(grader.get("value", 1))
+            detail = f"{len(tocados)} archivo(s): " + ", ".join(tocados[:5])
         elif gtype == "manual":
             ok = None
             detail = grader.get("value", "revision humana")
@@ -276,7 +334,12 @@ def main() -> int:
     parser.add_argument("--baseline", default="")
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--bin", default=VIDEO or str(DEFAULT_BIN))
+    parser.add_argument("--isolated", action="store_true", help="store temporal en vez del vivo")
     args = parser.parse_args()
+    global ISOLATED_ENV
+    if args.isolated:
+        ISOLATED_ENV, store_tmp = isolated_env()
+        print("store aislado:", store_tmp)
 
     binary = Path(args.bin)
     if not binary.exists():
@@ -293,7 +356,7 @@ def main() -> int:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_path = RUNS / f"{stamp}.json"
 
-    serve = AcpStdio(binary)
+    serve = AcpStdio(binary, ISOLATED_ENV)
     results = []
     try:
         serve.request("initialize", {"protocolVersion": 1, "clientCapabilities": {}}, timeout=120)
@@ -311,13 +374,20 @@ def main() -> int:
                 continue
             try:
                 out = run_case(serve, case, args.timeout)
-                checks = grade(case, out["text"], {"approvals": out.get("approvals", 0)})
+                checks = grade(
+                    case,
+                    out["text"],
+                    {"approvals": out.get("approvals", 0), "changed_files": out.get("changed_files") or []},
+                )
+                # Un check manual (lo que solo puede juzgar una persona) no es un fallo: el caso
+                # queda en estado "manual" y no ensucia el diff contra la corrida anterior.
+                manual = any(c["pass"] is None for c in checks)
                 passed = all(c["pass"] is not False for c in checks) and any(
                     c["pass"] is not None for c in checks
                 )
                 entry.update(
                     {
-                        "status": "pass" if passed else "fail",
+                        "status": "pass" if passed else ("manual" if manual else "fail"),
                         "checks": checks,
                         "answer_head": out["text"][:600],
                         "answer_chars": len(out["text"]),
@@ -328,7 +398,8 @@ def main() -> int:
                         "stop_reason": out["stop_reason"],
                     }
                 )
-                print(f"{case['id']:<4} {'ok  ' if passed else 'FALLA'} {out['wall_s']:>6.1f}s  {len(out['text']):>5} chars")
+                etiqueta = "ok  " if passed else ("manual" if manual else "FALLA")
+                print(f"{case['id']:<4} {etiqueta} {out['wall_s']:>6.1f}s  {len(out['text']):>5} chars")
             except Exception as error:  # noqa: BLE001
                 entry.update({"status": "error", "error": str(error)[:400]})
                 print(f"{case['id']:<4} ERROR {error}")
@@ -341,6 +412,7 @@ def main() -> int:
         "binary": str(binary),
         "total": len(results),
         "pass": sum(1 for r in results if r["status"] == "pass"),
+        "manual": sum(1 for r in results if r["status"] == "manual"),
         "fail": sum(1 for r in results if r["status"] == "fail"),
         "error": sum(1 for r in results if r["status"] == "error"),
         "skipped": sum(1 for r in results if r["status"] == "skipped"),
@@ -351,7 +423,7 @@ def main() -> int:
         bucket = summary["by_category"].setdefault(
             entry["category"], {"pass": 0, "fail": 0, "error": 0, "skipped": 0}
         )
-        bucket[entry["status"]] += 1
+        bucket[entry["status"]] = bucket.get(entry["status"], 0) + 1
 
     if args.baseline:
         base = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
