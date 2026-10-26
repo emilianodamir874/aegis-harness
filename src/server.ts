@@ -70,6 +70,68 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 65536): Promise<unk
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
+// Memoria del operador: state/data/memory/facts.jsonl es la fuente (una linea JSON por hecho).
+// El panel de la UI lee y escribe por aca; las reglas de estado viven en el motor, esto solo las
+// expone. La escritura es atomica (tmp + rename) y ordenada por id para no romper la idempotencia de
+// la consolidacion.
+const MEMORY_DIR = join(process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state', 'data', 'memory');
+const MEMORY_FACTS_FILE = join(MEMORY_DIR, 'facts.jsonl');
+
+interface MemoryFact {
+  id: string;
+  text: string;
+  kind?: string;
+  tags?: string[];
+  confidence?: number;
+  pinned?: boolean;
+  status?: string;
+  source?: string;
+  evidence?: string[];
+  created?: string;
+  updated?: string;
+  last_seen?: string;
+  session?: string;
+}
+
+async function readMemoryFacts(): Promise<MemoryFact[]> {
+  let raw = '';
+  try {
+    raw = await readFile(MEMORY_FACTS_FILE, 'utf8');
+  } catch {
+    return [];
+  }
+  const facts: MemoryFact[] = [];
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as MemoryFact;
+      if (parsed && typeof parsed.id === 'string' && typeof parsed.text === 'string') facts.push(parsed);
+    } catch {
+      // una linea corrupta no invalida el archivo entero
+    }
+  }
+  return facts;
+}
+
+async function writeMemoryFacts(facts: MemoryFact[]): Promise<void> {
+  await mkdir(MEMORY_DIR, { recursive: true });
+  const sorted = [...facts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const body = sorted.map((fact) => JSON.stringify(fact)).join('\n') + '\n';
+  const tmp = MEMORY_FACTS_FILE + '.tmp';
+  await writeFile(tmp, body, 'utf8');
+  await rename(tmp, MEMORY_FACTS_FILE);
+}
+
+function nextMemoryId(facts: MemoryFact[]): string {
+  let max = 0;
+  for (const fact of facts) {
+    const n = Number((fact.id || '').replace(/^F-/, ''));
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return 'F-' + String(max + 1).padStart(4, '0');
+}
+
 async function workspaceList(raw: string): Promise<string> {
   try {
     if (!raw) {
@@ -950,6 +1012,108 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       const data = await readWsDefaults();
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
       res.end(JSON.stringify(data));
+      return;
+    }
+
+    // Memoria del operador (panel): GET lista, POST confirma, rechaza, fija, agrega o consolida.
+    if (url.pathname === '/memory.json') {
+      if (req.method === 'POST') {
+        try {
+          const body = (await readJsonBody(req)) as
+            | { action?: string; id?: string; text?: string; kind?: string; confidence?: number; pinned?: boolean }
+            | null;
+          const action = body && typeof body.action === 'string' ? body.action : '';
+          const facts = await readMemoryFacts();
+          const find = (id: string) => facts.find((fact) => fact.id === id);
+          const now = new Date().toISOString();
+          let changed = false;
+
+          if (action === 'consolidate') {
+            const { execFileSync } = await import('node:child_process');
+            const exe = process.env.AEGIS_SERVE_BIN || 'C:/Aegis-Proyects/core/bin/aegis-current.exe';
+            let stdout = '';
+            try {
+              stdout = execFileSync(exe, ['--memory-consolidate'], {
+                env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state' },
+                encoding: 'utf8',
+                timeout: 30000,
+              });
+            } catch (e) {
+              stdout = String((e as Error)?.message || e);
+            }
+            const after = await readMemoryFacts();
+            res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+            res.end(JSON.stringify({ ok: true, output: stdout.trim(), facts: after }));
+            return;
+          }
+
+          const id = body && typeof body.id === 'string' ? body.id : '';
+          if (action === 'add') {
+            const text = body && typeof body.text === 'string' ? body.text.trim() : '';
+            if (!text) {
+              res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+              res.end(JSON.stringify({ error: 'text requerido' }));
+              return;
+            }
+            facts.push({
+              id: nextMemoryId(facts),
+              text,
+              kind: body?.kind && body.kind.trim() ? body.kind.trim() : 'fact',
+              tags: [],
+              confidence: typeof body?.confidence === 'number' ? Math.max(0, Math.min(1, body.confidence)) : 0.9,
+              pinned: body?.pinned === true,
+              status: 'confirmed',
+              source: 'declared',
+              evidence: ['panel: declarado'],
+              created: now,
+              updated: now,
+              last_seen: now,
+              session: 'panel',
+            });
+            changed = true;
+          } else if (id) {
+            const fact = find(id);
+            if (!fact) {
+              res.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+              res.end(JSON.stringify({ error: 'hecho inexistente: ' + id }));
+              return;
+            }
+            if (action === 'confirm') {
+              fact.status = 'confirmed';
+              fact.updated = now;
+              changed = true;
+            } else if (action === 'reject') {
+              fact.status = 'rejected';
+              fact.updated = now;
+              changed = true;
+            } else if (action === 'pin') {
+              fact.pinned = true;
+              fact.updated = now;
+              changed = true;
+            } else if (action === 'unpin') {
+              fact.pinned = false;
+              fact.updated = now;
+              changed = true;
+            }
+          }
+
+          if (!changed) {
+            res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+            res.end(JSON.stringify({ error: 'accion no reconocida' }));
+            return;
+          }
+          await writeMemoryFacts(facts);
+          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ ok: true, facts: await readMemoryFacts() }));
+        } catch (e) {
+          res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ error: String((e as Error)?.message || e) }));
+        }
+        return;
+      }
+      const facts = await readMemoryFacts();
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+      res.end(JSON.stringify({ path: MEMORY_FACTS_FILE, facts }));
       return;
     }
 

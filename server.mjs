@@ -1,133 +1,85 @@
-// src/server.ts
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { readFile, appendFile, mkdir, stat, opendir } from "node:fs/promises";
+import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename } from "node:fs/promises";
 import zlib from "node:zlib";
 import { join, extname, normalize, resolve, dirname, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-
-// src/piper-vivo.ts
-import { spawn } from "node:child_process";
-import { mkdirSync, readdirSync, statSync, readFileSync, unlinkSync } from "node:fs";
-var EXE = "C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe";
-var VOZ_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
-var DIR = "C:/Aegis-Proyects/tmp/piper-vivo";
-var IDLE_MS = 5 * 60 * 1e3;
-var TIMEOUT_MS = 3e4;
-var viv = { proc: null, clave: "", cola: Promise.resolve(), ultimo: 0, dir: false };
-var dormir = (ms) => new Promise((r) => setTimeout(r, ms));
-function prepararDir() {
-  if (viv.dir) return;
-  mkdirSync(DIR, { recursive: true });
-  try {
-    for (const f of readdirSync(DIR)) if (f.endsWith(".wav")) unlinkSync(DIR + "/" + f);
-  } catch (e) {
-  }
-  viv.dir = true;
-}
-function listo(voz, ritmo, ns = 0.667, nw = 0.8) {
-  const clave = voz + "|" + ritmo.toFixed(3) + "|" + ns.toFixed(3) + "|" + nw.toFixed(3);
-  if (viv.proc && viv.clave === clave) return viv.proc;
-  if (viv.proc) {
-    try {
-      viv.proc.kill();
-    } catch (e) {
-    }
-    viv.proc = null;
-  }
-  prepararDir();
-  const proc = spawn(EXE, [
-    "-m",
-    VOZ_DIR + "/" + voz + ".onnx",
-    "-d",
-    DIR,
-    "-q",
-    "--length_scale",
-    String(ritmo),
-    "--noise_scale",
-    String(ns),
-    "--noise_w",
-    String(nw),
-    "--sentence_silence",
-    "0.12"
-  ]);
-  proc.stdout.on("data", () => {
-  });
-  proc.stderr.on("data", () => {
-  });
-  proc.on("exit", () => {
-    if (viv.proc === proc) viv.proc = null;
-  });
-  viv.proc = proc;
-  viv.clave = clave;
-  viv.ultimo = Date.now();
-  return proc;
-}
-async function piperDespertar(voz, ritmo) {
-  const v = voz || "es_AR-daniela-high";
-  const r = typeof ritmo === "number" ? ritmo : 0.98;
-  try {
-    listo(v, r, 0.667, 0.8);
-    await piperVivo("Listo.", v, r);
-  } catch (e) {
-  }
-}
-function piperVivo(texto, voz, ritmo, ns = 0.667, nw = 0.8) {
-  const tarea = async () => {
-    if (viv.proc && Date.now() - viv.ultimo > IDLE_MS) {
-      try {
-        viv.proc.kill();
-      } catch (e) {
-      }
-      viv.proc = null;
-    }
-    const proc = listo(voz, ritmo, ns, nw);
-    const antes = new Set(readdirSync(DIR).filter((f) => f.endsWith(".wav")));
-    proc.stdin.write(String(texto).replace(/[\r\n]+/g, " ") + "\n");
-    viv.ultimo = Date.now();
-    const t0 = Date.now();
-    while (Date.now() - t0 < TIMEOUT_MS) {
-      const nuevas = readdirSync(DIR).filter((f) => f.endsWith(".wav") && !antes.has(f));
-      if (nuevas.length) {
-        const ruta = DIR + "/" + nuevas[0];
-        const a = statSync(ruta).size;
-        await dormir(60);
-        if (a > 1e3 && a === statSync(ruta).size) {
-          const buf = readFileSync(ruta);
-          try {
-            unlinkSync(ruta);
-          } catch (e) {
-          }
-          return buf;
-        }
-      }
-      await dormir(15);
-    }
-    try {
-      proc.kill();
-    } catch (e) {
-    }
-    if (viv.proc === proc) viv.proc = null;
-    throw new Error("piper vivo sin respuesta en " + TIMEOUT_MS + " ms");
-  };
-  const encadenada = viv.cola.then(tarea, tarea);
-  viv.cola = encadenada.catch(() => {
-  });
-  return encadenada;
-}
-
-// src/server.ts
-import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
-var WS_ROOTS = (process.env.AEGIS_WORKSPACE_ROOTS || "C:\\Aegis-Proyects;C:\\Users\\Emiliano").split(";").map((s) => s.trim()).filter(Boolean).map((s) => resolve(s));
+const WS_ROOTS = (process.env.AEGIS_WORKSPACE_ROOTS || "C:\\Aegis-Proyects;C:\\Users\\Emiliano").split(";").map((s) => s.trim()).filter(Boolean).map((s) => resolve(s));
 function wsInside(path) {
   const target = resolve(path).toLowerCase();
   return WS_ROOTS.some((root) => {
     const r = root.toLowerCase();
     return target === r || target.startsWith(r.endsWith(sep) ? r : r + sep);
   });
+}
+const WS_DEFAULTS_FILE = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "config", "workspaces.defaults.json");
+async function readWsDefaults() {
+  try {
+    const raw = await readFile(WS_DEFAULTS_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+async function writeWsDefaults(data) {
+  const tmp = WS_DEFAULTS_FILE + ".tmp";
+  await writeFile(tmp, JSON.stringify(data, null, 2) + "\n", "utf8");
+  await rename(tmp, WS_DEFAULTS_FILE);
+}
+function wsDefaultsKey(path) {
+  return resolve(path).toLowerCase();
+}
+async function readJsonBody(req, maxBytes = 65536) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) throw new Error("body too large");
+    chunks.push(chunk);
+  }
+  if (!chunks.length) return null;
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+const MEMORY_DIR = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "data", "memory");
+const MEMORY_FACTS_FILE = join(MEMORY_DIR, "facts.jsonl");
+async function readMemoryFacts() {
+  let raw = "";
+  try {
+    raw = await readFile(MEMORY_FACTS_FILE, "utf8");
+  } catch {
+    return [];
+  }
+  const facts = [];
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed.id === "string" && typeof parsed.text === "string") facts.push(parsed);
+    } catch {
+    }
+  }
+  return facts;
+}
+async function writeMemoryFacts(facts) {
+  await mkdir(MEMORY_DIR, { recursive: true });
+  const sorted = [...facts].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const body = sorted.map((fact) => JSON.stringify(fact)).join("\n") + "\n";
+  const tmp = MEMORY_FACTS_FILE + ".tmp";
+  await writeFile(tmp, body, "utf8");
+  await rename(tmp, MEMORY_FACTS_FILE);
+}
+function nextMemoryId(facts) {
+  let max = 0;
+  for (const fact of facts) {
+    const n = Number((fact.id || "").replace(/^F-/, ""));
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return "F-" + String(max + 1).padStart(4, "0");
 }
 async function workspaceList(raw) {
   try {
@@ -167,8 +119,8 @@ async function workspaceList(raw) {
     });
   }
 }
-var DIR2 = fileURLToPath(new URL(".", import.meta.url));
-var gzipCache = /* @__PURE__ */ new Map();
+const DIR = fileURLToPath(new URL(".", import.meta.url));
+const gzipCache = /* @__PURE__ */ new Map();
 function gzipBuf(buf, key) {
   const hit = gzipCache.get(key);
   if (hit) return hit;
@@ -177,16 +129,16 @@ function gzipBuf(buf, key) {
   gzipCache.set(key, out);
   return out;
 }
-var cfg = JSON.parse(await readFile(join(DIR2, "config.json"), "utf8"));
-var APP = join(DIR2, "app");
-var OUTBOX = join(DIR2, "outbox");
+const cfg = JSON.parse(await readFile(join(DIR, "config.json"), "utf8"));
+const APP = join(DIR, "app");
+const OUTBOX = join(DIR, "outbox");
 await mkdir(OUTBOX, { recursive: true }).catch(() => {
 });
-await mkdir(join(DIR2, "logs"), { recursive: true }).catch(() => {
+await mkdir(join(DIR, "logs"), { recursive: true }).catch(() => {
 });
-var logLine = (file, line) => appendFile(join(DIR2, "logs", file), line).catch(() => {
+const logLine = (file, line) => appendFile(join(DIR, "logs", file), line).catch(() => {
 });
-var goalsCache = /* @__PURE__ */ new Map();
+let goalsCache = /* @__PURE__ */ new Map();
 async function goalsIndex(sid) {
   const clave = sid || "";
   const previo = goalsCache.get(clave);
@@ -194,7 +146,7 @@ async function goalsIndex(sid) {
   let body;
   try {
     const { execFile } = await import("node:child_process");
-    const args = ["--experimental-sqlite", join(DIR2, "tools", "goals-index.mjs")];
+    const args = ["--experimental-sqlite", join(DIR, "tools", "goals-index.mjs")];
     if (clave) args.push(clave);
     body = await new Promise((ok) => {
       execFile(
@@ -210,7 +162,7 @@ async function goalsIndex(sid) {
   goalsCache = /* @__PURE__ */ new Map([[clave, { at: Date.now(), body }]]);
   return body;
 }
-var statsCache = /* @__PURE__ */ new Map();
+let statsCache = /* @__PURE__ */ new Map();
 async function statsIndex(days) {
   const clave = String(days || 0);
   const previo = statsCache.get(clave);
@@ -218,7 +170,7 @@ async function statsIndex(days) {
   let body;
   try {
     const { execFile } = await import("node:child_process");
-    const args = ["--experimental-sqlite", join(DIR2, "tools", "stats-index.mjs"), "--days", clave];
+    const args = ["--experimental-sqlite", join(DIR, "tools", "stats-index.mjs"), "--days", clave];
     body = await new Promise((ok) => {
       execFile(
         process.execPath,
@@ -233,9 +185,9 @@ async function statsIndex(days) {
   statsCache = /* @__PURE__ */ new Map([[clave, { at: Date.now(), body }]]);
   return body;
 }
-var searchCache = /* @__PURE__ */ new Map();
-var SEARCH_TTL_MS = 15e3;
-var SEARCH_MAX_ENTRIES = 40;
+const searchCache = /* @__PURE__ */ new Map();
+const SEARCH_TTL_MS = 15e3;
+const SEARCH_MAX_ENTRIES = 40;
 async function searchIndex(queryRaw, limit) {
   const query = String(queryRaw || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
   const clave = limit + "|" + query.toLowerCase();
@@ -247,7 +199,7 @@ async function searchIndex(queryRaw, limit) {
   } else {
     try {
       const { execFile } = await import("node:child_process");
-      const args = ["--experimental-sqlite", join(DIR2, "tools", "search-index.mjs"), "--query", query, "--limit", String(limit)];
+      const args = ["--experimental-sqlite", join(DIR, "tools", "search-index.mjs"), "--query", query, "--limit", String(limit)];
       body = await new Promise((ok) => {
         execFile(
           process.execPath,
@@ -267,15 +219,15 @@ async function searchIndex(queryRaw, limit) {
   }
   return body;
 }
-var AUTH_FILE = join(DIR2, "auth.json");
-var auth = null;
+const AUTH_FILE = join(DIR, "auth.json");
+let auth = null;
 try {
   auth = JSON.parse((await readFile(AUTH_FILE, "utf8")).replace(/^\uFEFF/, ""));
 } catch {
 }
-var COOKIE = "gw_auth";
-var COOKIE_TTL_MS = 30 * 24 * 3600 * 1e3;
-var HMAC_KEY = String(cfg.secretKey || "aegis-web") + "|" + String(cfg.authStamp || "v1");
+const COOKIE = "gw_auth";
+const COOKIE_TTL_MS = 30 * 24 * 3600 * 1e3;
+const HMAC_KEY = String(cfg.secretKey || "aegis-web") + "|" + String(cfg.authStamp || "v1");
 function sign(exp) {
   return crypto.createHmac("sha256", HMAC_KEY).update(`gw|${exp}`).digest("base64url");
 }
@@ -306,7 +258,7 @@ function parseCookies(header) {
 function authed(req) {
   return verifyToken(parseCookies(req.headers.cookie)[COOKIE]);
 }
-var PRIVATE_V4 = [
+const PRIVATE_V4 = [
   /^10\./,
   /^192\.168\./,
   /^172\.(1[6-9]|2\d|3[01])\./,
@@ -332,7 +284,7 @@ function isTunnel(req) {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return !isPrivateIp(host);
   return true;
 }
-var loginFails = /* @__PURE__ */ new Map();
+const loginFails = /* @__PURE__ */ new Map();
 function loginBlocked(ip) {
   const e = loginFails.get(ip);
   if (!e) return false;
@@ -348,14 +300,14 @@ function noteLoginFail(ip) {
   else e.n += 1;
 }
 function loginPage(variant, next) {
-  const error = variant === "bad" ? '<p class="err" id="err" role="alert">Contrase\xF1a incorrecta. Prob\xE1 de nuevo.</p>' : variant === "blocked" ? '<p class="err" id="err" role="alert">Demasiados intentos. Esper\xE1 un minuto antes de reintentar.</p>' : "";
+  const error = variant === "bad" ? '<p class="err" id="err" role="alert">Contraseña incorrecta. Probá de nuevo.</p>' : variant === "blocked" ? '<p class="err" id="err" role="alert">Demasiados intentos. Esperá un minuto antes de reintentar.</p>' : "";
   const invalid = error ? ' aria-invalid="true" aria-describedby="err"' : "";
   const action = "/login?next=" + encodeURIComponent(safeNext(next));
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1e1d1b"><meta name="color-scheme" content="dark">
-<meta name="robots" content="noindex"><title>Aegis \xB7 acceso</title>
+<meta name="robots" content="noindex"><title>Aegis · acceso</title>
 <style>
   :root {
     color-scheme: dark;
@@ -410,12 +362,12 @@ function loginPage(variant, next) {
     <b>Aegis</b><span class="chip">web</span>
   </div>
   <h1>Acceso al harness</h1>
-  <p class="sub">Est\xE1s entrando por el t\xFAnel de Cloudflare.</p>
-  <label for="password">Contrase\xF1a</label>
-  <input id="password" type="password" name="password" placeholder="Contrase\xF1a" autocomplete="current-password" autofocus required${invalid}>
+  <p class="sub">Estás entrando por el túnel de Cloudflare.</p>
+  <label for="password">Contraseña</label>
+  <input id="password" type="password" name="password" placeholder="Contraseña" autocomplete="current-password" autofocus required${invalid}>
   <button type="submit">Entrar</button>
   ${error}
-  <p class="hint">La sesi\xF3n queda guardada 30 d\xEDas en este dispositivo.</p>
+  <p class="hint">La sesión queda guardada 30 días en este dispositivo.</p>
 </form>
 </body></html>`;
 }
@@ -460,7 +412,7 @@ function configFor(req) {
     host: proxied ? host : `${cfg.publicHost}:${cfg.servePort}`
   };
 }
-var MIME = {
+const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".mjs": "text/javascript; charset=utf-8",
@@ -478,11 +430,11 @@ var MIME = {
   ".map": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8"
 };
-var SEC = {
+const SEC = {
   "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:; base-uri 'none'; form-action 'none'",
   "x-content-type-options": "nosniff"
 };
-var SEC_LOGIN = {
+const SEC_LOGIN = {
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'",
   "x-content-type-options": "nosniff"
 };
@@ -533,12 +485,14 @@ function proxyAcp(req, socket, head) {
   });
   up.end();
 }
-var PIPER_EXE = "C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe";
-var PIPER_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
-var PIPER_VOZ = "es_AR-daniela-high";
-var _ttsCache = /* @__PURE__ */ new Map();
-var TTS_CACHE_MAX = 24;
-var _vocesPiper = null;
+import { piperVivo, piperDespertar } from "./piper-vivo.js";
+import { MsEdgeTTS, OUTPUT_FORMAT } from "msedge-tts";
+const PIPER_EXE = "C:/Aegis-Proyects/core/state/piper/bin/piper/piper.exe";
+const PIPER_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
+const PIPER_VOZ = "es_AR-daniela-high";
+const _ttsCache = /* @__PURE__ */ new Map();
+const TTS_CACHE_MAX = 24;
+let _vocesPiper = null;
 async function vozPiperValida(voz) {
   const fss = await import("node:fs");
   try {
@@ -553,7 +507,7 @@ async function vozPiperValida(voz) {
   const v = String(voz || "").replace(/[^A-Za-z0-9_.-]/g, "");
   return _vocesPiper.has(v) ? v : PIPER_VOZ;
 }
-var _caminoTts = "vivo";
+let _caminoTts = "vivo";
 function headroomWav(buf, objetivo = 0.84) {
   if (!buf || buf.length < 44 || buf.toString("ascii", 0, 4) !== "RIFF") return buf;
   const out = Buffer.from(buf);
@@ -602,12 +556,12 @@ async function piperTts(texto, voz, rate, ns = 0.667, nw = 0.8) {
   return audio;
 }
 async function piperSuelto(texto, modelo, ritmo, ns = 0.667, nw = 0.8) {
-  const { spawn: spawn2 } = await import("node:child_process");
+  const { spawn } = await import("node:child_process");
   const clave = modelo + "|" + ritmo.toFixed(3) + "|" + ns.toFixed(3) + "|" + nw.toFixed(3) + "|" + texto;
   const guardado = _ttsCache.get(clave);
   if (guardado) return guardado;
   const audio = await new Promise((resolve2, reject) => {
-    const p = spawn2(PIPER_EXE, [
+    const p = spawn(PIPER_EXE, [
       "-m",
       PIPER_DIR + "/" + modelo + ".onnx",
       "-f",
@@ -660,11 +614,11 @@ function backendTcpReady() {
 }
 piperDespertar().catch(() => {
 });
-var EDGE_VOZ = "es-AR-ElenaNeural";
-var EDGE_VOCES = /* @__PURE__ */ new Set(["es-AR-ElenaNeural", "es-AR-TomasNeural", "es-MX-DaliaNeural", "es-ES-ElviraNeural", "es-ES-AlvaroNeural"]);
-var _edge = new MsEdgeTTS();
-var _edgeVoz = "";
-var _edgeCola = Promise.resolve();
+const EDGE_VOZ = "es-AR-ElenaNeural";
+const EDGE_VOCES = /* @__PURE__ */ new Set(["es-AR-ElenaNeural", "es-AR-TomasNeural", "es-MX-DaliaNeural", "es-ES-ElviraNeural", "es-ES-AlvaroNeural"]);
+const _edge = new MsEdgeTTS();
+let _edgeVoz = "";
+let _edgeCola = Promise.resolve();
 async function edgeTts(texto, voz, rate) {
   const modelo = EDGE_VOCES.has(voz) ? voz : EDGE_VOZ;
   const pct = Math.round((Number(rate) > 0.5 && Number(rate) < 2 ? Number(rate) : 1) * 100 - 100);
@@ -694,7 +648,7 @@ async function edgeTts(texto, voz, rate) {
   _ttsCache.set(clave, buf);
   return buf;
 }
-var handler = async (req, res) => {
+const handler = async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
     const ip = req.socket.remoteAddress || "?";
@@ -900,6 +854,132 @@ ${Buffer.concat(chunks).toString("utf8")}
       res.end();
       return;
     }
+    if (url.pathname === "/ws/defaults") {
+      if (req.method === "POST") {
+        try {
+          const body2 = await readJsonBody(req);
+          const root = body2 && typeof body2.root === "string" ? body2.root : "";
+          if (!root || !wsInside(root)) {
+            res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+            res.end(JSON.stringify({ error: "root fuera de las raices permitidas" }));
+            return;
+          }
+          const data3 = await readWsDefaults();
+          const key = wsDefaultsKey(root);
+          if (body2 && body2.defaults && typeof body2.defaults === "object") {
+            data3[key] = { root: resolve(root), defaults: body2.defaults, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+          } else {
+            delete data3[key];
+          }
+          await writeWsDefaults(data3);
+          res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({ ok: true, key }));
+        } catch (e) {
+          res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({ error: String(e?.message || e) }));
+        }
+        return;
+      }
+      const data2 = await readWsDefaults();
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
+      res.end(JSON.stringify(data2));
+      return;
+    }
+    if (url.pathname === "/memory.json") {
+      if (req.method === "POST") {
+        try {
+          const body2 = await readJsonBody(req);
+          const action = body2 && typeof body2.action === "string" ? body2.action : "";
+          const facts2 = await readMemoryFacts();
+          const find = (id2) => facts2.find((fact) => fact.id === id2);
+          const now = (/* @__PURE__ */ new Date()).toISOString();
+          let changed = false;
+          if (action === "consolidate") {
+            const { execFileSync } = await import("node:child_process");
+            const exe = process.env.AEGIS_SERVE_BIN || "C:/Aegis-Proyects/core/bin/aegis-current.exe";
+            let stdout = "";
+            try {
+              stdout = execFileSync(exe, ["--memory-consolidate"], {
+                env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" },
+                encoding: "utf8",
+                timeout: 3e4
+              });
+            } catch (e) {
+              stdout = String(e?.message || e);
+            }
+            const after = await readMemoryFacts();
+            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+            res.end(JSON.stringify({ ok: true, output: stdout.trim(), facts: after }));
+            return;
+          }
+          const id = body2 && typeof body2.id === "string" ? body2.id : "";
+          if (action === "add") {
+            const text = body2 && typeof body2.text === "string" ? body2.text.trim() : "";
+            if (!text) {
+              res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+              res.end(JSON.stringify({ error: "text requerido" }));
+              return;
+            }
+            facts2.push({
+              id: nextMemoryId(facts2),
+              text,
+              kind: body2?.kind && body2.kind.trim() ? body2.kind.trim() : "fact",
+              tags: [],
+              confidence: typeof body2?.confidence === "number" ? Math.max(0, Math.min(1, body2.confidence)) : 0.9,
+              pinned: body2?.pinned === true,
+              status: "confirmed",
+              source: "declared",
+              evidence: ["panel: declarado"],
+              created: now,
+              updated: now,
+              last_seen: now,
+              session: "panel"
+            });
+            changed = true;
+          } else if (id) {
+            const fact = find(id);
+            if (!fact) {
+              res.writeHead(404, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+              res.end(JSON.stringify({ error: "hecho inexistente: " + id }));
+              return;
+            }
+            if (action === "confirm") {
+              fact.status = "confirmed";
+              fact.updated = now;
+              changed = true;
+            } else if (action === "reject") {
+              fact.status = "rejected";
+              fact.updated = now;
+              changed = true;
+            } else if (action === "pin") {
+              fact.pinned = true;
+              fact.updated = now;
+              changed = true;
+            } else if (action === "unpin") {
+              fact.pinned = false;
+              fact.updated = now;
+              changed = true;
+            }
+          }
+          if (!changed) {
+            res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+            res.end(JSON.stringify({ error: "accion no reconocida" }));
+            return;
+          }
+          await writeMemoryFacts(facts2);
+          res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({ ok: true, facts: await readMemoryFacts() }));
+        } catch (e) {
+          res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({ error: String(e?.message || e) }));
+        }
+        return;
+      }
+      const facts = await readMemoryFacts();
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+      res.end(JSON.stringify({ path: MEMORY_FACTS_FILE, facts }));
+      return;
+    }
     if (url.pathname === "/ws/list") {
       const body2 = await workspaceList(url.searchParams.get("path") || "");
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
@@ -909,7 +989,7 @@ ${Buffer.concat(chunks).toString("utf8")}
     if (url.pathname === "/prices.json") {
       let body2 = "{}";
       try {
-        body2 = await readFile(join(DIR2, "prices.json"), "utf8");
+        body2 = await readFile(join(DIR, "prices.json"), "utf8");
       } catch (e) {
         body2 = JSON.stringify({ _error: String(e && e.message || e) });
       }
@@ -1054,8 +1134,8 @@ ${Buffer.concat(chunks).toString("utf8")}
     res.end(String(err));
   }
 };
-var server = http.createServer(handler);
-var onUpgrade = (req, socket, head) => {
+const server = http.createServer(handler);
+const onUpgrade = (req, socket, head) => {
   let url;
   try {
     url = new URL(req.url, "http://localhost");
@@ -1080,15 +1160,15 @@ var onUpgrade = (req, socket, head) => {
   proxyAcp(req, socket, head);
 };
 server.on("upgrade", onUpgrade);
-var port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
+const port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
 server.listen(port, "0.0.0.0", () => {
   console.log(`[aegis-web] UI:      http://${cfg.publicHost}:${port}   (LAN)`);
   console.log(`[aegis-web] UI:      http://127.0.0.1:${port}          (local)`);
   console.log(`[aegis-web] backend: ws://${cfg.publicHost}:${cfg.servePort}/acp   (directo, LAN)`);
   console.log(`[aegis-web] tunel:   wss://<host>/acp proxeado a 127.0.0.1:${cfg.servePort}  (login: ${auth ? "auth.json" : "SIN auth.json -> tunel cerrado"})`);
 });
-var tlsDir = process.env.AEGIS_WEB_TLS_DIR || cfg.tlsDir || "";
-var httpsPort = Number(process.env.AEGIS_WEB_HTTPS_PORT || cfg.httpsPort || 3789);
+const tlsDir = process.env.AEGIS_WEB_TLS_DIR || cfg.tlsDir || "";
+const httpsPort = Number(process.env.AEGIS_WEB_HTTPS_PORT || cfg.httpsPort || 3789);
 if (tlsDir) {
   const crtPath = join(tlsDir, "server.crt");
   const keyPath = join(tlsDir, "server.key");
