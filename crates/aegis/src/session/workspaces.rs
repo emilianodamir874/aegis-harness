@@ -102,6 +102,7 @@ pub async fn register_workspace(
     let canonical =
         crate::session::session_manager::canonical_working_dir(std::path::PathBuf::from(root));
     let root = canonical.to_string_lossy().to_string();
+    anyhow::ensure!(!root.trim().is_empty(), "a workspace needs a root path");
     let id = workspace_id(&root);
     let name = workspace_name(&root);
 
@@ -143,6 +144,7 @@ pub async fn seed_from_sessions(conn: &mut SqliteConnection) -> Result<usize> {
                MAX(COALESCE(updated_at, created_at)) AS last_used_at
           FROM sessions
          WHERE COALESCE(NULLIF(TRIM(project_id), ''), working_dir) IS NOT NULL
+           AND TRIM(COALESCE(NULLIF(TRIM(project_id), ''), working_dir)) <> ''
          GROUP BY root
         "#,
     )
@@ -191,6 +193,26 @@ mod tests {
     fn root_of_unit_keeps_its_separator() {
         assert_eq!(workspace_id("C:\\"), workspace_id(r"\\?\C:\"));
         assert_eq!(workspace_id("C:\\"), workspace_id("c:/"));
+    }
+
+    #[tokio::test]
+    async fn empty_root_is_not_a_workspace() {
+        use sqlx::Connection;
+
+        let mut conn = sqlx::SqliteConnection::connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(CREATE_WORKSPACES_TABLE)
+            .execute(&mut conn)
+            .await
+            .unwrap();
+        assert!(register_workspace(&mut conn, "  ", None).await.is_err());
+        assert!(register_workspace(&mut conn, "", None).await.is_err());
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM workspaces")
+            .fetch_one(&mut conn)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]
