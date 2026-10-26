@@ -6141,4 +6141,23 @@ mod tests {
             "si no se puede canonicalizar se conserva la ruta original"
         );
     }
+
+    #[test]
+    fn canonical_working_dir_strips_verbatim_prefix_only_for_drive_paths() {
+        // Ruta inexistente a proposito: canonicalize falla y la funcion trabaja sobre la entrada,
+        // asi el caso queda determinista en cualquier plataforma.
+        let verbatim_drive = PathBuf::from(r"\\?\C:\aegis-canonical-test-does-not-exist\proj");
+        assert_eq!(
+            canonical_working_dir(verbatim_drive),
+            PathBuf::from(r"C:\aegis-canonical-test-does-not-exist\proj"),
+            "el prefijo verbatim de una ruta de unidad se quita"
+        );
+
+        let verbatim_unc = PathBuf::from(r"\\?\UNC\server\share\proj");
+        assert_eq!(
+            canonical_working_dir(verbatim_unc.clone()),
+            verbatim_unc,
+            "las rutas UNC no son rutas de unidad y conservan el prefijo"
+        );
+    }
 }
