@@ -23,19 +23,31 @@ pub fn get_context_filenames() -> Vec<String> {
         })
 }
 
+/// Hard ceiling for the subdirectory hints a single request may carry. Ancestor
+/// chains repeat the same files for every directory a tool touches, so without a
+/// budget a session that visits 13 directories ships 13 copies of the repo's
+/// AGENTS.md (measured: 108 KB, 27k tokens per request).
+pub const MAX_SUBDIR_HINT_BYTES: usize = 32_768;
+
 #[derive(Default)]
 pub struct SubdirectoryHintTracker {
     loaded_dirs: HashSet<PathBuf>,
+    /// Hint files already emitted by this tracker, so an ancestor hint shared by
+    /// several directories is sent once instead of once per directory.
+    loaded_files: HashSet<PathBuf>,
     pending_dirs: Vec<PathBuf>,
     hints_filenames: Vec<String>,
+    emitted_bytes: usize,
 }
 
 impl SubdirectoryHintTracker {
     pub fn new() -> Self {
         Self {
             loaded_dirs: HashSet::new(),
+            loaded_files: HashSet::new(),
             pending_dirs: Vec::new(),
             hints_filenames: get_context_filenames(),
+            emitted_bytes: 0,
         }
     }
 
@@ -79,7 +91,10 @@ impl SubdirectoryHintTracker {
             return Vec::new();
         };
 
-        let mut results = Vec::new();
+        let hints_filenames = &self.hints_filenames;
+        let loaded_files = &mut self.loaded_files;
+        let mut results: Vec<(String, String)> = Vec::new();
+        let mut truncated = false;
         for dir in pending {
             let Ok(dir) = dir.canonicalize() else {
                 continue;
@@ -91,12 +106,25 @@ impl SubdirectoryHintTracker {
                 continue;
             }
             if let Some(content) =
-                load_hints_from_directory(&dir, &working_dir, &self.hints_filenames)
+                load_hints_from_directory(&dir, &working_dir, hints_filenames, loaded_files)
             {
                 let key = format!("subdir_hints:{}", dir.display());
-                results.push((key, content));
+                if self.emitted_bytes + content.len() > MAX_SUBDIR_HINT_BYTES {
+                    truncated = true;
+                } else {
+                    self.emitted_bytes += content.len();
+                    results.push((key, content));
+                }
             }
             self.loaded_dirs.insert(dir);
+        }
+        if truncated {
+            results.push((
+                "subdir_hints:truncated".to_string(),
+                format!(
+                    "### Subdirectory Hints (truncated)\nAdditional hint files were skipped: this request already carries {MAX_SUBDIR_HINT_BYTES} bytes of subdirectory hints. Read the file you need directly instead."
+                ),
+            ));
         }
         results
     }
@@ -116,6 +144,7 @@ fn load_hints_from_directory(
     directory: &Path,
     working_dir: &Path,
     hints_filenames: &[String],
+    loaded_files: &mut HashSet<PathBuf>,
 ) -> Option<String> {
     if !directory.is_dir() || !directory.is_absolute() {
         return None;
@@ -140,18 +169,23 @@ fn load_hints_from_directory(
     for dir in &directories {
         for hints_filename in hints_filenames {
             let hints_path = dir.join(hints_filename);
-            if hints_path.is_file() {
-                let mut visited = HashSet::new();
-                let expanded = read_referenced_files(
-                    &hints_path,
-                    import_boundary,
-                    &mut visited,
-                    0,
-                    &gitignore,
-                );
-                if !expanded.is_empty() {
-                    contents.push(expanded);
-                }
+            if !hints_path.is_file() {
+                continue;
+            }
+            let identity = hints_path.canonicalize().unwrap_or_else(|_| hints_path.clone());
+            if !loaded_files.insert(identity) {
+                continue;
+            }
+            let mut visited = HashSet::new();
+            let expanded = read_referenced_files(
+                &hints_path,
+                import_boundary,
+                &mut visited,
+                0,
+                &gitignore,
+            );
+            if !expanded.is_empty() {
+                contents.push(expanded);
             }
         }
     }
@@ -855,6 +889,60 @@ End of hints"#;
         tracker.record_tool_arguments(&Some(args), &project_root);
         let hints = tracker.load_new_hints(&project_root);
         assert!(hints.is_empty());
+    }
+
+    #[test]
+    fn tracker_emits_a_shared_ancestor_hint_once_per_request() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().to_path_buf();
+        let src = root.join("src");
+        fs::create_dir_all(src.join("a")).unwrap();
+        fs::create_dir_all(src.join("b")).unwrap();
+        fs::write(src.join(AGENTS_MD_FILENAME), "shared crate hints").unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        for rel in ["src/a/x.rs", "src/b/y.rs"] {
+            let args: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str(&format!(r#"{{"path": "{rel}"}}"#)).unwrap();
+            tracker.record_tool_arguments(&Some(args), &root);
+        }
+
+        let hints = tracker.load_new_hints(&root);
+        let joined = hints
+            .iter()
+            .map(|(_, content)| content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            joined.matches("shared crate hints").count(),
+            1,
+            "an ancestor hint shared by two directories must be sent once"
+        );
+    }
+
+    #[test]
+    fn tracker_caps_subdirectory_hint_bytes() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path().to_path_buf();
+        let mut tracker = SubdirectoryHintTracker::new();
+        for i in 0..3 {
+            let dir = root.join(format!("d{i}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join(AEGIS_HINTS_FILENAME), "x".repeat(20_000)).unwrap();
+            let args: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str(&format!(r#"{{"path": "d{i}/f.rs"}}"#)).unwrap();
+            tracker.record_tool_arguments(&Some(args), &root);
+        }
+
+        let hints = tracker.load_new_hints(&root);
+        let total: usize = hints.iter().map(|(_, content)| content.len()).sum();
+        assert!(
+            total <= MAX_SUBDIR_HINT_BYTES + 512,
+            "subdirectory hints must respect the byte budget, got {total}"
+        );
+        assert!(hints
+            .iter()
+            .any(|(key, _)| key == "subdir_hints:truncated"));
     }
 
     #[test]

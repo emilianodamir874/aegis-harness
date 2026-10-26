@@ -383,7 +383,9 @@ async fn do_compact(
 
     let context_limit =
         crate::context_limit::get_context_limit(provider, &model_config.model_name).await?;
-    let output_budget = (context_limit / 8).clamp(1_024, 8_192);
+    // Scale the summary budget with the window: the old 8.192-token ceiling was
+    // calibrated for 128k models and truncates the summary of a 1M-window session.
+    let output_budget = (context_limit / 16).clamp(4_096, 32_768);
     let model = AegisCompactionModel {
         provider,
         model_config,
