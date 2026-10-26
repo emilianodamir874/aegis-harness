@@ -1015,6 +1015,48 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
 
+    // Lectura de un archivo para la revision de diff antes de aplicar un write/edit (M4).
+    // Devuelve contenido + hash: el cliente compara contra lo propuesto y, si el hash no coincide
+    // con el que vio al aprobar, no aplica (aplicar dos veces no duplica ni pisa cambios ajenos).
+    if (url.pathname === '/file.json') {
+      const raw = url.searchParams.get('path') || '';
+      const resolvedPath = resolve(raw);
+      const inside = WS_ROOTS.some((root) => {
+        const r = resolve(root);
+        return resolvedPath === r || resolvedPath.startsWith(r.endsWith(sep) ? r : r + sep);
+      });
+      if (!raw || !inside) {
+        res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+        res.end(JSON.stringify({ error: 'ruta fuera de las raices permitidas' }));
+        return;
+      }
+      try {
+        const info = await stat(resolvedPath);
+        if (!info.isFile()) throw new Error('no es un archivo');
+        if (info.size > 1_500_000) {
+          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ path: resolvedPath, tooLarge: true, bytes: info.size }));
+          return;
+        }
+        const body = await readFile(resolvedPath);
+        const text = body.toString('utf8');
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+        res.end(JSON.stringify({
+          path: resolvedPath,
+          exists: true,
+          bytes: info.size,
+          mtime: info.mtime.toISOString(),
+          sha256: crypto.createHash('sha256').update(body).digest('hex'),
+          text,
+          lines: text.split('\n').length,
+        }));
+      } catch {
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+        res.end(JSON.stringify({ path: resolvedPath, exists: false, bytes: 0, text: '', lines: 0 }));
+      }
+      return;
+    }
+
     // Artefactos: lo que el agente deja en web/outbox, con tamaño y preview acotado.
     // El link de descarga ya existia (/dl/<nombre>); esto solo lo hace visible y previsualizable.
     if (url.pathname === '/outbox.json') {
