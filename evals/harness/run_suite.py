@@ -129,6 +129,10 @@ class AcpStdio:
             except json.JSONDecodeError:
                 continue
 
+    def notify(self, method: str, params: dict | None = None) -> None:
+        """Notificacion JSON-RPC sin id: se usa para session/cancel."""
+        self._send({"jsonrpc": "2.0", "method": method, "params": params or {}})
+
     def _send(self, payload: dict) -> None:
         assert self.proc.stdin is not None
         self.proc.stdin.write(json.dumps(payload) + "\n")
@@ -235,18 +239,39 @@ def count_kind(notifications: list[dict], kind_filter: str) -> int:
 def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
     cwd = case.get("cwd") or r"C:\Aegis-Proyects"
     started = time.time()
-    timeout = float(case.get("timeout_s") or timeout)
+    # `--timeout` es techo global: un caso puede pedir menos, nunca más.
+    timeout = min(float(case.get("timeout_s") or timeout), float(timeout))
     before = snapshot_tree(Path(cwd))
     session = serve.request("session/new", {"cwd": cwd, "mcpServers": []}, timeout=120)
     session_id = session.get("sessionId") or session.get("session_id")
     serve.drain_notifications()
 
     prompt = case["prompt"]
-    result = serve.request(
-        "session/prompt",
-        {"sessionId": session_id, "prompt": [{"type": "text", "text": prompt}]},
-        timeout=timeout,
-    )
+    # Techo de turno con cierre forzado: si el case se pasa del tiempo, se pide session/cancel y se
+    # junta lo que ya llego. Un caso que explora sin cerrar (C13, C21) deja evidencia en vez de
+    # terminar en "error" sin dato: lo que se mide es que no cierra, y eso queda registrado.
+    cancelled = False
+    try:
+        result = serve.request(
+            "session/prompt",
+            {"sessionId": session_id, "prompt": [{"type": "text", "text": prompt}]},
+            timeout=timeout,
+        )
+    except RuntimeError as error:
+        if "timeout esperando session/prompt" not in str(error):
+            raise
+        cancelled = True
+        try:
+            serve.notify("session/cancel", {"sessionId": session_id})
+        except Exception:
+            pass
+        deadline = time.time() + 20
+        while time.time() < deadline and serve.proc.poll() is None:
+            try:
+                time.sleep(0.5)
+            except Exception:
+                break
+        result = {"stopReason": "timeout-cancelled"}
     notifications = serve.drain_notifications()
     approvals = serve.take_approvals()
     text = collect_text(notifications)
@@ -262,6 +287,7 @@ def run_case(serve: AcpStdio, case: dict, timeout: float) -> dict:
         "wall_s": round(time.time() - started, 2),
         "stop_reason": result.get("stopReason") or result.get("stop_reason"),
         "session_id": session_id,
+        "cancelled": cancelled,
     }
 
 
