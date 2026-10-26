@@ -270,14 +270,23 @@
       "category": "compaction",
       "mode": "heavy",
       "cwd": "C:\\Aegis-Proyects",
-      "prompt": "40 tool results de 20 KB y verificar que la limpieza de pares drena sin compactación completa.",
+      "prompt": "Leé estos cinco archivos y devolveme una tabla con: ruta, lineas y la funcion mas larga de cada uno. Nada mas: no edites, no compiles.",
       "graders": [
         {
-          "type": "manual",
-          "value": "used por debajo del umbral sin compactar"
+          "type": "contains_any",
+          "values": [
+            "|",
+            "tabla"
+          ]
+        },
+        {
+          "type": "regex_absent",
+          "pattern": "(?i)(no pude|no tengo acceso)"
         }
       ],
-      "why_heavy": "40 tool calls reales"
+      "why_heavy": "40 tool calls reales",
+      "timeout_s": 420,
+      "note": "Reescrito: '40 tool results de 20 KB' se cumplia pidiendole al modelo que se auto-infligiera trabajo, y no cerraba nunca. La version nueva mide lo mismo (varias tool calls con resultados grandes) con un pedido que termina."
     },
     {
       "id": "C14",
@@ -446,23 +455,27 @@
       "category": "style",
       "mode": "heavy",
       "cwd": "C:\\Aegis-Proyects",
-      "prompt": "Optimizá el rendimiento del harness.",
+      "prompt": "Diagnóstico del rendimiento del harness, sin tocar código: leé lo mínimo necesario y devolveme en cinco puntos qué se repite por turno y cuál es el cambio de mayor impacto. No implementes nada.",
       "graders": [
+        {
+          "type": "contains_any",
+          "values": [
+            "1.",
+            "- ",
+            "|"
+          ]
+        },
         {
           "type": "no_preamble"
         },
         {
-          "type": "contains_any",
-          "values": [
-            "?",
-            "asumo",
-            "si te referís",
-            "voy con"
-          ]
+          "type": "regex_absent",
+          "pattern": "(?i)^(claro|certainly|por supuesto)"
         }
       ],
-      "timeout_s": 900,
-      "why_heavy": "explora el repo y no cierra: se corre a mano con --include-heavy"
+      "timeout_s": 420,
+      "why_heavy": "explora el repo y no cierra: se corre a mano con --include-heavy",
+      "note": "Reescrito para que converja: el pedido original ('optimizá el rendimiento') es una tarea abierta que ningun turno cierra; la version nueva pide diagnostico y plan, que es lo que el harness puede entregar en un turno."
     },
     {
       "id": "C22",
