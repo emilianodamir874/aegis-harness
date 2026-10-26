@@ -8,7 +8,7 @@ use crate::conversation::{merge_consecutive_messages, Conversation};
 use crate::providers::base::Provider;
 #[cfg(test)]
 use crate::providers::base::{stream_from_single_message, MessageStream};
-use crate::{config::Config, token_counter::create_token_counter};
+use crate::{config::Config, token_counter::shared_token_counter};
 use aegis_providers::conversation::token_usage::ProviderUsage;
 use aegis_providers::errors::ProviderError;
 use aegis_providers::model::ModelConfig;
@@ -251,7 +251,7 @@ pub async fn compact_messages(
 /// Estimate the tokens of the agent-visible messages, counted the same way
 /// as the fallback estimation in `check_if_compaction_needed`.
 pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
-    let counter = create_token_counter()
+    let counter = shared_token_counter()
         .await
         .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
     let total: usize = messages
@@ -291,7 +291,7 @@ pub async fn check_if_compaction_needed(
     let (current_tokens, _token_source) = match session.usage.total_tokens {
         Some(tokens) => (tokens as usize, "session metadata"),
         None => {
-            let token_counter = create_token_counter()
+            let token_counter = shared_token_counter()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
 
@@ -393,7 +393,7 @@ async fn do_compact(
         output_budget: output_budget as i32,
     };
     let estimator = AegisTokenEstimator {
-        counter: create_token_counter().await.map_err(anyhow::Error::msg)?,
+        counter: shared_token_counter().await.map_err(anyhow::Error::msg)?,
     };
     let summary = aegis_context_management::summarize_in_chunks(
         &model,

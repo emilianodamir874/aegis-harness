@@ -13,14 +13,12 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::warn;
 
-const TOOL_TITLE_SYSTEM_PROMPT: &str =
-    "Summarize this tool call in a short lowercase phrase (3-8 words). \
-     No punctuation. No quotes. Examples: reading project configuration, \
-     checking network connectivity, listing files in src directory. \
-     You are labeling a tool call that already happened: never execute it, \
-     never explain it, never ask for the full arguments. The arguments are \
-     truncated on purpose; label the intent anyway.";
-const TOOL_TITLE_ARGUMENTS_MAX_LENGTH: usize = 300;
+/// El titulo de una tool call es un detalle de UI y se arma localmente: generarlo con el
+/// modelo costaba una ida y vuelta al proveedor por cada tool call (medido: 38 % de los
+/// requests de un turno con herramientas eran estos one-shots). El texto sale del nombre y
+/// los argumentos, asi que es instantaneo y determinista.
+const LOCAL_TITLE_MAX_CHARS: usize = 60;
+const LOCAL_TITLE_MAX_WORDS: usize = 10;
 const TOOL_CHAIN_SUMMARY_SYSTEM_PROMPT: &str =
     "Summarize this sequence of tool calls in a short lowercase phrase \
      (3-8 words). No punctuation. No quotes. \
@@ -36,24 +34,11 @@ const LABEL_GENERATION_MAX_ATTEMPTS: usize = 2;
 const LABEL_GENERATION_RETRY_DELAY: Duration = Duration::from_millis(150);
 
 pub(crate) async fn generate_tool_title(
-    agent: &Agent,
     session_manager: &SessionManager,
     session_id: &str,
     tool_request: &ToolRequest,
 ) -> Option<String> {
-    let provider = agent.provider(session_id).await.ok()?;
-    if provider.manages_own_context() {
-        return None;
-    }
-
-    let model_config = agent.model_config_for_session(session_id).await.ok()?;
-    let title = generate_tool_title_with_provider(
-        provider.as_ref(),
-        &model_config,
-        session_id,
-        tool_request,
-    )
-    .await?;
+    let title = local_tool_title(tool_request)?;
     let request_id = &tool_request.id;
 
     let patch = json!({
@@ -67,6 +52,114 @@ pub(crate) async fn generate_tool_title(
     }
 
     Some(title)
+}
+
+/// Nombre corto de herramienta, verbo en gerundio y el argumento que identifica la llamada.
+/// `developer__shell` con `{"command": "git status"}` produce `running git status`.
+fn local_tool_title(tool_request: &ToolRequest) -> Option<String> {
+    let tool_call = tool_request.tool_call.as_ref().ok()?;
+    let name = tool_call.name.as_ref();
+    let short_name = name.rsplit("__").next().unwrap_or(name);
+    let target = salient_argument(tool_call.arguments.as_ref());
+    let label = match (verb_for(short_name), target) {
+        (Some(verb), Some(target)) => format!("{verb} {target}"),
+        (Some(verb), None) => verb.to_string(),
+        (None, Some(target)) => format!("{} {target}", short_name.replace('_', " ")),
+        (None, None) => short_name.replace('_', " "),
+    };
+    finish_local_title(&label)
+}
+
+fn verb_for(tool_name: &str) -> Option<&'static str> {
+    Some(match tool_name {
+        "shell" | "run" | "exec" | "execute_command" => "running",
+        "read_file" | "read" => "reading",
+        "write" | "write_file" => "writing",
+        "edit" | "apply_patch" | "str_replace" => "editing",
+        "grep" | "search" => "searching",
+        "tree" | "list" | "list_files" => "listing",
+        "web_search" => "searching the web for",
+        "web_fetch" => "fetching",
+        "read_image" => "looking at",
+        "load" | "load_skill" => "loading",
+        "delegate" => "delegating",
+        "chatrecall" => "searching past chats for",
+        "memory_write" => "saving memory",
+        "memory_search" => "searching memory for",
+        "memory_list" => "listing memory",
+        "memory_confirm" => "confirming memory",
+        "memory_forget" => "forgetting memory",
+        "memory_consolidate" => "consolidating memory",
+        "manage_extensions" => "changing extensions",
+        "search_available_extensions" => "searching extensions",
+        "manage_schedule" => "editing the schedule",
+        _ => return None,
+    })
+}
+
+/// El argumento que mejor identifica una llamada, en orden de utilidad para el operador.
+fn salient_argument(
+    arguments: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> Option<String> {
+    const PRIORITY: [&str; 9] = [
+        "command",
+        "path",
+        "file_path",
+        "pattern",
+        "query",
+        "url",
+        "prompt",
+        "skill",
+        "name",
+    ];
+    const PATH_KEYS: [&str; 2] = ["path", "file_path"];
+
+    let arguments = arguments?;
+    for key in PRIORITY {
+        let Some(value) = arguments.get(key).and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        let value = collapse_whitespace(value);
+        if value.is_empty() {
+            continue;
+        }
+        return Some(if PATH_KEYS.contains(&key) {
+            shorten_path(&value)
+        } else {
+            value
+        });
+    }
+    arguments
+        .values()
+        .filter_map(serde_json::Value::as_str)
+        .map(collapse_whitespace)
+        .find(|value| !value.is_empty())
+}
+
+fn collapse_whitespace(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn shorten_path(value: &str) -> String {
+    let parts: Vec<&str> = value
+        .split(['\\', '/'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    match parts.len() {
+        0 | 1 => value.to_string(),
+        len => format!("{}/{}", parts[len - 2], parts[len - 1]),
+    }
+}
+
+fn finish_local_title(label: &str) -> Option<String> {
+    let collapsed = collapse_whitespace(label);
+    if collapsed.is_empty() {
+        return None;
+    }
+    let words: Vec<&str> = collapsed.split(' ').take(LOCAL_TITLE_MAX_WORDS).collect();
+    let bounded = safe_truncate(&words.join(" "), LOCAL_TITLE_MAX_CHARS);
+    let bounded = bounded.trim().to_string();
+    label_is_usable(&bounded).then_some(bounded)
 }
 
 pub(crate) async fn generate_tool_chain_summary(
@@ -135,41 +228,6 @@ fn prepare_tool_chain_steps(tool_requests: &[ToolRequest]) -> Vec<(String, Strin
             Some((tool_call.name.to_string(), arguments))
         })
         .collect()
-}
-
-async fn generate_tool_title_with_provider(
-    provider: &dyn Provider,
-    model_config: &ModelConfig,
-    session_id: &str,
-    tool_request: &ToolRequest,
-) -> Option<String> {
-    let tool_call = tool_request.tool_call.as_ref().ok()?;
-    let name = &tool_call.name;
-    let args_json = tool_call
-        .arguments
-        .as_ref()
-        .map(|arguments| {
-            let serialized = serde_json::to_string(arguments).unwrap_or_default();
-            if serialized.len() > TOOL_TITLE_ARGUMENTS_MAX_LENGTH {
-                format!(
-                    "{}…",
-                    safe_truncate(&serialized, TOOL_TITLE_ARGUMENTS_MAX_LENGTH)
-                )
-            } else {
-                serialized
-            }
-        })
-        .unwrap_or_default();
-    let message = Message::user().with_text(format!("Tool: {name}\nArguments: {args_json}"));
-
-    complete_label(
-        provider,
-        model_config,
-        session_id,
-        TOOL_TITLE_SYSTEM_PROMPT,
-        &message,
-    )
-    .await
 }
 
 async fn generate_tool_chain_summary_with_provider(
@@ -292,10 +350,6 @@ mod tests {
         fn first_user_message(&self) -> String {
             self.messages.lock().unwrap()[0][0].as_concat_text()
         }
-
-        fn first_model_config(&self) -> ModelConfig {
-            self.model_configs.lock().unwrap()[0].clone()
-        }
     }
 
     #[async_trait]
@@ -369,16 +423,6 @@ mod tests {
         }
     }
 
-    async fn generate_with(provider: &MockProvider, tool_request: &ToolRequest) -> Option<String> {
-        generate_tool_title_with_provider(
-            provider,
-            &ModelConfig::new("test-model"),
-            "session-1",
-            tool_request,
-        )
-        .await
-    }
-
     async fn generate_chain_with(
         provider: &MockProvider,
         steps: &[(String, String)],
@@ -419,121 +463,67 @@ mod tests {
     mod title_generation {
         use super::*;
 
-        #[tokio::test]
-        async fn returns_trimmed_generated_title() {
-            let provider = MockProvider::new(vec![Ok(
-                Message::assistant().with_text("  checking project status  ")
-            )]);
-
-            let title =
-                generate_with(&provider, &tool_request(json!({"command": "git status"}))).await;
-
-            assert_eq!(title.as_deref(), Some("checking project status"));
-            assert_eq!(provider.call_count(), 1);
+        fn title_of(name: &str, arguments: serde_json::Value) -> Option<String> {
+            local_tool_title(&tool_request_with("request-1", name, arguments))
         }
 
-        #[tokio::test]
-        async fn disables_thinking_for_title_generation() {
-            let provider = MockProvider::new(vec![Ok(Message::assistant().with_text("title"))]);
-            let request = tool_request(json!({}));
-            let model_config = ModelConfig::new("test-model")
-                .with_thinking_effort(aegis_providers::thinking::ThinkingEffort::High);
-
-            generate_tool_title_with_provider(&provider, &model_config, "session-1", &request)
-                .await;
-
+        #[test]
+        fn labels_a_shell_call_with_its_command() {
             assert_eq!(
-                provider.first_model_config().thinking_effort(),
-                Some(aegis_providers::thinking::ThinkingEffort::Off),
+                title_of("developer__shell", json!({"command": "git status"})).as_deref(),
+                Some("running git status"),
             );
         }
 
-        #[tokio::test]
-        async fn retries_once_after_empty_response() {
-            let provider = MockProvider::new(vec![
-                Ok(Message::assistant().with_text("  ")),
-                Ok(Message::assistant().with_text("reading project configuration")),
-            ]);
+        #[test]
+        fn labels_a_read_with_the_last_two_path_components() {
+            assert_eq!(
+                title_of(
+                    "developer__read_file",
+                    json!({"path": "C:/Aegis-Proyects/src/crates/aegis/src/lib.rs"}),
+                )
+                .as_deref(),
+                Some("reading src/lib.rs"),
+            );
+        }
 
-            let title = generate_with(&provider, &tool_request(json!({}))).await;
+        #[test]
+        fn unknown_tools_fall_back_to_their_own_name() {
+            assert_eq!(
+                title_of("custom_tool", json!({"name": "alpha"})).as_deref(),
+                Some("custom tool alpha"),
+            );
+        }
 
-            assert_eq!(title.as_deref(), Some("reading project configuration"));
-            assert_eq!(provider.call_count(), 2);
+        #[test]
+        fn labels_stay_on_one_bounded_line() {
+            let command = format!("powershell -NoProfile -Command \"{}\"", "x".repeat(400));
+            let title = title_of("developer__shell", json!({"command": command}))
+                .expect("a shell call always yields a label");
+
+            assert!(!title.contains('\n'));
+            assert!(title.chars().count() <= LOCAL_TITLE_MAX_CHARS);
+            assert!(title.split_whitespace().count() <= LOCAL_TITLE_MAX_WORDS);
+        }
+
+        #[test]
+        fn labels_are_deterministic() {
+            let arguments = json!({"command": "cargo test -p aegis --lib"});
+            assert_eq!(
+                title_of("developer__shell", arguments.clone()),
+                title_of("developer__shell", arguments),
+            );
+        }
+
+        #[test]
+        fn a_broken_tool_call_has_no_label() {
+            assert_eq!(local_tool_title(&invalid_tool_request("request-1")), None);
         }
 
         #[tokio::test]
-        async fn retries_once_after_provider_error() {
-            let provider = MockProvider::new(vec![
-                Err(ProviderError::ExecutionError("temporary".to_string())),
-                Ok(Message::assistant().with_text("checking network connectivity")),
-            ]);
-
-            let title = generate_with(&provider, &tool_request(json!({}))).await;
-
-            assert_eq!(title.as_deref(), Some("checking network connectivity"));
-            assert_eq!(provider.call_count(), 2);
-        }
-
-        #[tokio::test]
-        async fn rejects_prose_answer_and_retries() {
-            let provider = MockProvider::new(vec![
-                Ok(Message::assistant().with_text(
-                    "I don't have a shell tool available in this conversation, so I can't run that build.",
-                )),
-                Ok(Message::assistant().with_text("running the release build")),
-            ]);
-
-            let title = generate_with(&provider, &tool_request(json!({}))).await;
-
-            assert_eq!(title.as_deref(), Some("running the release build"));
-            assert_eq!(provider.call_count(), 2);
-        }
-
-        #[tokio::test]
-        async fn returns_none_when_both_attempts_are_prose() {
-            let provider = MockProvider::new(vec![
-                Ok(Message::assistant().with_text(
-                    "Your message looks truncated, so I cannot tell what the full command is.",
-                )),
-                Ok(Message::assistant().with_text(
-                    "I can't execute that command for you, but here is what it would do:\n1. cd",
-                )),
-            ]);
-
-            let title = generate_with(&provider, &tool_request(json!({}))).await;
-
-            assert_eq!(title, None);
-            assert_eq!(provider.call_count(), 2);
-        }
-
-        #[tokio::test]
-        async fn returns_none_after_two_unsuccessful_attempts() {
-            let provider = MockProvider::new(vec![
-                Ok(Message::assistant().with_text("")),
-                Err(ProviderError::ExecutionError(
-                    "still unavailable".to_string(),
-                )),
-            ]);
-
-            let title = generate_with(&provider, &tool_request(json!({}))).await;
-
-            assert_eq!(title, None);
-            assert_eq!(provider.call_count(), 2);
-        }
-
-        #[tokio::test]
-        async fn skips_provider_that_manages_own_context() {
+        async fn persists_local_title_without_calling_a_provider() {
             let temp_dir = TempDir::new().unwrap();
             let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
-            let permission_manager =
-                Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
-                session_manager.clone(),
-                permission_manager,
-                None,
-                true,
-                AegisPlatform::AegisCli,
-            ));
             let session = session_manager
                 .create_session(
                     PathBuf::new(),
@@ -541,86 +531,6 @@ mod tests {
                     SessionType::Hidden,
                     AegisMode::Auto,
                 )
-                .await
-                .unwrap();
-            let provider = Arc::new(MockProvider::managing_own_context());
-            agent
-                .update_provider(
-                    provider.clone(),
-                    ModelConfig::new("test-model"),
-                    &session.id,
-                )
-                .await
-                .unwrap();
-
-            let title = generate_tool_title(
-                &agent,
-                session_manager.as_ref(),
-                &session.id,
-                &tool_request(json!({})),
-            )
-            .await;
-
-            assert_eq!(title, None);
-            assert_eq!(provider.call_count(), 0);
-        }
-
-        #[tokio::test]
-        async fn preserves_short_serialized_arguments() {
-            let provider = MockProvider::new(vec![Ok(Message::assistant().with_text("title"))]);
-            let tool_request = tool_request(json!({"command": "git status"}));
-
-            generate_with(&provider, &tool_request).await;
-
-            assert_eq!(
-                provider.first_user_message(),
-                "Tool: developer__shell\nArguments: {\"command\":\"git status\"}",
-            );
-        }
-
-        #[tokio::test]
-        async fn truncates_long_serialized_arguments() {
-            let provider = MockProvider::new(vec![Ok(Message::assistant().with_text("title"))]);
-            let arguments = json!({"command": "x".repeat(400)});
-            let serialized = serde_json::to_string(arguments.as_object().unwrap()).unwrap();
-            let expected = format!(
-                "Tool: developer__shell\nArguments: {}…",
-                safe_truncate(&serialized, TOOL_TITLE_ARGUMENTS_MAX_LENGTH),
-            );
-            let tool_request = tool_request(arguments);
-
-            generate_with(&provider, &tool_request).await;
-
-            assert_eq!(provider.first_user_message(), expected);
-        }
-
-        #[tokio::test]
-        async fn persists_title_for_recent_tool_request() {
-            let temp_dir = TempDir::new().unwrap();
-            let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("sessions")));
-            let permission_manager =
-                Arc::new(PermissionManager::new(temp_dir.path().join("permissions")));
-            let agent = Agent::with_config(AgentConfig::new(
-                session_manager.clone(),
-                permission_manager,
-                None,
-                true,
-                AegisPlatform::AegisCli,
-            ));
-            let session = session_manager
-                .create_session(
-                    PathBuf::new(),
-                    "test".to_string(),
-                    SessionType::Hidden,
-                    AegisMode::Auto,
-                )
-                .await
-                .unwrap();
-            let provider = Arc::new(MockProvider::new(vec![Ok(
-                Message::assistant().with_text("checking project status")
-            )]));
-            agent
-                .update_provider(provider, ModelConfig::new("test-model"), &session.id)
                 .await
                 .unwrap();
             let tool_request = tool_request(json!({"command": "git status"}));
@@ -633,10 +543,9 @@ mod tests {
                 .unwrap();
 
             let title =
-                generate_tool_title(&agent, session_manager.as_ref(), &session.id, &tool_request)
-                    .await;
+                generate_tool_title(session_manager.as_ref(), &session.id, &tool_request).await;
 
-            assert_eq!(title.as_deref(), Some("checking project status"));
+            assert_eq!(title.as_deref(), Some("running git status"));
             let loaded = session_manager
                 .get_session(&session.id, true)
                 .await
@@ -655,7 +564,7 @@ mod tests {
                     _ => None,
                 });
 
-            assert_eq!(persisted_title, Some("checking project status"));
+            assert_eq!(persisted_title, Some("running git status"));
         }
     }
 

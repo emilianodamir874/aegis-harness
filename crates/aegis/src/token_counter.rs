@@ -9,7 +9,9 @@ use crate::conversation::message::Message;
 
 static TOKENIZER: OnceCell<Arc<CoreBPE>> = OnceCell::const_new();
 
-const MAX_TOKEN_CACHE_SIZE: usize = 1_024;
+// El historial de una sesion larga entra en el cache: con 1024 entradas el LRU expulsaba
+// resultados de tools de turnos anteriores y el BPE volvia a codificarlos.
+const MAX_TOKEN_CACHE_SIZE: usize = 8_192;
 
 // token use for various bits of a tool calls:
 const FUNC_INIT: usize = 7;
@@ -19,9 +21,10 @@ const ENUM_INIT: isize = -3;
 const ENUM_ITEM: usize = 3;
 const FUNC_END: usize = 12;
 
+#[derive(Clone)]
 pub struct TokenCounter {
     tokenizer: Arc<CoreBPE>,
-    token_cache: Mutex<LruCache<TokenCacheKey, usize>>,
+    token_cache: Arc<Mutex<LruCache<TokenCacheKey, usize>>>,
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -50,7 +53,7 @@ impl TokenCounter {
             NonZeroUsize::new(MAX_TOKEN_CACHE_SIZE).expect("token cache capacity must be non-zero");
         Ok(Self {
             tokenizer,
-            token_cache: Mutex::new(LruCache::new(cache_capacity)),
+            token_cache: Arc::new(Mutex::new(LruCache::new(cache_capacity))),
         })
     }
 
@@ -222,6 +225,17 @@ async fn get_tokenizer() -> Result<Arc<CoreBPE>, String> {
         .clone())
 }
 
+static SHARED_COUNTER: OnceCell<TokenCounter> = OnceCell::const_new();
+
+/// Contador del proceso. El cache LRU se comparte entre turnos y entre compactaciones,
+/// asi que el historial ya codificado no se vuelve a pasar por el BPE: solo la cola nueva.
+pub async fn shared_token_counter() -> Result<TokenCounter, String> {
+    SHARED_COUNTER
+        .get_or_try_init(TokenCounter::new)
+        .await
+        .cloned()
+}
+
 pub async fn create_token_counter() -> Result<TokenCounter, String> {
     TokenCounter::new().await
 }
@@ -229,6 +243,24 @@ pub async fn create_token_counter() -> Result<TokenCounter, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn shared_counter_keeps_its_cache_across_handles() {
+        let first = shared_token_counter().await.unwrap();
+        let second = shared_token_counter().await.unwrap();
+        assert!(
+            Arc::ptr_eq(&first.token_cache, &second.token_cache),
+            "el contador compartido tiene que ser la misma instancia"
+        );
+    }
+
+    #[tokio::test]
+    async fn fresh_counter_starts_with_an_empty_cache() {
+        let shared = shared_token_counter().await.unwrap();
+        let fresh = create_token_counter().await.unwrap();
+        assert!(!Arc::ptr_eq(&shared.token_cache, &fresh.token_cache));
+        assert_eq!(fresh.cache_size(), 0);
+    }
 
     #[tokio::test]
     async fn test_token_caching() {

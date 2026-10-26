@@ -1,5 +1,4 @@
 use crate::conversation::message::{Message, MessageContent};
-use crate::token_counter::create_token_counter;
 use anyhow::Result;
 use rmcp::model::Role;
 
@@ -13,7 +12,9 @@ pub(super) async fn recent_start(
     if budget == 0 {
         return Ok(None);
     }
-    let counter = create_token_counter().await.map_err(anyhow::Error::msg)?;
+    let counter = crate::token_counter::shared_token_counter()
+        .await
+        .map_err(anyhow::Error::msg)?;
     let mut used = 0usize;
     let mut start = None;
     for (index, message) in messages.iter().enumerate().rev() {

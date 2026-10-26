@@ -1825,7 +1825,7 @@ impl AegisAcpAgent {
                 );
             }
             MessageContent::ToolRequest(tool_request) => {
-                self.handle_tool_request(tool_request, message, session_id, &target.agent, bus)
+                self.handle_tool_request(tool_request, message, session_id, bus)
                     .await?;
             }
             MessageContent::ToolResponse(tool_response) => {
@@ -1967,7 +1967,6 @@ impl AegisAcpAgent {
         tool_request: &ToolRequest,
         message: &Message,
         session_id: &SessionId,
-        agent: &Arc<Agent>,
         bus: &SessionBus,
     ) -> Result<(), agent_client_protocol::Error> {
         let client_requests_label_enrichment = self.requests_tool_call_label_enrichment();
@@ -1985,7 +1984,6 @@ impl AegisAcpAgent {
 
         if tool_request.tool_call.is_ok() {
             spawn_tool_title_enrichment(
-                agent,
                 tool_call_notifier,
                 &self.session_manager,
                 session_id.0.as_ref(),

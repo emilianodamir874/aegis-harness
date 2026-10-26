@@ -172,18 +172,15 @@ fn load_hints_from_directory(
             if !hints_path.is_file() {
                 continue;
             }
-            let identity = hints_path.canonicalize().unwrap_or_else(|_| hints_path.clone());
+            let identity = hints_path
+                .canonicalize()
+                .unwrap_or_else(|_| hints_path.clone());
             if !loaded_files.insert(identity) {
                 continue;
             }
             let mut visited = HashSet::new();
-            let expanded = read_referenced_files(
-                &hints_path,
-                import_boundary,
-                &mut visited,
-                0,
-                &gitignore,
-            );
+            let expanded =
+                read_referenced_files(&hints_path, import_boundary, &mut visited, 0, &gitignore);
             if !expanded.is_empty() {
                 contents.push(expanded);
             }
@@ -940,9 +937,7 @@ End of hints"#;
             total <= MAX_SUBDIR_HINT_BYTES + 512,
             "subdirectory hints must respect the byte budget, got {total}"
         );
-        assert!(hints
-            .iter()
-            .any(|(key, _)| key == "subdir_hints:truncated"));
+        assert!(hints.iter().any(|(key, _)| key == "subdir_hints:truncated"));
     }
 
     #[test]

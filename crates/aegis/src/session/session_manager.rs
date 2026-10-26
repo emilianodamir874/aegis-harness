@@ -1223,7 +1223,17 @@ impl SessionStorage {
             .create_if_missing(true)
             .foreign_keys(true)
             .busy_timeout(std::time::Duration::from_secs(30))
-            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            // El store pasa los 540 MB y las sesiones largas se leen enteras al abrirlas: con la
+            // cache de 2 MB por defecto cada lectura vuelve al disco. 32 MB por conexion y 256 MB
+            // de mmap (respaldado por la cache del SO y compartido entre conexiones) cortan esos
+            // page faults sin reservar memoria de golpe.
+            .pragma("cache_size", "-32768")
+            .pragma("mmap_size", "268435456")
+            .pragma("temp_store", "MEMORY")
+            // En WAL, NORMAL es durable ante la caida del proceso y evita un fsync por commit:
+            // hay un commit por mensaje, o sea uno o dos por tool call.
+            .pragma("synchronous", "NORMAL");
 
         SqlitePoolOptions::new().connect_lazy_with(options)
     }
@@ -2618,10 +2628,17 @@ impl SessionStorage {
             None => false,
         };
         let mut where_clauses = Vec::new();
-        let mut having_clauses = Vec::new();
-        let normalized_message_timestamp = normalized_message_timestamp_sql("m.created_timestamp");
+        let mut cursor_clauses = Vec::new();
+        // El ultimo mensaje se resuelve con una subconsulta correlacionada por sesion: recorre
+        // `idx_messages_session_created` al reves y corta en la primera fila. Agregar con
+        // `JOIN messages + GROUP BY` obligaba a leer todos los mensajes del store en cada
+        // listado (medido en el log del serve: 1,2 s de promedio, 137 veces en diez minutos
+        // solo por el polling del listado de sesiones).
+        let last_message_raw =
+            "(SELECT MAX(m.created_timestamp) FROM messages m WHERE m.session_id = s.id)";
+        let normalized_message_timestamp = normalized_message_timestamp_sql(last_message_raw);
         let sort_timestamp_sql =
-            format!("COALESCE(MAX({normalized_message_timestamp}), unixepoch(s.updated_at))");
+            format!("COALESCE({normalized_message_timestamp}, unixepoch(s.updated_at))");
         if let Some(types) = filters.types {
             let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
             where_clauses.push(format!("s.session_type IN ({})", placeholders));
@@ -2636,10 +2653,13 @@ impl SessionStorage {
                 message_keyword_clause(keywords.len())
             });
         }
+        if filters.only_sessions_with_messages {
+            where_clauses
+                .push("EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id)".to_string());
+        }
         if query.cursor.is_some() {
-            having_clauses.push(format!(
-                "({sort_timestamp_sql} < ? OR ({sort_timestamp_sql} = ? AND s.id < ?))"
-            ));
+            cursor_clauses
+                .push("(t.sort_timestamp < ? OR (t.sort_timestamp = ? AND t.id < ?))".to_string());
         }
 
         let where_clause = if where_clauses.is_empty() {
@@ -2647,56 +2667,51 @@ impl SessionStorage {
         } else {
             format!("WHERE {}", where_clauses.join(" AND "))
         };
-        let having_clause = if having_clauses.is_empty() {
+        let cursor_clause = if cursor_clauses.is_empty() {
             String::new()
         } else {
-            format!("HAVING {}", having_clauses.join(" AND "))
+            format!("WHERE {}", cursor_clauses.join(" AND "))
         };
-        let message_join = if filters.only_sessions_with_messages {
-            "JOIN messages m ON s.id = m.session_id"
-        } else {
-            "LEFT JOIN messages m ON s.id = m.session_id"
-        };
-        let order_by = "ORDER BY sort_timestamp DESC, s.id DESC";
+        let order_by = "ORDER BY t.sort_timestamp DESC, t.id DESC";
         let limit_clause = if query.limit.is_some() { "LIMIT ?" } else { "" };
 
         let message_count_sql = if has_limit {
             "0".to_string()
         } else {
             format!(
-                "COUNT(m.id) FILTER (WHERE {})",
+                "(SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND {})",
                 user_visible_message_sql("m.metadata_json")
             )
         };
         let sql = format!(
             r#"
-            SELECT s.id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
-                   s.total_tokens, s.input_tokens, s.output_tokens,
-                   s.cache_read_tokens, s.cache_write_tokens,
-                   s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
-                   s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens,
-                   s.accumulated_cost,
-                   s.schedule_id, s.recipe_json, s.user_recipe_values_json,
-                   s.provider_name, s.model_config_json, s.aegis_mode,
-                   s.archived_at, s.project_id, s.parent_session_id,
-                   s.system_prompt_override, s.system_prompt_extras_json, s.container_id,
-                   {} as message_count,
-                   MAX({}) as last_message_timestamp,
-                   {} as sort_timestamp
-            FROM sessions s
-            {}
-            {}
-            GROUP BY s.id
+            SELECT t.*
+            FROM (
+                SELECT s.id AS id, s.working_dir, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
+                       s.total_tokens, s.input_tokens, s.output_tokens,
+                       s.cache_read_tokens, s.cache_write_tokens,
+                       s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
+                       s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens,
+                       s.accumulated_cost,
+                       s.schedule_id, s.recipe_json, s.user_recipe_values_json,
+                       s.provider_name, s.model_config_json, s.aegis_mode,
+                       s.archived_at, s.project_id, s.parent_session_id,
+                       s.system_prompt_override, s.system_prompt_extras_json, s.container_id,
+                       {} as message_count,
+                       {} as last_message_timestamp,
+                       {} as sort_timestamp
+                FROM sessions s
+                {}
+            ) AS t
             {}
             {}
             {}
             "#,
             message_count_sql,
-            normalized_message_timestamp,
+            last_message_raw,
             sort_timestamp_sql,
-            message_join,
             where_clause,
-            having_clause,
+            cursor_clause,
             order_by,
             limit_clause
         );

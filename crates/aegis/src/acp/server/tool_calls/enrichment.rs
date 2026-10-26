@@ -32,25 +32,18 @@ fn build_chain_summary_update(
 }
 
 pub(crate) fn spawn_tool_title_enrichment(
-    agent: &Arc<Agent>,
     tool_call_notifier: ToolCallNotifier,
     session_manager: &Arc<SessionManager>,
     session_id: &str,
     tool_request: &ToolRequest,
 ) {
-    let agent = agent.clone();
     let session_manager = session_manager.clone();
     let session_id = session_id.to_string();
     let tool_request = tool_request.clone();
 
     spawn(async move {
-        if let Some(title) = generate_tool_title(
-            agent.as_ref(),
-            session_manager.as_ref(),
-            &session_id,
-            &tool_request,
-        )
-        .await
+        if let Some(title) =
+            generate_tool_title(session_manager.as_ref(), &session_id, &tool_request).await
         {
             let _ = tool_call_notifier.send_update(ToolCallUpdate::new(
                 ToolCallId::new(tool_request.id),
