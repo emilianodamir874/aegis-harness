@@ -32,6 +32,12 @@ interface UsageState {
   provider?: string;
 }
 
+interface PriceRow {
+  input?: number | null;
+  output?: number | null;
+  inputEffective?: number | null;
+}
+
 declare global {
   interface Window {
     __aegisWeb?: {
@@ -133,6 +139,46 @@ interface Meter {
   mark: HTMLDivElement;
 }
 
+let prices: Record<string, PriceRow> = {};
+let pricesLoaded = false;
+
+/// Tarifas por 1M tokens, derivadas del propio store (`/prices.json`). No son factura: si el modelo
+/// no aparece, el tooltip lo dice en vez de inventar un numero.
+function loadPrices(): void {
+  if (pricesLoaded) return;
+  pricesLoaded = true;
+  fetch('/prices.json', { cache: 'force-cache' })
+    .then((response) => (response.ok ? response.json() : {}))
+    .then((data: Record<string, PriceRow>) => {
+      prices = data || {};
+    })
+    .catch(() => {
+      prices = {};
+    });
+}
+
+function priceFor(provider: string, model: string): PriceRow | null {
+  if (!model) return null;
+  const exact = provider ? prices[`${provider}/${model}`] : undefined;
+  if (exact) return exact;
+  const suffix = `/${model}`;
+  for (const [key, row] of Object.entries(prices)) {
+    if (key.startsWith('_')) continue;
+    if (key.endsWith(suffix)) return row;
+  }
+  return null;
+}
+
+function providerLabel(usage: UsageState | null): string {
+  if (usage?.provider) return String(usage.provider);
+  const state = (window.__aegisWeb?.state || {}) as Record<string, unknown>;
+  for (const key of ['provider', 'providerName']) {
+    const raw = state[key];
+    if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  }
+  return '';
+}
+
 let meter: Meter | null = null;
 let map: HTMLDivElement | null = null;
 
@@ -199,7 +245,23 @@ function renderMeter(usage: UsageState | null): void {
   }
   const usd = turnCost(usage as UsageState);
   const model = modelLabel(usage as UsageState);
+  const provider = providerLabel(usage);
   m.cost.textContent = [usd ? `turno ${fmtUsd(usd)}` : '', model].filter(Boolean).join(' · ');
+
+  // M7: el chip explica con que tarifa se esta midiendo.
+  const price = priceFor(provider, model);
+  const lines = [`modelo: ${model || 'sin informar'}`];
+  if (provider) lines.push(`proveedor: ${provider}`);
+  if (price) {
+    const input = typeof price.input === 'number' ? `entrada $${price.input.toFixed(2)} / 1M` : 'entrada sin tarifa';
+    const output = typeof price.output === 'number' ? `salida $${price.output.toFixed(2)} / 1M` : 'salida sin tarifa';
+    lines.push(`${input} · ${output}`);
+    if (typeof price.inputEffective === 'number') lines.push(`efectivo $${price.inputEffective.toFixed(2)} / 1M de entrada (mezcla real del store)`);
+  } else {
+    lines.push('sin tarifa derivada para este modelo: el costo del turno sale del usage del server');
+  }
+  if (usd) lines.push(`este turno: ${fmtUsd(usd)}`);
+  m.cost.title = lines.join('\n');
 }
 
 function closeMap(): void {
@@ -306,6 +368,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeMap();
 });
 
+loadPrices();
 setInterval(refresh, TICK_MS);
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', refresh);
