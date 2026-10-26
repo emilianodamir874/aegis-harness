@@ -143,14 +143,22 @@
       "prompt": "Renombrá un símbolo que aparezca en exactamente dos archivos y dejá `cargo check` pasando.",
       "graders": [
         {
+          "type": "diff_files_any",
+          "value": 1
+        },
+        {
           "type": "contains_any",
           "values": [
-            "Finished",
-            "ok"
+            "rename",
+            "rename",
+            "renombr",
+            "cargo check",
+            "compila"
           ]
         }
       ],
-      "why_heavy": "edita y compila"
+      "why_heavy": "edita y compila",
+      "note": "Exige que el rename toque archivos de verdad: en la primera corrida C8 'paso' con cero archivos modificados, o sea que explico el rename y no lo hizo."
     },
     {
       "id": "C9",

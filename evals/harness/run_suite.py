@@ -380,6 +380,10 @@ def grade(case: dict, answer: str, context: dict | None = None) -> list[dict]:
             )
             ok = asked or words
             detail = f"approvals={grader.get('_ctx', {}).get('approvals', 0)}"
+        elif gtype == "diff_files_any":
+            tocados = context.get("changed_files") or []
+            ok = len(tocados) >= int(grader.get("value", 1))
+            detail = f"{len(tocados)} archivo(s): " + ", ".join(tocados[:5])
         elif gtype == "diff_files_max":
             tocados = context.get("changed_files") or []
             ok = len(tocados) <= int(grader.get("value", 1))
