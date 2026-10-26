@@ -376,7 +376,7 @@
     {
       "id": "C21",
       "category": "style",
-      "mode": "light",
+      "mode": "heavy",
       "cwd": "C:\\Aegis-Proyects",
       "prompt": "Optimizá el rendimiento del harness.",
       "graders": [
@@ -393,7 +393,8 @@
           ]
         }
       ],
-      "timeout_s": 600
+      "timeout_s": 900,
+      "why_heavy": "explora el repo y no cierra: se corre a mano con --include-heavy"
     },
     {
       "id": "C22",
