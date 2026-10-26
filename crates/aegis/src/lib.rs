@@ -29,6 +29,7 @@ pub mod instance_id;
 mod live_voice;
 pub mod logging;
 pub mod mcp_utils;
+pub mod memory;
 #[cfg(feature = "online-model-meta")]
 pub mod model_catalog;
 pub mod model_config;

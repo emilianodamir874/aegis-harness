@@ -378,6 +378,21 @@ impl Agent {
         tool_inspection_manager
     }
 
+    /// Dispara la extraccion de memoria del turno que acaba de cerrar. Corre desprendida: el
+    /// operador ya tiene su respuesta y esto solo agrega candidatos al store.
+    async fn spawn_post_turn_memory_extraction(&self, session_id: &str) {
+        if !crate::memory::extraction::enabled() {
+            return;
+        }
+        let Ok(provider) = self.provider(session_id).await else {
+            return;
+        };
+        let Ok(model_config) = self.effective_model_config_for_session(session_id).await else {
+            return;
+        };
+        crate::memory::extraction::spawn(provider, model_config, session_id.to_string());
+    }
+
     pub async fn provider(&self, session_id: &str) -> Result<Arc<dyn Provider>> {
         let session = self
             .config
@@ -918,6 +933,8 @@ impl Agent {
 
                     if !has_confirmations {
                         turn_guard.state().clear_confirmations();
+                        self.spawn_post_turn_memory_extraction(&session_config.id)
+                            .await;
                         return;
                     }
                 }
@@ -928,6 +945,8 @@ impl Agent {
                     .await;
                 if !resume {
                     turn_guard.state().clear_confirmations();
+                    self.spawn_post_turn_memory_extraction(&session_config.id)
+                        .await;
                     return;
                 }
                 stream = Some(

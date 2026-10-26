@@ -1,7 +1,13 @@
+//! Extension `memory`: las tools con las que el agente lee y escribe la memoria del operador.
+//!
+//! El store y sus reglas viven en `crate::memory::store`; aca solo estan los contratos de tool y el
+//! digest que entra al prompt. La extraccion automatica al cierre de turno esta en
+//! `crate::memory::extraction`.
+
 use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
-use crate::config::paths::Paths;
+use crate::memory::store::{self, Fact};
 use anyhow::Result;
 use async_trait::async_trait;
 use indoc::indoc;
@@ -11,8 +17,6 @@ use rmcp::model::{
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
 
 pub static EXTENSION_NAME: &str = "memory";
@@ -20,35 +24,8 @@ pub const MEMORY_WRITE_TOOL_NAME: &str = "memory_write";
 pub const MEMORY_SEARCH_TOOL_NAME: &str = "memory_search";
 pub const MEMORY_LIST_TOOL_NAME: &str = "memory_list";
 pub const MEMORY_FORGET_TOOL_NAME: &str = "memory_forget";
-
-/// Cuanto del archivo de hechos entra en cada turno. El digest es el punto de contacto con el
-/// operador: si crece demasiado deja de ser memoria y pasa a ser impuesto de contexto.
-const MOIM_MAX_CHARS: usize = 4_000;
-const MOIM_MAX_FACTS: usize = 24;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Fact {
-    id: String,
-    text: String,
-    #[serde(default)]
-    kind: String,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default = "default_confidence")]
-    confidence: f32,
-    #[serde(default)]
-    pinned: bool,
-    #[serde(default)]
-    created: String,
-    #[serde(default)]
-    updated: String,
-    #[serde(default)]
-    session: String,
-}
-
-fn default_confidence() -> f32 {
-    0.8
-}
+pub const MEMORY_CONFIRM_TOOL_NAME: &str = "memory_confirm";
+pub const MEMORY_CONSOLIDATE_TOOL_NAME: &str = "memory_consolidate";
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 struct MemoryWriteParams {
@@ -85,78 +62,33 @@ struct MemoryListParams {
     /// Filtrar por categoria.
     #[serde(skip_serializing_if = "Option::is_none")]
     kind: Option<String>,
+    /// Filtrar por estado: candidate, confirmed, stale, rejected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-struct MemoryForgetParams {
-    /// Id del hecho a borrar (ej: F-0007).
+struct MemoryIdParams {
+    /// Id del hecho (ej: F-0007).
     id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+struct MemoryConsolidateParams {
+    /// Si es true, ademas de consolidar regenera el informe. Default: true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    report: Option<bool>,
 }
 
 pub struct MemoryClient {
     info: InitializeResult,
 }
 
-fn facts_path() -> PathBuf {
-    Paths::in_data_dir("memory").join("facts.jsonl")
-}
-
-fn now_iso() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-}
-
-fn read_facts() -> Vec<Fact> {
-    let Ok(raw) = std::fs::read_to_string(facts_path()) else {
-        return Vec::new();
-    };
-    raw.lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<Fact>(line).ok())
-        .collect()
-}
-
-fn write_facts(facts: &[Fact]) -> std::io::Result<()> {
-    let path = facts_path();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let tmp = path.with_extension("jsonl.tmp");
-    {
-        let mut file = std::fs::File::create(&tmp)?;
-        for fact in facts {
-            let line = serde_json::to_string(fact).unwrap_or_default();
-            writeln!(file, "{line}")?;
-        }
-        file.flush()?;
-    }
-    std::fs::rename(&tmp, &path)
-}
-
-fn next_id(facts: &[Fact]) -> String {
-    let max = facts
-        .iter()
-        .filter_map(|f| f.id.strip_prefix("F-"))
-        .filter_map(|n| n.parse::<u32>().ok())
-        .max()
-        .unwrap_or(0);
-    format!("F-{:04}", max + 1)
-}
-
-fn normalize(text: &str) -> String {
-    text.to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' { c } else { ' ' })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 impl MemoryClient {
     pub fn new(_context: PlatformExtensionContext) -> Result<Self> {
         let info = InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(
-                Implementation::new(EXTENSION_NAME.to_string(), "1.0.0".to_string())
+                Implementation::new(EXTENSION_NAME.to_string(), "2.0.0".to_string())
                     .with_title("Operator Memory"),
             )
             .with_instructions(
@@ -167,11 +99,15 @@ impl MemoryClient {
                   decision tomada y su por que, dato del entorno, objetivo en curso). Escribi cuando
                   aprendas algo que seguiria siendo cierto dentro de un mes.
                 - `memory_search` / `memory_list`: consultar antes de preguntar algo que ya te dijo.
-                - `memory_forget`: borrar un hecho que quedo viejo o equivocado.
+                - `memory_forget`: marca un hecho como rechazado (queda el rastro, no entra al prompt).
+                - `memory_confirm`: confirma un candidato que el extractor propuso.
+                - `memory_consolidate`: deduplica, promueve candidatos repetidos y archiva lo viejo.
+
+                Los hechos que el extractor infiere al cierre de cada turno entran como candidatos y
+                no se inyectan hasta que se repiten en otra sesion o los confirmes.
 
                 No guardes estados transitorios (que archivo estas editando, que build corre).
                 No guardes credenciales ni rutas de secretos.
-                Los hechos con `pinned` entran en el digest de cada turno; el resto se consulta.
             "#}
                 .to_string(),
             );
@@ -187,6 +123,22 @@ impl MemoryClient {
             .unwrap_or_default()
     }
 
+    fn read_only(
+        name: &str,
+        description: &str,
+        schema: serde_json::Map<String, serde_json::Value>,
+    ) -> Tool {
+        Tool::new(name.to_string(), description.to_string(), schema).annotate(
+            ToolAnnotations::from_raw(
+                Some(name.to_string()),
+                Some(true),
+                Some(true),
+                Some(false),
+                Some(false),
+            ),
+        )
+    }
+
     fn get_tools() -> Vec<Tool> {
         vec![
             Tool::new(
@@ -196,7 +148,7 @@ impl MemoryClient {
 
                     Usalo cuando aprendas algo que seguiria siendo cierto dentro de un mes: una
                     preferencia, una decision y su motivo, un dato del entorno, un objetivo.
-                    Si el hecho ya existe, se actualiza en lugar de duplicarse.
+                    Si el hecho ya existe, se actualiza y vuelve a quedar confirmado.
                 "#}
                 .to_string(),
                 Self::tool_schema::<MemoryWriteParams>(),
@@ -208,41 +160,53 @@ impl MemoryClient {
                 Some(false),
                 Some(false),
             )),
-            Tool::new(
-                MEMORY_SEARCH_TOOL_NAME.to_string(),
-                "Busca hechos guardados por palabras. Devuelve id, categoria y texto.".to_string(),
+            Self::read_only(
+                MEMORY_SEARCH_TOOL_NAME,
+                "Busca hechos guardados por palabras. Devuelve id, categoria, estado y texto.",
                 Self::tool_schema::<MemorySearchParams>(),
-            )
-            .annotate(ToolAnnotations::from_raw(
-                Some("Search memory".to_string()),
-                Some(true),
-                Some(true),
-                Some(false),
-                Some(false),
-            )),
-            Tool::new(
-                MEMORY_LIST_TOOL_NAME.to_string(),
-                "Lista los hechos guardados, mas nuevos primero.".to_string(),
+            ),
+            Self::read_only(
+                MEMORY_LIST_TOOL_NAME,
+                "Lista los hechos guardados, mas nuevos primero. Filtra por categoria o estado.",
                 Self::tool_schema::<MemoryListParams>(),
-            )
-            .annotate(ToolAnnotations::from_raw(
-                Some("List memory".to_string()),
-                Some(true),
-                Some(true),
-                Some(false),
-                Some(false),
-            )),
+            ),
             Tool::new(
                 MEMORY_FORGET_TOOL_NAME.to_string(),
-                "Borra un hecho por id.".to_string(),
-                Self::tool_schema::<MemoryForgetParams>(),
+                "Marca un hecho como rechazado: deja de entrar al prompt pero queda el rastro con su evidencia."
+                    .to_string(),
+                Self::tool_schema::<MemoryIdParams>(),
             )
             .annotate(ToolAnnotations::from_raw(
-                Some("Forget fact".to_string()),
+                Some("Reject fact".to_string()),
                 Some(false),
                 Some(true),
                 Some(false),
+                Some(false),
+            )),
+            Tool::new(
+                MEMORY_CONFIRM_TOOL_NAME.to_string(),
+                "Confirma un candidato propuesto por el extractor para que entre al prompt.".to_string(),
+                Self::tool_schema::<MemoryIdParams>(),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Confirm fact".to_string()),
+                Some(false),
                 Some(true),
+                Some(false),
+                Some(false),
+            )),
+            Tool::new(
+                MEMORY_CONSOLIDATE_TOOL_NAME.to_string(),
+                "Consolida la memoria: fusiona duplicados, promueve candidatos con dos evidencias y archiva lo viejo."
+                    .to_string(),
+                Self::tool_schema::<MemoryConsolidateParams>(),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Consolidate memory".to_string()),
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(false),
             )),
         ]
     }
@@ -253,18 +217,16 @@ impl MemoryClient {
         }
         facts
             .iter()
-            .map(|f| {
-                let mut line = format!("- [{}] {}", f.id, f.text);
-                if !f.kind.is_empty() {
-                    line.push_str(&format!(" ({}, conf {:.2})", f.kind, f.confidence));
-                }
-                line
-            })
+            .map(store::render_line)
             .collect::<Vec<_>>()
             .join("\n")
     }
 
-    fn handle_write(&self, session_id: &str, arguments: Option<JsonObject>) -> Result<Vec<ContentBlock>, String> {
+    fn handle_write(
+        &self,
+        session_id: &str,
+        arguments: Option<JsonObject>,
+    ) -> Result<Vec<ContentBlock>, String> {
         let args = arguments.as_ref().ok_or("Missing arguments")?;
         let text = args
             .get("text")
@@ -273,7 +235,6 @@ impl MemoryClient {
             .filter(|s| !s.is_empty())
             .ok_or("Missing required parameter: text")?
             .to_string();
-
         let kind = args
             .get("kind")
             .and_then(|v| v.as_str())
@@ -292,50 +253,26 @@ impl MemoryClient {
             .get("confidence")
             .and_then(|v| v.as_f64())
             .map(|v| v as f32)
-            .unwrap_or_else(default_confidence)
+            .unwrap_or(0.8)
             .clamp(0.0, 1.0);
-        let pinned = args.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
+        let pinned = args
+            .get("pinned")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
-        let mut facts = read_facts();
-        let key = normalize(&text);
-        let now = now_iso();
-
-        if let Some(existing) = facts
-            .iter_mut()
-            .find(|f| normalize(&f.text) == key)
-        {
-            existing.updated = now;
-            existing.confidence = confidence;
-            existing.pinned = existing.pinned || pinned;
-            for tag in tags {
-                if !existing.tags.contains(&tag) {
-                    existing.tags.push(tag);
-                }
-            }
-            let id = existing.id.clone();
-            write_facts(&facts).map_err(|e| format!("No se pudo escribir la memoria: {e}"))?;
-            return Ok(vec![ContentBlock::text(format!(
-                "Actualizado {id} ({} hechos en total)",
-                facts.len()
-            ))]);
-        }
-
-        let id = next_id(&facts);
-        facts.push(Fact {
-            id: id.clone(),
-            text,
-            kind,
-            tags,
-            confidence,
-            pinned,
-            created: now.clone(),
-            updated: now,
-            session: session_id.to_string(),
-        });
-        write_facts(&facts).map_err(|e| format!("No se pudo escribir la memoria: {e}"))?;
+        let path = store::store_path();
+        let outcome =
+            store::upsert_declared(&path, session_id, &text, &kind, tags, confidence, pinned)
+                .map_err(|e| format!("No se pudo escribir la memoria: {e}"))?;
+        let total = store::read_from(&path).len();
+        let verb = if outcome.created {
+            "Guardado"
+        } else {
+            "Actualizado"
+        };
         Ok(vec![ContentBlock::text(format!(
-            "Guardado {id} ({} hechos en total)",
-            facts.len()
+            "{verb} {} ({total} hechos en total)",
+            outcome.id
         ))])
     }
 
@@ -345,36 +282,20 @@ impl MemoryClient {
             .get("query")
             .and_then(|v| v.as_str())
             .unwrap_or("")
-            .to_lowercase();
+            .to_string();
         let limit = args
             .get("limit")
             .and_then(|v| v.as_u64())
             .unwrap_or(10)
             .clamp(1, 50) as usize;
 
-        let terms: Vec<&str> = query.split_whitespace().collect();
-        let facts = read_facts();
-        let hits: Vec<&Fact> = facts
-            .iter()
-            .filter(|f| {
-                let haystack = format!(
-                    "{} {} {}",
-                    f.text.to_lowercase(),
-                    f.kind.to_lowercase(),
-                    f.tags.join(" ").to_lowercase()
-                );
-                terms.iter().all(|term| haystack.contains(term))
-            })
-            .take(limit)
-            .collect();
-
+        let hits = store::search(&store::read_from(&store::store_path()), &query, limit);
         if hits.is_empty() {
             return Ok(vec![ContentBlock::text(format!(
                 "Sin resultados para \"{query}\"."
             ))]);
         }
-        let owned: Vec<Fact> = hits.into_iter().cloned().collect();
-        Ok(vec![ContentBlock::text(Self::render(&owned))])
+        Ok(vec![ContentBlock::text(Self::render(&hits))])
     }
 
     fn handle_list(&self, arguments: Option<JsonObject>) -> Result<Vec<ContentBlock>, String> {
@@ -388,10 +309,24 @@ impl MemoryClient {
             .get("kind")
             .and_then(|v| v.as_str())
             .map(|s| s.to_lowercase());
+        let status = args
+            .get("status")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_lowercase());
 
-        let mut facts: Vec<Fact> = read_facts()
+        let mut facts: Vec<Fact> = store::read_from(&store::store_path())
             .into_iter()
-            .filter(|f| kind.as_ref().map(|k| f.kind.to_lowercase() == *k).unwrap_or(true))
+            .filter(|f| {
+                kind.as_ref()
+                    .map(|k| f.kind.to_lowercase() == *k)
+                    .unwrap_or(true)
+            })
+            .filter(|f| {
+                status
+                    .as_ref()
+                    .map(|s| f.status.as_str() == s.as_str())
+                    .unwrap_or(true)
+            })
             .collect();
         facts.sort_by(|a, b| b.updated.cmp(&a.updated));
         facts.truncate(limit);
@@ -405,17 +340,50 @@ impl MemoryClient {
             .and_then(|v| v.as_str())
             .ok_or("Missing required parameter: id")?
             .to_string();
-
-        let mut facts = read_facts();
-        let before = facts.len();
-        facts.retain(|f| f.id != id);
-        if facts.len() == before {
-            return Ok(vec![ContentBlock::text(format!("No existe {id}."))]);
+        let path = store::store_path();
+        match store::reject(&path, &id)
+            .map_err(|e| format!("No se pudo escribir la memoria: {e}"))?
+        {
+            true => Ok(vec![ContentBlock::text(format!(
+                "Rechazado {id}: queda el rastro, ya no entra al prompt."
+            ))]),
+            false => Ok(vec![ContentBlock::text(format!("No existe {id}."))]),
         }
-        write_facts(&facts).map_err(|e| format!("No se pudo escribir la memoria: {e}"))?;
+    }
+
+    fn handle_confirm(&self, arguments: Option<JsonObject>) -> Result<Vec<ContentBlock>, String> {
+        let args = arguments.as_ref().ok_or("Missing arguments")?;
+        let id = args
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing required parameter: id")?
+            .to_string();
+        let path = store::store_path();
+        match store::confirm(&path, &id)
+            .map_err(|e| format!("No se pudo escribir la memoria: {e}"))?
+        {
+            true => Ok(vec![ContentBlock::text(format!("Confirmado {id}."))]),
+            false => Ok(vec![ContentBlock::text(format!("No existe {id}."))]),
+        }
+    }
+
+    fn handle_consolidate(&self) -> Result<Vec<ContentBlock>, String> {
+        let report = store::consolidate(&store::store_path())
+            .map_err(|e| format!("No se pudo consolidar la memoria: {e}"))?;
+        let changed = if report.changed {
+            "con cambios"
+        } else {
+            "sin cambios (idempotente)"
+        };
         Ok(vec![ContentBlock::text(format!(
-            "Borrado {id} ({} hechos quedan)",
-            facts.len()
+            "Memoria: {} hechos ({} confirmados, {} candidatos, {} stale, {} rechazados). Fusionados {}, promovidos {}. Corrida {changed}.",
+            report.total,
+            report.confirmed,
+            report.candidates,
+            report.stale,
+            report.rejected,
+            report.duplicates_merged,
+            report.promoted.len()
         ))])
     }
 }
@@ -449,6 +417,8 @@ impl McpClientTrait for MemoryClient {
             MEMORY_SEARCH_TOOL_NAME => self.handle_search(arguments),
             MEMORY_LIST_TOOL_NAME => self.handle_list(arguments),
             MEMORY_FORGET_TOOL_NAME => self.handle_forget(arguments),
+            MEMORY_CONFIRM_TOOL_NAME => self.handle_confirm(arguments),
+            MEMORY_CONSOLIDATE_TOOL_NAME => self.handle_consolidate(),
             _ => Err(format!("Unknown tool: {}", name)),
         };
 
@@ -466,37 +436,48 @@ impl McpClientTrait for MemoryClient {
     }
 
     async fn get_moim(&self, _session_id: &str, _tools: &[Tool]) -> Option<String> {
-        let mut facts = read_facts();
-        if facts.is_empty() {
-            return None;
-        }
+        store::digest(&store::read_from(&store::store_path()))
+    }
+}
 
-        // Pinned primero (identidad y reglas), despues lo mas reciente. El corte es por caracteres
-        // para que el digest no crezca sin control.
-        facts.sort_by(|a, b| {
-            b.pinned
-                .cmp(&a.pinned)
-                .then_with(|| b.updated.cmp(&a.updated))
-        });
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        let mut selected = Vec::new();
-        let mut used = 0usize;
-        for fact in facts.into_iter().take(MOIM_MAX_FACTS) {
-            let cost = fact.text.chars().count() + 16;
-            if used + cost > MOIM_MAX_CHARS {
-                break;
-            }
-            used += cost;
-            selected.push(fact);
-        }
+    #[test]
+    fn tool_list_exposes_the_full_contract() {
+        let names: Vec<String> = MemoryClient::get_tools()
+            .into_iter()
+            .map(|t| t.name.to_string())
+            .collect();
+        assert!(names.contains(&MEMORY_WRITE_TOOL_NAME.to_string()));
+        assert!(names.contains(&MEMORY_SEARCH_TOOL_NAME.to_string()));
+        assert!(names.contains(&MEMORY_LIST_TOOL_NAME.to_string()));
+        assert!(names.contains(&MEMORY_FORGET_TOOL_NAME.to_string()));
+        assert!(names.contains(&MEMORY_CONFIRM_TOOL_NAME.to_string()));
+        assert!(names.contains(&MEMORY_CONSOLIDATE_TOOL_NAME.to_string()));
+    }
 
-        if selected.is_empty() {
-            return None;
-        }
-
-        Some(format!(
-            "## Memoria del operador\n\n{}\n",
-            Self::render(&selected)
-        ))
+    #[test]
+    fn render_marks_status_and_confidence() {
+        let fact = Fact {
+            id: "F-0002".to_string(),
+            text: "Prefiere tablas".to_string(),
+            kind: "style".to_string(),
+            tags: vec![],
+            confidence: 0.4,
+            pinned: false,
+            status: store::Status::Candidate,
+            source: store::Source::Inferred,
+            evidence: vec!["s1: q".to_string()],
+            created: String::new(),
+            updated: String::new(),
+            last_seen: String::new(),
+            session: "s1".to_string(),
+        };
+        let line = store::render_line(&fact);
+        assert!(line.contains("candidate"));
+        assert!(line.contains("conf 0.40"));
+        assert!(line.contains("evidencia 1"));
     }
 }

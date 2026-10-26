@@ -112,6 +112,12 @@ struct Args {
 
     #[arg(
         long,
+        help = "Consolidate operator memory (dedupe, promote, archive) and exit"
+    )]
+    memory_consolidate: bool,
+
+    #[arg(
+        long,
         value_name = "N",
         help = "List the N most recent sessions and exit (replaces `aegis session list`)"
     )]
@@ -363,6 +369,24 @@ async fn main() -> Result<()> {
 
     if args.list_skills {
         list_skills();
+        return Ok(());
+    }
+
+    if args.memory_consolidate {
+        let path = aegis::memory::store::store_path();
+        let report = aegis::memory::store::consolidate(&path)?;
+        println!(
+            "memoria: {} hechos ({} confirmados, {} candidatos, {} stale, {} rechazados)",
+            report.total, report.confirmed, report.candidates, report.stale, report.rejected
+        );
+        println!(
+            "duplicados fusionados: {} | promovidos: {} | stale nuevos: {} | cambios: {}",
+            report.duplicates_merged,
+            report.promoted.len(),
+            report.marked_stale.len(),
+            report.changed
+        );
+        println!("informe: {}", aegis::memory::store::report_path().display());
         return Ok(());
     }
 
