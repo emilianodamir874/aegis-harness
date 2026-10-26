@@ -39,6 +39,10 @@ impl TokenCacheKey {
     }
 }
 
+/// Providers that send back opaque reasoning blobs charge a fixed overhead for
+/// them; the payload is not readable text, so there is nothing to count.
+const REDACTED_THINKING_TOKENS: usize = 32;
+
 impl TokenCounter {
     pub async fn new() -> Result<Self, String> {
         let tokenizer = get_tokenizer().await?;
@@ -157,6 +161,12 @@ impl TokenCounter {
                     }
                 } else if let Some(tool_response_text) = content.as_tool_response_text() {
                     num_tokens += self.count_tokens(&tool_response_text);
+                } else if let Some(thinking) = content.as_thinking() {
+                    // Reasoning blocks are re-sent to providers that support them, so they
+                    // occupy the window even though they never reach `as_text()`.
+                    num_tokens += self.count_tokens(&thinking.thinking);
+                } else if content.as_redacted_thinking().is_some() {
+                    num_tokens += REDACTED_THINKING_TOKENS;
                 }
             }
         }

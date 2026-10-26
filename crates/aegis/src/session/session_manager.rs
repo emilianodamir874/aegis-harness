@@ -491,6 +491,24 @@ pub struct SessionNameUpdate {
     pub user_set_name: bool,
 }
 
+/// Normalizes the working directory a session is created with.
+///
+/// `std::fs::canonicalize` on Windows returns verbatim paths (`\\?\C:\...`), which made the
+/// same project show up as several different sessions in the store and in statistics. The
+/// verbatim prefix is stripped for drive paths so every entry point stores one spelling; the
+/// path is canonicalized first so `..` and symlinks are resolved before the strip.
+pub(crate) fn canonical_working_dir(path: PathBuf) -> PathBuf {
+    let resolved = path.canonicalize().unwrap_or(path);
+    let text = resolved.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let bytes = rest.as_bytes();
+        if bytes.len() > 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return PathBuf::from(rest);
+        }
+    }
+    resolved
+}
+
 impl SessionManager {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
@@ -521,6 +539,7 @@ impl SessionManager {
         session_type: SessionType,
         aegis_mode: AegisMode,
     ) -> Result<Session> {
+        let working_dir = canonical_working_dir(working_dir);
         self.storage
             .create_session(working_dir, name, session_type, aegis_mode)
             .await
