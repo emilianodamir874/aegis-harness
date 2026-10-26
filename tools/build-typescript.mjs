@@ -18,6 +18,7 @@ const entries = [
   { entry: 'src/palette.ts', output: 'app/palette.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/onboarding.ts', output: 'app/onboarding.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/handoff.ts', output: 'app/handoff.js', options: { format: 'esm', platform: 'browser' } },
+  { entry: 'src/split-view.ts', output: 'app/split-view.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/stats.ts', output: 'app/stats.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/server.ts', output: 'server.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'src/piper-vivo.ts', output: 'piper-vivo.js', options: { format: 'esm', platform: 'node', packages: 'external' } },

@@ -3046,3 +3046,10 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
 }
+
+/* Split view (M9): cuando la segunda sesion esta abierta, el transcript principal deja lugar
+   en vez de quedar tapado. Solo en pantallas anchas: en movil el panel ocupa todo. */
+@media (min-width: 901px) {
+  html.aegis-split-open #msg-inner,
+  html.aegis-split-open .composer-wrap { padding-right: var(--aegis-split-pad, 0); }
+}
