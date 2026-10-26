@@ -2658,8 +2658,44 @@ async function blobToWav16k(blob) {
     }
     body.innerHTML = rows.length ? rows.map((r) => '<button class="ws-row" type="button" data-ws="' + esc(r.cwd) + '"><span class="ws-name">' + esc(r.label) + '</span><span class="ws-path">' + esc(r.meta) + "</span></button>").join("") : '<p class="ws-empty">Todavía no hay carpetas usadas.</p>';
     if (input) input.value = localStorage.getItem("gweb.ws") || current || "";
+    body.innerHTML += '<button class="ws-row ws-browse" type="button" data-nav=""><span class="ws-name">Elegir otra carpeta…</span><span class="ws-path">navegar</span></button>';
     pop.hidden = false;
     if (input) setTimeout(() => input.focus(), 0);
+  }
+  async function wsBrowse(path) {
+    const body = $("#ws-body");
+    if (!body) return;
+    body.innerHTML = '<p class="ws-empty">Leyendo carpetas…</p>';
+    let payload = null;
+    try {
+      const res = await fetch("/ws/list?path=" + encodeURIComponent(path || ""), { credentials: "same-origin" });
+      payload = await res.json();
+    } catch (e) {
+      body.innerHTML = '<p class="ws-empty">No se pudo leer la carpeta.</p>';
+      return;
+    }
+    if (payload && payload.error) {
+      body.innerHTML = '<p class="ws-empty">' + esc(String(payload.error)) + "</p>";
+      return;
+    }
+    const rows = [];
+    if (payload && payload.path) {
+      rows.push('<button class="ws-row ws-use" type="button" data-ws="' + esc(payload.path) + '"><span class="ws-name">Crear chat acá</span><span class="ws-path">' + esc(payload.path) + "</span></button>");
+    }
+    if (payload && payload.parent) {
+      rows.push('<button class="ws-row" type="button" data-nav="' + esc(payload.parent) + '"><span class="ws-name">..</span><span class="ws-path">' + esc(payload.parent) + "</span></button>");
+    }
+    const entries = payload && Array.isArray(payload.entries) ? payload.entries : [];
+    for (const e of entries) {
+      rows.push('<button class="ws-row" type="button" data-nav="' + esc(e.path) + '"><span class="ws-name">' + esc(e.name) + '</span><span class="ws-path">' + esc(e.path) + "</span></button>");
+    }
+    if (!entries.length && payload && payload.path) {
+      rows.push('<p class="ws-empty">Sin subcarpetas.</p>');
+    }
+    if (!payload || !payload.path) {
+      rows.push('<p class="ws-empty">Elegí una raíz o escribí una ruta abajo.</p>');
+    }
+    body.innerHTML = rows.join("");
   }
   function closeWorkspacePicker() {
     const pop = $("#ws-picker");
@@ -2672,6 +2708,7 @@ async function blobToWav16k(blob) {
   }
   async function newSession(workspace) {
     const targetCwd = workspace || CFG.cwd || void 0;
+    state.pendingConfig = leerPendientes(targetCwd);
     if (!rpc.ready) {
       systemNote("Sin conexión con el backend - reintentando.");
       return;
@@ -4637,9 +4674,18 @@ ${a.text}
     } catch (e) {
     }
   }
-  function leerPendientes() {
+  function pendientesKey(cwd) {
+    const base = "aegis.pendingConfig";
+    if (!cwd) return base;
+    const raw = String(cwd).toLowerCase();
+    const clean = raw.startsWith("\\\\?\\") ? raw.slice(4) : raw;
+    const slug = clean.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return base + "." + slug;
+  }
+  function leerPendientes(cwd) {
     try {
-      const j = JSON.parse(localStorage.getItem("aegis.pendingConfig") || "{}");
+      const per = cwd ? localStorage.getItem(pendientesKey(cwd)) : null;
+      const j = JSON.parse(per || localStorage.getItem(pendientesKey()) || "{}");
       return j && typeof j === "object" ? j : {};
     } catch (e) {
       return {};
@@ -4648,6 +4694,11 @@ ${a.text}
   function guardarPendientes() {
     try {
       localStorage.setItem("aegis.pendingConfig", JSON.stringify(state.pendingConfig || {}));
+    } catch (e) {
+    }
+    try {
+      const cwd = state.current && state.current.cwd;
+      if (cwd) localStorage.setItem(pendientesKey(cwd), JSON.stringify(state.pendingConfig || {}));
     } catch (e) {
     }
   }
@@ -5368,7 +5419,13 @@ ${a.text}
     if (wsPop) {
       wsPop.addEventListener("click", (e) => {
         const row = e.target && e.target.closest ? e.target.closest(".ws-row") : null;
-        if (row) startSessionIn(row.getAttribute("data-ws") || "");
+        if (!row) return;
+        const nav = row.getAttribute("data-nav");
+        if (nav !== null) {
+          wsBrowse(nav || "");
+          return;
+        }
+        startSessionIn(row.getAttribute("data-ws") || "");
       });
       const wsCancel = $("#ws-cancel");
       if (wsCancel) wsCancel.addEventListener("click", closeWorkspacePicker);

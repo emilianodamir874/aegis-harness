@@ -2289,8 +2289,54 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
           '<span class="ws-path">' + esc(r.meta) + '</span></button>').join('')
       : '<p class="ws-empty">Todavía no hay carpetas usadas.</p>';
     if (input) input.value = localStorage.getItem('gweb.ws') || current || '';
+    // acceso a navegar carpetas del server (allowlist AEGIS_WORKSPACE_ROOTS)
+    body.innerHTML += '<button class="ws-row ws-browse" type="button" data-nav="">' +
+      '<span class="ws-name">Elegir otra carpeta…</span>' +
+      '<span class="ws-path">navegar</span></button>';
     (pop as HTMLElement).hidden = false;
     if (input) setTimeout(() => input.focus(), 0);
+  }
+
+  async function wsBrowse(path: string): Promise<void> {
+    const body = $('#ws-body');
+    if (!body) return;
+    body.innerHTML = '<p class="ws-empty">Leyendo carpetas…</p>';
+    let payload: any = null;
+    try {
+      const res = await fetch('/ws/list?path=' + encodeURIComponent(path || ''), { credentials: 'same-origin' });
+      payload = await res.json();
+    } catch (e) {
+      body.innerHTML = '<p class="ws-empty">No se pudo leer la carpeta.</p>';
+      return;
+    }
+    if (payload && payload.error) {
+      body.innerHTML = '<p class="ws-empty">' + esc(String(payload.error)) + '</p>';
+      return;
+    }
+    const rows: string[] = [];
+    if (payload && payload.path) {
+      rows.push('<button class="ws-row ws-use" type="button" data-ws="' + esc(payload.path) + '">' +
+        '<span class="ws-name">Crear chat acá</span>' +
+        '<span class="ws-path">' + esc(payload.path) + '</span></button>');
+    }
+    if (payload && payload.parent) {
+      rows.push('<button class="ws-row" type="button" data-nav="' + esc(payload.parent) + '">' +
+        '<span class="ws-name">..</span>' +
+        '<span class="ws-path">' + esc(payload.parent) + '</span></button>');
+    }
+    const entries = (payload && Array.isArray(payload.entries)) ? payload.entries : [];
+    for (const e of entries) {
+      rows.push('<button class="ws-row" type="button" data-nav="' + esc(e.path) + '">' +
+        '<span class="ws-name">' + esc(e.name) + '</span>' +
+        '<span class="ws-path">' + esc(e.path) + '</span></button>');
+    }
+    if (!entries.length && payload && payload.path) {
+      rows.push('<p class="ws-empty">Sin subcarpetas.</p>');
+    }
+    if (!payload || !payload.path) {
+      rows.push('<p class="ws-empty">Elegí una raíz o escribí una ruta abajo.</p>');
+    }
+    body.innerHTML = rows.join('');
   }
 
   function closeWorkspacePicker(): void {
@@ -2306,6 +2352,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 
   async function newSession(workspace?: string) {
     const targetCwd = workspace || CFG.cwd || undefined;
+    // defaults del workspace elegido (modelo/esfuerzo) antes de aplicar pendientes
+    state.pendingConfig = leerPendientes(targetCwd);
     if (!rpc.ready) { systemNote('Sin conexión con el backend - reintentando.'); return; }
     clearTimeout(draftTimer);
     saveDraft(); detachRunView(); // si había un turno en curso, sigue corriendo en el server
@@ -4259,11 +4307,30 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   function guardarCacheChips(opts) {
     try { localStorage.setItem('aegis.chipCache', JSON.stringify((opts || []).slice(0, 8))); } catch (e) {}
   }
-  function leerPendientes() {
-    try { const j = JSON.parse(localStorage.getItem('aegis.pendingConfig') || '{}'); return j && typeof j === 'object' ? j : {}; } catch (e) { return {}; }
+  // Modelo/esfuerzo pendientes: por workspace si se conoce la carpeta, con el global como respaldo.
+  // Asi abrir un chat en ROLEPLAY AI no arrastra el modelo elegido para Aegis.
+  function pendientesKey(cwd?: string): string {
+    const base = 'aegis.pendingConfig';
+    if (!cwd) return base;
+    const raw = String(cwd).toLowerCase();
+    const clean = raw.startsWith('\\\\?\\') ? raw.slice(4) : raw;
+    const slug = clean.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return base + '.' + slug;
+  }
+
+  function leerPendientes(cwd?: string) {
+    try {
+      const per = cwd ? localStorage.getItem(pendientesKey(cwd)) : null;
+      const j = JSON.parse(per || localStorage.getItem(pendientesKey()) || '{}');
+      return j && typeof j === 'object' ? j : {};
+    } catch (e) { return {}; }
   }
   function guardarPendientes() {
     try { localStorage.setItem('aegis.pendingConfig', JSON.stringify(state.pendingConfig || {})); } catch (e) {}
+    try {
+      const cwd = state.current && state.current.cwd;
+      if (cwd) localStorage.setItem(pendientesKey(cwd), JSON.stringify(state.pendingConfig || {}));
+    } catch (e) {}
   }
   async function aplicarPendientes(sessionId) {
     const pend = state.pendingConfig || {};
@@ -4997,7 +5064,13 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     if (wsPop) {
       wsPop.addEventListener('click', (e: any) => {
         const row = e.target && e.target.closest ? e.target.closest('.ws-row') : null;
-        if (row) startSessionIn(row.getAttribute('data-ws') || '');
+        if (!row) return;
+        const nav = row.getAttribute('data-nav');
+        if (nav !== null) {
+          wsBrowse(nav || '');
+          return;
+        }
+        startSessionIn(row.getAttribute('data-ws') || '');
       });
       const wsCancel = $('#ws-cancel');
       if (wsCancel) wsCancel.addEventListener('click', closeWorkspacePicker);
