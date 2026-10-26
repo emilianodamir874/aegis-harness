@@ -13,6 +13,7 @@ const entries = [
   { entry: 'src/skills.ts', output: 'app/skills.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/memory.ts', output: 'app/memory.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/artifacts.ts', output: 'app/artifacts.js', options: { format: 'esm', platform: 'browser' } },
+  { entry: 'src/context-meter.ts', output: 'app/context-meter.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/stats.ts', output: 'app/stats.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/server.ts', output: 'server.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'src/piper-vivo.ts', output: 'piper-vivo.js', options: { format: 'esm', platform: 'node', packages: 'external' } },
