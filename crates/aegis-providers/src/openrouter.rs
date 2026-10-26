@@ -311,7 +311,7 @@ fn gemini_schema_ref_note(safe_key: &str) -> String {
 fn apply_gemini_compatibility(model_name: &str, payload: &mut Value, messages: &[Message]) {
     if is_gemini_model(model_name) {
         escape_gemini_schema_ref_keys_in_tool_responses(payload);
-        openrouter_format::add_reasoning_details_to_request(payload, messages);
+        openrouter_format::add_reasoning_details_to_payload(payload, messages);
     }
 }
 

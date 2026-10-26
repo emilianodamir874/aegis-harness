@@ -50,7 +50,7 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
     Ok(message)
 }
 
-pub fn add_reasoning_details_to_request(payload: &mut Value, messages: &[Message]) {
+pub fn add_reasoning_details_to_payload(payload: &mut Value, messages: &[Message]) {
     let mut assistant_reasoning: Vec<Option<Vec<Value>>> = messages
         .iter()
         .filter(|m| m.is_agent_visible())
