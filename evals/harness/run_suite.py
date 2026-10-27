@@ -65,7 +65,12 @@ def isolated_env() -> tuple[dict, Path]:
     return env, root
 
 
-SKIP_DIRS = {".git", "target", "node_modules", "state", "dist-ts", ".venv", "__pycache__", ".idea"}
+SKIP_DIRS = {
+    ".git", "target", "node_modules", "state", "dist-ts", ".venv", "__pycache__", ".idea",
+    # Ruido que no es del caso: el watchdog y los jobs escriben aca mientras la suite corre, y
+    # contarlos hacia que C7 ("no toques nada mas") fallara por archivos ajenos.
+    "core\\logs", "core\\tmp", "tmp", "logs",
+}
 
 
 def snapshot_tree(root: Path, limit: int = 40000) -> dict[str, tuple[float, int]]:
