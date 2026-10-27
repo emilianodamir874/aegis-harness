@@ -126,9 +126,13 @@ function modelLabel(usage: UsageState): string {
     const raw = state[key];
     if (typeof raw === 'string' && raw.trim()) return raw.trim();
   }
-  const meta = document.getElementById('meta-right');
-  const text = (meta?.textContent || '').trim();
-  return text.split(/\s+/).slice(0, 1).join(' ');
+  // El texto de `#meta-right` trae "16% · 165.2k/1M tok · $0.927": tomarlo como nombre de modelo
+  // metia "16% — en uso" en el selector. Como ultimo recurso se usa el chip del composer, que si
+  // muestra el modelo, y se descarta cualquier candidato con forma de cifra.
+  const chip = document.querySelector<HTMLElement>('.model-chip, [data-role="model"], #model-chip');
+  const candidato = (chip?.textContent || '').trim();
+  if (candidato && !/^\d/.test(candidato) && !candidato.includes('%')) return candidato;
+  return '';
 }
 
 interface Meter {

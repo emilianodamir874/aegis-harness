@@ -67,9 +67,10 @@ function modelLabel(usage) {
     const raw = state[key];
     if (typeof raw === "string" && raw.trim()) return raw.trim();
   }
-  const meta = document.getElementById("meta-right");
-  const text = (meta?.textContent || "").trim();
-  return text.split(/\s+/).slice(0, 1).join(" ");
+  const chip = document.querySelector('.model-chip, [data-role="model"], #model-chip');
+  const candidato = (chip?.textContent || "").trim();
+  if (candidato && !/^\d/.test(candidato) && !candidato.includes("%")) return candidato;
+  return "";
 }
 let prices = {};
 let pricesLoaded = false;
