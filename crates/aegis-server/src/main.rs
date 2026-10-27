@@ -337,7 +337,9 @@ fn init_logging() -> Result<()> {
         component: "serve",
         name: None,
         extra_directives: &["aegis_server=info"],
-        console: false,
+        // Con AEGIS_LOG_CONSOLE=1 el log tambien va a stderr. Sin esto el modo `--stdio` no deja
+        // rastro observable: no escribe archivo y las sondas no tienen donde mirar.
+        console: std::env::var("AEGIS_LOG_CONSOLE").is_ok(),
         json: true,
     };
     aegis::logging::build_logging_subscriber(&config)?
