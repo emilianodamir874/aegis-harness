@@ -4,6 +4,7 @@ import net from "node:net";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import zlib from "node:zlib";
 import { join, extname, normalize, resolve, dirname, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,12 +54,12 @@ const pendingCache = new Map();
 // escribe nada.
 function sweepPendingAtStartup() {
   try {
-    const { execFileSync } = require("node:child_process");
     const env = { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" };
     const bin = process.env.AEGIS_SERVE_BIN || "C:/Aegis-Proyects/core/bin/aegis-current.exe";
     // El barrido vive en el binario (`aegis-serve --sweep-pending`) porque ahi esta el modelo de
     // mensajes: si el serve se reinicia sin que arranque este server web, el subcomando se puede
     // correr igual a mano. El script node queda como respaldo si el binario no tiene el flag.
+    // Este modulo es ESM: `require` no existe aca y el catch se comia el error en silencio.
     let salida = "";
     try {
       salida = execFileSync(bin, ["--sweep-pending"], { encoding: "utf8", timeout: 9e4, env });
