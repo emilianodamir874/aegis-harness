@@ -118,6 +118,12 @@ struct Args {
 
     #[arg(
         long,
+        help = "Close tool confirmations that never got an answer and exit"
+    )]
+    sweep_pending: bool,
+
+    #[arg(
+        long,
         value_name = "N",
         help = "List the N most recent sessions and exit (replaces `aegis session list`)"
     )]
@@ -371,6 +377,26 @@ async fn main() -> Result<()> {
 
     if args.list_skills {
         list_skills();
+        return Ok(());
+    }
+
+    if args.sweep_pending {
+        let manager = aegis::session::SessionManager::instance();
+        let report = aegis::session::pending_confirmations::sweep_pending(&manager, true).await?;
+        if report.cancelled == 0 {
+            println!(
+                "confirmaciones: nada pendiente ({} sesiones con confirmaciones pedidas)",
+                report.sessions_seen
+            );
+        } else {
+            println!(
+                "confirmaciones: {} cerradas en {} sesiones",
+                report.cancelled, report.sessions_seen
+            );
+            for (session_id, request_id) in &report.detail {
+                println!("  {session_id}  {request_id}");
+            }
+        }
         return Ok(());
     }
 
