@@ -235,6 +235,7 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
         emit: &Emitter,
     ) -> Result<OperationResult<AegisEffect>> {
         if self.manages_own_context {
+            tracing::debug!("compaction: el provider maneja su propio contexto, no aplica");
             return not_applicable();
         }
 
@@ -268,6 +269,13 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
                 return not_applicable();
             }
             let tokens = self.context_tokens(session, conversation).await?;
+            tracing::debug!(
+                tokens,
+                limite = self.context_limit,
+                threshold = self.threshold,
+                total_reportado = ?session.usage.total_tokens,
+                "compaction: evaluando umbral"
+            );
             if tokens <= 0 || !self.over_threshold(tokens as usize) {
                 return not_applicable();
             }
