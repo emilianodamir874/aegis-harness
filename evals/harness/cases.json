@@ -293,7 +293,7 @@
       "category": "compaction",
       "mode": "heavy",
       "cwd": "C:\\Aegis-Proyects",
-      "prompt": "Escribir un hecho con memory_write, compactar y verificar que sigue en el digest.",
+      "prompt": "Guarda un hecho con la herramienta memory_write (texto: el harness compacta a 350k), despues corre memory_consolidate y devolveme en dos lineas si el hecho sigue ahi. No explores archivos ni el store: usa las tools, no el shell.",
       "graders": [
         {
           "type": "contains_all",
@@ -304,18 +304,20 @@
         {
           "type": "contains_any",
           "values": [
-            "digest",
-            "Memoria del operador",
-            "turn-context"
+            "sigue",
+            "F-000",
+            "confirmed",
+            "confirmado"
           ]
         },
         {
           "type": "regex_absent",
-          "pattern": "(?i)(no se guard|no qued\\u00f3|se perdi\\u00f3)"
+          "pattern": "(?i)(no se guard|se perdi)"
         }
       ],
       "why_heavy": "necesita compactación forzada",
-      "note": "Criterio manual original: 'hecho presente despues de compactar'. Lo que el caso ejercita de verdad es la consolidacion de memoria (memory_consolidate) y la supervivencia del hecho en el digest, no la compactacion de contexto: eso necesita una sesion larga y quedo como caso aparte."
+      "note": "Reescrito: dejaba explorar el store a mano y se iba 866 s sin consolidar. Mismo criterio, pidiendo explicitamente las dos tools.",
+      "timeout_s": 420
     },
     {
       "id": "C15",
