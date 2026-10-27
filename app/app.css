@@ -749,6 +749,12 @@ input, textarea { font-family: inherit; color: inherit; }
 
 }
 
+.msg-user .att-img, .msg-user img[data-dl-img] {
+  display: block; max-width: 100%; height: auto; margin: 8px 0 0; border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.msg-user .att-note { font-size: 12px; opacity: .75; margin-top: 6px; }
+
 .att-thumb { position: relative; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
 
 .att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }

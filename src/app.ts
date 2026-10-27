@@ -1004,6 +1004,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     img.dataset.dlImg = '1';
     img.src = 'data:' + content.mimeType + ';base64,' + content.data;
     img.alt = 'adjunto';
+    img.className = 'att-img';
+    img.dataset.dlImg = '1';
     el.appendChild(img);
     return true;
   }
@@ -1025,7 +1027,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     let html = text ? md(text) : '';
     for (const a of atts || []) {
       if (a && a.kind === 'text') html += `<div class="att-note">📄 ${esc(a.name)}</div>`;
-      else if (a && a.data && a.mimeType) html += `<img src="data:${esc(a.mimeType)};base64,${a.data}" alt="${esc(a.name || 'adjunto')}">`;
+      else if (a && a.data && a.mimeType) html += `<img class="att-img" src="data:${esc(a.mimeType)};base64,${a.data}" alt="${esc(a.name || 'adjunto')}">`;
     }
     el.innerHTML = html;
     if (opts && opts.mid && !opts.queued) addRewindBtn(el);
