@@ -45,6 +45,7 @@ async function readJsonBody(req, maxBytes = 65536) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 const MEMORY_DIR = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "data", "memory");
+const pendingCache = new Map();
 const MEMORY_FACTS_FILE = join(MEMORY_DIR, "facts.jsonl");
 async function readMemoryFacts() {
   let raw = "";
@@ -982,6 +983,34 @@ ${Buffer.concat(chunks).toString("utf8")}
       items.sort((a, b) => a.mtime < b.mtime ? 1 : -1);
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
       res.end(JSON.stringify({ dir: OUTBOX_DIR, items }));
+      return;
+    }
+    if (url.pathname === "/pending.json") {
+      // Confirmaciones pedidas y nunca respondidas, por sesion. Se calcula en un proceso aparte
+      // (mismo patron que goals/stats) porque el store pesa ~500 MB y esto es una consulta de
+      // lectura: no conviene tenerlo en el proceso del server.
+      let body2 = JSON.stringify({ sessions: [], total: 0 });
+      const previo = pendingCache.get("all");
+      if (previo && Date.now() - previo.at < 3e4) {
+        body2 = previo.body;
+      } else {
+        try {
+          const { execFile } = await import("node:child_process");
+          body2 = await new Promise((ok) => {
+            execFile(
+              process.execPath,
+              ["--experimental-sqlite", join(DIR, "tools", "pending-index.mjs")],
+              { timeout: 4e4, maxBuffer: 8 * 1024 * 1024 },
+              (_err, stdout) => ok(String(stdout || "").trim() || JSON.stringify({ sessions: [], total: 0 })),
+            );
+          });
+          pendingCache.set("all", { at: Date.now(), body: body2 });
+        } catch (e) {
+          body2 = JSON.stringify({ sessions: [], total: 0, error: String((e && e.message) || e) });
+        }
+      }
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
+      res.end(body2);
       return;
     }
     if (url.pathname === "/memory.json") {

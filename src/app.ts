@@ -241,6 +241,52 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     for (const pendiente of cola) showPermCard(pendiente);
   }
 
+  // Confirmaciones pedidas y nunca respondidas, leidas del store por /pending.json. Cuando el
+  // serve se reinicia, la espera muere con el proceso y la tarjeta no vuelve a aparecer; esto es
+  // lo unico que hace visible una sesion trabada.
+  const pendientesStore = new Map<string, number>();
+  let pendientesCargados = 0;
+
+  function pendientesDe(sid: string): number {
+    return pendientesStore.get(sid) || 0;
+  }
+
+  async function cargarPendientes(): Promise<void> {
+    if (Date.now() - pendientesCargados < 60000) return;
+    pendientesCargados = Date.now();
+    try {
+      const respuesta = await fetch('/pending.json', { cache: 'no-store' });
+      if (!respuesta.ok) return;
+      const datos = await respuesta.json();
+      const lista: any[] = Array.isArray(datos && datos.sessions) ? datos.sessions : [];
+      const previo = new Set(pendientesStore.keys());
+      pendientesStore.clear();
+      for (const fila of lista) {
+        if (fila && fila.sessionId) pendientesStore.set(String(fila.sessionId), Number(fila.pendientes) || 1);
+      }
+      const nuevas = [...pendientesStore.keys()].filter((id) => !previo.has(id));
+      if (nuevas.length) toast('Hay confirmaciones sin responder en otro chat.', '');
+      const cur = state.current;
+      if (cur) aplicarAvisoPendientes(cur.id);
+    } catch {
+      // sin red o sin endpoint: no es un error del chat
+    }
+  }
+
+  function aplicarAvisoPendientes(sid: string): void {
+    const total = pendientesDe(sid);
+    if (!total) return;
+    const marca = `pendientes-${sid}`;
+    if (document.getElementById(marca)) return;
+    systemNote(
+      `Esta sesión tiene ${total} confirmación${total === 1 ? '' : 'es'} sin responder. ` +
+        'El proceso que las esperaba ya no existe (reinicio del serve), así que no se pueden aprobar: ' +
+        'lo que quedó pendiente no se ejecutó. Si hace falta, repetí el pedido.',
+    );
+    const nodo = document.querySelector('#msgs .sys-note:last-of-type');
+    if (nodo && nodo instanceof HTMLElement) nodo.id = marca;
+  }
+
   function handleServerMessage(m) {
     if (m.method === 'session/update') return onUpdate(m.params || {});
     if (m.method === '_aegis/unstable/session/update') return onAegisUpdate(m.params || {});
@@ -2755,6 +2801,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     // Las tarjetas de permiso que llegaron mientras se miraba otro chat se pintan recien cuando
     // el replay de esta sesion ya esta puesto.
     setTimeout(() => { if (state.current?.id === id) flushPermPendientes(id); }, 800);
+    setTimeout(() => { if (state.current?.id === id) aplicarAvisoPendientes(id); }, 900);
     if (!opts || !opts.quiet) setPill('Cargando conversación.');
     if (!SOFT.on) {
       state.replayBuf = []; // (v6.6) se pinta en dos fases al terminar el load
@@ -5276,6 +5323,9 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     });
 
     $('#btn-new').addEventListener('click', () => openWorkspacePicker()); // selector de carpeta (2026-10-26)
+    // Confirmaciones sin responder del store: se leen al arrancar y cada 5 minutos.
+    cargarPendientes().catch(() => {});
+    setInterval(() => { cargarPendientes().catch(() => {}); }, 300000);
     const wsPop = $('#ws-picker');
     if (wsPop) {
       wsPop.addEventListener('click', (e: any) => {
