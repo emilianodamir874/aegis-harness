@@ -92,10 +92,27 @@ impl CompactionOperation {
     }
 
     async fn context_tokens(&self, session: &Session, conversation: &Conversation) -> Result<i32> {
-        match session.usage.total_tokens {
-            Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
-            None => count_context_tokens(conversation.messages()).await,
-        }
+        // `session.usage.total_tokens` es lo que reporto el proveedor en la ultima inferencia, y en las
+        // sesiones del serve queda muy por debajo del contexto real: medido en un store aislado, la
+        // sesion tenia 406 KB de mensajes (~100k tokens) y el contador marcaba 9.5k. Con ese numero la
+        // compactacion automatica no se dispara nunca antes del limite del modelo.
+        //
+        // Se toma el mayor entre lo reportado y el conteo local de lo que se le manda al modelo.
+        let contado = count_context_tokens(conversation.messages()).await?;
+        let reportado = match session.usage.total_tokens {
+            Some(tokens) => tokens + unreported_tool_tokens(conversation).await?,
+            None => 0,
+        };
+        let total = reportado.max(contado);
+        tracing::debug!(
+            reportado,
+            contado,
+            total,
+            limite = self.context_limit,
+            threshold = self.threshold,
+            "compaction: conteo de contexto"
+        );
+        Ok(total)
     }
 
     fn command_error(
