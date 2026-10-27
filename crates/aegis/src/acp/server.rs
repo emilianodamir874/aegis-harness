@@ -1389,6 +1389,7 @@ impl AegisAcpAgent {
         });
 
         let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
+    crate::config::permission::install_global_permission_manager(Arc::clone(&permission_manager));
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
         let agent_manager = match options.agent_manager.clone() {
             Some(manager) => manager,

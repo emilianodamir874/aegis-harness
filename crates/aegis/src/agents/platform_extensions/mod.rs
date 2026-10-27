@@ -7,6 +7,7 @@ pub mod chatrecall;
 pub mod developer;
 pub mod ext_manager;
 pub mod memory;
+pub mod mode;
 #[cfg(feature = "scheduler")]
 pub mod scheduler;
 pub mod summarize;
@@ -175,6 +176,21 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 client_factory: |ctx| Some(Box::new(websearch::WebSearchClient::new(ctx).unwrap())),
             },
         );
+        map.insert(
+            mode::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: mode::EXTENSION_NAME,
+                display_name: "Session mode",
+                description: "Cambia el modo de la sesion (plan / revisar / ejecutar).",
+                default_enabled: true,
+                unprefixed_tools: false,
+                hidden: false,
+                client_factory: |ctx| {
+                    mode::ModeClient::new(ctx).ok().map(|c| Box::new(c) as Box<dyn McpClientTrait>)
+                },
+            },
+        );
+
         map.insert(
             memory::EXTENSION_NAME,
             PlatformExtensionDef {

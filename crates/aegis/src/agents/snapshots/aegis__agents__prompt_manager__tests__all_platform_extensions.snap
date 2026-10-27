@@ -88,6 +88,11 @@ no se inyectan hasta que se repiten en otra sesion o los confirmes.
 
 No guardes estados transitorios (que archivo estas editando, que build corre).
 No guardes credenciales ni rutas de secretos.
+## mode
+### Instructions
+Modo de la sesion: `plan` no escribe, `revisar` pide permiso por escritura y `ejecutar`
+manda permission.yaml. Si no ves las tools de escritura es porque estas en `plan`; pedi
+`revisar` con `request_mode` cuando la tarea necesite escribir.
 ## scheduler
 ### Instructions
 Create, list, update, pause, resume, and remove scheduled recipe runs, and inspect the sessions they produced.## skills

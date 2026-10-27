@@ -46,6 +46,27 @@ pub struct PermissionManager {
 const USER_PERMISSION: &str = "user";
 const SMART_APPROVE_PERMISSION: &str = "smart_approve";
 
+/// Instancia unica del proceso. El chip de la web, el inspector de permisos y la extension `mode`
+/// tienen que ver los mismos overrides de sesion: si cada uno tuviera su propio `PermissionManager`,
+/// cambiar de modo desde una tool no afectaria a las tools del turno siguiente.
+static GLOBAL_PERMISSION_MANAGER: std::sync::RwLock<Option<Arc<PermissionManager>>> =
+    std::sync::RwLock::new(None);
+
+/// Instala (o reemplaza) la instancia del proceso. Se puede reemplazar a proposito: los tests montan
+/// la suya y no quieren arrastrar la del primero que corrio.
+pub fn install_global_permission_manager(manager: Arc<PermissionManager>) {
+    *GLOBAL_PERMISSION_MANAGER
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(manager);
+}
+
+pub fn global_permission_manager() -> Option<Arc<PermissionManager>> {
+    GLOBAL_PERMISSION_MANAGER
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
 impl PermissionManager {
     pub fn new(config_dir: PathBuf) -> Self {
         let permission_path = config_dir.join(PERMISSION_FILE);
@@ -197,7 +218,8 @@ impl PermissionManager {
         });
     }
 
-    /// Permiso explicito para una sesion puntual. Gana sobre el mapa persistido y sobre el modo:
+
+/// Permiso explicito para una sesion puntual. Gana sobre el mapa persistido y sobre el modo:
     /// es lo que permite que debatir bloquee shell/edit/write sin tocar permission.yaml ni
     /// afectar a las demas sesiones, al CLI ni a los jobs programados.
     pub fn session_permission(&self, session_id: &str, tool_name: &str) -> Option<PermissionLevel> {

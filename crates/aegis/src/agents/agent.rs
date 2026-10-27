@@ -25,8 +25,10 @@ use crate::agents::state_machine::{
     InferenceRunner, MaxTurnsOperation, Operation, ProjectOperation, RecipeOperation,
     RetryOperation, SkillOperation, SlashCommandOperation, StateMachine, StatusOperation,
     SteerOperation, SteerQueue, Step, StopHookOperation, ToolApprovalOperation,
-    ToolExecutionOperation, ToolPairCompactionOperation, UnknownToolOperation,
+    ToolExecutionOperation, ToolPairCompactionOperation, TurnCeilingOperation,
+    UnknownToolOperation,
 };
+use crate::agents::state_machine::{turn_deadline_seconds, turn_tool_call_limit};
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::types::{
     SessionConfig, DEFAULT_ON_FAILURE_TIMEOUT_SECONDS, DEFAULT_RETRY_TIMEOUT_SECONDS,
@@ -659,6 +661,8 @@ impl Agent {
             .clamp(0.0, 1.0);
         let pair_compaction_min_tokens =
             (context_limit as f64 * compaction_threshold * pair_compact_ratio) as usize;
+        let turn_tool_call_limit = turn_tool_call_limit();
+        let turn_deadline_seconds = turn_deadline_seconds();
         let manages_own_context = provider.manages_own_context();
         let tool_pair_compaction_enabled =
             crate::context_mgmt::tool_pair_summarization_enabled() && !manages_own_context;
@@ -721,9 +725,9 @@ impl Agent {
                 stop_hook_block_cap,
             )),
             Arc::new(ExitOnErrorOperation),
+            Arc::new(TurnCeilingOperation::new(turn_tool_call_limit, turn_deadline_seconds)),
             Arc::new(MaxTurnsOperation::new(max_turns)),
-        ];
-        operations.extend(remaining_operations);
+        ];        operations.extend(remaining_operations);
         let request_preparer = AegisInferenceRequestPreparer {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
@@ -2481,6 +2485,7 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     ) -> Result<(Agent, String)> {
         let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
         let permission_manager = Arc::new(PermissionManager::new(data_dir));
+    crate::config::permission::install_global_permission_manager(Arc::clone(&permission_manager));
         let config = AgentConfig::new(
             session_manager.clone(),
             permission_manager,
