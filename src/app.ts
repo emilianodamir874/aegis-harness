@@ -206,7 +206,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
             if (err && typeof err === 'object') {
               // El servidor manda el motivo real en data (p. ej. "Model file not found: ...").
               // Sin esto la UI solo mostraba "Internal error" y no habia forma de diagnosticar.
-              const detalle = err.data == null ? '' : String(err.data).slice(0, 200);
+              const detalle = err.data == null ? '' : (typeof err.data === 'string' ? err.data : JSON.stringify(err.data)).slice(0, 200);
               const base = ya ? m : m + " [metodo: " + method + "]";
               err.message = detalle && !base.includes(detalle) ? base + ": " + detalle : base;
               rej(err);
@@ -236,7 +236,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   }
   function flushPermPendientes(sid: string): void {
     const cola = permPendientes.get(sid);
-    if (!cola || !cola.length) return;
+    if (!cola || !cola.length || state.current?.id !== sid) return;
     permPendientes.delete(sid);
     for (const pendiente of cola) showPermCard(pendiente);
   }
@@ -296,11 +296,13 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       // el actual. Se encola por sesion y se muestra al abrirla.
       const sid = (m.params && m.params.sessionId) || '';
       const cur = state.current;
-      if (sid && cur && sid !== cur.id) {
+      if (sid && sid !== cur?.id) {
         permPendientesDe(sid).push(m);
         toast('Otra sesión pide una confirmación.', '');
         return;
       }
+      // Sin sesión activa ni identificador del pedido, no atribuir la tarjeta al chat abierto.
+      if (!cur || !sid) return;
       return showPermCard(m);
     }
     // (v6.4) El hub avisa que truncó su ring: hay que recargar la conversación completa.
@@ -1756,6 +1758,10 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     cardEl.insertBefore(box, cardEl.querySelector('.perm-btns'));
     try {
       const resp = await fetch('/file.json?path=' + encodeURIComponent(String(ruta)), { cache: 'no-store' });
+      if (!resp.ok) {
+        box.textContent = resp.status === 401 ? 'Iniciá sesión para ver el diff.' : 'No se puede leer este archivo para calcular el diff.';
+        return;
+      }
       const data = await resp.json();
       if (!data || data.exists === false) {
         if (propuesto && typeof propuesto === 'object') {

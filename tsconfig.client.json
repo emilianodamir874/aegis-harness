@@ -18,6 +18,7 @@
     "files":  [
                   "src/app.ts",
                   "src/skills.ts",
+                  "src/workspace-nav.ts",
                   "src/stats.ts"
               ]
 }

@@ -124,6 +124,15 @@ try {
   const css = await readFile(join(root, 'app/app.css'), 'utf8');
   const bundle = await build({ entryPoints: [join(root, 'src/app.ts')], bundle: true, write: false, platform: 'browser', format: 'esm', target: 'es2022', logLevel: 'silent' });
   const script = bundle.outputFiles[0].text;
+  // index.html carga otros módulos además de app.js. Servir el JS compilado real de cada
+  // script declarado: responder {} con MIME JSON hace fallar al navegador antes de validar
+  // la búsqueda, y stubs vacíos ocultarían errores de inicialización de esos módulos.
+  const assetNames = [...html.matchAll(/<script\b[^>]*\bsrc=["']\.\/([^"']+\.js)["']/g)]
+    .map((match) => match[1])
+    .filter((name) => name !== 'config.js' && name !== 'app.js');
+  const assets = new Map<string, string>(await Promise.all(assetNames.map(async (name) =>
+    [name, await readFile(join(root, 'dist-ts/app', name), 'utf8')] as [string, string],
+  )));
   const sessions = [
     { sessionId: 's_visible', title: 'Aegis harness', cwd: '/mock', updatedAt: new Date(Date.now() - 60000).toISOString(), _meta: { messageCount: 4 } },
   ];
@@ -160,6 +169,8 @@ try {
     if (url.pathname === '/config.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: `window.__AEGIS_APP__={acpUrl:'ws://search-e2e.invalid/acp',cwd:'/mock',host:'mock'};` });
     if (url.pathname === '/app.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: script });
     if (url.pathname === '/app.css') return route.fulfill({ status: 200, contentType: 'text/css', body: css });
+    const asset = assets.get(url.pathname.slice(1));
+    if (asset !== undefined) return route.fulfill({ status: 200, contentType: 'application/javascript', body: asset });
     if (url.pathname === '/client-log') return route.fulfill({ status: 204, body: '' });
     if (url.pathname === '/search.json') {
       const q = (url.searchParams.get('q') || '').toLowerCase();

@@ -3053,6 +3053,37 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
   * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
 }
 
+/* Navegación de trabajo: se conserva el chat como centro y los paneles como fuentes reales. */
+.sb-tools { display: grid; gap: 2px; flex: none; }
+.sb-tool { min-height: 38px; }
+.sb-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* La bienvenida está dentro del scroll de mensajes: nunca superpuesta al compositor. */
+.welcome { margin-top: clamp(18px, 7vh, 72px); padding-bottom: 24px; }
+@media (max-width: 880px) {
+  .sidebar {
+    top: var(--drawer-top, 0px);
+    bottom: auto;
+    height: var(--drawer-height, 100dvh);
+    max-height: var(--drawer-height, 100dvh);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
+  }
+  .sb-head, .sb-tools, .sb-foot { flex: none; }
+  .sb-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .welcome { margin-top: 20px; }
+}
+@media (max-width: 760px) {
+  .sidebar { max-height: var(--drawer-height, 100dvh); }
+  .sb-tool { min-height: 44px; }
+  .sb-head { gap: 5px; padding-bottom: 6px; }
+  .sb-tools { gap: 0; padding-top: 2px; padding-bottom: 2px; }
+  .sb-tool { padding-top: 6px; padding-bottom: 6px; }
+}
+@media (max-height: 560px) and (max-width: 880px) {
+  .sb-foot { padding-top: 5px; padding-bottom: 5px; }
+  .welcome { margin-top: 12px; }
+}
+
 /* Split view (M9): cuando la segunda sesion esta abierta, el transcript principal deja lugar
    en vez de quedar tapado. Solo en pantallas anchas: en movil el panel ocupa todo. */
 @media (min-width: 901px) {

@@ -18,6 +18,14 @@ const bundle = await build({ entryPoints: [join(root, 'src/app.ts')], bundle: tr
 const script = bundle.outputFiles[0].text;
 const html = await readFile(join(root, 'app/index.html'), 'utf8');
 const css = await readFile(join(root, 'app/app.css'), 'utf8');
+// Cargar el JS compilado de todos los scripts del HTML; no sustituir módulos por
+// respuestas JSON ni stubs, porque eso ocultaría fallos reales de inicialización.
+const assetNames = [...html.matchAll(/<script\b[^>]*\bsrc=["']\.\/([^"']+\.js)["']/g)]
+  .map((match) => match[1])
+  .filter((name) => name !== 'config.js' && name !== 'app.js');
+const assets = new Map<string, string>(await Promise.all(assetNames.map(async (name) =>
+  [name, await readFile(join(root, 'dist-ts/app', name), 'utf8')] as [string, string],
+)));
 const wav = await readFile(join(root, 'tools/_silencio-2s.wav'));
 
 const ttsPedidos: Array<{ text: string; voice: string; rate: string }> = [];
@@ -26,6 +34,8 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(html); }
   if (url.pathname === '/app.js') { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' }); return res.end(script); }
   if (url.pathname === '/app.css') { res.writeHead(200, { 'content-type': 'text/css; charset=utf-8' }); return res.end(css); }
+  const asset = assets.get(url.pathname.slice(1));
+  if (asset !== undefined) { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' }); return res.end(asset); }
   if (url.pathname === '/config.js') {
     res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
     return res.end(`window.__AEGIS_APP__={acpUrl:'ws://127.0.0.1:${port}/acp',cwd:'/mock',host:'mock'};`);

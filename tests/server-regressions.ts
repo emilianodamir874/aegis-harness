@@ -25,6 +25,10 @@ try {
   await writeFile(join(dir, 'piper-vivo.js'),
     'export const piperDespertar = async () => {}; export const piperVivo = async () => { throw Error("Piper stub"); };\n');
   await writeFile(join(dir, 'package.json'), '{"type":"module"}\n');
+  const store = join(dir, 'fixture-store');
+  await mkdir(store);
+  await mkdir(join(dir, 'tools'));
+  await writeFile(join(dir, 'tools', 'sweep-pending.mjs'), 'if (!process.env.AEGIS_PATH_ROOT.includes("fixture-store")) throw Error("store no aislado");\n');
   const secret = 'TEST-ONLY-token-not-a-real-secret';
   const password = 'TEST-ONLY-password';
   await writeFile(join(dir, 'config.json'), JSON.stringify({ secretKey: secret, authStamp: 'test',
@@ -36,7 +40,7 @@ try {
   const port = (reservation.address() as net.AddressInfo).port;
   await new Promise<void>((ok, fail) => reservation.close(e => e ? fail(e) : ok()));
   child = spawn(process.execPath, [join(dir, 'server.mjs')], {
-    cwd: dir, env: { ...process.env, AEGIS_WEB_PORT: String(port), AEGIS_WEB_TLS_DIR: '' },
+    cwd: dir, env: { ...process.env, AEGIS_PATH_ROOT: store, AEGIS_SERVE_BIN: join(dir, 'missing-serve.exe'), AEGIS_WEB_PORT: String(port), AEGIS_WEB_TLS_DIR: '' },
     stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
   });
   let output = '';

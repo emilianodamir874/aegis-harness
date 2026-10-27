@@ -39,6 +39,20 @@ function wsInside(path: string): boolean {
 // del harness.
 const WS_DEFAULTS_FILE = join(process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state', 'config', 'workspaces.defaults.json');
 
+// Cola por archivo dentro de este proceso: protege el ciclo leer/modificar/renombrar completo.
+// Una operacion fallida no impide que avance la siguiente ni oculta el error al solicitante.
+const fileQueues = new Map<string, Promise<void>>();
+function withFileQueue<T>(file: string, operation: () => Promise<T>): Promise<T> {
+  const previous = fileQueues.get(file) || Promise.resolve();
+  const result = previous.then(operation);
+  const settled = result.then(() => {}, () => {});
+  fileQueues.set(file, settled);
+  void settled.then(() => {
+    if (fileQueues.get(file) === settled) fileQueues.delete(file);
+  });
+  return result;
+}
+
 async function readWsDefaults(): Promise<Record<string, unknown>> {
   try {
     const raw = await readFile(WS_DEFAULTS_FILE, 'utf8');
@@ -207,8 +221,7 @@ const MODULE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const DIR = ['src', 'dist-ts'].includes(basename(resolve(MODULE_DIR))) ? dirname(MODULE_DIR) : MODULE_DIR;
 
 type WebConfig = { secretKey?: string; authStamp?: string; publicHost?: string; webPort?: number; servePort?: number; ttsEngine?: string; ttsVoice?: string; ttsRate?: number; cwd?: string; appConfig?: { AEGIS_VERSION?: string; AEGIS_DEFAULT_PROVIDER?: string; AEGIS_DEFAULT_MODEL?: string; AEGIS_THINKING_EFFORT?: string }; tlsDir?: string; httpsPort?: number };
-// Estaticos: comprimidos (gzip) y, cuando la URL viene versionada por mtime (?v=...), se
-// cachean para siempre. Antes el telefono bajaba 203 KB sin comprimir en cada carga.
+// Estaticos: gzip y cache inmutable solo con una version que coincide con el hash del contenido.
 const gzipCache = new Map<string, Buffer>();
 function gzipBuf(buf: Buffer, key: string) {
   const hit = gzipCache.get(key);
@@ -638,6 +651,27 @@ const PIPER_DIR = 'C:/Aegis-Proyects/core/state/piper/voices';
 const PIPER_VOZ = 'es_AR-daniela-high';
 const _ttsCache = new Map<string, Buffer>();          // texto+voz ->Buffer, para no resintetizar lo mismo
 const TTS_CACHE_MAX = 24;
+const TTS_TEXT_MAX = 1200; // el cliente manda fragmentos mucho menores; rechazar, no truncar silenciosamente
+const TTS_IN_FLIGHT_MAX = 2;
+const TTS_WAITING_MAX = 6;
+let ttsInFlight = 0;
+let ttsWaiting = 0;
+const ttsWaiters: Array<() => void> = [];
+async function ttsSlot(): Promise<() => void> {
+  if (ttsInFlight < TTS_IN_FLIGHT_MAX) {
+    ttsInFlight++;
+  } else {
+    if (ttsWaiting >= TTS_WAITING_MAX) throw new Error('tts ocupado');
+    ttsWaiting++;
+    await new Promise<void>((resolve) => ttsWaiters.push(resolve));
+    ttsWaiting--;
+  }
+  return () => {
+    const next = ttsWaiters.shift();
+    if (next) next(); // se transfiere el slot; no abre una plaza adicional
+    else ttsInFlight--;
+  };
+}
 let _vocesPiper: Set<string> | null = null;
 async function vozPiperValida(voz: string): Promise<string> {
   const fss = await import('node:fs');
@@ -719,13 +753,23 @@ async function piperSuelto(texto: string, modelo: string, ritmo: number, ns = 0.
     ]);
     const partes: Buffer[] = [];
     let err = '';
-    p.stdout.on("data", (d) => partes.push(d));
-    p.stderr.on("data", (d) => { err += d.toString(); });
-    p.on("error", reject);
+    let bytes = 0;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; p.kill(); }, 35_000);
+    p.stdout.on("data", (d: Buffer) => {
+      bytes += d.length;
+      if (bytes > 12 * 1024 * 1024) { p.kill(); return; }
+      partes.push(d);
+    });
+    p.stderr.on("data", (d) => { err = (err + d.toString()).slice(-300); });
+    p.on("error", (e) => { clearTimeout(timer); reject(e); });
     p.on("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) return reject(new Error('piper suelto sin respuesta en 35000 ms'));
+      if (bytes > 12 * 1024 * 1024) return reject(new Error('piper audio demasiado grande'));
       const buf = Buffer.concat(partes);
       if (code !== 0) return reject(new Error('piper exit ' + code + ' ' + err.slice(0, 200)));
-      if (!buf || buf.length < 100) return reject(new Error('piper sin audio: ' + err.slice(0, 150)));
+      if (buf.length < 100) return reject(new Error('piper sin audio: ' + err.slice(0, 150)));
       resolve(buf);
     });
     p.stdin.write(String(texto));
@@ -829,7 +873,12 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         res.end(JSON.stringify({ error: 'unauthorized', login: '/login' }));
         return;
       }
-      const texto = String(url.searchParams.get('text') || '').slice(0, 4000);   // el cliente manda trozos de hasta 900
+      const texto = url.searchParams.get('text') || '';
+      if (texto.length > TTS_TEXT_MAX) {
+        res.writeHead(413, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+        res.end('tts: text excede ' + TTS_TEXT_MAX + ' caracteres');
+        return;
+      }
       const motor = String(url.searchParams.get('engine') || cfg.ttsEngine || 'piper');
       // La voz por defecto es la de Piper; si el cliente manda una de otro motor, piperTts la
       // valida contra los modelos instalados y cae a la local.
@@ -838,6 +887,13 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       const ns = Number(url.searchParams.get('ns') || (cfg as any).ttsNoiseScale || 0.667);
       const nw = Number(url.searchParams.get('nw') || (cfg as any).ttsNoiseW || 0.8);
       if (!texto) { res.writeHead(400, { 'content-type': 'text/plain' }); res.end('falta text'); return; }
+      let releaseTts: () => void;
+      try { releaseTts = await ttsSlot(); }
+      catch {
+        res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '2' });
+        res.end('tts ocupado');
+        return;
+      }
       try {
         let audio: Buffer;
         let tipo = 'audio/wav';
@@ -866,6 +922,8 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       } catch (err) {
         res.writeHead(502, { 'content-type': 'text/plain' });
         res.end('tts: ' + ((err as Error) && (err as Error).message ? (err as Error).message : String(err)));
+      } finally {
+        releaseTts();
       }
       return;
     }
@@ -1025,14 +1083,16 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
             res.end(JSON.stringify({ error: 'root fuera de las raices permitidas' }));
             return;
           }
-          const data = await readWsDefaults();
           const key = wsDefaultsKey(root);
-          if (body && body.defaults && typeof body.defaults === 'object') {
-            data[key] = { root: resolve(root), defaults: body.defaults, updatedAt: new Date().toISOString() };
-          } else {
-            delete data[key];
-          }
-          await writeWsDefaults(data);
+          await withFileQueue(WS_DEFAULTS_FILE, async () => {
+            const data = await readWsDefaults();
+            if (body && body.defaults && typeof body.defaults === 'object') {
+              data[key] = { root: resolve(root), defaults: body.defaults, updatedAt: new Date().toISOString() };
+            } else {
+              delete data[key];
+            }
+            await writeWsDefaults(data);
+          });
           res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
           res.end(JSON.stringify({ ok: true, key }));
         } catch (e) {
@@ -1041,7 +1101,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         }
         return;
       }
-      const data = await readWsDefaults();
+      const data = await withFileQueue(WS_DEFAULTS_FILE, readWsDefaults);
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
       res.end(JSON.stringify(data));
       return;
@@ -1051,8 +1111,13 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     // Devuelve contenido + hash: el cliente compara contra lo propuesto y, si el hash no coincide
     // con el que vio al aprobar, no aplica (aplicar dos veces no duplica ni pisa cambios ajenos).
     if (url.pathname === '/file.json') {
-      // Igual que /config.js: la LAN no requiere cookie, pero un sitio ajeno no debe
-      // poder usar el navegador del operador para leer archivos de la maquina.
+      // El diff puede consultar cualquier archivo del workspace: exigir la sesion web
+      // tambien en LAN; ni el filtro de nombres ni sameOrigin son autorizacion.
+      if (!authed(req)) {
+        res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+        res.end(JSON.stringify({ error: 'unauthorized', login: '/login' }));
+        return;
+      }
       if (req.method !== 'GET' || !sameOriginRequest(req)) {
         res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
         res.end(JSON.stringify({ error: 'forbidden' }));
@@ -1213,6 +1278,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
             | { action?: string; id?: string; text?: string; kind?: string; confidence?: number; pinned?: boolean }
             | null;
           const action = body && typeof body.action === 'string' ? body.action : '';
+          await withFileQueue(MEMORY_FACTS_FILE, async () => {
           const facts = await readMemoryFacts();
           const find = (id: string) => facts.find((fact) => fact.id === id);
           const now = new Date().toISOString();
@@ -1227,9 +1293,12 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
                 env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state' },
                 encoding: 'utf8',
                 timeout: 30000,
+                maxBuffer: 1024 * 1024,
               });
             } catch (e) {
-              stdout = String((e as Error)?.message || e);
+              res.writeHead(502, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+              res.end(JSON.stringify({ ok: false, error: 'consolidate fallo: ' + String((e as Error)?.message || e).slice(0, 300) }));
+              return;
             }
             const after = await readMemoryFacts();
             res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
@@ -1295,13 +1364,14 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
           await writeMemoryFacts(facts);
           res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
           res.end(JSON.stringify({ ok: true, facts: await readMemoryFacts() }));
+          });
         } catch (e) {
           res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
           res.end(JSON.stringify({ error: String((e as Error)?.message || e) }));
         }
         return;
       }
-      const facts = await readMemoryFacts();
+      const facts = await withFileQueue(MEMORY_FACTS_FILE, readMemoryFacts);
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
       res.end(JSON.stringify({ path: MEMORY_FACTS_FILE, facts }));
       return;
@@ -1428,37 +1498,36 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
 
-    // Cache-busting del cliente: sin esto un telefono puede seguir ejecutando un app.js
-    // viejo (el 14/10 llego un ReferenceError apuntando a una linea que ya no existe).
-    // El HTML referencia siempre la version actual, por mtime.
+    // Versionar recursos estaticos con sus bytes reales; config.js es dinamico y queda sin version.
     if (rel === 'index.html') {
-      const stampOf = async (f: string) => {
-        const st = await stat(join(APP, f)).catch(() => null);
-        return st ? Math.round(st.mtimeMs).toString(36) : '0';
-      };
-      const vJs = await stampOf('app.js');
-      const vCss = await stampOf('app.css');
-      const vSkills = await stampOf('skills.js');
-      data = Buffer.from(
-        String(data).replace('./app.js', './app.js?v=' + vJs).replace('./app.css', './app.css?v=' + vCss).replace('./skills.js', './skills.js?v=' + vSkills),
-      );
+      const html = String(data);
+      const assets = ['app.css', 'app.js', 'skills.js', 'memory.js', 'artifacts.js', 'workspace-nav.js',
+        'context-meter.js', 'session-mode.js', 'palette.js', 'onboarding.js',
+        'handoff.js', 'split-view.js', 'stats.js'];
+      const versions = await Promise.all(assets.map(async (asset) => {
+        try {
+          return [asset, crypto.createHash('sha256').update(await readFile(join(APP, asset))).digest('hex')] as const;
+        } catch {
+          return [asset, ''] as const;
+        }
+      }));
+      data = Buffer.from(versions.reduce((markup, [asset, hash]) =>
+        hash ? markup.replace(`./${asset}"`, `./${asset}?v=${hash}"`) : markup, html));
     }
     const type = MIME[extname(file).toLowerCase()] || 'application/octet-stream';
     const headers: OutgoingHttpHeaders = { 'content-type': type, 'cache-control': 'no-cache', ...SEC };
-    // Versionado por mtime (?v=...): se cachea para siempre. Sin version, no-cache.
     const comprimible = /^(text|application\/(javascript|json)|image\/svg)/.test(type);
-    if (url.search && comprimible) {
+    const contentHash = crypto.createHash('sha256').update(data).digest('hex');
+    if (comprimible && url.searchParams.size === 1 && url.searchParams.get('v') === contentHash) {
       headers['cache-control'] = 'public, max-age=31536000, immutable';
     }
-    const st = await stat(file).catch(() => null);
-    if (st) {
-      const etag = `"${st.size.toString(16)}-${Math.round(st.mtimeMs).toString(16)}"`;
-      headers.etag = etag;
-      if (req.headers['if-none-match'] === etag) {
-        res.writeHead(304, { 'cache-control': 'no-cache', etag });
-        res.end();
-        return;
-      }
+    // Hash del cuerpo transformado: si cambia la version de un script, cambia el ETag del HTML.
+    const etag = `"${contentHash}"`;
+    headers.etag = etag;
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { 'cache-control': headers['cache-control'], etag });
+      res.end();
+      return;
     }
     let body: Buffer = data;
     if (comprimible && /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""))) {

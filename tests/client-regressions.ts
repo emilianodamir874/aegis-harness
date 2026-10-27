@@ -58,6 +58,7 @@ try {
           else reply({});
           break;
         case 'test/error': ws.send(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32042, message: 'error simulado', data: { actualRunId: 'mock-run' } } })); break;
+        case 'test/error-detail': ws.send(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32043, message: 'Internal error', data: 'Model file not found: mock-model' } })); break;
         default: throw new Error('RPC inesperado: ' + m.method); // nunca simular session/prompt
       }
     });
@@ -455,7 +456,17 @@ try {
     try { await (window as any).__aegisWeb.rpc.request('test/error', {}); return null; }
     catch (e: any) { return { message: e.message, code: e.code, data: e.data }; }
   });
-  if (rpcError?.code !== -32042 || rpcError?.data?.actualRunId !== 'mock-run' || rpcError?.message !== 'error simulado [metodo: test/error]') throw new Error('error RPC perdió code/data/método: ' + JSON.stringify(rpcError));
+  // data estructurado se conserva para la lógica (actualRunId); el mensaje añade el detalle del servidor.
+  if (rpcError?.code !== -32042 || rpcError?.data?.actualRunId !== 'mock-run' ||
+      rpcError?.message !== 'error simulado [metodo: test/error]: {"actualRunId":"mock-run"}')
+    throw new Error('error RPC perdió code/data/método: ' + JSON.stringify(rpcError));
+  const detailError = await page.evaluate(async () => {
+    try { await (window as any).__aegisWeb.rpc.request('test/error-detail', {}); return null; }
+    catch (e: any) { return { message: e.message, code: e.code, data: e.data }; }
+  });
+  if (detailError?.code !== -32043 || detailError.data !== 'Model file not found: mock-model' ||
+      detailError.message !== 'Internal error [metodo: test/error-detail]: Model file not found: mock-model')
+    throw new Error('error RPC ocultó detalle legible del servidor: ' + JSON.stringify(detailError));
   if (requests.some(r => r.method === 'session/prompt' || r.method === 'session/new')) throw new Error('se intentó crear sesión o enviar prompt');
   if (errors.length) throw new Error('excepciones en navegador: ' + errors.join(' | '));
   console.log('PASS error RPC preserva code/data/método; cero sesiones o prompts reales');
