@@ -27,20 +27,21 @@ const MAX_USER_CHARS: usize = 4_000;
 const MAX_ASSISTANT_CHARS: usize = 6_000;
 const SEEN_CAPACITY: usize = 256;
 
-const SYSTEM_PROMPT: &str = r#"Sos un extractor de memoria de un operador tecnico. Leelo y devolve SOLO JSON.
+const SYSTEM_PROMPT: &str = r#"You extract durable memory from a technical operator's turn. Reply with JSON only.
 
-Reglas:
-- Extrae unicamente hechos DURABLES sobre el operador o su entorno: preferencias de estilo, decisiones
-  tomadas y su motivo, datos de la maquina o del proyecto, objetivos en curso, reglas de trabajo.
-- No extraigas estados transitorios (que archivo se edita, que build corre, que comando fallo), ni
-  resumenes de la tarea, ni lo que dijo el agente: solo lo que dijo el operador.
-- No inventes. Si el operador no declaro nada durable, devolve {"facts": [], "nothing_new": true}.
-- Cada hecho: una frase corta en espanol, sin adornos, sin comillas internas.
-- `confidence` entre 0 y 0.6: que tan seguro estas de que es durable y explicito.
-- `quote`: la frase textual del operador que lo respalda (maximo 160 caracteres).
-- Nada de credenciales, tokens, claves ni datos personales sensibles.
+Rules:
+- Extract only DURABLE facts about the operator or their environment: style preferences, decisions
+  taken and why, machine or project facts, standing goals, working rules.
+- Do not extract transient state (which file is being edited, which build is running, which command
+  failed), task summaries, or anything the agent said: only what the operator said.
+- Do not invent. If the operator stated nothing durable, return {"facts": [], "nothing_new": true}.
+- Each fact: one short sentence, no decoration, no internal quotes.
+- Write `text` in the operator's language (Spanish unless the turn is in another language).
+- `confidence` between 0 and 0.6: how sure you are that the fact is durable and explicit.
+- `quote`: the operator's verbatim sentence that supports it (max 160 chars).
+- No credentials, tokens, keys or sensitive personal data.
 
-Formato exacto:
+Exact format, keys always in English:
 {"facts":[{"text":"...","kind":"preference|fact|goal|decision|style","confidence":0.5,"quote":"..."}],"nothing_new":false}"#;
 
 #[derive(Debug, Deserialize)]
