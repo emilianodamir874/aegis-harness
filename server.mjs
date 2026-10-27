@@ -1139,7 +1139,9 @@ ${Buffer.concat(chunks).toString("utf8")}
         // Modelo con el que arranca un chat nuevo: lo define el servidor (appConfig). Se muestra en
         // la pantalla de bienvenida para saber que va a usar antes de escribir el primer mensaje.
         defaultProvider: (cfg.appConfig || {}).AEGIS_DEFAULT_PROVIDER || "",
-        defaultModel: (cfg.appConfig || {}).AEGIS_DEFAULT_MODEL || ""
+        defaultModel: (cfg.appConfig || {}).AEGIS_DEFAULT_MODEL || "",
+        // Effort con el que arranca un chat nuevo (AEGIS_THINKING_EFFORT del config.yaml).
+        defaultEffort: (cfg.appConfig || {}).AEGIS_THINKING_EFFORT || ""
       })};`;
       res.writeHead(200, { "content-type": MIME[".js"], "cache-control": "no-store", "cross-origin-resource-policy": "same-origin", ...SEC });
       res.end(body2);
