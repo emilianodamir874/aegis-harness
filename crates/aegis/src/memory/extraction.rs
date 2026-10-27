@@ -244,24 +244,75 @@ pub async fn run_turn(
 
 /// Dispara la extraccion desprendida del turno: el usuario ya tiene su respuesta y esto corre
 /// despues. Cualquier error se loguea y no se propaga.
+/// Provider propio para la extraccion, si esta configurado.
+///
+/// `AEGIS_MEMORY_EXTRACT_MODEL` se valida contra el provider de la sesion, asi que
+/// con la sesion en otro proveedor el override se descartaba en silencio. Este
+/// segundo knob levanta un provider aparte para que el trabajo repetido corra en un
+/// modelo barato sin mover el proveedor de la sesion.
+/// Decide si hay un extractor propio, sin tocar red ni config: la politica pura.
+///
+/// Devuelve `(provider, modelo)` solo cuando ambos estan presentes; con uno solo
+/// se sigue usando el de la sesion y el knob queda inerte en vez de fallar.
+fn extractor_choice(provider: Option<&str>, model: Option<&str>) -> Option<(String, String)> {
+    let provider = provider?.trim();
+    let model = model?.trim();
+    if provider.is_empty() || model.is_empty() {
+        return None;
+    }
+    Some((provider.to_string(), model.to_string()))
+}
+
+async fn extractor_provider() -> Option<(Arc<dyn Provider>, String)> {
+    let provider_name = crate::config::Config::global()
+        .get_param::<String>("AEGIS_MEMORY_EXTRACT_PROVIDER")
+        .ok();
+    let model = model_override();
+    let (name, model) = extractor_choice(provider_name.as_deref(), model.as_deref())?;
+    match crate::providers::create(&name, Vec::new()).await {
+        Ok(provider) => Some((provider, model)),
+        Err(error) => {
+            tracing::debug!("memoria: no se pudo crear el provider '{name}': {error}");
+            None
+        }
+    }
+}
+
+async fn pick_extractor(
+    provider: Arc<dyn Provider>,
+    model_config: ModelConfig,
+) -> (Arc<dyn Provider>, ModelConfig) {
+    if let Some((own_provider, model)) = extractor_provider().await {
+        let name = own_provider.get_name().to_string();
+        match crate::model_config::model_config_from_user_config(&name, &model) {
+            Ok(config) => return (own_provider, config),
+            Err(error) => tracing::debug!(
+                "memoria: modelo de extraccion '{model}' invalido en '{name}': {error}"
+            ),
+        }
+    }
+    let model_config = match model_override() {
+        Some(model) => match crate::model_config::model_config_from_user_config(
+            provider.get_name(),
+            &model,
+        ) {
+            Ok(config) => config,
+            Err(error) => {
+                tracing::debug!("memoria: modelo de extraccion '{model}' invalido: {error}");
+                model_config
+            }
+        },
+        None => model_config,
+    };
+    (provider, model_config)
+}
+
 pub fn spawn(provider: Arc<dyn Provider>, model_config: ModelConfig, session_id: String) {
     tokio::spawn(async move {
         if !enabled() {
             return;
         }
-        let model_config = match model_override() {
-            Some(model) => match crate::model_config::model_config_from_user_config(
-                provider.get_name(),
-                &model,
-            ) {
-                Ok(config) => config,
-                Err(error) => {
-                    tracing::debug!("memoria: modelo de extraccion '{model}' invalido: {error}");
-                    model_config
-                }
-            },
-            None => model_config,
-        };
+        let (provider, model_config) = pick_extractor(provider, model_config).await;
 
         let manager = crate::session::SessionManager::instance();
         let session = match manager.get_session(&session_id, true).await {
@@ -285,6 +336,27 @@ pub fn spawn(provider: Arc<dyn Provider>, model_config: ModelConfig, session_id:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extractor_choice_needs_both_knobs() {
+        assert_eq!(
+            extractor_choice(Some("chatgpt_codex"), Some("gpt-6-luna")),
+            Some(("chatgpt_codex".to_string(), "gpt-6-luna".to_string()))
+        );
+        assert!(extractor_choice(None, Some("gpt-6-luna")).is_none());
+        assert!(extractor_choice(Some("chatgpt_codex"), None).is_none());
+        assert!(extractor_choice(Some("  "), Some("gpt-6-luna")).is_none());
+        assert!(extractor_choice(Some("chatgpt_codex"), Some("")).is_none());
+    }
+
+    #[test]
+    fn extractor_choice_trims_values() {
+        assert_eq!(
+            extractor_choice(Some(" chatgpt_codex "), Some(" gpt-6-luna ")),
+            Some(("chatgpt_codex".to_string(), "gpt-6-luna".to_string()))
+        );
+    }
+
     use crate::memory::store;
     use tempfile::TempDir;
 
