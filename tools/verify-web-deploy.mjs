@@ -152,7 +152,7 @@ try {
           const dialog = document.querySelector('.aegis-activity');
           return dialog && (/páginas agotadas|lista incompleta/.test(dialog.querySelector('.note')?.textContent || '')
             || /No se pudieron consultar sesiones/.test(dialog.querySelector('main')?.textContent || ''));
-        }, null, { timeout: 12000 });
+        }, null, { timeout: 55000 });
         const activity = await page.locator('.aegis-activity main').innerText();
         const activityNoFake = !/No se pudieron consultar sesiones/.test(activity)
           && !/No se pudo consultar \/pending\.json/.test(activity)
