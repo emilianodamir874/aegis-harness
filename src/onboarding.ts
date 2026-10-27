@@ -128,7 +128,9 @@ async function refresh(): Promise<void> {
     document.head.appendChild(style);
   }
   const rows = await collect();
-  if (!rows.length) return;
+  // Sin turno abierto todavia no hay modelo ni uso: la tarjeta se dibuja igual, con las sugerencias.
+  // Ocultarla hasta que haya datos dejaba el estado vacio sin nada que ensenar, que es justo el bug.
+
 
   let card = document.getElementById('aegis-onboard');
   if (card) card.remove();
@@ -136,12 +138,16 @@ async function refresh(): Promise<void> {
   card.id = 'aegis-onboard';
   card.appendChild(el('h3', undefined, 'Con qué estás hablando'));
 
-  const dl = el('dl');
-  for (const [term, value] of rows) {
-    dl.appendChild(el('dt', undefined, term));
-    dl.appendChild(el('dd', undefined, value));
+  if (rows.length) {
+    const dl = el('dl');
+    for (const [term, value] of rows) {
+      dl.appendChild(el('dt', undefined, term));
+      dl.appendChild(el('dd', undefined, value));
+    }
+    card.appendChild(dl);
+  } else {
+    card.appendChild(el('p', undefined, 'Todavía no hay turno en esta sesión: el modelo, la tarifa y el consumo aparecen acá después del primero.'));
   }
-  card.appendChild(dl);
 
   const sug = el('div', 'sug');
   for (const text of suggestions(rows)) {

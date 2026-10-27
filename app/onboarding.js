@@ -91,18 +91,21 @@ async function refresh() {
     document.head.appendChild(style);
   }
   const rows = await collect();
-  if (!rows.length) return;
   let card = document.getElementById("aegis-onboard");
   if (card) card.remove();
   card = el("div", "aegis-onboard");
   card.id = "aegis-onboard";
   card.appendChild(el("h3", void 0, "Con qué estás hablando"));
-  const dl = el("dl");
-  for (const [term, value] of rows) {
-    dl.appendChild(el("dt", void 0, term));
-    dl.appendChild(el("dd", void 0, value));
+  if (rows.length) {
+    const dl = el("dl");
+    for (const [term, value] of rows) {
+      dl.appendChild(el("dt", void 0, term));
+      dl.appendChild(el("dd", void 0, value));
+    }
+    card.appendChild(dl);
+  } else {
+    card.appendChild(el("p", void 0, "Todavía no hay turno en esta sesión: el modelo, la tarifa y el consumo aparecen acá después del primero."));
   }
-  card.appendChild(dl);
   const sug = el("div", "sug");
   for (const text of suggestions(rows)) {
     const button = el("button");
