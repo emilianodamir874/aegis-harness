@@ -1,5 +1,9 @@
 /* Modos de sesion: plan / ejecutar / revisar (M5).
  *
+ * Sin chip: el operador pidio que el modo lo maneje el agente (`request_mode`) y que la pantalla no
+ * gaste lugar. Este modulo ya no dibuja nada ni aplica nada al abrir la sesion; queda como API para
+ * la palette (comandos de modo) y para reflejar un cambio hecho por el agente.
+ *
  * Por que existe: hoy todo turno puede escribir. El mecanismo para frenarlo ya estaba en el server
  * (`_aegis/unstable/tools/permissions/set` con `sessionId`, el mismo que usa el modo debate), pero no
  * habia forma de elegirlo desde la UI. Este modulo le pone un chip de tres estados al composer.
@@ -137,13 +141,11 @@ function ensureChip(): HTMLButtonElement | null {
 }
 
 function renderChip(): void {
-  const el = ensureChip();
-  if (!el) return;
-  const mode = readMode();
-  el.textContent = LABEL[mode];
-  el.dataset.mode = mode;
-  el.title = `${HINT[mode]} Click para cambiar (plan → ejecutar → revisar).`;
-  el.setAttribute('aria-label', `Modo de sesion: ${mode}. ${HINT[mode]}`);
+  // Sin chip a proposito: el modo vive en el server y lo maneja el agente.
+  if (chip) {
+    chip.remove();
+    chip = null;
+  }
 }
 
 async function set(mode: Mode): Promise<void> {
@@ -154,16 +156,10 @@ async function set(mode: Mode): Promise<void> {
 
 function tick(): void {
   renderChip();
-  // Ojo: no se reaplica el modo guardado en cada vuelta. El agente tambien puede cambiarlo (tool
-  // `request_mode`) y una reaplicacion periodica lo pisaria de inmediato. El modo se aplica al abrir
-  // la sesion, al cambiarla y cuando el operador toca el chip.
 }
 
-// Un turno nuevo o un cambio de sesion puede reemplazar el agente: se reaplica.
-document.addEventListener('aegis:session-changed', () => {
-  appliedFor = '';
-  void apply();
-});
+// Cambiar de sesion no reaplica nada: cada sesion arranca con lo que diga el server y el agente
+// decide despues. El unico camino para fijar un modo desde la UI es la palette.
 
 // Si el server cambia el modo por su cuenta (tool request_mode), el chip se entera y se actualiza
 // sin tocar los overrides: lee el modo que el agente dejo y lo refleja.

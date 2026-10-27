@@ -94,13 +94,10 @@ function ensureChip() {
   return chip;
 }
 function renderChip() {
-  const el = ensureChip();
-  if (!el) return;
-  const mode = readMode();
-  el.textContent = LABEL[mode];
-  el.dataset.mode = mode;
-  el.title = `${HINT[mode]} Click para cambiar (plan → ejecutar → revisar).`;
-  el.setAttribute("aria-label", `Modo de sesion: ${mode}. ${HINT[mode]}`);
+  if (chip) {
+    chip.remove();
+    chip = null;
+  }
 }
 async function set(mode) {
   writeMode(mode);
@@ -110,10 +107,6 @@ async function set(mode) {
 function tick() {
   renderChip();
 }
-document.addEventListener("aegis:session-changed", () => {
-  appliedFor = "";
-  void apply();
-});
 window.addEventListener("aegis:mode-hint", (event) => {
   const detalle = event.detail;
   const modo = detalle?.mode;

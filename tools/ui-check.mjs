@@ -35,9 +35,12 @@ const globals = await page.evaluate(() => ({
   welcome: !!window.__aegisWelcome,
   meter: !!document.querySelector('.ctx-meter'),
   onboard: !!document.getElementById('aegis-onboard'),
-  modeChip: !!document.querySelector('.aegis-mode'),
+  modeChip: !!document.querySelector('.aegis-mode'), // ahora se espera false
 }));
-for (const [k, v] of Object.entries(globals)) note(v, `global/selector ${k}`);
+for (const [k, v] of Object.entries(globals)) {
+  if (k === 'modeChip') continue; // el chip se elimino a proposito: el modo lo maneja el agente
+  note(v, `global/selector ${k}`);
+}
 
 await page.screenshot({ path: path.join(OUT, '01-inicio.png'), fullPage: false });
 
@@ -74,19 +77,9 @@ await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
 note((await page.locator('.aegis-pal').count()) === 0, 'Escape cierra la palette');
 
-// 4. chip de modo: tres estados y titulo que explica
-const chip = page.locator('.aegis-mode');
-if (await chip.count()) {
-  const states = [];
-  for (let i = 0; i < 3; i++) {
-    states.push((await chip.innerText()).trim().toLowerCase());
-    await chip.click();
-    await page.waitForTimeout(400);
-  }
-  note(new Set(states).size === 3, 'chip cicla tres estados', states.join(' → '));
-  const title = await chip.getAttribute('title');
-  note(!!title && title.length > 20, 'chip explica el modo', (title || '').slice(0, 90));
-}
+// 4. chip de modo: ya no existe (el modo lo maneja el agente), pero la API sigue viva
+note((await page.locator('.aegis-mode').count()) === 0, 'sin chip de modo en pantalla');
+note(!!globals.sessionMode, 'API de modo disponible para la palette');
 
 // 5. medidor: click abre el mapa con desglose
 const meter = page.locator('.ctx-meter');
