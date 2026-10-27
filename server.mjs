@@ -54,18 +54,25 @@ const pendingCache = new Map();
 function sweepPendingAtStartup() {
   try {
     const { execFileSync } = require("node:child_process");
-    const salida = execFileSync(
-      process.execPath,
-      ["--experimental-sqlite", join(DIR, "tools", "sweep-pending.mjs"), "--apply"],
-      {
-        encoding: "utf8",
-        timeout: 6e4,
-        env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" },
-      },
-    );
+    const env = { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" };
+    const bin = process.env.AEGIS_SERVE_BIN || "C:/Aegis-Proyects/core/bin/aegis-current.exe";
+    // El barrido vive en el binario (`aegis-serve --sweep-pending`) porque ahi esta el modelo de
+    // mensajes: si el serve se reinicia sin que arranque este server web, el subcomando se puede
+    // correr igual a mano. El script node queda como respaldo si el binario no tiene el flag.
+    let salida = "";
+    try {
+      salida = execFileSync(bin, ["--sweep-pending"], { encoding: "utf8", timeout: 9e4, env });
+    } catch {
+      salida = execFileSync(
+        process.execPath,
+        ["--experimental-sqlite", join(DIR, "tools", "sweep-pending.mjs"), "--apply"],
+        { encoding: "utf8", timeout: 9e4, env },
+      );
+    }
     const resumen = String(salida || "")
       .split("\n")
-      .filter((linea) => /sin respuesta|respuestas cancel|backup/.test(linea))
+      .filter((linea) => /confirmaciones|sin respuesta|respuestas cancel|backup/.test(linea))
+      .slice(0, 4)
       .join(" | ");
     if (resumen) console.log(`[pending] barrido de arranque: ${resumen}`);
   } catch (e) {
