@@ -27,6 +27,8 @@ interface UsageState {
   inTok?: number;
   outTok?: number;
   contextBreakdown?: BreakdownRow[];
+  /** Tokens a los que el server compacta solo (campo `n` del wire: auto_compact_at). */
+  n?: number;
   last?: Record<string, unknown>;
   model?: string;
   provider?: string;
@@ -53,7 +55,7 @@ const COMPACT_RATIO = 0.8;
 const TICK_MS = 1200;
 
 const CSS = `
-.ctx-meter{display:flex;align-items:center;gap:10px;padding:2px 4px 6px;font:12px/1.4 system-ui,Segoe UI,sans-serif;color:#93a2b8;cursor:pointer;user-select:none;background:transparent;border:0;width:100%;text-align:left}
+.ctx-meter{max-width:820px;margin:0 auto;display:flex;align-items:center;gap:10px;padding:2px 4px 6px;font:12px/1.4 system-ui,Segoe UI,sans-serif;color:#93a2b8;cursor:pointer;user-select:none;background:transparent;border:0;width:100%;text-align:left}
 .ctx-meter:hover .ctx-track{background:rgba(255,255,255,.14)}
 .ctx-meter .ctx-track{position:relative;flex:1;height:4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
 .ctx-meter .ctx-fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:999px;transition:width .3s ease,background .3s ease}
@@ -231,16 +233,21 @@ function renderMeter(usage: UsageState | null): void {
   }
   m.root.style.display = 'flex';
   const limit = typeof usage?.limit === 'number' && usage.limit > 0 ? usage.limit : null;
-  const pct = limit ? Math.min(100, (used / limit) * 100) : 0;
-  const tone = pct >= 75 ? 'bad' : pct >= 50 ? 'warn' : 'ok';
+  const techo = typeof usage?.n === 'number' && usage.n > 0 ? usage.n : limit ? limit * COMPACT_RATIO : 0;
+  const pct = techo ? Math.min(100, (used / techo) * 100) : 0;
+  const tone = pct >= 90 ? 'bad' : pct >= 75 ? 'warn' : 'ok';
   m.fill.style.width = (limit ? pct : 100) + '%';
   m.fill.className = 'ctx-fill ' + tone;
 
   if (limit) {
-    const trigger = limit * COMPACT_RATIO;
+    // El trigger lo manda el server (auto_compact_at). El 0,8 fijo mentia: con techo de 350k en un
+    // modelo de 1M la marca se dibujaba en 800k y parecia que faltaba un mundo cuando en realidad
+    // estabas a un turno de la compactacion automatica.
+    const trigger = typeof usage?.n === 'number' && usage.n > 0 ? usage.n : limit * COMPACT_RATIO;
+    const ratio = Math.min(1, trigger / limit);
     m.mark.style.display = 'block';
-    m.mark.style.left = COMPACT_RATIO * 100 + '%';
-    m.label.textContent = `contexto ${fmtTok(used)} / ${fmtTok(limit)} (${Math.round(pct)}%)`;
+    m.mark.style.left = ratio * 100 + '%';
+    m.label.textContent = `contexto ${fmtTok(used)} / ${fmtTok(limit)} (${Math.round((used / trigger) * 100)}% del techo)`;
     m.label.title = `compacta sola a ~${fmtTok(trigger)} · margen ${fmtTok(Math.max(0, trigger - used))} tok`;
   } else {
     m.mark.style.display = 'none';
