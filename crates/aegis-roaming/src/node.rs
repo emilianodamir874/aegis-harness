@@ -367,7 +367,7 @@ impl RoamingNode {
         card: &ConnectionCard,
         label: Option<String>,
     ) -> Result<RoamingClientStream, RoamingError> {
-        let addr = card.endpoint_addr()?;
+        let addr = card.dial_addr()?;
         self.connect_with_addr(addr, label).await
     }
 

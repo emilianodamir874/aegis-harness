@@ -27,7 +27,119 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 use tracing::warn;
+
+/// Skill discovery is a filesystem walk: it lists every skill root, canonicalizes
+/// each skill directory, reads every `SKILL.md` (41 files, ~874 KB in this store)
+/// and then walks each skill directory again for supporting files. `prompt_parts`
+/// runs once per inference, so the same walk happened before every model call.
+///
+/// The answer only changes when one of the paths involved changes, so it is cached
+/// and validated by comparing `mtime` + `len` of every root and every discovered
+/// skill directory. Validation is ~40 `metadata` calls; discovery is a full walk.
+const DISCOVERY_CACHE_ENTRIES: usize = 8;
+
+/// How long a cached resolution is trusted before the roots are resolved again.
+/// Resolving roots also runs plugin auto-update checks, which are throttled to an
+/// hour internally but should not be re-entered on every inference.
+const DISCOVERY_RECHECK_INTERVAL: Duration = Duration::from_secs(5);
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct DiscoveryKey {
+    working_dir: Option<PathBuf>,
+    /// Que plugins estan habilitados sale de la config, no del disco: sin esto, deshabilitar un plugin
+    /// dejaba su skill en la cache hasta que venciera el TTL de 5 s (lo cazo
+    /// `disabled_plugin_skill_is_not_listed_or_loadable`).
+    plugins: String,
+}
+
+fn plugins_fingerprint(config: &Config) -> String {
+    let entries: std::collections::BTreeMap<String, serde_json::Value> = config
+        .get_param(crate::plugins::discovery::PLUGINS_CONFIG_KEY)
+        .unwrap_or_default();
+    serde_json::to_string(&entries).unwrap_or_default()
+}
+
+#[derive(Clone)]
+struct PathStamp {
+    path: PathBuf,
+    modified: Option<SystemTime>,
+    len: Option<u64>,
+}
+
+struct CachedDiscovery {
+    resolved_at: Instant,
+    stamps: Vec<PathStamp>,
+    sources: Vec<SourceEntry>,
+}
+
+static DISCOVERY_CACHE: LazyLock<Mutex<Vec<(DiscoveryKey, CachedDiscovery)>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn path_stamp(path: &Path) -> PathStamp {
+    let metadata = std::fs::metadata(path).ok();
+    PathStamp {
+        path: path.to_path_buf(),
+        modified: metadata.as_ref().and_then(|m| m.modified().ok()),
+        len: metadata.as_ref().map(|m| m.len()),
+    }
+}
+
+fn stamps_match(stamps: &[PathStamp]) -> bool {
+    stamps.iter().all(|stamp| {
+        let current = path_stamp(&stamp.path);
+        current.modified == stamp.modified && current.len == stamp.len
+    })
+}
+
+fn cached_discovery(key: &DiscoveryKey) -> Option<Vec<SourceEntry>> {
+    let cache = DISCOVERY_CACHE.lock().expect("discovery cache poisoned");
+    let (_, entry) = cache.iter().find(|(cached, _)| cached == key)?;
+    if entry.resolved_at.elapsed() < DISCOVERY_RECHECK_INTERVAL && stamps_match(&entry.stamps) {
+        return Some(entry.sources.clone());
+    }
+    None
+}
+
+fn store_discovery(key: DiscoveryKey, stamps: Vec<PathStamp>, sources: Vec<SourceEntry>) {
+    // El sello de cada skill va aca y no en el llamador: en Windows editar un archivo NO mueve el
+    // mtime del directorio que lo contiene, asi que sellar solo el directorio servia contenido viejo
+    // (lo cazo `discovery_cache_is_reused_until_a_stamped_path_changes`). Se sellan el directorio, el
+    // `SKILL.md` y el padre, que es lo que cambia cuando una skill aparece o desaparece.
+    let mut stamps = stamps;
+    let mut sellados: HashSet<PathBuf> = stamps.iter().map(|sello| sello.path.clone()).collect();
+    for entry in sources.iter().filter(|entry| matches!(entry.source_type, SourceType::Skill)) {
+        let path = Path::new(&entry.path);
+        for candidato in [path.to_path_buf(), path.join("SKILL.md")] {
+            if sellados.insert(candidato.clone()) {
+                stamps.push(path_stamp(&candidato));
+            }
+        }
+        if let Some(parent) = path.parent() {
+            if sellados.insert(parent.to_path_buf()) {
+                stamps.push(path_stamp(parent));
+            }
+        }
+    }
+    let mut cache = DISCOVERY_CACHE.lock().expect("discovery cache poisoned");
+    if let Some(position) = cache.iter().position(|(cached, _)| *cached == key) {
+        cache.remove(position);
+    }
+    cache.insert(
+        0,
+        (
+            key,
+            CachedDiscovery {
+                resolved_at: Instant::now(),
+                stamps,
+                sources,
+            },
+        ),
+    );
+    cache.truncate(DISCOVERY_CACHE_ENTRIES);
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SkillFrontmatter {
@@ -607,15 +719,45 @@ fn scan_skills_from_dir(
 /// Discover skills from all configured filesystem locations and built-ins.
 /// Each returned entry has `global` set according to the directory it was
 /// found in (or `true` for built-ins).
+///
+/// Cached against the state of the directories involved; see
+/// `DISCOVERY_CACHE_ENTRIES`.
 pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
-    discover_skills_with_config(working_dir, Config::global())
+    let key = DiscoveryKey {
+        working_dir: working_dir.map(Path::to_path_buf),
+        plugins: plugins_fingerprint(Config::global()),
+    };
+    if let Some(sources) = cached_discovery(&key) {
+        return sources;
+    }
+
+    let dirs = all_skill_dirs_with_config(working_dir, Config::global());
+    let sources = collect_sources(&dirs);
+
+    let mut stamps: Vec<PathStamp> = dirs.iter().map(|dir| path_stamp(&dir.path)).collect();
+    // Skill directories are stamped individually: editing a `SKILL.md` in place
+    // moves its directory's mtime, and a skill that appears or disappears moves
+    // both the root and itself.
+    stamps.extend(
+        sources
+            .iter()
+            .filter(|entry| matches!(entry.source_type, SourceType::Skill))
+            .map(|entry| path_stamp(Path::new(&entry.path))),
+    );
+
+    store_discovery(key, stamps, sources.clone());
+    sources
 }
 
 fn discover_skills_with_config(working_dir: Option<&Path>, config: &Config) -> Vec<SourceEntry> {
+    collect_sources(&all_skill_dirs_with_config(working_dir, config))
+}
+
+fn collect_sources(dirs: &[SkillDirectory]) -> Vec<SourceEntry> {
     let mut sources: Vec<SourceEntry> = Vec::new();
     let mut seen = HashSet::new();
 
-    for dir in all_skill_dirs_with_config(working_dir, config) {
+    for dir in dirs {
         for source in scan_skills_from_dir(
             &dir.path,
             dir.is_global,
@@ -1219,5 +1361,53 @@ mod tests {
 
         crate::sources::delete_source(SourceType::Skill, &skill.path).unwrap();
         assert!(!skill_dir.exists());
+    }
+
+    #[test]
+    fn discovery_cache_is_reused_until_a_stamped_path_changes() {
+        let project = tempfile::tempdir().unwrap();
+        let skill_dir = project.path().join(".agents/skills/cached-skill");
+        write_test_skill(&skill_dir, "cached-skill", "first body");
+
+        let key = DiscoveryKey {
+            working_dir: Some(project.path().to_path_buf()),
+            plugins: String::new(),
+        };
+        let stamps = vec![path_stamp(project.path()), path_stamp(&skill_dir)];
+        let sources = collect_sources(&[SkillDirectory {
+            path: skill_dir.clone(),
+            is_global: false,
+            writable: true,
+            preserve_path: false,
+        }]);
+        store_discovery(key.clone(), stamps, sources);
+
+        let cached = cached_discovery(&key).expect("a fresh entry with matching stamps is a hit");
+        assert!(cached
+            .iter()
+            .any(|source| source.name == "cached-skill" && source.content == "first body"));
+
+        write_test_skill(&skill_dir, "cached-skill", "second body");
+        assert!(
+            cached_discovery(&key).is_none(),
+            "editing SKILL.md must invalidate the entry instead of serving stale content"
+        );
+    }
+
+    #[test]
+    fn discovery_cache_misses_on_a_different_working_dir() {
+        let project = tempfile::tempdir().unwrap();
+        let key = DiscoveryKey {
+            working_dir: Some(project.path().to_path_buf()),
+            plugins: String::new(),
+        };
+        store_discovery(key.clone(), vec![path_stamp(project.path())], Vec::new());
+
+        assert!(cached_discovery(&key).is_some());
+        assert!(cached_discovery(&DiscoveryKey {
+            working_dir: Some(project.path().join("other")),
+            plugins: String::new(),
+        })
+        .is_none());
     }
 }

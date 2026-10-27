@@ -26,6 +26,9 @@ struct ExpansionBudget {
     remaining_operations: usize,
     remaining_output_bytes: usize,
     exhausted: bool,
+    /// Every file whose bytes ended up in the expansion, in the order they were
+    /// read. Callers that cache the expansion fingerprint these paths.
+    reads: Vec<PathBuf>,
 }
 
 struct ImportBoundary {
@@ -39,6 +42,7 @@ impl ExpansionBudget {
             remaining_operations: operations,
             remaining_output_bytes: output_bytes,
             exhausted: false,
+            reads: Vec::new(),
         }
     }
 
@@ -403,6 +407,7 @@ fn process_file_reference(
             return None;
         }
     }
+    budget.reads.push(safe_path.to_path_buf());
 
     let output_bytes = expanded_output_cost(reference, content.len())?;
     if !budget.reserve_output(output_bytes) {
@@ -518,6 +523,7 @@ fn read_referenced_files_with_budget(
             return String::new();
         }
     };
+    budget.reads.push(safe_file_path.clone());
 
     expand_file_content(
         &content,
@@ -530,6 +536,14 @@ fn read_referenced_files_with_budget(
     )
 }
 
+/// An expansion plus the files it was built from. Callers that cache the
+/// expansion revalidate against these paths instead of re-reading everything.
+pub struct ExpandedHints {
+    pub content: String,
+    pub read_paths: Vec<PathBuf>,
+}
+
+#[cfg(test)]
 pub fn read_referenced_files(
     file_path: &Path,
     import_boundary: &Path,
@@ -537,15 +551,30 @@ pub fn read_referenced_files(
     depth: usize,
     ignore_patterns: &Gitignore,
 ) -> String {
+    read_referenced_files_tracked(file_path, import_boundary, visited, depth, ignore_patterns)
+        .content
+}
+
+pub fn read_referenced_files_tracked(
+    file_path: &Path,
+    import_boundary: &Path,
+    visited: &mut HashSet<PathBuf>,
+    depth: usize,
+    ignore_patterns: &Gitignore,
+) -> ExpandedHints {
     let mut budget = ExpansionBudget::new(MAX_REFERENCE_OPERATIONS, MAX_EXPANDED_OUTPUT_BYTES);
-    read_referenced_files_with_budget(
+    let content = read_referenced_files_with_budget(
         file_path,
         import_boundary,
         visited,
         depth,
         ignore_patterns,
         &mut budget,
-    )
+    );
+    ExpandedHints {
+        content,
+        read_paths: budget.reads,
+    }
 }
 
 #[cfg(test)]

@@ -311,7 +311,7 @@ impl PromptInjectionScanner {
         let matches = self.pattern_matcher.scan_for_patterns(text);
         let confidence = self
             .pattern_matcher
-            .get_max_risk_level(&matches)
+            .max_risk_level(&matches)
             .map_or(0.0, |r| r.confidence_score());
 
         (confidence, matches)

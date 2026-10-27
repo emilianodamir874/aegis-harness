@@ -21,7 +21,7 @@ use crate::agents::state_machine::{
     RecipeOperation, RetryOperation, RunStatus, SkillOperation, SlashCommandOperation,
     StateMachine, StatusOperation, SteerOperation, SteerQueue, Step, StopHookOperation,
     ToolApprovalOperation, ToolExecutionOperation, ToolPairCompactionOperation,
-    UnknownToolOperation,
+    TurnCeilingOperation, UnknownToolOperation,
 };
 use crate::agents::subagent_handler::ForegroundSubagentRunner;
 use crate::agents::AgentEvent;
@@ -102,6 +102,7 @@ pub(super) struct TestPipeline {
     working_dir: std::path::PathBuf,
     steer_queue: SteerQueue,
     max_turns: u32,
+    turn_tool_call_limit: u32,
     tool_pair_compactions:
         crate::agents::state_machine::ops_tool_pair_compaction::PendingToolPairCompactions,
     scheduler: Option<Arc<crate::scheduler::Scheduler>>,
@@ -174,6 +175,7 @@ impl TestPipeline {
                 self.stop_hook_block_cap,
             )),
             Arc::new(ExitOnErrorOperation),
+            Arc::new(TurnCeilingOperation::new(self.turn_tool_call_limit, 0)),
             Arc::new(MaxTurnsOperation::new(self.max_turns)),
         ];
         operations.extend(remaining_operations);
@@ -268,6 +270,11 @@ impl TestPipeline {
 
     pub(super) fn with_max_turns(mut self, max_turns: u32) -> Self {
         self.max_turns = max_turns;
+        self
+    }
+
+    pub(super) fn with_turn_tool_call_limit(mut self, limit: u32) -> Self {
+        self.turn_tool_call_limit = limit;
         self
     }
 
@@ -863,6 +870,7 @@ async fn build_test_pipeline(
         working_dir: session.working_dir.clone(),
         steer_queue: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
         max_turns: MAX_TURNS,
+        turn_tool_call_limit: 0,
         tool_pair_compactions: Arc::default(),
         scheduler,
         _temp_dir: temp_dir,

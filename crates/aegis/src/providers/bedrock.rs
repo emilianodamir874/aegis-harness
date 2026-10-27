@@ -30,7 +30,7 @@ use serde_json::Value;
 use smithy_transport_reqwest::ReqwestHttpClient;
 
 use super::formats::bedrock::{
-    bedrock_anthropic_thinking_fields, bedrock_inference_config, from_bedrock_message,
+    bedrock_anthropic_thinking_fields, bedrock_converse_inference_config, from_bedrock_message,
     from_bedrock_usage, sanitize_json_unicode_tags, to_bedrock_message_with_caching,
     to_bedrock_tool_config,
 };
@@ -483,7 +483,7 @@ impl BedrockProvider {
             messages: bedrock_messages,
             tool_config,
             thinking_fields: bedrock_anthropic_thinking_fields(model),
-            inference_config: bedrock_inference_config(model),
+            inference_config: bedrock_converse_inference_config(model),
         })
     }
 

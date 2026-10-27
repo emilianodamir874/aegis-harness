@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::{paths::Paths, Config};
 use crate::plugins::plugin_install_dir;
 
-pub(in crate::plugins) const PLUGINS_CONFIG_KEY: &str = "plugins";
+pub(crate) const PLUGINS_CONFIG_KEY: &str = "plugins";
 
 /// Per-plugin entry stored under the `plugins` map in `config.yaml`, keyed by
 /// the plugin's filesystem path.

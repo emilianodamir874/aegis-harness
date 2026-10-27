@@ -6160,4 +6160,42 @@ mod tests {
             "las rutas UNC no son rutas de unidad y conservan el prefijo"
         );
     }
+
+    #[test]
+    fn canonical_working_dir_matches_drive_prefix_by_shape_not_by_case() {
+        // El guard acepta cualquier letra ASCII, asi que una unidad minuscula tambien pela el
+        // prefijo, y el resto se devuelve textual: no se reescribe mayusculas ni separadores.
+        // Rutas inexistentes a proposito: canonicalize falla y la funcion trabaja sobre la
+        // entrada, con lo que el caso da lo mismo en cualquier plataforma.
+        assert_eq!(
+            canonical_working_dir(PathBuf::from(
+                r"\\?\d:\aegis-canonical-test-does-not-exist\proj"
+            )),
+            PathBuf::from(r"d:\aegis-canonical-test-does-not-exist\proj"),
+            "una letra de unidad minuscula tambien pela el prefijo"
+        );
+
+        let not_a_drive = PathBuf::from(r"\\?\Aa\proj");
+        assert_eq!(
+            canonical_working_dir(not_a_drive.clone()),
+            not_a_drive,
+            "el caracter alfabetico solo cuenta si lo sigue `:`"
+        );
+    }
+
+    #[test]
+    fn canonical_working_dir_keeps_prefix_when_nothing_follows_a_valid_drive() {
+        // Ramas negativas del guard: `\\?\C:` no tiene resto (`len > 2`), y `\\?\1:\proj` tiene un
+        // caracter no alfabetico antes de los dos puntos. Rutas inexistentes a proposito, asi
+        // canonicalize falla y la funcion trabaja sobre la entrada en cualquier plataforma.
+        for raw in [r"\\?\C:", r"\\?\1:\proj"] {
+            let path = PathBuf::from(raw);
+            assert_eq!(
+                canonical_working_dir(path.clone()),
+                path,
+                "no se pela el prefijo de una ruta mal formada: {}",
+                path.display()
+            );
+        }
+    }
 }

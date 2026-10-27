@@ -250,7 +250,7 @@ pub async fn compact_messages(
 
 /// Estimate the tokens of the agent-visible messages, counted the same way
 /// as the fallback estimation in `check_if_compaction_needed`.
-pub(crate) async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
+pub async fn count_context_tokens(messages: &[Message]) -> Result<i32> {
     let counter = shared_token_counter()
         .await
         .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;

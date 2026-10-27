@@ -354,8 +354,8 @@ impl PatternMatcher {
         matches
     }
 
-    /// Get the highest risk level from matches
-    pub fn get_max_risk_level(&self, matches: &[PatternMatch]) -> Option<RiskLevel> {
+    /// Highest risk level among matches
+    pub fn max_risk_level(&self, matches: &[PatternMatch]) -> Option<RiskLevel> {
         matches.iter().map(|m| &m.threat.risk_level).max().cloned()
     }
 

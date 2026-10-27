@@ -39,7 +39,7 @@ pub fn bedrock_anthropic_thinking_fields(model_config: &ModelConfig) -> Option<D
             Document::String("adaptive".to_string()),
         )])),
         ThinkingType::Enabled => {
-            // Thinking tokens count against `maxTokens`, which `bedrock_inference_config`
+            // Thinking tokens count against `maxTokens`, which `bedrock_converse_inference_config`
             // now sends when explicitly configured. Mirror the Anthropic formatter: clamp
             // the budget to leave room for an answer, and drop thinking entirely when even
             // a minimal budget wouldn't fit under the cap. When max_tokens is unset, Bedrock
@@ -125,7 +125,9 @@ fn strip_bedrock_version_suffix(model_name: &str) -> String {
 ///   ids (the same mapping used for thinking) and the Bedrock canonical registry
 ///   for other known Bedrock ids, so models that reject a custom temperature keep
 ///   the server default.
-pub fn bedrock_inference_config(model_config: &ModelConfig) -> bedrock::InferenceConfiguration {
+pub fn bedrock_converse_inference_config(
+    model_config: &ModelConfig,
+) -> bedrock::InferenceConfiguration {
     let mut builder = bedrock::InferenceConfiguration::builder();
 
     if let Some(max_tokens) = model_config.max_tokens {
@@ -1622,7 +1624,7 @@ mod tests {
         config.max_tokens = Some(8192);
         config.temperature = Some(0.5);
 
-        let inference_config = bedrock_inference_config(&config);
+        let inference_config = bedrock_converse_inference_config(&config);
 
         assert_eq!(inference_config.max_tokens(), Some(8192));
         assert_eq!(inference_config.temperature(), Some(0.5));
@@ -1634,7 +1636,7 @@ mod tests {
         config.max_tokens = None;
         config.temperature = None;
 
-        let inference_config = bedrock_inference_config(&config);
+        let inference_config = bedrock_converse_inference_config(&config);
 
         // When max_tokens is not explicitly configured we leave it unset so
         // Bedrock applies its per-model server default. Forwarding
@@ -1650,7 +1652,7 @@ mod tests {
         let mut config = ModelConfig::new("us.anthropic.claude-sonnet-4-5-20250929-v1:0");
         config.max_tokens = Some(4096);
 
-        let inference_config = bedrock_inference_config(&config);
+        let inference_config = bedrock_converse_inference_config(&config);
 
         // An explicitly configured value is always forwarded.
         assert_eq!(inference_config.max_tokens(), Some(4096));
@@ -1661,7 +1663,7 @@ mod tests {
         let mut config = ModelConfig::new("global.anthropic.claude-sonnet-5");
         config.temperature = Some(0.5);
 
-        let inference_config = bedrock_inference_config(&config);
+        let inference_config = bedrock_converse_inference_config(&config);
 
         assert!(!bedrock_model_supports_temperature(&config));
         assert_eq!(inference_config.temperature(), None);

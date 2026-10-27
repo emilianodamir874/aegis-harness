@@ -2,10 +2,122 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
+    time::{Duration, Instant, SystemTime},
 };
 
 use crate::config::paths::Paths;
-use crate::hints::import_files::read_referenced_files;
+use crate::hints::import_files::read_referenced_files_tracked;
+
+/// Subdirectory hints run once per inference: the tracker replays every tool call
+/// of the conversation, resolves each directory it touched and re-reads the hint
+/// files for it. A session working inside the repo therefore read `AGENTS.md`
+/// (8.5 KB) and expanded its `@imports` before every single model call.
+///
+/// The expansion of a file only changes when that file, or a file it references,
+/// changes, so expansions are cached and validated with `mtime` + `len` per path
+/// they were built from. Validation is one `metadata` call per file read.
+const EXPANSION_CACHE_ENTRIES: usize = 64;
+
+#[derive(Clone, PartialEq, Eq)]
+struct FileStamp {
+    path: PathBuf,
+    modified: Option<SystemTime>,
+    len: Option<u64>,
+}
+
+struct CachedExpansion {
+    key: (PathBuf, PathBuf),
+    stamps: Vec<FileStamp>,
+    content: String,
+}
+
+static EXPANSION_CACHE: LazyLock<Mutex<Vec<CachedExpansion>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn stamp_of(path: &Path) -> FileStamp {
+    let metadata = std::fs::metadata(path).ok();
+    FileStamp {
+        path: path.to_path_buf(),
+        modified: metadata.as_ref().and_then(|m| m.modified().ok()),
+        len: metadata.as_ref().map(|m| m.len()),
+    }
+}
+
+fn expansion_is_current(stamps: &[FileStamp]) -> bool {
+    !stamps.is_empty()
+        && stamps.iter().all(|stamp| {
+            let current = stamp_of(&stamp.path);
+            current.modified == stamp.modified && current.len == stamp.len
+        })
+}
+
+/// Expand `@path` references in a hint file, reusing a previous expansion while
+/// the file and everything it pulled in keep the same size and mtime.
+fn expand_hint_file(hints_path: &Path, import_boundary: &Path, gitignore: &Gitignore) -> String {
+    let safety_path = hints_path
+        .canonicalize()
+        .unwrap_or_else(|_| hints_path.to_path_buf());
+    let key = (safety_path, import_boundary.to_path_buf());
+    if let Some(content) = {
+        let cache = EXPANSION_CACHE.lock().expect("expansion cache poisoned");
+        cache
+            .iter()
+            .find(|entry| entry.key == key && expansion_is_current(&entry.stamps))
+            .map(|entry| entry.content.clone())
+    } {
+        return content;
+    }
+
+    let mut visited = HashSet::new();
+    let expanded =
+        read_referenced_files_tracked(hints_path, import_boundary, &mut visited, 0, gitignore);
+    let stamps: Vec<FileStamp> = expanded.read_paths.iter().map(|p| stamp_of(p)).collect();
+    if !stamps.is_empty() {
+        let mut cache = EXPANSION_CACHE.lock().expect("expansion cache poisoned");
+        if let Some(position) = cache.iter().position(|entry| entry.key == key) {
+            cache.remove(position);
+        }
+        cache.insert(
+            0,
+            CachedExpansion {
+                key,
+                stamps,
+                content: expanded.content.clone(),
+            },
+        );
+        cache.truncate(EXPANSION_CACHE_ENTRIES);
+    }
+    expanded.content
+}
+
+/// `AGENTS.md` and friends live inside a repository whose `.git` never moves, and
+/// the answer is asked once per touched directory per inference.
+const GIT_ROOT_CACHE_TTL: Duration = Duration::from_secs(5);
+
+/// cache de `git rev-parse` por directorio: (dir, root encontrado, cuando se miro)
+type GitRootCache = Mutex<Vec<(PathBuf, Option<PathBuf>, Instant)>>;
+
+static GIT_ROOT_CACHE: LazyLock<GitRootCache> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+fn find_git_root_cached(start_dir: &Path) -> Option<PathBuf> {
+    if let Some(found) = {
+        let cache = GIT_ROOT_CACHE.lock().expect("git root cache poisoned");
+        cache
+            .iter()
+            .find(|(dir, _, checked)| dir == start_dir && checked.elapsed() < GIT_ROOT_CACHE_TTL)
+            .map(|(_, root, _)| root.clone())
+    } {
+        return found;
+    }
+
+    let found = find_git_root(start_dir).map(Path::to_path_buf);
+    let mut cache = GIT_ROOT_CACHE.lock().expect("git root cache poisoned");
+    cache.retain(|(dir, _, _)| dir != start_dir);
+    cache.insert(0, (start_dir.to_path_buf(), found.clone(), Instant::now()));
+    cache.truncate(16);
+    found
+}
 
 pub const AEGIS_HINTS_FILENAME: &str = ".aegishints";
 pub const AGENTS_MD_FILENAME: &str = "AGENTS.md";
@@ -154,8 +266,8 @@ fn load_hints_from_directory(
         return None;
     }
 
-    let git_root = find_git_root(working_dir);
-    let import_boundary = git_root.unwrap_or(working_dir);
+    let git_root = find_git_root_cached(working_dir);
+    let import_boundary = git_root.as_deref().unwrap_or(working_dir);
     let gitignore = Gitignore::empty();
 
     let mut directories: Vec<PathBuf> = directory
@@ -178,9 +290,7 @@ fn load_hints_from_directory(
             if !loaded_files.insert(identity) {
                 continue;
             }
-            let mut visited = HashSet::new();
-            let expanded =
-                read_referenced_files(&hints_path, import_boundary, &mut visited, 0, &gitignore);
+            let expanded = expand_hint_file(&hints_path, import_boundary, &gitignore);
             if !expanded.is_empty() {
                 contents.push(expanded);
             }
@@ -243,8 +353,8 @@ fn get_local_directories(git_root: Option<&Path>, cwd: &Path) -> Vec<PathBuf> {
 /// down to `cwd`, matching git's hierarchical ignore semantics. When there
 /// is no git root, only `cwd/.gitignore` is loaded.
 pub fn build_gitignore(cwd: &Path) -> Gitignore {
-    let git_root = find_git_root(cwd);
-    let directories = get_local_directories(git_root, cwd);
+    let git_root = find_git_root_cached(cwd);
+    let directories = get_local_directories(git_root.as_deref(), cwd);
 
     let mut builder = GitignoreBuilder::new(cwd);
     for dir in &directories {
@@ -281,40 +391,28 @@ pub fn load_hint_files(
 
     for global_hints_path in &global_hints_paths {
         if global_hints_path.is_file() {
-            let mut visited = HashSet::new();
             let hints_dir = global_hints_path.parent().unwrap();
             let global_ignore_patterns = GitignoreBuilder::new(hints_dir)
                 .build()
                 .unwrap_or_else(|_| Gitignore::empty());
-            let expanded_content = read_referenced_files(
-                global_hints_path,
-                hints_dir,
-                &mut visited,
-                0,
-                &global_ignore_patterns,
-            );
+            let expanded_content =
+                expand_hint_file(global_hints_path, hints_dir, &global_ignore_patterns);
             if !expanded_content.is_empty() {
                 global_hints_contents.push(expanded_content);
             }
         }
     }
-    let git_root = find_git_root(cwd);
-    let local_directories = get_local_directories(git_root, cwd);
+    let git_root = find_git_root_cached(cwd);
+    let local_directories = get_local_directories(git_root.as_deref(), cwd);
 
-    let import_boundary = git_root.unwrap_or(cwd);
+    let import_boundary = git_root.as_deref().unwrap_or(cwd);
 
     for directory in &local_directories {
         for hints_filename in hints_filenames {
             let hints_path = directory.join(hints_filename);
             if hints_path.is_file() {
-                let mut visited = HashSet::new();
-                let expanded_content = read_referenced_files(
-                    &hints_path,
-                    import_boundary,
-                    &mut visited,
-                    0,
-                    ignore_patterns,
-                );
+                let expanded_content =
+                    expand_hint_file(&hints_path, import_boundary, ignore_patterns);
                 if !expanded_content.is_empty() {
                     local_hints_contents.push(expanded_content);
                 }
@@ -352,6 +450,48 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
         let builder = GitignoreBuilder::new(temp_dir.path());
         builder.build().expect("failed to build gitignore")
+    }
+
+    #[test]
+    fn expansion_cache_is_reused_and_revalidated_by_mtime_and_len() {
+        let dir = TempDir::new().unwrap();
+        let hints_path = dir.path().join(AEGIS_HINTS_FILENAME);
+        fs::write(&hints_path, "Escribir reportes en tabla").unwrap();
+        let gitignore = create_dummy_gitignore();
+
+        let first = expand_hint_file(&hints_path, dir.path(), &gitignore);
+        assert!(first.contains("Escribir reportes en tabla"));
+
+        let cached = expand_hint_file(&hints_path, dir.path(), &gitignore);
+        assert_eq!(first, cached, "an unchanged file is served from the cache");
+
+        // Same length, different bytes: only the mtime can catch this one.
+        fs::write(&hints_path, "Escribir reportes en prosa").unwrap();
+        let updated = expand_hint_file(&hints_path, dir.path(), &gitignore);
+        assert!(
+            updated.contains("Escribir reportes en prosa"),
+            "editing a hint file must invalidate its cached expansion"
+        );
+    }
+
+    #[test]
+    fn a_referenced_file_change_invalidates_the_expansion() {
+        let dir = TempDir::new().unwrap();
+        let hints_path = dir.path().join(AEGIS_HINTS_FILENAME);
+        let imported = dir.path().join("reglas.md");
+        fs::write(&hints_path, "Reglas: @reglas.md").unwrap();
+        fs::write(&imported, "primera regla").unwrap();
+        let gitignore = create_dummy_gitignore();
+
+        let first = expand_hint_file(&hints_path, dir.path(), &gitignore);
+        assert!(first.contains("primera regla"));
+
+        fs::write(&imported, "segunda regla").unwrap();
+        let updated = expand_hint_file(&hints_path, dir.path(), &gitignore);
+        assert!(
+            updated.contains("segunda regla"),
+            "a referenced file is part of the cached expansion's fingerprint"
+        );
     }
 
     #[test]
