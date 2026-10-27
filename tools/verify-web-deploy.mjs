@@ -128,7 +128,7 @@ try {
       const context = await browser.newContext({ viewport, deviceScaleFactor: 1, serviceWorkers: 'block' });
       const page = await context.newPage();
       const errors = { console: 0, page: 0, http: 0, request: 0 };
-      let wsSeen = false, wsConnected = false;
+      let wsSeen = false, wsConnected = false, stage = 'carga';
       page.on('console', m => { if (m.type() === 'error') errors.console++; });
       page.on('pageerror', () => errors.page++);
       page.on('response', r => { if (r.status() === 404 && new URL(r.url()).origin === base.origin) errors.http++; });
@@ -143,8 +143,10 @@ try {
           noSession: !window.__aegisWeb?.state?.current, controls: ['btn-activity', 'btn-changes', 'input'].every(id => !!document.getElementById(id)),
           visible: !!document.getElementById('welcome')?.getBoundingClientRect().width }));
         // A fresh browser context must not navigate/open a session or send any prompt.
+        stage = 'actividad';
         if (viewport.width < 500) await page.locator('#btn-menu').click();
-        await page.locator('#btn-activity').click();
+        else await page.locator('#btn-activity').scrollIntoViewIfNeeded();
+        await page.locator('#btn-activity').click({ timeout: 4000 });
         await page.locator('.aegis-activity').waitFor({ timeout: 8000 });
         await page.waitForFunction(() => {
           const dialog = document.querySelector('.aegis-activity');
@@ -156,8 +158,10 @@ try {
           && !/No se pudo consultar \/pending\.json/.test(activity)
           && !/Formato de confirmaciones no disponible/.test(activity);
         await page.locator('.aegis-activity button').filter({ hasText: 'Cerrar' }).click();
+        stage = 'cambios';
         if (viewport.width < 500) await page.locator('#btn-menu').click();
-        await page.locator('#btn-changes').click();
+        else await page.locator('#btn-changes').scrollIntoViewIfNeeded();
+        await page.locator('#btn-changes').click({ timeout: 4000 });
         await page.locator('.aegis-changes').waitFor({ timeout: 8000 });
         const changes = await page.locator('.aegis-changes').innerText();
         const changesOk = /Sin sesión activa · no se consultó Git/.test(changes) && /Abrí una conversación/.test(changes)
@@ -165,7 +169,7 @@ try {
         const ok = main?.status() === 200 && initial.controls && initial.visible && initial.noSession && initial.ready
           && wsSeen && wsConnected && activityNoFake && changesOk && Object.values(errors).every(n => n === 0);
         gate(`Chromium ${label}`, ok, `DOM=${initial.visible} sinSesión=${initial.noSession} ACP=${initial.ready && wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} actividad=${activityNoFake} cambios=${changesOk} errores=${JSON.stringify(errors)}`);
-      } catch (e) { gate(`Chromium ${label}`, false, `${errorKind(e)} · ACP=${wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} · errores=${JSON.stringify(errors)}`); }
+      } catch (e) { gate(`Chromium ${label}`, false, `${errorKind(e)} en ${stage} · ACP=${wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} · errores=${JSON.stringify(errors)}`); }
       finally { await context.close(); }
     }
   } catch { gate('Chromium', false, 'no se pudo iniciar Chromium/Playwright'); }
