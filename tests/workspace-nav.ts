@@ -7,10 +7,11 @@ import { chromium, type WebSocketRoute } from 'playwright';
 const root = resolve(process.cwd(), 'dist-ts', 'app');
 const host = 'workspace-nav.invalid';
 const origin = `http://${host}`;
-const modules = ['app.js', 'skills.js', 'memory.js', 'artifacts.js', 'workspace-nav.js', 'context-meter.js', 'session-mode.js', 'palette.js', 'onboarding.js', 'handoff.js', 'split-view.js', 'stats.js'];
+const html = await readFile(resolve(root, 'index.html'), 'utf8');
+const modules = [...html.matchAll(/<script\b[^>]*\bsrc=["']\.\/([^"']+\.js)["']/g)].map(m => m[1]).filter(name => name !== 'config.js');
 const assets = new Map<string, { body: string; contentType: string }>();
-for (const name of ['index.html', 'app.css', ...modules]) {
-  assets.set('/' + name, { body: await readFile(resolve(root, name), 'utf8'), contentType: name.endsWith('.css') ? 'text/css' : name.endsWith('.html') ? 'text/html' : 'application/javascript' });
+for (const name of ['app.css', 'icon.svg', 'manifest.json', ...modules]) {
+  assets.set('/' + name, { body: await readFile(resolve(root, name), 'utf8'), contentType: name.endsWith('.css') ? 'text/css' : name.endsWith('.svg') ? 'image/svg+xml' : name.endsWith('.json') ? 'application/json' : 'application/javascript' });
 }
 const fixtureFile = { name: 'fixture.txt', bytes: 13, mtime: '2026-01-01T00:00:00Z', ext: '.txt', url: '/dl/fixture.txt' };
 const fail = (condition: unknown, message: string): void => { if (!condition) throw new Error(message); };
@@ -32,12 +33,14 @@ try {
         if (url.host !== host) { errors.push('red externa: ' + url.href); return route.abort(); }
         const path = url.pathname === '/' ? '/index.html' : url.pathname;
         calls.push(request.method() + ' ' + path);
+        if (request.method() === 'GET' && path === '/index.html') return route.fulfill({ status: 200, contentType: 'text/html', body: html });
         if (request.method() === 'GET' && path === '/config.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: `window.__AEGIS_APP__={acpUrl:'ws://${host}/acp',cwd:'/mock',host:'mock'};` });
         const asset = assets.get(path);
         if (request.method() === 'GET' && asset) return route.fulfill({ status: 200, ...asset });
         if (request.method() === 'GET' && path === '/outbox.json') return route.fulfill({ status: 200, json: url.searchParams.has('preview') ? { name: fixtureFile.name, ext: '.txt', text: 'fixture local' } : { dir: 'outbox fixture', items: [fixtureFile] } });
         if (request.method() === 'GET' && path === '/memory.json') return route.fulfill({ status: 200, json: { facts: [{ id: 'F-local', text: 'Solo fixture', status: 'confirmed', kind: 'fact' }] } });
-        if (request.method() === 'GET' && ['/skills.json', '/stats.json', '/goals.json', '/search.json', '/ws/defaults', '/pending.json', '/prices.json'].includes(path)) return route.fulfill({ status: 200, json: path === '/skills.json' ? { skills: [] } : path === '/stats.json' ? { stats: {} } : path === '/search.json' ? { results: [] } : {} });
+        if (request.method() === 'GET' && path === '/pending.json') return route.fulfill({ status: 200, json: { sessions: [] } });
+        if (request.method() === 'GET' && ['/skills.json', '/stats.json', '/goals.json', '/search.json', '/ws/defaults', '/prices.json'].includes(path)) return route.fulfill({ status: 200, json: path === '/skills.json' ? { skills: [] } : path === '/stats.json' ? { stats: {} } : path === '/search.json' ? { results: [] } : {} });
         if (request.method() === 'POST' && path === '/client-log') return route.fulfill({ status: 204, body: '' });
         errors.push('petición no simulada: ' + request.method() + ' ' + path);
         return route.fulfill({ status: 404, body: 'fixture: petición no simulada' });
@@ -105,9 +108,10 @@ try {
       await page.evaluate(() => (window as any).__aegisMemory.close());
       await openNav();
       await page.locator('#btn-activity').click();
-      await page.waitForFunction(() => document.activeElement?.id === 'messages' && document.getElementById('messages')!.scrollTop > 0);
+      await page.locator('.aegis-activity[role="dialog"]').waitFor({ state: 'visible' });
+      await page.waitForFunction(() => document.querySelector('.aegis-activity main')?.textContent?.includes('Ninguna confirmación sin respuesta registrada.'));
       fail(await page.locator('#fixture-transcript').count() === 1, 'Actividad modificó o sustituyó el transcript');
-      fail(await page.locator('.aegis-art-backdrop:visible, .aegis-mem-backdrop:visible').count() === 0, 'Actividad abrió panel en lugar del transcript');
+      fail(await page.locator('.aegis-art-backdrop:visible, .aegis-mem-backdrop:visible').count() === 0, 'Actividad abrió un panel no solicitado');
       if (mobile) fail(!await page.locator('#sidebar').evaluate(el => el.classList.contains('open')), 'Actividad dejó el cajón abierto');
       fail(!calls.some(call => /session\/(new|prompt|load)/.test(call)), `sesión o prompt inesperado: ${calls.join(', ')}`);
       fail(errors.length === 0, `${width}x${height}: ${errors.join(' | ')}`);

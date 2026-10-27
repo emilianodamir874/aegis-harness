@@ -12,10 +12,11 @@ import https from 'node:https';
 import net from 'node:net';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename, realpath, open } from 'node:fs/promises';
+import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename, realpath, lstat, open } from 'node:fs/promises';
+import { pipeline } from 'node:stream/promises';
 import { execFile } from 'node:child_process';
 import zlib from 'node:zlib';
-import { join, extname, normalize, resolve, dirname, basename, sep } from 'node:path';
+import { join, extname, normalize, resolve, dirname, basename, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Raices donde el selector de workspace puede navegar. Configurable por AEGIS_WORKSPACE_ROOTS
@@ -234,6 +235,40 @@ function gzipBuf(buf: Buffer, key: string) {
 const cfg = JSON.parse(await readFile(join(DIR, 'config.json'), 'utf8')) as WebConfig;
 const APP = join(DIR, 'app');
 const OUTBOX = join(DIR, 'outbox');
+const OUTBOX_PREVIEW_MAX = 2_000_000;
+// Artefactos son archivos planos, no accesos indirectos a configuracion, credenciales o al store.
+function outboxName(name: string): boolean {
+  return !!name && name !== '.' && name !== '..' && !/[\\/\x00-\x1f\x7f:]/.test(name) &&
+    !name.includes('..') && !/[. ]$/.test(name) && !name.startsWith('.') &&
+    !/^(?:auth|config|secrets|permission|tokens)\.json$|^(?:config|secrets|permission)\.ya?ml$|^id_(?:rsa|ed25519)$|\.(?:pem|key|p12|pfx|db|sqlite[0-9]*)$/i.test(name);
+}
+
+// La ruta real debe seguir dentro del outbox y el descriptor abierto debe corresponder
+// al mismo archivo regular. Abrir la ruta resuelta evita seguir un alias que se reemplace
+// entre realpath y open; la verificacion posterior rechaza cambios concurrentes del nombre.
+async function openOutboxFile(name: string) {
+  if (!outboxName(name)) throw new Error('nombre invalido');
+  const root = await realpath(OUTBOX);
+  if (root.toLowerCase() !== resolve(OUTBOX).toLowerCase()) throw new Error('outbox no permitido');
+  const candidate = join(OUTBOX, name);
+  const entry = await lstat(candidate);
+  if (!entry.isFile() || entry.isSymbolicLink()) throw new Error('no es archivo regular');
+  const actual = await realpath(candidate);
+  if (dirname(actual).toLowerCase() !== root.toLowerCase()) throw new Error('fuera del outbox');
+  const handle = await open(actual, 'r');
+  try {
+    const [info, current, currentPath] = await Promise.all([handle.stat(), lstat(candidate), realpath(candidate)]);
+    if (!info.isFile() || !current.isFile() || current.isSymbolicLink() ||
+        currentPath.toLowerCase() !== actual.toLowerCase() ||
+        (info.ino && current.ino && (info.ino !== current.ino || info.dev !== current.dev))) {
+      throw new Error('archivo cambiado');
+    }
+    return { handle, info };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
 await mkdir(OUTBOX, { recursive: true }).catch(() => {
 });
 await mkdir(join(DIR, 'logs'), { recursive: true }).catch(() => {});
@@ -1107,6 +1142,94 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
 
+    // Snapshot Git de un workspace validado; el CLI NO acepta cwd de HTTP sin estos controles.
+    if (url.pathname === '/changes.json') {
+      const headers = { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC };
+      const reply = (status: number, body: object) => {
+        res.writeHead(status, headers);
+        res.end(JSON.stringify(body));
+      };
+      // Este endpoint expone paths y diffs: autenticar incluso en LAN.
+      if (!authed(req)) {
+        reply(401, { error: 'unauthorized', login: '/login' });
+        return;
+      }
+      if (req.method !== 'GET' || !sameOriginRequest(req)) {
+        reply(403, { error: 'forbidden' });
+        return;
+      }
+      const raw = url.searchParams.get('cwd');
+      if (!raw || !isAbsolute(raw) || raw.includes('\0') || /[\x00-\x1f\x7f]/.test(raw)) {
+        reply(400, { error: 'cwd absoluto requerido' });
+        return;
+      }
+      // Comprobar ambas representaciones: una junction en la raiz es valida, pero
+      // una junction/symlink desde un workspace hacia fuera de su raiz real no lo es.
+      const denied = (path: string) => /(?:^|[\\/])(?:state|config|\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.(?:json|ya?ml)|secrets?\.ya?ml|permission\.ya?ml|tokens\.json|credentials?(?:\.[^\\/]*)?|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      const inside = (path: string, root: string) => {
+        const p = resolve(path).toLowerCase();
+        const r = resolve(root).toLowerCase();
+        return p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
+      };
+      const lexical = resolve(raw);
+      if (!wsInside(lexical) || denied(lexical)) {
+        reply(403, { error: 'cwd no permitido' });
+        return;
+      }
+      let actual: string;
+      try {
+        actual = await realpath(lexical);
+      } catch {
+        reply(404, { error: 'cwd no disponible' });
+        return;
+      }
+      try {
+        const roots = await Promise.all(WS_ROOTS.map(async (root) => ({ root, actual: await realpath(root).catch(() => '') })));
+        const allowed = (candidate: string, real: string) =>
+          roots.some(({ root, actual: rootReal }) => rootReal && inside(candidate, root) && inside(real, rootReal));
+        if (!allowed(lexical, actual) || denied(actual) || !(await stat(actual)).isDirectory()) {
+          reply(403, { error: 'cwd no permitido' });
+          return;
+        }
+        const output = await new Promise<string>((ok, fail) => {
+          execFile(process.execPath, [join(DIR, 'tools', 'changes-index.mjs'), '--cwd', actual],
+            { encoding: 'utf8', timeout: 35_000, maxBuffer: 1024 * 1024, windowsHide: true },
+            (error, stdout) => error ? fail(error) : ok(stdout));
+        });
+        const data: unknown = JSON.parse(output);
+        if (!data || typeof data !== 'object' || !('kind' in data)) throw new Error('invalid result');
+        const result = data as { kind: unknown; cwd?: unknown; root?: unknown; entries?: unknown; truncated?: unknown };
+        if (result.kind === 'not-git') {
+          reply(200, { kind: 'not-git', cwd: actual, entries: [], truncated: false });
+          return;
+        }
+        if (result.kind !== 'git' || typeof result.root !== 'string' || !isAbsolute(result.root) || !Array.isArray(result.entries)) {
+          throw new Error('invalid result');
+        }
+        const gitRoot = resolve(result.root);
+        const gitReal = await realpath(gitRoot);
+        // Git puede devolver la ruta fisica, no el alias de una junction de WS_ROOTS.
+        const rootAllowed = roots.some(({ root, actual: rootReal }) => rootReal && inside(lexical, root) &&
+          inside(gitReal, rootReal) && (inside(gitRoot, root) || inside(gitRoot, rootReal)));
+        if (!rootAllowed || denied(gitRoot) || denied(gitReal)) {
+          reply(403, { error: 'repositorio no permitido' });
+          return;
+        }
+        const entries = result.entries.slice(0, 60).filter((entry: unknown) => {
+          if (!entry || typeof entry !== 'object') return false;
+          const item = entry as { path?: unknown; staged?: unknown; worktree?: unknown; diff?: unknown };
+          if (typeof item.path !== 'string' || typeof item.staged !== 'string' || typeof item.worktree !== 'string' || typeof item.diff !== 'string') return false;
+          if (!item.path || isAbsolute(item.path) || item.path.includes('\\') || item.path.split('/').some((part) => !part || part === '.' || part === '..')) return false;
+          return !denied(item.path) && !denied(resolve(gitRoot, item.path));
+        });
+        reply(200, { kind: 'git', cwd: actual, root: gitRoot, entries, truncated: result.truncated === true || entries.length !== result.entries.length });
+      } catch {
+        // No exponer stderr, mensajes de Git ni rutas internas en respuestas de error.
+        reply(502, { kind: 'error', entries: [], truncated: false, error: 'Cambios no disponibles' });
+      }
+      return;
+    }
+
     // Lectura de un archivo para la revision de diff antes de aplicar un write/edit (M4).
     // Devuelve contenido + hash: el cliente compara contra lo propuesto y, si el hash no coincide
     // con el que vio al aprobar, no aplica (aplicar dos veces no duplica ni pisa cambios ajenos).
@@ -1183,49 +1306,59 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     // Artefactos: lo que el agente deja en web/outbox, con tamaño y preview acotado.
     // El link de descarga ya existia (/dl/<nombre>); esto solo lo hace visible y previsualizable.
     if (url.pathname === '/outbox.json') {
-      const OUTBOX_DIR = join(DIR, 'outbox');
       const name = url.searchParams.get('name') || '';
       const preview = url.searchParams.get('preview') === '1';
       if (preview && name) {
-        const safe = name.replace(/[\\/]/g, '');
-        const target = join(OUTBOX_DIR, safe);
-        if (!target.startsWith(OUTBOX_DIR)) {
+        if (!outboxName(name)) {
           res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
           res.end(JSON.stringify({ error: 'nombre invalido' }));
           return;
         }
         try {
-          const info = await stat(target);
-          if (info.size > 2_000_000) {
-            res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
-            res.end(JSON.stringify({ name: safe, tooLarge: true, bytes: info.size }));
-            return;
+          const { handle, info } = await openOutboxFile(name);
+          let body: Buffer;
+          try {
+            if (info.size > OUTBOX_PREVIEW_MAX) {
+              res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+              res.end(JSON.stringify({ name, tooLarge: true, bytes: info.size }));
+              return;
+            }
+            const buffer = Buffer.alloc(OUTBOX_PREVIEW_MAX + 1);
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+            if (bytesRead > OUTBOX_PREVIEW_MAX) {
+              res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+              res.end(JSON.stringify({ name, tooLarge: true, bytes: bytesRead }));
+              return;
+            }
+            body = buffer.subarray(0, bytesRead);
+          } finally {
+            await handle.close();
           }
-          const body = await readFile(target);
-          const ext = extname(safe).toLowerCase();
+          const ext = extname(name).toLowerCase();
           const binary = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.pdf', '.zip'].includes(ext);
           res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
           res.end(JSON.stringify({
-            name: safe,
-            bytes: info.size,
+            name,
+            bytes: body.length,
             ext,
             binary,
             text: binary ? '' : body.toString('utf8'),
             dataUrl: binary ? 'data:application/octet-stream;base64,' + body.toString('base64') : '',
           }));
-        } catch (e) {
+        } catch {
           res.writeHead(404, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
-          res.end(JSON.stringify({ error: String(((e as Error) && (e as Error).message) || e) }));
+          res.end(JSON.stringify({ error: 'archivo no disponible' }));
         }
         return;
       }
       const items: Array<{ name: string; bytes: number; mtime: string; ext: string; url: string }> = [];
       try {
-        const dir = await opendir(OUTBOX_DIR);
+        const dir = await opendir(OUTBOX);
         for await (const entry of dir) {
-          if (!entry.isFile()) continue;
+          if (!entry.isFile() || !outboxName(entry.name)) continue;
           try {
-            const info = await stat(join(OUTBOX_DIR, entry.name));
+            const { handle, info } = await openOutboxFile(entry.name);
+            await handle.close();
             items.push({
               name: entry.name,
               bytes: info.size,
@@ -1242,7 +1375,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       items.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
-      res.end(JSON.stringify({ dir: OUTBOX_DIR, items }));
+      res.end(JSON.stringify({ dir: OUTBOX, items }));
       return;
     }
 
@@ -1452,31 +1585,44 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     }
 
     if (url.pathname.startsWith('/dl/') && req.method === 'GET') {
-      const raw = decodeURIComponent(url.pathname.slice(4));
-      const name = normalize(raw).replace(/^[/\\]+/, '');
-      const plano = name && !name.includes('..') && !name.includes('/') && !name.includes('\\');
-      if (!plano) {
-        res.writeHead(400, { 'content-type': 'text/plain' });
+      let name = '';
+      try { name = decodeURIComponent(url.pathname.slice(4)); } catch { /* URI malformada */ }
+      if (!outboxName(name)) {
+        res.writeHead(400, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SEC });
         res.end('bad path');
         return;
       }
-      let data;
+      let opened: Awaited<ReturnType<typeof openOutboxFile>>;
       try {
-        data = await readFile(join(OUTBOX, name));
+        opened = await openOutboxFile(name);
       } catch {
-        res.writeHead(404, { 'content-type': 'text/plain' });
+        res.writeHead(404, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SEC });
         res.end('not found');
         return;
       }
-      const type = MIME[extname(name).toLowerCase()] || 'application/octet-stream';
-      res.writeHead(200, {
-        'content-type': type,
-        'content-length': data.length,
-        'content-disposition': `attachment; filename="${name.replace(/"/g, '')}"`,
-        'cache-control': 'no-store',
-        ...SEC,
-      });
-      res.end(data);
+      const { handle, info } = opened;
+      try {
+        // No cargar el archivo entero en memoria ni transmitir bytes agregados tras stat.
+        if (info.size > 512 * 1024 * 1024) {
+          res.writeHead(413, { 'content-type': 'text/plain', 'cache-control': 'no-store', ...SEC });
+          res.end('file too large');
+          return;
+        }
+        const type = MIME[extname(name).toLowerCase()] || 'application/octet-stream';
+        res.writeHead(200, {
+          'content-type': type,
+          'content-length': info.size,
+          'content-disposition': `attachment; filename="${name.replace(/["\r\n]/g, '')}"`,
+          'cache-control': 'no-store',
+          ...SEC,
+        });
+        if (info.size === 0) { res.end(); return; }
+        await pipeline(handle.createReadStream({ start: 0, end: info.size - 1, autoClose: false }), res);
+      } catch {
+        res.destroy();
+      } finally {
+        await handle.close();
+      }
       return;
     }
     let pathname = decodeURIComponent(url.pathname);
@@ -1503,7 +1649,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       const html = String(data);
       const assets = ['app.css', 'app.js', 'skills.js', 'memory.js', 'artifacts.js', 'workspace-nav.js',
         'context-meter.js', 'session-mode.js', 'palette.js', 'onboarding.js',
-        'handoff.js', 'split-view.js', 'stats.js'];
+        'handoff.js', 'split-view.js', 'stats.js', 'activity.js', 'changes.js'];
       const versions = await Promise.all(assets.map(async (asset) => {
         try {
           return [asset, crypto.createHash('sha256').update(await readFile(join(APP, asset))).digest('hex')] as const;

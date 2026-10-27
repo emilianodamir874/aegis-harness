@@ -40,9 +40,13 @@
       </div>
       <div id="session-list" class="sb-list" role="list" aria-label="Sesiones"></div>
       <nav class="sb-tools" aria-label="Espacio de trabajo">
-        <button id="btn-activity" class="sb-tool" type="button" title="Ir al estado y actividad de la conversación" aria-controls="messages">
+        <button id="btn-activity" class="sb-tool" type="button" title="Ver actividad real de sesiones y confirmaciones" aria-haspopup="dialog">
           <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2 10h3l2.2-5 4.2 10 2.1-5H18" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>Actividad</span>
+        </button>
+        <button id="btn-changes" class="sb-tool" type="button" aria-haspopup="dialog" title="Ver cambios Git del directorio de esta sesión">
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 5-4 5 4 5m6-10 4 5-4 5M11 3 9 17" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Cambios</span>
         </button>
         <button id="btn-files" class="sb-tool" type="button" aria-haspopup="dialog" title="Abrir archivos del outbox">
           <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5a2 2 0 0 1 2-2h4l2 2h4a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
@@ -189,6 +193,8 @@
   <script src="./artifacts.js" type="module"></script>
   <!-- Se publica como app/workspace-nav.js desde src/workspace-nav.ts en la fase de build. -->
   <script src="./workspace-nav.js" type="module"></script>
+  <script src="./activity.js" type="module"></script>
+  <script src="./changes.js" type="module"></script>
   <script src="./context-meter.js" type="module"></script>
   <script src="./session-mode.js" type="module"></script>
   <script src="./palette.js" type="module"></script>

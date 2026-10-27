@@ -1,23 +1,27 @@
 // Regresiones de cliente SIN web/ACP vivos, credenciales, sesiones reales ni prompts.
-// Desde web/: npx esbuild tests/client-regressions.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/client-regressions.mjs && node node_modules/.cache/client-regressions.mjs
+// Desde web/: npm run build && node dist-ts/tests/client-regressions.mjs
 // Integrada al runner/build; no usar AEGIS_WEB_URL aquí.
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium, type WebSocketRoute } from 'playwright';
-import { build } from 'esbuild';
+
 // Fórmulas probadas contra el bundle del cliente a través del hook mock.
 
 const eq = (actual: unknown, expected: unknown, message: string) => {
   if (actual !== expected) throw new Error(message + ': ' + String(actual) + ' ≠ ' + String(expected));
 };
 
-// Ejecutar desde la raíz de web; así el bundle temporal puede vivir fuera del repo.
-const root = resolve(process.cwd()) + '/';
-const html = await readFile(root + 'app/index.html', 'utf8');
-const css = await readFile(root + 'app/app.css', 'utf8');
-// Prueba el src/app.ts actual, no un app/app.js compilado previamente ni la web en producción.
-const built = await build({ entryPoints: [root + 'src/app.ts'], bundle: true, write: false, platform: 'browser', format: 'esm', target: 'es2022', logLevel: 'silent' });
-const script = built.outputFiles[0].text;
+// Probar el build aislado en dist-ts/app, sin publicar ni usar la web real.
+const root = resolve(process.cwd(), 'dist-ts', 'app');
+const html = await readFile(resolve(root, 'index.html'), 'utf8');
+const modules = [...html.matchAll(/<script\b[^>]*\bsrc=["']\.\/([^"']+\.js)["']/g)].map(m => m[1]).filter(name => name !== 'config.js');
+const assets = new Map<string, { body: string; contentType: string }>();
+for (const name of ['app.css', 'icon.svg', 'manifest.json', ...modules]) {
+  assets.set('/' + name, { body: await readFile(resolve(root, name), 'utf8'), contentType: name.endsWith('.css') ? 'text/css' : name.endsWith('.svg') ? 'image/svg+xml' : name.endsWith('.json') ? 'application/json' : 'application/javascript' });
+}
+// Scripts de index.html, todos desde el build actual.
+
+
 const A = 'mock-session-A', B = 'mock-session-B';
 const sessions = [A, B].map((sessionId, i) => ({ sessionId, title: i ? 'Chat B' : 'Chat A', cwd: '/mock', updatedAt: new Date(Date.now() - i * 60000).toISOString(), _meta: { messageCount: 2 } }));
 let running = [A, B];
@@ -29,18 +33,28 @@ try {
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   const errors: string[] = [];
-  page.on('pageerror', e => errors.push(e.message));
-  await page.route('http://client-regressions.invalid/**', async route => {
-    const url = new URL(route.request().url());
-    if (url.pathname === '/' || url.pathname === '/index.html') return route.fulfill({ status: 200, contentType: 'text/html', body: html });
-    if (url.pathname === '/config.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: `window.__AEGIS_APP__={acpUrl:'ws://client-regressions.invalid/acp',cwd:'/mock',host:'mock'};` });
-    if (url.pathname === '/app.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: script });
-    if (url.pathname === '/app.css') return route.fulfill({ status: 200, contentType: 'text/css', body: css });
-    if (url.pathname === '/client-log') return route.fulfill({ status: 204, body: '' });
-    // No requests to a real host, including stats, goals, TTS, skills or other APIs.
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-  });
-  await page.routeWebSocket('ws://client-regressions.invalid/acp', (ws: WebSocketRoute) => {
+  page.on('pageerror', e => errors.push('pageerror: ' + e.message));
+  page.on('console', msg => { if (msg.type() === 'error') errors.push('console: ' + msg.text()); });
+  page.on('requestfailed', request => errors.push('requestfailed: ' + request.url()));
+  await page.route('**/*', async route => {
+    const request = route.request(), url = new URL(request.url());
+    if (url.host !== 'client-regressions.invalid') { errors.push('red externa: ' + url.href); return route.abort(); }
+    const path = url.pathname === '/' ? '/index.html' : url.pathname;
+    if (request.method() === 'GET' && path === '/index.html') return route.fulfill({ status: 200, contentType: 'text/html', body: html });
+    if (request.method() === 'GET' && path === '/config.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: `window.__AEGIS_APP__={acpUrl:'ws://client-regressions.invalid/acp',cwd:'/mock',host:'mock'};` });
+    const asset = assets.get(path);
+    if (request.method() === 'GET' && asset) return route.fulfill({ status: 200, ...asset });
+    if (request.method() === 'GET' && path === '/pending.json') return route.fulfill({ status: 200, json: { sessions: [] } });
+    if (request.method() === 'GET' && path === '/outbox.json') return route.fulfill({ status: 200, json: { items: [] } });
+    if (request.method() === 'GET' && path === '/memory.json') return route.fulfill({ status: 200, json: { facts: [] } });
+    if (request.method() === 'GET' && path === '/skills.json') return route.fulfill({ status: 200, json: { skills: [] } });
+    if (request.method() === 'GET' && path === '/ws/defaults') return route.fulfill({ status: 200, json: {} });
+    if (request.method() === 'GET' && path === '/prices.json') return route.fulfill({ status: 200, json: {} });
+    if (request.method() === 'GET' && path === '/goals.json') return route.fulfill({ status: 200, json: { goals: [] } });
+    if (request.method() === 'POST' && path === '/client-log') return route.fulfill({ status: 204, body: '' });
+    errors.push('petición inesperada: ' + request.method() + ' ' + path);
+    return route.fulfill({ status: 404, body: 'fixture: petición inesperada' });
+  });  await page.routeWebSocket('ws://client-regressions.invalid/acp', (ws: WebSocketRoute) => {
     ws.onMessage(raw => {
       const m = JSON.parse(String(raw));
       if (m.id === undefined) return;
@@ -48,6 +62,8 @@ try {
       const reply = (result: unknown) => ws.send(JSON.stringify({ jsonrpc: '2.0', id: m.id, result }));
       switch (m.method) {
         case 'initialize': reply({ protocolVersion: 1 }); break;
+        case '_aegis/unstable/sources/list': reply({ sources: [] }); break;
+        case 'tools/list': reply({ tools: [] }); break;
         case 'session/list': reply({ sessions, _meta: { runningSessionIds: running }, nextCursor: null }); break;
         case 'session/load': reply({ configOptions: [], modes: {} }); break;
         case '_aegis/unstable/session/info': reply({ activeRunId: 'mock-mobile-run' }); break; // watchdog mock, sin red real

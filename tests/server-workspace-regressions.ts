@@ -18,7 +18,8 @@ const outside = join(dir, 'outside');
 const store = join(dir, 'fixture-store');
 let child: ChildProcess | undefined;
 try {
-  await Promise.all([mkdir(workspace), mkdir(outside), mkdir(store), mkdir(join(dir, 'app')), mkdir(join(dir, 'tools'))]);
+  const outbox = join(dir, 'outbox');
+  await Promise.all([mkdir(workspace), mkdir(outside), mkdir(store), mkdir(join(dir, 'app')), mkdir(join(dir, 'tools')), mkdir(outbox)]);
   const defaultRoots = Array.from({ length: 4 }, (_, n) => join(workspace, `fixture-${n}`));
   await mkdir(join(store, 'data'));
   await Promise.all([mkdir(join(store, 'config')), mkdir(join(store, 'data', 'memory')),
@@ -120,6 +121,59 @@ try {
   assert.match(cookie || '', /^gw_auth=/);
   const read = (path: string, headers: Record<string, string> = {}, method = 'GET') =>
     fetch(base + '/file.json?' + new URLSearchParams({ path }), { method, headers: { Cookie: cookie!, ...headers }, signal: AbortSignal.timeout(3000) });
+  // /outbox.json usa DIR/outbox (no el workspace ni el store): solo fixtures efimeros.
+  const artifactText = 'artefacto de prueba\nsegunda linea\n';
+  const artifactName = 'nota prueba.txt';
+  const artifactBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
+  await writeFile(join(outbox, artifactName), artifactText);
+  await writeFile(join(outbox, 'imagen.png'), artifactBytes);
+  await mkdir(join(outbox, 'subdir'));
+  await writeFile(join(outbox, 'subdir', 'omitido.txt'), secretText);
+  const artifactRequest = (query = '', headers: Record<string, string> = {}) =>
+    fetch(base + '/outbox.json' + query, { headers: { Cookie: cookie!, ...headers }, signal: AbortSignal.timeout(3000) });
+  const artifactList = await artifactRequest();
+  assert.equal(artifactList.status, 200);
+  assert.equal(artifactList.headers.get('cache-control'), 'no-store');
+  const artifactData = await artifactList.json() as { dir: string; items: { name: string; bytes: number; ext: string; mtime: string; url: string }[] };
+  assert.equal(artifactData.dir, outbox);
+  assert.deepEqual(artifactData.items.map(item => item.name).sort(), ['imagen.png', artifactName].sort(), 'solo archivos regulares');
+  for (const [name, bytes, ext] of [[artifactName, Buffer.byteLength(artifactText), '.txt'], ['imagen.png', artifactBytes.length, '.png']] as const) {
+    const item = artifactData.items.find(entry => entry.name === name)!;
+    assert.equal(item.bytes, bytes);
+    assert.equal(item.ext, ext);
+    assert.equal(item.url, '/dl/' + encodeURIComponent(name));
+    assert.match(item.mtime, /^\d{4}-\d\d-\d\dT/);
+  }
+  const artifactPreview = (name: string, headers: Record<string, string> = {}) =>
+    artifactRequest('?' + new URLSearchParams({ preview: '1', name }), headers);
+  const textPreview = await artifactPreview(artifactName);
+  assert.equal(textPreview.status, 200);
+  assert.deepEqual(await textPreview.json(), { name: artifactName, bytes: Buffer.byteLength(artifactText), ext: '.txt',
+    binary: false, text: artifactText, dataUrl: '' });
+  const binaryPreview = await artifactPreview('imagen.png');
+  assert.equal(binaryPreview.status, 200);
+  assert.deepEqual(await binaryPreview.json(), { name: 'imagen.png', bytes: artifactBytes.length, ext: '.png',
+    binary: true, text: '', dataUrl: 'data:application/octet-stream;base64,' + artifactBytes.toString('base64') });
+  console.log('PASS /outbox.json: listado aislado (omite subdirectorios), preview texto y binario');
+  // La implementacion actual quita separadores antes de resolver: no exigir un status especifico,
+  // sino que nunca revele el archivo exterior ni permita navegar fuera del fixture.
+  for (const name of ['../outside/public.txt', '..\\outside\\public.txt', outsidePath]) {
+    const denied = await artifactPreview(name);
+    assert.ok([400, 404].includes(denied.status), `traversal denegado: ${name} -> ${denied.status}`);
+    assert.ok(!(await denied.text()).includes(secretText), `traversal no filtra: ${name}`);
+  }
+  console.log('PASS /outbox.json: traversal no lee archivo exterior');
+  const tunnelArtifact = { 'cf-connecting-ip': '203.0.113.9' };
+  for (const query of ['', '?' + new URLSearchParams({ preview: '1', name: artifactName })]) {
+    for (const headers of [tunnelArtifact, { ...tunnelArtifact, Cookie: 'gw_auth=falsa' }]) {
+      const unauth = await fetch(base + '/outbox.json' + query, { headers, signal: AbortSignal.timeout(3000) });
+      assert.equal(unauth.status, 401, `tunel sin sesion ${query || 'listado'}`);
+      assert.equal((await unauth.json() as { error: string }).error, 'unauthorized');
+    }
+    const authed = await artifactRequest(query, tunnelArtifact);
+    assert.equal(authed.status, 200, `tunel con cookie valida ${query || 'listado'}`);
+  }
+  console.log('PASS /outbox.json: tunel sin cookie 401 y con cookie valida 200 para listado y preview');
   const allowed = await read(plainPath, { 'Sec-Fetch-Site': 'same-origin', Origin: base });
   assert.equal(allowed.status, 200);
   assert.equal(allowed.headers.get('cache-control'), 'no-store');
@@ -273,6 +327,25 @@ try {
   assert.notEqual(updated.headers.get('etag'), etag);
   assert.match(await updated.text(), new RegExp('app\\.js\\?v=' + createHash('sha256').update('window.fixture=false;').digest('hex')));
   console.log('PASS HTML: gzip/etag 304, invalidacion y cache versionada por contenido');
+
+  // opendir().isFile() omite symlinks del listado, pero stat/readFile del preview
+  // siguen el enlace. Mantener la regresion: el endpoint actual filtra el destino.
+  try {
+    const outsideLink = join(outbox, 'alias-exterior.txt');
+    await symlink(outsidePath, outsideLink, 'file');
+    const linkedList = await artifactRequest();
+    assert.equal(linkedList.status, 200);
+    assert.ok(!(await linkedList.text()).includes('alias-exterior.txt'), 'listado omite symlink');
+    const linkedPreview = await artifactPreview('alias-exterior.txt');
+    const linkedBody = await linkedPreview.text();
+    assert.ok([400, 403, 404].includes(linkedPreview.status),
+      `preview siguio symlink externo: HTTP ${linkedPreview.status}, contiene secreto=${linkedBody.includes(secretText)}`);
+    assert.ok(!linkedBody.includes(secretText), 'preview no filtra destino exterior');
+    console.log('PASS /outbox.json: symlink exterior omitido del listado y denegado en preview');
+  } catch (error) {
+    if (!['EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP'].includes((error as NodeJS.ErrnoException).code || '')) throw error;
+    console.log('SKIP /outbox.json symlink: sistema sin permiso para crear enlaces');
+  }
 } finally {
   if (child && child.exitCode === null) {
     const stopped = new Promise<void>(ok => child!.once('exit', () => ok()));
