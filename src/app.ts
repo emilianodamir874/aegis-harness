@@ -227,10 +227,36 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 
   let titleLock = null; // {id, title, until} — el server auto-titula; no pisar un rename del usuario
 
+  // Tarjetas de permiso pendientes por sesion: una confirmacion pedida en otro chat no se pinta
+  // aca, se guarda y se muestra cuando esa sesion se abre.
+  const permPendientes = new Map<string, any[]>();
+  function permPendientesDe(sid: string): any[] {
+    if (!permPendientes.has(sid)) permPendientes.set(sid, []);
+    return permPendientes.get(sid) as any[];
+  }
+  function flushPermPendientes(sid: string): void {
+    const cola = permPendientes.get(sid);
+    if (!cola || !cola.length) return;
+    permPendientes.delete(sid);
+    for (const pendiente of cola) showPermCard(pendiente);
+  }
+
   function handleServerMessage(m) {
     if (m.method === 'session/update') return onUpdate(m.params || {});
     if (m.method === '_aegis/unstable/session/update') return onAegisUpdate(m.params || {});
-    if (m.method === 'session/request_permission') return showPermCard(m);
+    if (m.method === 'session/request_permission') {
+      // La tarjeta de permiso llega por el socket con la sesion que la pidio, no con la que se
+      // esta mirando: pintarla sin comparar hacia que apareciera la confirmacion de otro chat en
+      // el actual. Se encola por sesion y se muestra al abrirla.
+      const sid = (m.params && m.params.sessionId) || '';
+      const cur = state.current;
+      if (sid && cur && sid !== cur.id) {
+        permPendientesDe(sid).push(m);
+        toast('Otra sesión pide una confirmación.', '');
+        return;
+      }
+      return showPermCard(m);
+    }
     // (v6.4) El hub avisa que truncó su ring: hay que recargar la conversación completa.
     if (m.method === '_aegis/unstable/session/replay_gap') return onReplayGap(m.params || {});
     if (m.id !== undefined) {
@@ -338,6 +364,9 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   function onAegisUpdate(params) {
     const cur = state.current;
     if (!cur) return;
+    // Este canal no filtraba por sesion: el arranque y el fin de turno de otro chat se aplicaban
+    // al que se estaba mirando.
+    if (params.sessionId && params.sessionId !== cur.id) return;
     const u = params.update || {};
     // (v6.4) El arranque y el FIN de turno llegan por acá (`params.aegis.activeRunId`): con
     // el hub es el único aviso cuando el response del prompt se pierde (reload, socket
@@ -2723,6 +2752,9 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     clearMessages();
     updateTitle(); markActive(id); closeDrawer(); loadDraft(); readLoad(); debateLoad(); enforceFixedModel();
     localStorage.setItem('gweb.last', id);
+    // Las tarjetas de permiso que llegaron mientras se miraba otro chat se pintan recien cuando
+    // el replay de esta sesion ya esta puesto.
+    setTimeout(() => { if (state.current?.id === id) flushPermPendientes(id); }, 800);
     if (!opts || !opts.quiet) setPill('Cargando conversación.');
     if (!SOFT.on) {
       state.replayBuf = []; // (v6.6) se pinta en dos fases al terminar el load
