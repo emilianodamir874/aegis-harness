@@ -423,7 +423,26 @@ function toggleMap(anchor: HTMLElement): void {
           aplicar.disabled = false;
           return;
         }
-        await rpc.request('session/set_config_option', { sessionId: sid, configId: 'model', valueId: select.value });
+        // El wire usa `value`, no `valueId`: con valueId el server respondia -32602 Invalid params y
+        // el boton no hacia nada. Verificado contra v102 por ACP.
+        const r = await rpc.request<{ configOptions?: unknown[] }>('session/set_config_option', {
+          sessionId: sid,
+          configId: 'model',
+          value: select.value,
+        });
+        // El effort viaja como sufijo del modelo en open_design: si eligen `...-max`, se fija tambien
+        // el chip de effort para que la barra y el mapa digan lo mismo.
+        const effort = /-(max|high|medium|low|minimal)$/.exec(select.value)?.[1];
+        if (effort) {
+          await rpc.request('session/set_config_option', {
+            sessionId: sid,
+            configId: 'thinking_effort',
+            value: effort,
+          });
+        }
+        if (r && Array.isArray(r.configOptions)) {
+          document.dispatchEvent(new CustomEvent('aegis:config-changed', { detail: r.configOptions }));
+        }
         closeMap();
       } catch (error) {
         aplicar.textContent = 'falló: ' + String((error as Error).message || error).slice(0, 40);

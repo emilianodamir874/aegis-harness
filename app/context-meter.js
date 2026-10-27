@@ -313,7 +313,22 @@ function toggleMap(anchor) {
           aplicar.disabled = false;
           return;
         }
-        await rpc.request("session/set_config_option", { sessionId: sid, configId: "model", valueId: select.value });
+        const r = await rpc.request("session/set_config_option", {
+          sessionId: sid,
+          configId: "model",
+          value: select.value
+        });
+        const effort = /-(max|high|medium|low|minimal)$/.exec(select.value)?.[1];
+        if (effort) {
+          await rpc.request("session/set_config_option", {
+            sessionId: sid,
+            configId: "thinking_effort",
+            value: effort
+          });
+        }
+        if (r && Array.isArray(r.configOptions)) {
+          document.dispatchEvent(new CustomEvent("aegis:config-changed", { detail: r.configOptions }));
+        }
         closeMap();
       } catch (error) {
         aplicar.textContent = "falló: " + String(error.message || error).slice(0, 40);

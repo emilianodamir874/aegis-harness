@@ -1266,7 +1266,9 @@ async function blobToWav16k(blob) {
     const el = document.getElementById("default-model-chip");
     if (!el) return;
     const hayChat = !!(state.current && state.current.id);
-    const modelo = String(CFG && CFG.defaultModel || "");
+    const base = String(CFG && CFG.defaultModel || "");
+    const effort = String(CFG && CFG.defaultEffort || "");
+    const modelo = base && effort ? `${base} · effort ${effort}` : base;
     const hayChips = document.querySelectorAll("#chips .chip").length > 0;
     if (hayChat || !modelo || hayChips) {
       if (!el.hidden) {
