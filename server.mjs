@@ -46,6 +46,33 @@ async function readJsonBody(req, maxBytes = 65536) {
 }
 const MEMORY_DIR = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "data", "memory");
 const pendingCache = new Map();
+
+// Al arrancar, las confirmaciones que quedaron esperando de una corrida anterior ya no pueden
+// responderse: el proceso que las esperaba murio con el reinicio. Se cancelan una vez para que el
+// store quede consistente y el indice no las siga reportando. Es idempotente: sin pendientes no
+// escribe nada.
+function sweepPendingAtStartup() {
+  try {
+    const { execFileSync } = require("node:child_process");
+    const salida = execFileSync(
+      process.execPath,
+      ["--experimental-sqlite", join(DIR, "tools", "sweep-pending.mjs"), "--apply"],
+      {
+        encoding: "utf8",
+        timeout: 6e4,
+        env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" },
+      },
+    );
+    const resumen = String(salida || "")
+      .split("\n")
+      .filter((linea) => /sin respuesta|respuestas cancel|backup/.test(linea))
+      .join(" | ");
+    if (resumen) console.log(`[pending] barrido de arranque: ${resumen}`);
+  } catch (e) {
+    console.log(`[pending] barrido de arranque fallo: ${(e && e.message) || e}`);
+  }
+}
+sweepPendingAtStartup();
 const MEMORY_FACTS_FILE = join(MEMORY_DIR, "facts.jsonl");
 async function readMemoryFacts() {
   let raw = "";
