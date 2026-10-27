@@ -142,6 +142,15 @@ await page.waitForTimeout(400);
 // 10. markdown largo: ~3000 palabras con tablas, listas, codigo y enlaces.
 // Usa el renderer real del cliente (__aegisWeb.md) y el contenedor real de mensajes,
 // asi que mide lo que el operador veria en una respuesta larga del agente.
+// Primero abre una sesion corta: en "nuevo chat" el feed no esta montado y sembrar
+// ahi mediria un contenedor oculto.
+await page.getByText('Destructive disk wipe request', { exact: false }).first().click().catch(() => {});
+await page.waitForTimeout(2500);
+const feedListo = await page.evaluate(() => {
+  const box = document.querySelector('#msg-inner');
+  return { existe: !!box, hijos: box ? box.children.length : 0 };
+});
+note(feedListo.hijos > 0, 'el feed de una sesion real queda montado', `${feedListo.hijos} burbujas`);
 const mdWords = (n) => {
   const base = ['contexto', 'operacion', 'resultado', 'archivo', 'linea', 'sesion', 'turno', 'medicion', 'registro', 'bloque'];
   const out = [];
@@ -155,7 +164,7 @@ const mdLargo = [
   '',
   '| columna | valor | nota |',
   '|---|---|---|',
-  ...Array.from({ length: 12 }, (_, i) => `| fila ${i} | ${i * 17} | ${mdWords(9)} |`),
+  ...Array.from({ length: 12 }, (_, i) => `| fila ${i} | ${i * 17} | ${i === 0 ? 'C:\\\\Aegis-Proyects\\\\state\\\\data\\\\sessions\\\\sessions.db (310 sesiones, 93 mil mensajes, WAL aparte)' : mdWords(9)} |`),
   '',
   '### Pasos',
   '',
@@ -176,6 +185,8 @@ const mdLargo = [
 ].join('\n');
 
 const mdRes = await page.evaluate((text) => {
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.style.display = 'none';
   const host = document.querySelector('#msg-inner') || document.querySelector('.msgs') || document.body;
   const html = window.__aegisWeb.md(text);
   const box = document.createElement('div');
@@ -189,13 +200,18 @@ const mdRes = await page.evaluate((text) => {
     const r = el.getBoundingClientRect();
     return r.width > vw + 1;
   });
-  const scroller = box.closest('#msgs, .msgs, .chat, main') || document.scrollingElement;
-  const antes = scroller.scrollTop;
-  scroller.scrollTop = scroller.scrollHeight;
-  const bajo = scroller.scrollTop;
-  scroller.scrollTop = antes;
+  const ancestros = [];
+  for (let el = box.parentElement; el; el = el.parentElement) ancestros.push(el);
+  const scroller = ancestros.find((a) => a.scrollHeight > a.clientHeight + 8) || null;
+  const antes = scroller ? scroller.scrollTop : 0;
+  if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  const bajo = scroller ? scroller.scrollTop : 0;
+  if (scroller) scroller.scrollTop = antes;
+  box.scrollIntoView({ block: 'start' });
+  const recortados = [...box.querySelectorAll('table')].filter((el) => el.scrollWidth > el.clientWidth + 2);
+  const presConScroll = [...box.querySelectorAll('pre')].filter((el) => el.scrollWidth > el.clientWidth + 2).length;
   const res = {
-    ok: !docDesborda && anchos.length === 0 && bajo > 0,
+    ok: !docDesborda && anchos.length === 0 && box.scrollHeight > 1000 && recortados.length === 0,
     words: text.split(/\s+/).filter(Boolean).length,
     tables: box.querySelectorAll('table').length,
     pres: box.querySelectorAll('pre').length,
@@ -204,15 +220,23 @@ const mdRes = await page.evaluate((text) => {
     docWidth: document.documentElement.scrollWidth,
     viewport: vw,
     anchos: anchos.slice(0, 3).map((el) => el.tagName + '.' + el.className),
+    alto: box.scrollHeight,
+    recortados: recortados.slice(0, 3).map((el) => el.tagName + ' ' + el.scrollWidth + '>' + el.clientWidth),
+    presConScroll,
+    scroller: scroller ? (scroller.id || scroller.className || scroller.tagName) : 'sin scroller propio',
     scroll: bajo,
   };
   return res;
 }, mdLargo);
 
 note(mdRes.ok, 'markdown de 3000 palabras no desborda ni rompe el scroll',
-  `${mdRes.words} palabras · ${mdRes.tables} tablas · ${mdRes.pres} bloques de codigo · ${mdRes.lists} listas · ${mdRes.links} enlaces · doc ${mdRes.docWidth}/${mdRes.viewport} · scroll ${mdRes.scroll}${mdRes.anchos.length ? ' · anchos: ' + mdRes.anchos.join(',') : ''}`);
+  `${mdRes.words} palabras · ${mdRes.tables} tablas · ${mdRes.pres} bloques de codigo · ${mdRes.lists} listas · ${mdRes.links} enlaces · alto ${mdRes.alto}px · doc ${mdRes.docWidth}/${mdRes.viewport} · scroller ${mdRes.scroller} · scroll ${mdRes.scroll}${mdRes.anchos.length ? ' · anchos: ' + mdRes.anchos.join(',') : ''}${mdRes.recortados.length ? ' · RECORTADOS: ' + mdRes.recortados.join(',') : ''} · pre con scroll propio ${mdRes.presConScroll}`);
 await page.screenshot({ path: path.join(OUT, '08-markdown-largo.png') });
-await page.evaluate(() => document.getElementById('probe-md-largo')?.remove());
+await page.evaluate(() => {
+  document.getElementById('probe-md-largo')?.remove();
+  const welcome = document.getElementById('welcome');
+  if (welcome) welcome.style.display = '';
+});
 
 // 11. subida real de imagen desde el composer: PNG 2400x1600 generado aca,
 // cargado por el input de archivos y verificado en la miniatura del composer.
