@@ -91,10 +91,19 @@ impl CompactionOperation {
         (tokens as f64 / self.context_limit as f64) > self.threshold
     }
 
+    /// `session.usage` reports the last inference's tokens, so it describes the
+    /// prompt that inference saw and nothing that arrived after it: during a tool
+    /// loop it stays small while the history the next request will carry is
+    /// already over the ceiling, and it is absent when the provider reports no
+    /// usage at all. The agent visible history is what gets sent, so the count is
+    /// the floor and a larger report can only raise it.
     async fn context_tokens(&self, session: &Session, conversation: &Conversation) -> Result<i32> {
+        let counted = count_context_tokens(conversation.messages()).await?;
         match session.usage.total_tokens {
-            Some(tokens) => Ok(tokens + unreported_tool_tokens(conversation).await?),
-            None => count_context_tokens(conversation.messages()).await,
+            Some(tokens) => Ok(tokens
+                .saturating_add(unreported_tool_tokens(conversation).await?)
+                .max(counted)),
+            None => Ok(counted),
         }
     }
 

@@ -12,6 +12,7 @@ mod agent_reply;
 mod calculator_extension;
 mod cancellation;
 mod compaction_lifecycle;
+mod compaction_trigger;
 mod dummy_api;
 mod hooks_lifecycle;
 mod pipeline;
