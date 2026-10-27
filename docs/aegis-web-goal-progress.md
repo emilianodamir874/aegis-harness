@@ -30,6 +30,15 @@
 | Pruebas aisladas | `npm run build`, `server-regressions`, `server-workspace-regressions` (archivo/origen/cookie/symlink, memoria/defaults concurrentes, HTML/gzip/cache, TTS sin síntesis), `client-regressions`, `search-index`, `search-e2e`, `permission-e2e`, `media-e2e`, `stats-plan`, `workspace-nav` (1440×900 y 390×844): PASS en ejecuciones de esta sesión. | Faltan pruebas de publicación viva, integración ACP y de funcionalidades nuevas aún no implementadas. `visibility` leyó store real: PASS, pero no es fixture aislado. `npm test` completo no ejecutado porque incluye tests contra servicio vivo. |
 | Runtime | Node 3788/3789 PID 18476 y serve 3284 PID 18520 observados antes de la publicación; el JS servido aún no coincide con `dist-ts`. `app/index.html` y CSS sí se sirven desde disco y ya contienen nueva navegación. | **No dar por completado**: publicar el JS nuevo junto al HTML; hoy `workspace-nav.js` no existe en `app/`, por lo que el navegador puede recibir 404. Conservar el watchdog modificado por otro trabajo, fuera de commits. |
 
+## Promoción intentada y revertida (2026-10-27, ~19:04 ART)
+
+| Observación | Evidencia / estado |
+|---|---|
+| Publicación y primer gate | El supervisor externo copió `dist-ts/server.mjs`, `dist-ts/app/app.js` y `dist-ts/app/workspace-nav.js`; Node nuevo PID 25372 y serve original PID 18520. `/healthz?backend=1`, `/file.json` sin cookie=401, HTML comprimido y JS de navegación pasaron. |
+| Gate visual falló | `node tools/usage-pop-clamp-check.mjs`: 3/4 escenarios fallaron en móvil; `#usage-pop` heredaba `width:100%; margin:auto` del selector de compositor en `app/app.css:2651`, sobrepasaba el ancho visible. El supervisor anotó ERROR, pero su rollback **no se ejecutó** por una condición incorrecta en su script externo (esperaba un backup de HTML inexistente). |
+| Recuperación comprobada | Se restauraron manualmente y se compararon SHA-256 de `server.mjs` y `app/app.js` con los respaldos anteriores; Node PID 25372 sigue **con el código nuevo en memoria** hasta un reinicio; serve PID 18520 nunca cambió; `/healthz?backend=1` 200 y HTML 200. `app/workspace-nav.js` permanece servido y versionado. No calificar este estado como promoción completada ni rollback completo. |
+| Fix de causa raíz | Se separó `#usage-pop` del selector de ancho de compositor. El probe real pasó 4/4 (desktop 1440×900; móvil 390×844 normal/alto; 390×480). Queda ejecutar nueva promoción con rollback corregido y comprobar el proceso publicado. |
+
 ## Checklist de verificación y rollback propuesto (no ejecutado)
 
 - [ ] **Congelar baseline:** guardar `git status --short`/HEAD, hash y fecha de `server.mjs`, `app/app.js` y fuentes correspondientes; anotar dueños de 3284/3788/3789, `/healthz` (incluido `backendTcpReady`), `/health`, respuesta de `/goals.json?sid=<sid de prueba>` y estado del watchdog residente sin exponer tokens ni cookies.
