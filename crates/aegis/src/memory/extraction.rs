@@ -225,6 +225,31 @@ pub async fn run_turn(
     )
     .await?;
 
+    // La extraccion corre fuera del turno, con otro provider y otro modelo, asi que no pasa por
+    // el camino que anota el ledger: sin esto el trabajo barato no aparece en el costo. Se anota
+    // con el proveedor que realmente respondio, no con el de la sesion.
+    let (cost, cost_source) = crate::providers::canonical_cost::resolve_usage_cost(
+        Some(provider.get_name()),
+        &usage,
+    );
+    let mut billed = usage.clone();
+    billed.cost = cost;
+    billed.cost_source = cost_source;
+    let ledger = crate::conversation::message::MessageUsage::from_provider_usage(&billed, false);
+    if let Err(error) = crate::session::SessionManager::instance()
+        .record_usage_metrics(
+            session_id,
+            None,
+            billed.usage,
+            &billed.model,
+            Some(provider.get_name()),
+            &ledger,
+        )
+        .await
+    {
+        tracing::debug!("memoria: no se pudo anotar el costo de la extraccion: {error}");
+    }
+
     let raw: String = reply
         .content
         .iter()
