@@ -244,16 +244,12 @@ pub async fn run_turn(
 
 /// Dispara la extraccion desprendida del turno: el usuario ya tiene su respuesta y esto corre
 /// despues. Cualquier error se loguea y no se propaga.
-/// Provider propio para la extraccion, si esta configurado.
 ///
-/// `AEGIS_MEMORY_EXTRACT_MODEL` se valida contra el provider de la sesion, asi que
-/// con la sesion en otro proveedor el override se descartaba en silencio. Este
-/// segundo knob levanta un provider aparte para que el trabajo repetido corra en un
-/// modelo barato sin mover el proveedor de la sesion.
 /// Decide si hay un extractor propio, sin tocar red ni config: la politica pura.
-///
-/// Devuelve `(provider, modelo)` solo cuando ambos estan presentes; con uno solo
-/// se sigue usando el de la sesion y el knob queda inerte en vez de fallar.
+/// `AEGIS_MEMORY_EXTRACT_MODEL` se valida contra el provider de la sesion, asi que
+/// con la sesion en otro proveedor el override se descartaba en silencio; el knob
+/// `AEGIS_MEMORY_EXTRACT_PROVIDER` levanta un provider aparte para que el trabajo
+/// repetido corra en un modelo barato sin mover el proveedor de la sesion.
 fn extractor_choice(provider: Option<&str>, model: Option<&str>) -> Option<(String, String)> {
     let provider = provider?.trim();
     let model = model?.trim();
@@ -347,6 +343,26 @@ mod tests {
         assert!(extractor_choice(Some("chatgpt_codex"), None).is_none());
         assert!(extractor_choice(Some("  "), Some("gpt-6-luna")).is_none());
         assert!(extractor_choice(Some("chatgpt_codex"), Some("")).is_none());
+    }
+
+    #[tokio::test]
+    #[ignore = "toca el config del store y el registry de providers: se corre a mano para verificar"]
+    async fn extractor_provider_levanta_el_provider_configurado() {
+        let provider_name = crate::config::Config::global()
+            .get_param::<String>("AEGIS_MEMORY_EXTRACT_PROVIDER")
+            .ok();
+        let model = model_override();
+        let Some((name, model)) = extractor_choice(provider_name.as_deref(), model.as_deref()) else {
+            eprintln!("VERIFICA: sin knobs configurados, no hay extractor propio");
+            return;
+        };
+        match crate::providers::create(&name, Vec::new()).await {
+            Ok(provider) => eprintln!(
+                "VERIFICA: provider='{}' model='{model}' se construyo",
+                provider.get_name()
+            ),
+            Err(error) => eprintln!("VERIFICA: FALLO create('{name}'): {error}"),
+        }
     }
 
     #[test]
