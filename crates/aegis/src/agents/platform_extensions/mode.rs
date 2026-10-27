@@ -4,12 +4,9 @@
 //! escribir. En `plan` no ve las tools de escritura, asi que sin esto quedaria trabado hasta que
 //! alguien mueva el chip a mano.
 //!
-//! Reglas de escalada, a proposito asimetricas:
-//! - Bajar a `plan` es libre: es reducir el propio poder.
-//! - Subir a `revisar` es libre: cada escritura sigue pidiendo permiso al operador.
-//! - Subir a `ejecutar` necesita `confirmar: true` **y** estar en `revisar`: son dos llamadas, y la
-//!   primera deja constancia de la intencion en el transcript. Ningun turno se auto-desbloquea la
-//!   escritura sin antes escribir por que.
+//! El agente decide el modo, sin escalera ni confirmaciones: el operador eligio quedar a merced del
+//! modelo y no tener el chip en pantalla. El unico limite que queda es que el cambio aplica a la
+//! sesion en curso, no al store: no toca `permission.yaml` ni las demas sesiones.
 //!
 //! El cambio usa los mismos overrides de sesion que el chip de la web (`PermissionManager` global):
 //! no toca `permission.yaml` ni afecta a otras sesiones.
@@ -51,12 +48,8 @@ struct RequestModeParams {
     /// Modo pedido: `plan` (no escribir), `revisar` (cada escritura pide permiso) o `ejecutar`
     /// (permission.yaml manda).
     mode: String,
-    /// Por que hace falta el cambio. Queda en el transcript: es la constancia de la intencion.
+    /// Por que hace falta el cambio. Queda en el transcript como constancia.
     reason: String,
-    /// Solo para pasar a `ejecutar`: se manda en una segunda llamada, despues de la primera en
-    /// `revisar`. Sin esto, el modo no cambia.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    confirmar: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,12 +170,12 @@ impl ModeClient {
                 Cambia el modo de esta sesion. Si no ves las tools de escritura (write, edit, shell) es
                 porque estas en `plan`: pedi `revisar` o `ejecutar`.
 
-                - `plan`: no podes escribir. Bajarte a plan es libre.
-                - `revisar`: cada escritura pide permiso al operador. Subir de plan a revisar es libre.
-                - `ejecutar`: permission.yaml manda. Para llegar necesitas DOS llamadas: primero
-                  `revisar` (o estar ya en revisar), despues `ejecutar` con `confirmar: true`.
+                - `plan`: no podes escribir; las tools de escritura no se mandan.
+                - `revisar`: cada escritura pide permiso al operador, con su diff.
+                - `ejecutar`: permission.yaml manda.
 
-                Usalo solo cuando la tarea lo pida de verdad: si vas a leer y responder, plan alcanza.
+                Cambia al modo que la tarea necesite. Si vas a leer y responder, `plan` alcanza; si vas
+                a escribir, `revisar` deja que el operador apruebe cada cambio.
             "#}
             .to_string(),
             Self::tool_schema::<RequestModeParams>(),
@@ -203,23 +196,6 @@ impl ModeClient {
         let actual = Self::current(session_id);
         if pedido == actual {
             return format!("Ya estás en modo `{}`.", actual.name());
-        }
-        if pedido == SessionMode::Ejecutar && actual != SessionMode::Revisar {
-            return match Self::apply(session_id, SessionMode::Revisar) {
-                Ok(()) => format!(
-                    "Paso a `revisar` (motivo: {}). Si el operador aprueba las escrituras y hace falta \
-                     ir sin preguntas, volvé a llamar con mode=\"ejecutar\" y confirmar=true.",
-                    params.reason.trim()
-                ),
-                Err(error) => format!("No pude cambiar el modo: {error}"),
-            };
-        }
-        if pedido == SessionMode::Ejecutar && params.confirmar != Some(true) {
-            return format!(
-                "Estás en `revisar`. Para pasar a `ejecutar` repetí la llamada con confirmar=true y el \
-                 motivo ({}).",
-                params.reason.trim()
-            );
         }
         match Self::apply(session_id, pedido) {
             Ok(()) => format!(
