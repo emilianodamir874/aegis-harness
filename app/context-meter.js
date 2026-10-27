@@ -271,7 +271,10 @@ function toggleMap(anchor) {
       const porChip = opciones.find((o) => o.value && chips.includes(o.value));
       actual = porBase?.value || porChip?.value || "";
     }
-    const effortEnUso = EFFORTS.find((e) => new RegExp(`(^|\\s)${e}(\\s|$)`).test(chips)) || "";
+    const palabras = [...document.querySelectorAll("#chips *")].flatMap(
+      (n) => (n.textContent || "").toLowerCase().split(/[^a-z]+/).filter(Boolean)
+    );
+    const effortEnUso = [...palabras].reverse().find((p) => EFFORTS.includes(p)) || "";
     const indiceActual = opciones.findIndex(
       (o) => o.value === actual && (!effortEnUso || o.effort === effortEnUso) || o.base === actual && o.effort === effortEnUso
     );

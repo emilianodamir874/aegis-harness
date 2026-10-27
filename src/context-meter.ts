@@ -372,7 +372,14 @@ function toggleMap(anchor: HTMLElement): void {
       const porChip = opciones.find((o) => o.value && chips.includes(o.value));
       actual = porBase?.value || porChip?.value || '';
     }
-    const effortEnUso = EFFORTS.find((e) => new RegExp(`(^|\\s)${e}(\\s|$)`).test(chips)) || '';
+    // El effort se lee de los chips uno por uno: el texto del contenedor trae todo junto
+    // ("Open Design auto deepseek-v4.1-flash max") y el regex sobre eso no siempre matchea.
+    // Se buscan las palabras sueltas de todos los nodos de la fila de chips: el valor puede venir con
+    // iconos o texto pegado y la comparacion exacta fallaba.
+    const palabras = [...document.querySelectorAll('#chips *')].flatMap((n) =>
+      (n.textContent || '').toLowerCase().split(/[^a-z]+/).filter(Boolean),
+    );
+    const effortEnUso = [...palabras].reverse().find((p) => EFFORTS.includes(p)) || '';
     const indiceActual = opciones.findIndex(
       (o) => (o.value === actual && (!effortEnUso || o.effort === effortEnUso)) || (o.base === actual && o.effort === effortEnUso),
     );
