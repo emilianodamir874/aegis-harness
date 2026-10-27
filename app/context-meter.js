@@ -256,11 +256,19 @@ function toggleMap(anchor) {
     const select = document.createElement("select");
     select.style.cssText = "flex:1;min-width:0;font:inherit;color:inherit;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 6px";
     const actual = modelLabel(usage || {});
-    for (const key of models) {
+    const opciones = models.map((key) => ({ value: key.split("/").slice(1).join("/") || key, label: key }));
+    const indiceActual = opciones.findIndex((opcion) => opcion.value === actual);
+    if (indiceActual > 0) {
+      const [enUso] = opciones.splice(indiceActual, 1);
+      opciones.unshift(enUso);
+    } else if (actual && indiceActual === -1) {
+      opciones.unshift({ value: actual, label: `${actual} — en uso` });
+    }
+    for (const opcion of opciones) {
       const option = document.createElement("option");
-      option.value = key.split("/").slice(1).join("/") || key;
-      option.textContent = key;
-      if (option.value === actual) option.selected = true;
+      option.value = opcion.value;
+      option.textContent = opcion.label;
+      option.selected = opcion.value === actual || !actual && opcion === opciones[0];
       select.appendChild(option);
     }
     const aplicar = document.createElement("button");
