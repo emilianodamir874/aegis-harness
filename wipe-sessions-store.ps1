@@ -67,6 +67,35 @@ function Say([string]$msg) {
     if (Test-Path $LogDir) { Add-Content -Path $LogFile -Value $line -Encoding utf8 }
 }
 
+# --- lock de operaciones -----------------------------------------------------
+# Swap y wipe no pueden pisarse: el 2026-10-27 a las 05:05 el wipe apago el serve que el swap
+# acababa de levantar y lo dejo muerto seis horas. Un archivo con dueno y vencimiento alcanza.
+# el lock vive junto al puntero de version, fuera del store: $AegisRoot no existe en este script
+$Script:OpsLock = 'C:\Aegis-Proyects\core\state\ops.lock'
+
+function Get-OpsLock {
+    if (-not (Test-Path $Script:OpsLock)) { return $null }
+    try { return (Get-Content $Script:OpsLock -Raw | ConvertFrom-Json) } catch { return $null }
+}
+
+function Test-OpsLockFree([string]$Owner) {
+    $actual = Get-OpsLock
+    if (-not $actual) { return $true }
+    $edad = ((Get-Date) - [datetime]$actual.started).TotalMinutes
+    if ($edad -gt 30) { return $true }   # lock huerfano: el proceso murio sin limpiar
+    if ($actual.owner -eq $Owner) { return $true }
+    return $false
+}
+
+function Set-OpsLock([string]$Owner) {
+    $payload = @{ owner = $Owner; pid = $PID; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress
+    $payload | Out-File -FilePath $Script:OpsLock -Encoding utf8 -Force
+}
+
+function Clear-OpsLock {
+    Remove-Item -LiteralPath $Script:OpsLock -Force -ErrorAction SilentlyContinue
+}
+
 function Get-StoreStats {
     $db = Get-Item $DbPath -ErrorAction SilentlyContinue
     if (-not $db) { return $null }
@@ -194,34 +223,6 @@ if ($proc) {
     Say 'puerto libre'
 }
 
-
-# --- lock de operaciones -----------------------------------------------------
-# Swap y wipe no pueden pisarse: el 2026-10-27 a las 05:05 el wipe apago el serve que el swap
-# acababa de levantar y lo dejo muerto seis horas. Un archivo con dueno y vencimiento alcanza.
-$Script:OpsLock = Join-Path $AegisRoot 'core\state\ops.lock'
-
-function Get-OpsLock {
-    if (-not (Test-Path $Script:OpsLock)) { return $null }
-    try { return (Get-Content $Script:OpsLock -Raw | ConvertFrom-Json) } catch { return $null }
-}
-
-function Test-OpsLockFree([string]$Owner) {
-    $actual = Get-OpsLock
-    if (-not $actual) { return $true }
-    $edad = ((Get-Date) - [datetime]$actual.started).TotalMinutes
-    if ($edad -gt 30) { return $true }   # lock huerfano: el proceso murio sin limpiar
-    if ($actual.owner -eq $Owner) { return $true }
-    return $false
-}
-
-function Set-OpsLock([string]$Owner) {
-    $payload = @{ owner = $Owner; pid = $PID; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress
-    $payload | Out-File -FilePath $Script:OpsLock -Encoding utf8 -Force
-}
-
-function Clear-OpsLock {
-    Remove-Item -LiteralPath $Script:OpsLock -Force -ErrorAction SilentlyContinue
-}
 
 $victims = Get-ChildItem $StoreDir -Force -ErrorAction SilentlyContinue
 foreach ($f in $victims) {
