@@ -353,17 +353,29 @@ function toggleMap(anchor: HTMLElement): void {
     row.style.width = '100%';
     const select = document.createElement('select');
     select.style.cssText = 'flex:1;min-width:0;font:inherit;color:inherit;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 6px';
-    // El modelo en uso va primero y preseleccionado. Si no se puede resolver, no se elige por el
-    // usuario: el selector abre en una opcion vacia y honesta, nunca en el primero de la tabla.
-    const conocidos = new Set(models.map((key) => key.split('/').slice(1).join('/') || key));
+    // El modelo en uso va primero y preseleccionado. Los nombres `…-max` / `…-low` de la tabla de
+    // tarifas son variantes de effort, no modelos distintos: se muestran como "modelo · effort" y se
+    // elige la fila que coincide con el modelo Y con el effort que muestra el chip de la barra.
+    const EFFORTS = ['max', 'high', 'medium', 'low', 'minimal'];
+    const conocer = (key: string) => {
+      const nombre = key.split('/').slice(1).join('/') || key;
+      const effort = EFFORTS.find((e) => nombre.endsWith(`-${e}`)) || '';
+      return { value: nombre, base: effort ? nombre.slice(0, -(effort.length + 1)) : nombre, effort, label: key };
+    };
+    const opciones = models.map(conocer);
+    const nombres = new Set(opciones.map((o) => o.value));
     let actual = modelLabel((usage || {}) as UsageState);
-    if (!conocidos.has(actual)) {
-      const chips = (document.querySelector('#chips')?.textContent || '').trim();
-      const hallado = [...conocidos].find((nombre) => nombre && chips.includes(nombre));
-      actual = hallado || '';
+    const chips = (document.querySelector('#chips')?.textContent || '').trim();
+    if (!nombres.has(actual)) {
+      // el modelo puede venir con effort pegado, o sin figurar en la tabla
+      const porBase = opciones.find((o) => o.base === actual);
+      const porChip = opciones.find((o) => o.value && chips.includes(o.value));
+      actual = porBase?.value || porChip?.value || '';
     }
-    const opciones = models.map((key) => ({ value: key.split('/').slice(1).join('/') || key, label: key }));
-    const indiceActual = opciones.findIndex((opcion) => opcion.value === actual);
+    const effortEnUso = EFFORTS.find((e) => new RegExp(`(^|\\s)${e}(\\s|$)`).test(chips)) || '';
+    const indiceActual = opciones.findIndex(
+      (o) => (o.value === actual && (!effortEnUso || o.effort === effortEnUso)) || (o.base === actual && o.effort === effortEnUso),
+    );
     if (indiceActual > 0) {
       const [enUso] = opciones.splice(indiceActual, 1);
       opciones.unshift(enUso);
@@ -375,11 +387,12 @@ function toggleMap(anchor: HTMLElement): void {
       vacia.selected = true;
       select.appendChild(vacia);
     }
+    const elegido = indiceActual >= 0 ? opciones[0] : undefined;
     for (const opcion of opciones) {
       const option = document.createElement('option');
       option.value = opcion.value;
-      option.textContent = opcion.label;
-      option.selected = !!actual && opcion.value === actual;
+      option.textContent = opcion.effort ? `${opcion.label} · effort ${opcion.effort}` : opcion.label;
+      option.selected = !!elegido && opcion.value === elegido.value && opcion.effort === elegido.effort;
       select.appendChild(option);
     }
     const aplicar = document.createElement('button');
