@@ -154,14 +154,27 @@ async function set(mode: Mode): Promise<void> {
 
 function tick(): void {
   renderChip();
-  const sid = sessionId();
-  if (sid && appliedFor !== `${sid}:${readMode()}`) void apply();
+  // Ojo: no se reaplica el modo guardado en cada vuelta. El agente tambien puede cambiarlo (tool
+  // `request_mode`) y una reaplicacion periodica lo pisaria de inmediato. El modo se aplica al abrir
+  // la sesion, al cambiarla y cuando el operador toca el chip.
 }
 
 // Un turno nuevo o un cambio de sesion puede reemplazar el agente: se reaplica.
 document.addEventListener('aegis:session-changed', () => {
   appliedFor = '';
   void apply();
+});
+
+// Si el server cambia el modo por su cuenta (tool request_mode), el chip se entera y se actualiza
+// sin tocar los overrides: lee el modo que el agente dejo y lo refleja.
+window.addEventListener('aegis:mode-hint', (event) => {
+  const detalle = (event as CustomEvent).detail as { mode?: string } | undefined;
+  const modo = detalle?.mode;
+  if (modo === 'plan' || modo === 'ejecutar' || modo === 'revisar') {
+    writeMode(modo);
+    renderChip();
+    appliedFor = `${sessionId()}:${modo}`;
+  }
 });
 setInterval(tick, 1500);
 if (document.readyState === 'loading') {

@@ -109,12 +109,19 @@ async function set(mode) {
 }
 function tick() {
   renderChip();
-  const sid = sessionId();
-  if (sid && appliedFor !== `${sid}:${readMode()}`) void apply();
 }
 document.addEventListener("aegis:session-changed", () => {
   appliedFor = "";
   void apply();
+});
+window.addEventListener("aegis:mode-hint", (event) => {
+  const detalle = event.detail;
+  const modo = detalle?.mode;
+  if (modo === "plan" || modo === "ejecutar" || modo === "revisar") {
+    writeMode(modo);
+    renderChip();
+    appliedFor = `${sessionId()}:${modo}`;
+  }
 });
 setInterval(tick, 1500);
 if (document.readyState === "loading") {
