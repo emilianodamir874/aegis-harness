@@ -12,7 +12,8 @@ import https from 'node:https';
 import net from 'node:net';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename } from 'node:fs/promises';
+import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename, realpath, open } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import zlib from 'node:zlib';
 import { join, extname, normalize, resolve, dirname, basename, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -75,6 +76,34 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 65536): Promise<unk
 // expone. La escritura es atomica (tmp + rename) y ordenada por id para no romper la idempotencia de
 // la consolidacion.
 const MEMORY_DIR = join(process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state', 'data', 'memory');
+const pendingCache = new Map<string, { at: number; body: string }>();
+
+// Ejecutar solo tras escuchar: SQLite puede tardar y el proceso web nunca debe bloquear el
+// health check. El fallback conserva el barrido en instalaciones sin el flag del binario.
+function sweepPendingAtStartup(): void {
+  const env = { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state' };
+  const bin = process.env.AEGIS_SERVE_BIN || 'C:/Aegis-Proyects/core/bin/aegis-current.exe';
+  const run = (command: string, args: string[]): Promise<string> => new Promise((ok, fail) => {
+    execFile(command, args, { encoding: 'utf8', timeout: 90_000, maxBuffer: 1024 * 1024, env },
+      (error, stdout) => error ? fail(error) : ok(stdout));
+  });
+  void (async () => {
+    let output: string;
+    try {
+      output = await run(bin, ['--sweep-pending']);
+    } catch {
+      try {
+        output = await run(process.execPath, ['--experimental-sqlite', join(DIR, 'tools', 'sweep-pending.mjs'), '--apply']);
+      } catch (error) {
+        console.error(`[pending] barrido de arranque fallo: ${String((error as Error)?.message || error)}`);
+        return;
+      }
+    }
+    const summary = output.split('\n').filter((line) => /confirmaciones|sin respuesta|respuestas cancel|backup/.test(line)).slice(0, 4).join(' | ');
+    if (summary) console.log(`[pending] barrido de arranque: ${summary}`);
+  })();
+}
+
 const MEMORY_FACTS_FILE = join(MEMORY_DIR, 'facts.jsonl');
 
 interface MemoryFact {
@@ -172,9 +201,12 @@ async function workspaceList(raw: string): Promise<string> {
   }
 }
 
-const DIR = fileURLToPath(new URL('.', import.meta.url));
+// El fuente vive en src/ y el bundle en dist-ts/; ambos deben usar la raiz web.
+// Una copia aislada de server.mjs en otra carpeta (tests) sigue usando su propia carpeta.
+const MODULE_DIR = fileURLToPath(new URL('.', import.meta.url));
+const DIR = ['src', 'dist-ts'].includes(basename(resolve(MODULE_DIR))) ? dirname(MODULE_DIR) : MODULE_DIR;
 
-type WebConfig = { secretKey?: string; authStamp?: string; publicHost?: string; webPort?: number; servePort?: number; ttsEngine?: string; ttsVoice?: string; ttsRate?: number; cwd?: string; appConfig?: { AEGIS_VERSION?: string; AEGIS_DEFAULT_PROVIDER?: string; AEGIS_DEFAULT_MODEL?: string }; tlsDir?: string; httpsPort?: number };
+type WebConfig = { secretKey?: string; authStamp?: string; publicHost?: string; webPort?: number; servePort?: number; ttsEngine?: string; ttsVoice?: string; ttsRate?: number; cwd?: string; appConfig?: { AEGIS_VERSION?: string; AEGIS_DEFAULT_PROVIDER?: string; AEGIS_DEFAULT_MODEL?: string; AEGIS_THINKING_EFFORT?: string }; tlsDir?: string; httpsPort?: number };
 // Estaticos: comprimidos (gzip) y, cuando la URL viene versionada por mtime (?v=...), se
 // cachean para siempre. Antes el telefono bajaba 203 KB sin comprimir en cada carga.
 const gzipCache = new Map<string, Buffer>();
@@ -1019,38 +1051,64 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     // Devuelve contenido + hash: el cliente compara contra lo propuesto y, si el hash no coincide
     // con el que vio al aprobar, no aplica (aplicar dos veces no duplica ni pisa cambios ajenos).
     if (url.pathname === '/file.json') {
+      // Igual que /config.js: la LAN no requiere cookie, pero un sitio ajeno no debe
+      // poder usar el navegador del operador para leer archivos de la maquina.
+      if (req.method !== 'GET' || !sameOriginRequest(req)) {
+        res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+        res.end(JSON.stringify({ error: 'forbidden' }));
+        return;
+      }
       const raw = url.searchParams.get('path') || '';
       const resolvedPath = resolve(raw);
-      const inside = WS_ROOTS.some((root) => {
-        const r = resolve(root);
-        return resolvedPath === r || resolvedPath.startsWith(r.endsWith(sep) ? r : r + sep);
-      });
-      if (!raw || !inside) {
-        res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
-        res.end(JSON.stringify({ error: 'ruta fuera de las raices permitidas' }));
+      // No ofrecer credenciales ni binarios en la vista de diff. Las rutas sin extension
+      // siguen habilitadas para proyectos que editan Dockerfile, Makefile, etc.
+      const deny = (path: string) => /(?:^|[\\/])(?:\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.json|config\.ya?ml|permission\.ya?ml|secrets\.ya?ml|tokens\.json|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      const allowed = (path: string) => wsInside(path) && !deny(path);
+      if (!raw || !allowed(resolvedPath)) {
+        res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+        res.end(JSON.stringify({ error: 'ruta no permitida' }));
         return;
       }
       try {
-        const info = await stat(resolvedPath);
-        if (!info.isFile()) throw new Error('no es un archivo');
-        if (info.size > 1_500_000) {
-          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
-          res.end(JSON.stringify({ path: resolvedPath, tooLarge: true, bytes: info.size }));
+        const actualPath = await realpath(resolvedPath);
+        // Las raices configuradas tambien pueden ser junctions: comparar rutas reales.
+        const roots = await Promise.all(WS_ROOTS.map((root) => realpath(root).catch(() => '')));
+        const actual = actualPath.toLowerCase();
+        if (!roots.some((root) => root && (actual === root.toLowerCase() || actual.startsWith(root.toLowerCase().endsWith(sep) ? root.toLowerCase() : root.toLowerCase() + sep))) || deny(actualPath)) {
+          res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+          res.end(JSON.stringify({ error: 'ruta real no permitida' }));
           return;
         }
-        const body = await readFile(resolvedPath);
+        const handle = await open(actualPath, 'r');
+        let info;
+        let body: Buffer;
+        try {
+          info = await handle.stat();
+          if (!info.isFile()) throw new Error('no es un archivo');
+          if (info.size > 1_500_000) {
+            res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+            res.end(JSON.stringify({ path: resolvedPath, tooLarge: true, bytes: info.size }));
+            return;
+          }
+          // Leer como maximo 1.5 MB + un byte: el archivo puede crecer entre stat y read.
+          const buffer = Buffer.alloc(1_500_001);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+          if (bytesRead > 1_500_000) {
+            res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
+            res.end(JSON.stringify({ path: resolvedPath, tooLarge: true, bytes: bytesRead }));
+            return;
+          }
+          body = buffer.subarray(0, bytesRead);
+        } finally {
+          await handle.close();
+        }
         const text = body.toString('utf8');
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
-        res.end(JSON.stringify({
-          path: resolvedPath,
-          exists: true,
-          bytes: info.size,
-          mtime: info.mtime.toISOString(),
-          sha256: crypto.createHash('sha256').update(body).digest('hex'),
-          text,
-          lines: text.split('\n').length,
-        }));
+        res.end(JSON.stringify({ path: resolvedPath, exists: true, bytes: body.length,
+          mtime: info.mtime.toISOString(), sha256: crypto.createHash('sha256').update(body).digest('hex'),
+          text, lines: text.split('\n').length }));
       } catch {
+        // La UI necesita distinguir un archivo nuevo de un error de lectura.
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
         res.end(JSON.stringify({ path: resolvedPath, exists: false, bytes: 0, text: '', lines: 0 }));
       }
@@ -1120,6 +1178,30 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       items.sort((a, b) => (a.mtime < b.mtime ? 1 : -1));
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
       res.end(JSON.stringify({ dir: OUTBOX_DIR, items }));
+      return;
+    }
+
+    if (url.pathname === '/pending.json') {
+      // El indice es de solo lectura; no bloquear el event loop con SQLite síncrono.
+      const previous = pendingCache.get('all');
+      let body = previous && Date.now() - previous.at < 30_000 ? previous.body : '';
+      if (!body) {
+        try {
+          body = await new Promise<string>((ok, fail) => {
+            execFile(process.execPath, ['--experimental-sqlite', join(DIR, 'tools', 'pending-index.mjs')],
+              { timeout: 40_000, maxBuffer: 8 * 1024 * 1024,
+                env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state' } },
+              (error, stdout) => error ? fail(error) : ok(stdout.trim()));
+          });
+          if (!body) throw new Error('indice vacio');
+          JSON.parse(body);
+          pendingCache.set('all', { at: Date.now(), body });
+        } catch (error) {
+          body = JSON.stringify({ sessions: [], total: 0, error: String((error as Error)?.message || error) });
+        }
+      }
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-cache', ...SEC });
+      res.end(body);
       return;
     }
 
@@ -1292,6 +1374,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         // la pantalla de bienvenida para saber que va a usar antes de escribir el primer mensaje.
         defaultProvider: (cfg.appConfig || {}).AEGIS_DEFAULT_PROVIDER || '',
         defaultModel: (cfg.appConfig || {}).AEGIS_DEFAULT_MODEL || '',
+        defaultEffort: (cfg.appConfig || {}).AEGIS_THINKING_EFFORT || '',
       })};`;
       res.writeHead(200, { 'content-type': MIME['.js'], 'cache-control': 'no-store', 'cross-origin-resource-policy': 'same-origin', ...SEC });
       res.end(body);
@@ -1427,6 +1510,8 @@ server.on('upgrade', onUpgrade);
 
 const port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
 server.listen(port, '0.0.0.0', () => {
+  // La escucha/health ya estan disponibles mientras corre el barrido en otro proceso.
+  sweepPendingAtStartup();
   console.log(`[aegis-web] UI:      http://${cfg.publicHost}:${port}   (LAN)`);
   console.log(`[aegis-web] UI:      http://127.0.0.1:${port}          (local)`);
   console.log(`[aegis-web] backend: ws://${cfg.publicHost}:${cfg.servePort}/acp   (directo, LAN)`);
