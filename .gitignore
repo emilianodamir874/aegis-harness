@@ -1,3 +1,8 @@
+# scratch de sondas y backups: las sondas que valen la pena se versionan con nombre propio
+tools/_*
+server.mjs.bak-*
+tmp/
+
 # deps y salidas de node
 # buzon de descargas: lo que el agente deja para bajar (generado)
 outbox/
