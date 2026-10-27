@@ -371,7 +371,16 @@ function toggleMap(anchor: HTMLElement): void {
     };
     const opciones = models.map(conocer);
     const nombres = new Set(opciones.map((o) => o.value));
-    let actual = modelLabel((usage || {}) as UsageState);
+    // La verdad esta en la sesion (configOptions), no en el texto de los chips: leer el modelo y el
+    // effort de ahi evita que el selector caiga en "elegi uno" cuando el chip dice otra cosa.
+    const sesion = (window as any).__aegisWeb?.state?.current;
+    const opcionesSesion: any[] = Array.isArray(sesion?.configOptions) ? sesion.configOptions : [];
+    const valorSesion = (id: string): string => {
+      const encontrado = opcionesSesion.find((o) => o && o.id === id);
+      return encontrado ? String(encontrado.currentValue ?? encontrado.value ?? '') : '';
+    };
+    const effortSesion = valorSesion('thinking_effort');
+    let actual = valorSesion('model') || modelLabel((usage || {}) as UsageState);
     const chips = (document.querySelector('#chips')?.textContent || '').trim();
     if (!nombres.has(actual)) {
       // el modelo puede venir con effort pegado, o sin figurar en la tabla
@@ -386,9 +395,13 @@ function toggleMap(anchor: HTMLElement): void {
     const palabras = [...document.querySelectorAll('#chips *')].flatMap((n) =>
       (n.textContent || '').toLowerCase().split(/[^a-z]+/).filter(Boolean),
     );
-    const effortEnUso = [...palabras].reverse().find((p) => EFFORTS.includes(p)) || '';
+    const effortEnUso =
+      (EFFORTS.includes(effortSesion) ? effortSesion : '') ||
+      [...palabras].reverse().find((p) => EFFORTS.includes(p)) ||
+      '';
+    // Con effort en uso se exige la fila con ese effort; sin effort, la fila pelada.
     const indiceActual = opciones.findIndex(
-      (o) => (o.value === actual && (!effortEnUso || o.effort === effortEnUso)) || (o.base === actual && o.effort === effortEnUso),
+      (o) => (o.value === actual || o.base === actual) && o.effort === effortEnUso,
     );
     if (indiceActual > 0) {
       const [enUso] = opciones.splice(indiceActual, 1);

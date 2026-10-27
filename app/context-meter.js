@@ -266,7 +266,14 @@ function toggleMap(anchor) {
     };
     const opciones = models.map(conocer);
     const nombres = new Set(opciones.map((o) => o.value));
-    let actual = modelLabel(usage || {});
+    const sesion = window.__aegisWeb?.state?.current;
+    const opcionesSesion = Array.isArray(sesion?.configOptions) ? sesion.configOptions : [];
+    const valorSesion = (id) => {
+      const encontrado = opcionesSesion.find((o) => o && o.id === id);
+      return encontrado ? String(encontrado.currentValue ?? encontrado.value ?? "") : "";
+    };
+    const effortSesion = valorSesion("thinking_effort");
+    let actual = valorSesion("model") || modelLabel(usage || {});
     const chips = (document.querySelector("#chips")?.textContent || "").trim();
     if (!nombres.has(actual)) {
       const porBase = opciones.find((o) => o.base === actual);
@@ -276,9 +283,9 @@ function toggleMap(anchor) {
     const palabras = [...document.querySelectorAll("#chips *")].flatMap(
       (n) => (n.textContent || "").toLowerCase().split(/[^a-z]+/).filter(Boolean)
     );
-    const effortEnUso = [...palabras].reverse().find((p) => EFFORTS.includes(p)) || "";
+    const effortEnUso = (EFFORTS.includes(effortSesion) ? effortSesion : "") || [...palabras].reverse().find((p) => EFFORTS.includes(p)) || "";
     const indiceActual = opciones.findIndex(
-      (o) => o.value === actual && (!effortEnUso || o.effort === effortEnUso) || o.base === actual && o.effort === effortEnUso
+      (o) => (o.value === actual || o.base === actual) && o.effort === effortEnUso
     );
     if (indiceActual > 0) {
       const [enUso] = opciones.splice(indiceActual, 1);
