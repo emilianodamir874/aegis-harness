@@ -365,6 +365,52 @@ mod tests {
         }
     }
 
+    /// Llama de verdad al extractor configurado, con el prompt de extraccion, para probar la
+    /// cadena entera: provider propio + modelo + credenciales + request. Deja una fila real en
+    /// `usage_ledger`, que es lo unico que prueba que el trabajo se esta haciendo donde se cree.
+    #[tokio::test]
+    #[ignore = "hace una llamada real al proveedor y escribe en el ledger"]
+    async fn extractor_provider_responde_una_extraccion() {
+        let provider_name = crate::config::Config::global()
+            .get_param::<String>("AEGIS_MEMORY_EXTRACT_PROVIDER")
+            .ok();
+        let model = model_override();
+        let Some((name, model)) = extractor_choice(provider_name.as_deref(), model.as_deref()) else {
+            eprintln!("VERIFICA: sin knobs configurados");
+            return;
+        };
+        let provider = match crate::providers::create(&name, Vec::new()).await {
+            Ok(provider) => provider,
+            Err(error) => {
+                eprintln!("VERIFICA: FALLO create('{name}'): {error}");
+                return;
+            }
+        };
+        let model_config =
+            match crate::model_config::model_config_from_user_config(provider.get_name(), &model) {
+                Ok(config) => config,
+                Err(error) => {
+                    eprintln!("VERIFICA: FALLO model_config '{model}': {error}");
+                    return;
+                }
+            };
+        let mut conversation = Conversation::default();
+        conversation.push(crate::conversation::message::Message::user().with_text(
+            "El operador pidio mover la extraccion de memoria a gpt-6-luna. Respondio que si.",
+        ));
+        conversation.push(
+            crate::conversation::message::Message::assistant().with_text(
+                "Hecho: la extraccion de memoria ahora corre en chatgpt_codex con gpt-6-luna, \
+                 verificado contra el ledger y con dos tests nuevos sobre la politica de seleccion. \
+                 El proveedor de la sesion sigue en open_design, asi que el turno no cambia de modelo.",
+            ),
+        );
+        match run_turn(provider.as_ref(), &model_config, "probe-extractor", &conversation).await {
+            Ok(tocados) => eprintln!("VERIFICA: run_turn ok con '{name}/{model}', hechos tocados={tocados}"),
+            Err(error) => eprintln!("VERIFICA: run_turn FALLO con '{name}/{model}': {error}"),
+        }
+    }
+
     #[test]
     fn extractor_choice_trims_values() {
         assert_eq!(
