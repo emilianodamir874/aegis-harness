@@ -499,16 +499,22 @@ impl SummonClient {
         Tool::new(
             "delegate",
             "Delegate a task to a subagent that runs independently with its own context.\n\n\
+             Use it when one of these is true. These are triggers, not preferences:\n\
+             - The work means reading or grepping more than about 3 files and you only need the conclusion.\n\
+             - The work is a search over the whole tree: where is X used, which files mention Y.\n\
+             - The work produces output you would not want in this conversation: logs, big diffs, listings.\n\
+             - The work is independent of what you do next, so it can run in parallel.\n\n\
+             Do NOT delegate when:\n\
+             - You need the intermediate steps to decide the next action: a delegate returns only its final result.\n\
+             - The task touches files another delegate is editing. Same-file work conflicts.\n\
+             - One shell command answers it. A single grep, cat or ls is cheaper than a subagent.\n\n\
              Modes:\n\
-             1. Ad-hoc: Provide `instructions` for a custom task\n\
-             2. Source-based: Provide `source` name to run a subrecipe, recipe, or agent\n\
-             3. Combined: Pair a source with a task (e.g., source: \"deploy\", instructions: \"deploy to staging\")\n\n\
-             Effective Delegation:\n\
-             - Delegates know only instructions + source content\n\
-             - Delegates cannot coordinate. Same-file work = conflicts.\n\
-             - You get a delegate's result back once it finishes.\n\n\
-             Research (read-only): delegates explore and report back.\n\
-             Work (writes): partition files strictly - no two delegates touch the same file."
+             1. Ad-hoc: provide instructions for a custom task\n\
+             2. Source-based: provide source naming a subrecipe, recipe or agent\n\
+             3. Combined: source plus instructions, for example source deploy with deploy to staging\n\n\
+             Cost: a delegate pays its own context and turns. It pays off when it saves you reading a lot,\n\
+             or when it runs in parallel with work you already do. Read-only research is safe to\n\
+             parallelize; write work must partition files strictly so no two delegates touch one file."
                 .to_string(),
             schema.as_object().unwrap().clone(),
         )

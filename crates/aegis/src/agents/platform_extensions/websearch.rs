@@ -98,12 +98,12 @@ impl WebSearchClient {
         vec![
             Tool::new(
                 "web_search".to_string(),
-                "Search the web. Tries Tavily (TAVILY_API_KEY), SearXNG (SEARXNG_URL), Mojeek, Bing and DuckDuckGo lite in order, reports which engine answered, and caches results for an hour. Optional extract pulls the page text of the top results.".to_string(),
+                "Discover URLs you do not have yet. Use it as the FIRST step for any question about current or external facts: prices, releases, versions, docs, APIs, error messages, news, or anything that could have changed since your training. Do not answer those from memory because you half-remember them.\n\nOne call returns the engine that answered, ranked hits, and with `extract` the page text of the top results, so you usually do not need a second fetch. Tries Tavily (TAVILY_API_KEY), SearXNG (SEARXNG_URL), Mojeek, Bing and DuckDuckGo lite in order, and caches results for an hour.\n\nUse `web_fetch` instead when you already have the exact URL.".to_string(),
                 schema(serde_json::to_value(schemars::schema_for!(WebSearchParams)).unwrap_or_default()),
             ),
             Tool::new(
                 "web_fetch".to_string(),
-                "Fetch a URL and return its text without HTML boilerplate (cached for an hour). JSON responses are returned as-is, so static JSON APIs (catalogs, price feeds) work too.".to_string(),
+                "Fetch one known URL and return its text without HTML boilerplate (cached for an hour). Use it when you already have the link: a docs page, a changelog, a raw file on GitHub, an API endpoint. If you do not have the URL yet, call web_search first: it already returns extracted text for the top results.\n\nJSON responses are returned as-is, so static JSON APIs (catalogs, price feeds, package metadata) work too. Prefer api.github.com, raw.githubusercontent.com and registry JSON over scraping a rendered page.".to_string(),
                 schema(serde_json::to_value(schemars::schema_for!(WebFetchParams)).unwrap_or_default()),
             ),
         ]
