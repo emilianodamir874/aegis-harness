@@ -14,9 +14,14 @@ function wire() {
   });
   document.getElementById("btn-activity")?.addEventListener("click", () => {
     closeMobileDrawer();
-    const messages = document.getElementById("messages");
-    messages?.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-    messages?.focus({ preventScroll: true });
+    void window.__aegisActivity?.open();
+  });
+  document.getElementById("btn-changes")?.addEventListener("click", () => {
+    const runtime = window.__aegisWeb;
+    const cwd = runtime?.state?.current?.cwd;
+    closeMobileDrawer();
+    if (cwd) void window.__aegisChanges?.open(cwd);
+    else void window.__aegisChanges?.open("");
   });
   const sidebar = document.getElementById("sidebar");
   if (!sidebar) return;

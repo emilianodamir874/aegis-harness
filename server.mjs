@@ -3,10 +3,11 @@ import https from "node:https";
 import net from "node:net";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
+import { readFile, appendFile, mkdir, stat, opendir, writeFile, rename, realpath, lstat, open } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
+import { execFile } from "node:child_process";
 import zlib from "node:zlib";
-import { join, extname, normalize, resolve, dirname, basename, sep } from "node:path";
+import { join, extname, normalize, resolve, dirname, basename, sep, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 const WS_ROOTS = (process.env.AEGIS_WORKSPACE_ROOTS || "C:\\Aegis-Proyects;C:\\Users\\Emiliano").split(";").map((s) => s.trim()).filter(Boolean).map((s) => resolve(s));
 function wsInside(path) {
@@ -17,6 +18,19 @@ function wsInside(path) {
   });
 }
 const WS_DEFAULTS_FILE = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "config", "workspaces.defaults.json");
+const fileQueues = /* @__PURE__ */ new Map();
+function withFileQueue(file, operation) {
+  const previous = fileQueues.get(file) || Promise.resolve();
+  const result = previous.then(operation);
+  const settled = result.then(() => {
+  }, () => {
+  });
+  fileQueues.set(file, settled);
+  void settled.then(() => {
+    if (fileQueues.get(file) === settled) fileQueues.delete(file);
+  });
+  return result;
+}
 async function readWsDefaults() {
   try {
     const raw = await readFile(WS_DEFAULTS_FILE, "utf8");
@@ -46,41 +60,34 @@ async function readJsonBody(req, maxBytes = 65536) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 const MEMORY_DIR = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "data", "memory");
-const pendingCache = new Map();
-
-// Al arrancar, las confirmaciones que quedaron esperando de una corrida anterior ya no pueden
-// responderse: el proceso que las esperaba murio con el reinicio. Se cancelan una vez para que el
-// store quede consistente y el indice no las siga reportando. Es idempotente: sin pendientes no
-// escribe nada.
+const pendingCache = /* @__PURE__ */ new Map();
 function sweepPendingAtStartup() {
-  try {
-    const env = { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" };
-    const bin = process.env.AEGIS_SERVE_BIN || "C:/Aegis-Proyects/core/bin/aegis-current.exe";
-    // El barrido vive en el binario (`aegis-serve --sweep-pending`) porque ahi esta el modelo de
-    // mensajes: si el serve se reinicia sin que arranque este server web, el subcomando se puede
-    // correr igual a mano. El script node queda como respaldo si el binario no tiene el flag.
-    // Este modulo es ESM: `require` no existe aca y el catch se comia el error en silencio.
-    let salida = "";
+  const env = { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" };
+  const bin = process.env.AEGIS_SERVE_BIN || "C:/Aegis-Proyects/core/bin/aegis-current.exe";
+  const run = (command, args) => new Promise((ok, fail) => {
+    execFile(
+      command,
+      args,
+      { encoding: "utf8", timeout: 9e4, maxBuffer: 1024 * 1024, env },
+      (error, stdout) => error ? fail(error) : ok(stdout)
+    );
+  });
+  void (async () => {
+    let output;
     try {
-      salida = execFileSync(bin, ["--sweep-pending"], { encoding: "utf8", timeout: 9e4, env });
+      output = await run(bin, ["--sweep-pending"]);
     } catch {
-      salida = execFileSync(
-        process.execPath,
-        ["--experimental-sqlite", join(DIR, "tools", "sweep-pending.mjs"), "--apply"],
-        { encoding: "utf8", timeout: 9e4, env },
-      );
+      try {
+        output = await run(process.execPath, ["--experimental-sqlite", join(DIR, "tools", "sweep-pending.mjs"), "--apply"]);
+      } catch (error) {
+        console.error(`[pending] barrido de arranque fallo: ${String(error?.message || error)}`);
+        return;
+      }
     }
-    const resumen = String(salida || "")
-      .split("\n")
-      .filter((linea) => /confirmaciones|sin respuesta|respuestas cancel|backup/.test(linea))
-      .slice(0, 4)
-      .join(" | ");
-    if (resumen) console.log(`[pending] barrido de arranque: ${resumen}`);
-  } catch (e) {
-    console.log(`[pending] barrido de arranque fallo: ${(e && e.message) || e}`);
-  }
+    const summary = output.split("\n").filter((line) => /confirmaciones|sin respuesta|respuestas cancel|backup/.test(line)).slice(0, 4).join(" | ");
+    if (summary) console.log(`[pending] barrido de arranque: ${summary}`);
+  })();
 }
-sweepPendingAtStartup();
 const MEMORY_FACTS_FILE = join(MEMORY_DIR, "facts.jsonl");
 async function readMemoryFacts() {
   let raw = "";
@@ -155,7 +162,8 @@ async function workspaceList(raw) {
     });
   }
 }
-const DIR = fileURLToPath(new URL(".", import.meta.url));
+const MODULE_DIR = fileURLToPath(new URL(".", import.meta.url));
+const DIR = ["src", "dist-ts"].includes(basename(resolve(MODULE_DIR))) ? dirname(MODULE_DIR) : MODULE_DIR;
 const gzipCache = /* @__PURE__ */ new Map();
 function gzipBuf(buf, key) {
   const hit = gzipCache.get(key);
@@ -168,6 +176,31 @@ function gzipBuf(buf, key) {
 const cfg = JSON.parse(await readFile(join(DIR, "config.json"), "utf8"));
 const APP = join(DIR, "app");
 const OUTBOX = join(DIR, "outbox");
+const OUTBOX_PREVIEW_MAX = 2e6;
+function outboxName(name) {
+  return !!name && name !== "." && name !== ".." && !/[\\/\x00-\x1f\x7f:]/.test(name) && !name.includes("..") && !/[. ]$/.test(name) && !name.startsWith(".") && !/^(?:auth|config|secrets|permission|tokens)\.json$|^(?:config|secrets|permission)\.ya?ml$|^id_(?:rsa|ed25519)$|\.(?:pem|key|p12|pfx|db|sqlite[0-9]*)$/i.test(name);
+}
+async function openOutboxFile(name) {
+  if (!outboxName(name)) throw new Error("nombre invalido");
+  const root = await realpath(OUTBOX);
+  if (root.toLowerCase() !== resolve(OUTBOX).toLowerCase()) throw new Error("outbox no permitido");
+  const candidate = join(OUTBOX, name);
+  const entry = await lstat(candidate);
+  if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("no es archivo regular");
+  const actual = await realpath(candidate);
+  if (dirname(actual).toLowerCase() !== root.toLowerCase()) throw new Error("fuera del outbox");
+  const handle = await open(actual, "r");
+  try {
+    const [info, current, currentPath] = await Promise.all([handle.stat(), lstat(candidate), realpath(candidate)]);
+    if (!info.isFile() || !current.isFile() || current.isSymbolicLink() || currentPath.toLowerCase() !== actual.toLowerCase() || info.ino && current.ino && (info.ino !== current.ino || info.dev !== current.dev)) {
+      throw new Error("archivo cambiado");
+    }
+    return { handle, info };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
 await mkdir(OUTBOX, { recursive: true }).catch(() => {
 });
 await mkdir(join(DIR, "logs"), { recursive: true }).catch(() => {
@@ -181,11 +214,11 @@ async function goalsIndex(sid) {
   if (previo && Date.now() - previo.at < 6e4) return previo.body;
   let body;
   try {
-    const { execFile } = await import("node:child_process");
+    const { execFile: execFile2 } = await import("node:child_process");
     const args = ["--experimental-sqlite", join(DIR, "tools", "goals-index.mjs")];
     if (clave) args.push(clave);
     body = await new Promise((ok) => {
-      execFile(
+      execFile2(
         process.execPath,
         args,
         { timeout: 4e4, maxBuffer: 8 * 1024 * 1024 },
@@ -205,10 +238,10 @@ async function statsIndex(days) {
   if (previo && Date.now() - previo.at < 6e4) return previo.body;
   let body;
   try {
-    const { execFile } = await import("node:child_process");
+    const { execFile: execFile2 } = await import("node:child_process");
     const args = ["--experimental-sqlite", join(DIR, "tools", "stats-index.mjs"), "--days", clave];
     body = await new Promise((ok) => {
-      execFile(
+      execFile2(
         process.execPath,
         args,
         { timeout: 4e4, maxBuffer: 32 * 1024 * 1024 },
@@ -234,10 +267,10 @@ async function searchIndex(queryRaw, limit) {
     body = JSON.stringify({ query: "", results: [], totalSessions: 0, totalMatches: 0, truncated: false });
   } else {
     try {
-      const { execFile } = await import("node:child_process");
+      const { execFile: execFile2 } = await import("node:child_process");
       const args = ["--experimental-sqlite", join(DIR, "tools", "search-index.mjs"), "--query", query, "--limit", String(limit)];
       body = await new Promise((ok) => {
-        execFile(
+        execFile2(
           process.execPath,
           args,
           { timeout: 2e4, maxBuffer: 8 * 1024 * 1024 },
@@ -528,6 +561,27 @@ const PIPER_DIR = "C:/Aegis-Proyects/core/state/piper/voices";
 const PIPER_VOZ = "es_AR-daniela-high";
 const _ttsCache = /* @__PURE__ */ new Map();
 const TTS_CACHE_MAX = 24;
+const TTS_TEXT_MAX = 1200;
+const TTS_IN_FLIGHT_MAX = 2;
+const TTS_WAITING_MAX = 6;
+let ttsInFlight = 0;
+let ttsWaiting = 0;
+const ttsWaiters = [];
+async function ttsSlot() {
+  if (ttsInFlight < TTS_IN_FLIGHT_MAX) {
+    ttsInFlight++;
+  } else {
+    if (ttsWaiting >= TTS_WAITING_MAX) throw new Error("tts ocupado");
+    ttsWaiting++;
+    await new Promise((resolve2) => ttsWaiters.push(resolve2));
+    ttsWaiting--;
+  }
+  return () => {
+    const next = ttsWaiters.shift();
+    if (next) next();
+    else ttsInFlight--;
+  };
+}
 let _vocesPiper = null;
 async function vozPiperValida(voz) {
   const fss = await import("node:fs");
@@ -615,15 +669,34 @@ async function piperSuelto(texto, modelo, ritmo, ns = 0.667, nw = 0.8) {
     ]);
     const partes = [];
     let err = "";
-    p.stdout.on("data", (d) => partes.push(d));
-    p.stderr.on("data", (d) => {
-      err += d.toString();
+    let bytes = 0;
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      p.kill();
+    }, 35e3);
+    p.stdout.on("data", (d) => {
+      bytes += d.length;
+      if (bytes > 12 * 1024 * 1024) {
+        p.kill();
+        return;
+      }
+      partes.push(d);
     });
-    p.on("error", reject);
+    p.stderr.on("data", (d) => {
+      err = (err + d.toString()).slice(-300);
+    });
+    p.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
     p.on("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) return reject(new Error("piper suelto sin respuesta en 35000 ms"));
+      if (bytes > 12 * 1024 * 1024) return reject(new Error("piper audio demasiado grande"));
       const buf = Buffer.concat(partes);
       if (code !== 0) return reject(new Error("piper exit " + code + " " + err.slice(0, 200)));
-      if (!buf || buf.length < 100) return reject(new Error("piper sin audio: " + err.slice(0, 150)));
+      if (buf.length < 100) return reject(new Error("piper sin audio: " + err.slice(0, 150)));
       resolve2(buf);
     });
     p.stdin.write(String(texto));
@@ -713,7 +786,12 @@ const handler = async (req, res) => {
         res.end(JSON.stringify({ error: "unauthorized", login: "/login" }));
         return;
       }
-      const texto = String(url.searchParams.get("text") || "").slice(0, 4e3);
+      const texto = url.searchParams.get("text") || "";
+      if (texto.length > TTS_TEXT_MAX) {
+        res.writeHead(413, { "content-type": "text/plain", "cache-control": "no-store" });
+        res.end("tts: text excede " + TTS_TEXT_MAX + " caracteres");
+        return;
+      }
       const motor = String(url.searchParams.get("engine") || cfg.ttsEngine || "piper");
       const voz = String(url.searchParams.get("voice") || cfg.ttsVoice || PIPER_VOZ);
       const rate = Number(url.searchParams.get("rate") || cfg.ttsRate || 1.05);
@@ -722,6 +800,14 @@ const handler = async (req, res) => {
       if (!texto) {
         res.writeHead(400, { "content-type": "text/plain" });
         res.end("falta text");
+        return;
+      }
+      let releaseTts;
+      try {
+        releaseTts = await ttsSlot();
+      } catch {
+        res.writeHead(503, { "content-type": "text/plain", "cache-control": "no-store", "retry-after": "2" });
+        res.end("tts ocupado");
         return;
       }
       try {
@@ -752,6 +838,8 @@ const handler = async (req, res) => {
       } catch (err) {
         res.writeHead(502, { "content-type": "text/plain" });
         res.end("tts: " + (err && err.message ? err.message : String(err)));
+      } finally {
+        releaseTts();
       }
       return;
     }
@@ -900,14 +988,16 @@ ${Buffer.concat(chunks).toString("utf8")}
             res.end(JSON.stringify({ error: "root fuera de las raices permitidas" }));
             return;
           }
-          const data3 = await readWsDefaults();
           const key = wsDefaultsKey(root);
-          if (body2 && body2.defaults && typeof body2.defaults === "object") {
-            data3[key] = { root: resolve(root), defaults: body2.defaults, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
-          } else {
-            delete data3[key];
-          }
-          await writeWsDefaults(data3);
+          await withFileQueue(WS_DEFAULTS_FILE, async () => {
+            const data3 = await readWsDefaults();
+            if (body2 && body2.defaults && typeof body2.defaults === "object") {
+              data3[key] = { root: resolve(root), defaults: body2.defaults, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+            } else {
+              delete data3[key];
+            }
+            await writeWsDefaults(data3);
+          });
           res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
           res.end(JSON.stringify({ ok: true, key }));
         } catch (e) {
@@ -916,38 +1006,150 @@ ${Buffer.concat(chunks).toString("utf8")}
         }
         return;
       }
-      const data2 = await readWsDefaults();
+      const data2 = await withFileQueue(WS_DEFAULTS_FILE, readWsDefaults);
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
       res.end(JSON.stringify(data2));
       return;
     }
-    if (url.pathname === "/file.json") {
-      const raw = url.searchParams.get("path") || "";
-      const resolvedPath = resolve(raw);
-      const inside = WS_ROOTS.some((root) => {
-        const r = resolve(root);
-        return resolvedPath === r || resolvedPath.startsWith(r.endsWith(sep) ? r : r + sep);
-      });
-      if (!raw || !inside) {
-        res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-        res.end(JSON.stringify({ error: "ruta fuera de las raices permitidas" }));
+    if (url.pathname === "/changes.json") {
+      const headers2 = { "content-type": "application/json", "cache-control": "no-store", ...SEC };
+      const reply = (status2, body2) => {
+        res.writeHead(status2, headers2);
+        res.end(JSON.stringify(body2));
+      };
+      if (!authed(req)) {
+        reply(401, { error: "unauthorized", login: "/login" });
+        return;
+      }
+      if (req.method !== "GET" || !sameOriginRequest(req)) {
+        reply(403, { error: "forbidden" });
+        return;
+      }
+      const raw = url.searchParams.get("cwd");
+      if (!raw || !isAbsolute(raw) || raw.includes("\0") || /[\x00-\x1f\x7f]/.test(raw)) {
+        reply(400, { error: "cwd absoluto requerido" });
+        return;
+      }
+      const denied = (path) => /(?:^|[\\/])(?:state|config|\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.(?:json|ya?ml)|secrets?\.ya?ml|permission\.ya?ml|tokens\.json|credentials?(?:\.[^\\/]*)?|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      const inside = (path, root) => {
+        const p = resolve(path).toLowerCase();
+        const r = resolve(root).toLowerCase();
+        return p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
+      };
+      const lexical = resolve(raw);
+      if (!wsInside(lexical) || denied(lexical)) {
+        reply(403, { error: "cwd no permitido" });
+        return;
+      }
+      let actual;
+      try {
+        actual = await realpath(lexical);
+      } catch {
+        reply(404, { error: "cwd no disponible" });
         return;
       }
       try {
-        const info = await stat(resolvedPath);
-        if (!info.isFile()) throw new Error("no es un archivo");
-        if (info.size > 15e5) {
-          res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-          res.end(JSON.stringify({ path: resolvedPath, tooLarge: true, bytes: info.size }));
+        const roots = await Promise.all(WS_ROOTS.map(async (root) => ({ root, actual: await realpath(root).catch(() => "") })));
+        const allowed = (candidate, real) => roots.some(({ root, actual: rootReal }) => rootReal && inside(candidate, root) && inside(real, rootReal));
+        if (!allowed(lexical, actual) || denied(actual) || !(await stat(actual)).isDirectory()) {
+          reply(403, { error: "cwd no permitido" });
           return;
         }
-        const body2 = await readFile(resolvedPath);
+        const output = await new Promise((ok, fail) => {
+          execFile(
+            process.execPath,
+            [join(DIR, "tools", "changes-index.mjs"), "--cwd", actual],
+            { encoding: "utf8", timeout: 35e3, maxBuffer: 1024 * 1024, windowsHide: true },
+            (error, stdout) => error ? fail(error) : ok(stdout)
+          );
+        });
+        const data2 = JSON.parse(output);
+        if (!data2 || typeof data2 !== "object" || !("kind" in data2)) throw new Error("invalid result");
+        const result = data2;
+        if (result.kind === "not-git") {
+          reply(200, { kind: "not-git", cwd: actual, entries: [], truncated: false });
+          return;
+        }
+        if (result.kind !== "git" || typeof result.root !== "string" || !isAbsolute(result.root) || !Array.isArray(result.entries)) {
+          throw new Error("invalid result");
+        }
+        const gitRoot = resolve(result.root);
+        const gitReal = await realpath(gitRoot);
+        const rootAllowed = roots.some(({ root, actual: rootReal }) => rootReal && inside(lexical, root) && inside(gitReal, rootReal) && (inside(gitRoot, root) || inside(gitRoot, rootReal)));
+        if (!rootAllowed || denied(gitRoot) || denied(gitReal)) {
+          reply(403, { error: "repositorio no permitido" });
+          return;
+        }
+        const entries = result.entries.slice(0, 60).filter((entry) => {
+          if (!entry || typeof entry !== "object") return false;
+          const item = entry;
+          if (typeof item.path !== "string" || typeof item.staged !== "string" || typeof item.worktree !== "string" || typeof item.diff !== "string") return false;
+          if (!item.path || isAbsolute(item.path) || item.path.includes("\\") || item.path.split("/").some((part) => !part || part === "." || part === "..")) return false;
+          return !denied(item.path) && !denied(resolve(gitRoot, item.path));
+        });
+        reply(200, { kind: "git", cwd: actual, root: gitRoot, entries, truncated: result.truncated === true || entries.length !== result.entries.length });
+      } catch {
+        reply(502, { kind: "error", entries: [], truncated: false, error: "Cambios no disponibles" });
+      }
+      return;
+    }
+    if (url.pathname === "/file.json") {
+      if (!authed(req)) {
+        res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+        res.end(JSON.stringify({ error: "unauthorized", login: "/login" }));
+        return;
+      }
+      if (req.method !== "GET" || !sameOriginRequest(req)) {
+        res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+        res.end(JSON.stringify({ error: "forbidden" }));
+        return;
+      }
+      const raw = url.searchParams.get("path") || "";
+      const resolvedPath = resolve(raw);
+      const deny = (path) => /(?:^|[\\/])(?:\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.json|config\.ya?ml|permission\.ya?ml|secrets\.ya?ml|tokens\.json|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      const allowed = (path) => wsInside(path) && !deny(path);
+      if (!raw || !allowed(resolvedPath)) {
+        res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+        res.end(JSON.stringify({ error: "ruta no permitida" }));
+        return;
+      }
+      try {
+        const actualPath = await realpath(resolvedPath);
+        const roots = await Promise.all(WS_ROOTS.map((root) => realpath(root).catch(() => "")));
+        const actual = actualPath.toLowerCase();
+        if (!roots.some((root) => root && (actual === root.toLowerCase() || actual.startsWith(root.toLowerCase().endsWith(sep) ? root.toLowerCase() : root.toLowerCase() + sep))) || deny(actualPath)) {
+          res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+          res.end(JSON.stringify({ error: "ruta real no permitida" }));
+          return;
+        }
+        const handle = await open(actualPath, "r");
+        let info;
+        let body2;
+        try {
+          info = await handle.stat();
+          if (!info.isFile()) throw new Error("no es un archivo");
+          if (info.size > 15e5) {
+            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+            res.end(JSON.stringify({ path: resolvedPath, tooLarge: true, bytes: info.size }));
+            return;
+          }
+          const buffer = Buffer.alloc(1500001);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+          if (bytesRead > 15e5) {
+            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+            res.end(JSON.stringify({ path: resolvedPath, tooLarge: true, bytes: bytesRead }));
+            return;
+          }
+          body2 = buffer.subarray(0, bytesRead);
+        } finally {
+          await handle.close();
+        }
         const text = body2.toString("utf8");
         res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
         res.end(JSON.stringify({
           path: resolvedPath,
           exists: true,
-          bytes: info.size,
+          bytes: body2.length,
           mtime: info.mtime.toISOString(),
           sha256: crypto.createHash("sha256").update(body2).digest("hex"),
           text,
@@ -960,49 +1162,59 @@ ${Buffer.concat(chunks).toString("utf8")}
       return;
     }
     if (url.pathname === "/outbox.json") {
-      const OUTBOX_DIR = join(DIR, "outbox");
       const name = url.searchParams.get("name") || "";
       const preview = url.searchParams.get("preview") === "1";
       if (preview && name) {
-        const safe = name.replace(/[\\/]/g, "");
-        const target = join(OUTBOX_DIR, safe);
-        if (!target.startsWith(OUTBOX_DIR)) {
+        if (!outboxName(name)) {
           res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
           res.end(JSON.stringify({ error: "nombre invalido" }));
           return;
         }
         try {
-          const info = await stat(target);
-          if (info.size > 2e6) {
-            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-            res.end(JSON.stringify({ name: safe, tooLarge: true, bytes: info.size }));
-            return;
+          const { handle, info } = await openOutboxFile(name);
+          let body2;
+          try {
+            if (info.size > OUTBOX_PREVIEW_MAX) {
+              res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+              res.end(JSON.stringify({ name, tooLarge: true, bytes: info.size }));
+              return;
+            }
+            const buffer = Buffer.alloc(OUTBOX_PREVIEW_MAX + 1);
+            const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+            if (bytesRead > OUTBOX_PREVIEW_MAX) {
+              res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+              res.end(JSON.stringify({ name, tooLarge: true, bytes: bytesRead }));
+              return;
+            }
+            body2 = buffer.subarray(0, bytesRead);
+          } finally {
+            await handle.close();
           }
-          const body2 = await readFile(target);
-          const ext = extname(safe).toLowerCase();
+          const ext = extname(name).toLowerCase();
           const binary = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip"].includes(ext);
           res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
           res.end(JSON.stringify({
-            name: safe,
-            bytes: info.size,
+            name,
+            bytes: body2.length,
             ext,
             binary,
             text: binary ? "" : body2.toString("utf8"),
             dataUrl: binary ? "data:application/octet-stream;base64," + body2.toString("base64") : ""
           }));
-        } catch (e) {
+        } catch {
           res.writeHead(404, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-          res.end(JSON.stringify({ error: String(e && e.message || e) }));
+          res.end(JSON.stringify({ error: "archivo no disponible" }));
         }
         return;
       }
       const items = [];
       try {
-        const dir = await opendir(OUTBOX_DIR);
+        const dir = await opendir(OUTBOX);
         for await (const entry of dir) {
-          if (!entry.isFile()) continue;
+          if (!entry.isFile() || !outboxName(entry.name)) continue;
           try {
-            const info = await stat(join(OUTBOX_DIR, entry.name));
+            const { handle, info } = await openOutboxFile(entry.name);
+            await handle.close();
             items.push({
               name: entry.name,
               bytes: info.size,
@@ -1017,31 +1229,31 @@ ${Buffer.concat(chunks).toString("utf8")}
       }
       items.sort((a, b) => a.mtime < b.mtime ? 1 : -1);
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-      res.end(JSON.stringify({ dir: OUTBOX_DIR, items }));
+      res.end(JSON.stringify({ dir: OUTBOX, items }));
       return;
     }
     if (url.pathname === "/pending.json") {
-      // Confirmaciones pedidas y nunca respondidas, por sesion. Se calcula en un proceso aparte
-      // (mismo patron que goals/stats) porque el store pesa ~500 MB y esto es una consulta de
-      // lectura: no conviene tenerlo en el proceso del server.
-      let body2 = JSON.stringify({ sessions: [], total: 0 });
-      const previo = pendingCache.get("all");
-      if (previo && Date.now() - previo.at < 3e4) {
-        body2 = previo.body;
-      } else {
+      const previous = pendingCache.get("all");
+      let body2 = previous && Date.now() - previous.at < 3e4 ? previous.body : "";
+      if (!body2) {
         try {
-          const { execFile } = await import("node:child_process");
-          body2 = await new Promise((ok) => {
+          body2 = await new Promise((ok, fail) => {
             execFile(
               process.execPath,
               ["--experimental-sqlite", join(DIR, "tools", "pending-index.mjs")],
-              { timeout: 4e4, maxBuffer: 8 * 1024 * 1024 },
-              (_err, stdout) => ok(String(stdout || "").trim() || JSON.stringify({ sessions: [], total: 0 })),
+              {
+                timeout: 4e4,
+                maxBuffer: 8 * 1024 * 1024,
+                env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" }
+              },
+              (error, stdout) => error ? fail(error) : ok(stdout.trim())
             );
           });
+          if (!body2) throw new Error("indice vacio");
+          JSON.parse(body2);
           pendingCache.set("all", { at: Date.now(), body: body2 });
-        } catch (e) {
-          body2 = JSON.stringify({ sessions: [], total: 0, error: String((e && e.message) || e) });
+        } catch (error) {
+          body2 = JSON.stringify({ sessions: [], total: 0, error: String(error?.message || error) });
         }
       }
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-cache", ...SEC });
@@ -1053,92 +1265,97 @@ ${Buffer.concat(chunks).toString("utf8")}
         try {
           const body2 = await readJsonBody(req);
           const action = body2 && typeof body2.action === "string" ? body2.action : "";
-          const facts2 = await readMemoryFacts();
-          const find = (id2) => facts2.find((fact) => fact.id === id2);
-          const now = (/* @__PURE__ */ new Date()).toISOString();
-          let changed = false;
-          if (action === "consolidate") {
-            const { execFileSync } = await import("node:child_process");
-            const exe = process.env.AEGIS_SERVE_BIN || "C:/Aegis-Proyects/core/bin/aegis-current.exe";
-            let stdout = "";
-            try {
-              stdout = execFileSync(exe, ["--memory-consolidate"], {
-                env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" },
-                encoding: "utf8",
-                timeout: 3e4
+          await withFileQueue(MEMORY_FACTS_FILE, async () => {
+            const facts2 = await readMemoryFacts();
+            const find = (id2) => facts2.find((fact) => fact.id === id2);
+            const now = (/* @__PURE__ */ new Date()).toISOString();
+            let changed = false;
+            if (action === "consolidate") {
+              const { execFileSync } = await import("node:child_process");
+              const exe = process.env.AEGIS_SERVE_BIN || "C:/Aegis-Proyects/core/bin/aegis-current.exe";
+              let stdout = "";
+              try {
+                stdout = execFileSync(exe, ["--memory-consolidate"], {
+                  env: { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state" },
+                  encoding: "utf8",
+                  timeout: 3e4,
+                  maxBuffer: 1024 * 1024
+                });
+              } catch (e) {
+                res.writeHead(502, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+                res.end(JSON.stringify({ ok: false, error: "consolidate fallo: " + String(e?.message || e).slice(0, 300) }));
+                return;
+              }
+              const after = await readMemoryFacts();
+              res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+              res.end(JSON.stringify({ ok: true, output: stdout.trim(), facts: after }));
+              return;
+            }
+            const id = body2 && typeof body2.id === "string" ? body2.id : "";
+            if (action === "add") {
+              const text = body2 && typeof body2.text === "string" ? body2.text.trim() : "";
+              if (!text) {
+                res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+                res.end(JSON.stringify({ error: "text requerido" }));
+                return;
+              }
+              facts2.push({
+                id: nextMemoryId(facts2),
+                text,
+                kind: body2?.kind && body2.kind.trim() ? body2.kind.trim() : "fact",
+                tags: [],
+                confidence: typeof body2?.confidence === "number" ? Math.max(0, Math.min(1, body2.confidence)) : 0.9,
+                pinned: body2?.pinned === true,
+                status: "confirmed",
+                source: "declared",
+                evidence: ["panel: declarado"],
+                created: now,
+                updated: now,
+                last_seen: now,
+                session: "panel"
               });
-            } catch (e) {
-              stdout = String(e?.message || e);
+              changed = true;
+            } else if (id) {
+              const fact = find(id);
+              if (!fact) {
+                res.writeHead(404, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+                res.end(JSON.stringify({ error: "hecho inexistente: " + id }));
+                return;
+              }
+              if (action === "confirm") {
+                fact.status = "confirmed";
+                fact.updated = now;
+                changed = true;
+              } else if (action === "reject") {
+                fact.status = "rejected";
+                fact.updated = now;
+                changed = true;
+              } else if (action === "pin") {
+                fact.pinned = true;
+                fact.updated = now;
+                changed = true;
+              } else if (action === "unpin") {
+                fact.pinned = false;
+                fact.updated = now;
+                changed = true;
+              }
             }
-            const after = await readMemoryFacts();
-            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-            res.end(JSON.stringify({ ok: true, output: stdout.trim(), facts: after }));
-            return;
-          }
-          const id = body2 && typeof body2.id === "string" ? body2.id : "";
-          if (action === "add") {
-            const text = body2 && typeof body2.text === "string" ? body2.text.trim() : "";
-            if (!text) {
+            if (!changed) {
               res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-              res.end(JSON.stringify({ error: "text requerido" }));
+              res.end(JSON.stringify({ error: "accion no reconocida" }));
               return;
             }
-            facts2.push({
-              id: nextMemoryId(facts2),
-              text,
-              kind: body2?.kind && body2.kind.trim() ? body2.kind.trim() : "fact",
-              tags: [],
-              confidence: typeof body2?.confidence === "number" ? Math.max(0, Math.min(1, body2.confidence)) : 0.9,
-              pinned: body2?.pinned === true,
-              status: "confirmed",
-              source: "declared",
-              evidence: ["panel: declarado"],
-              created: now,
-              updated: now,
-              last_seen: now,
-              session: "panel"
-            });
-            changed = true;
-          } else if (id) {
-            const fact = find(id);
-            if (!fact) {
-              res.writeHead(404, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-              res.end(JSON.stringify({ error: "hecho inexistente: " + id }));
-              return;
-            }
-            if (action === "confirm") {
-              fact.status = "confirmed";
-              fact.updated = now;
-              changed = true;
-            } else if (action === "reject") {
-              fact.status = "rejected";
-              fact.updated = now;
-              changed = true;
-            } else if (action === "pin") {
-              fact.pinned = true;
-              fact.updated = now;
-              changed = true;
-            } else if (action === "unpin") {
-              fact.pinned = false;
-              fact.updated = now;
-              changed = true;
-            }
-          }
-          if (!changed) {
-            res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-            res.end(JSON.stringify({ error: "accion no reconocida" }));
-            return;
-          }
-          await writeMemoryFacts(facts2);
-          res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
-          res.end(JSON.stringify({ ok: true, facts: await readMemoryFacts() }));
+            await writeMemoryFacts(facts2);
+            res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
+            res.end(JSON.stringify({ ok: true, facts: await readMemoryFacts() }));
+          });
         } catch (e) {
           res.writeHead(400, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
           res.end(JSON.stringify({ error: String(e?.message || e) }));
         }
         return;
       }
-      const facts = await readMemoryFacts();
+      const facts = await withFileQueue(MEMORY_FACTS_FILE, readMemoryFacts);
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
       res.end(JSON.stringify({ path: MEMORY_FACTS_FILE, facts }));
       return;
@@ -1204,7 +1421,6 @@ ${Buffer.concat(chunks).toString("utf8")}
         // la pantalla de bienvenida para saber que va a usar antes de escribir el primer mensaje.
         defaultProvider: (cfg.appConfig || {}).AEGIS_DEFAULT_PROVIDER || "",
         defaultModel: (cfg.appConfig || {}).AEGIS_DEFAULT_MODEL || "",
-        // Effort con el que arranca un chat nuevo (AEGIS_THINKING_EFFORT del config.yaml).
         defaultEffort: (cfg.appConfig || {}).AEGIS_THINKING_EFFORT || ""
       })};`;
       res.writeHead(200, { "content-type": MIME[".js"], "cache-control": "no-store", "cross-origin-resource-policy": "same-origin", ...SEC });
@@ -1212,31 +1428,49 @@ ${Buffer.concat(chunks).toString("utf8")}
       return;
     }
     if (url.pathname.startsWith("/dl/") && req.method === "GET") {
-      const raw = decodeURIComponent(url.pathname.slice(4));
-      const name = normalize(raw).replace(/^[/\\]+/, "");
-      const plano = name && !name.includes("..") && !name.includes("/") && !name.includes("\\");
-      if (!plano) {
-        res.writeHead(400, { "content-type": "text/plain" });
+      let name = "";
+      try {
+        name = decodeURIComponent(url.pathname.slice(4));
+      } catch {
+      }
+      if (!outboxName(name)) {
+        res.writeHead(400, { "content-type": "text/plain", "cache-control": "no-store", ...SEC });
         res.end("bad path");
         return;
       }
-      let data2;
+      let opened;
       try {
-        data2 = await readFile(join(OUTBOX, name));
+        opened = await openOutboxFile(name);
       } catch {
-        res.writeHead(404, { "content-type": "text/plain" });
+        res.writeHead(404, { "content-type": "text/plain", "cache-control": "no-store", ...SEC });
         res.end("not found");
         return;
       }
-      const type2 = MIME[extname(name).toLowerCase()] || "application/octet-stream";
-      res.writeHead(200, {
-        "content-type": type2,
-        "content-length": data2.length,
-        "content-disposition": `attachment; filename="${name.replace(/"/g, "")}"`,
-        "cache-control": "no-store",
-        ...SEC
-      });
-      res.end(data2);
+      const { handle, info } = opened;
+      try {
+        if (info.size > 512 * 1024 * 1024) {
+          res.writeHead(413, { "content-type": "text/plain", "cache-control": "no-store", ...SEC });
+          res.end("file too large");
+          return;
+        }
+        const type2 = MIME[extname(name).toLowerCase()] || "application/octet-stream";
+        res.writeHead(200, {
+          "content-type": type2,
+          "content-length": info.size,
+          "content-disposition": `attachment; filename="${name.replace(/["\r\n]/g, "")}"`,
+          "cache-control": "no-store",
+          ...SEC
+        });
+        if (info.size === 0) {
+          res.end();
+          return;
+        }
+        await pipeline(handle.createReadStream({ start: 0, end: info.size - 1, autoClose: false }), res);
+      } catch {
+        res.destroy();
+      } finally {
+        await handle.close();
+      }
       return;
     }
     let pathname = decodeURIComponent(url.pathname);
@@ -1257,32 +1491,46 @@ ${Buffer.concat(chunks).toString("utf8")}
       return;
     }
     if (rel === "index.html") {
-      const stampOf = async (f) => {
-        const st2 = await stat(join(APP, f)).catch(() => null);
-        return st2 ? Math.round(st2.mtimeMs).toString(36) : "0";
-      };
-      const vJs = await stampOf("app.js");
-      const vCss = await stampOf("app.css");
-      const vSkills = await stampOf("skills.js");
-      data = Buffer.from(
-        String(data).replace("./app.js", "./app.js?v=" + vJs).replace("./app.css", "./app.css?v=" + vCss).replace("./skills.js", "./skills.js?v=" + vSkills)
-      );
+      const html = String(data);
+      const assets = [
+        "app.css",
+        "app.js",
+        "skills.js",
+        "memory.js",
+        "artifacts.js",
+        "workspace-nav.js",
+        "context-meter.js",
+        "session-mode.js",
+        "palette.js",
+        "onboarding.js",
+        "handoff.js",
+        "split-view.js",
+        "stats.js",
+        "activity.js",
+        "changes.js"
+      ];
+      const versions = await Promise.all(assets.map(async (asset) => {
+        try {
+          return [asset, crypto.createHash("sha256").update(await readFile(join(APP, asset))).digest("hex")];
+        } catch {
+          return [asset, ""];
+        }
+      }));
+      data = Buffer.from(versions.reduce((markup, [asset, hash]) => hash ? markup.replace(`./${asset}"`, `./${asset}?v=${hash}"`) : markup, html));
     }
     const type = MIME[extname(file).toLowerCase()] || "application/octet-stream";
     const headers = { "content-type": type, "cache-control": "no-cache", ...SEC };
     const comprimible = /^(text|application\/(javascript|json)|image\/svg)/.test(type);
-    if (url.search && comprimible) {
+    const contentHash = crypto.createHash("sha256").update(data).digest("hex");
+    if (comprimible && url.searchParams.size === 1 && url.searchParams.get("v") === contentHash) {
       headers["cache-control"] = "public, max-age=31536000, immutable";
     }
-    const st = await stat(file).catch(() => null);
-    if (st) {
-      const etag = `"${st.size.toString(16)}-${Math.round(st.mtimeMs).toString(16)}"`;
-      headers.etag = etag;
-      if (req.headers["if-none-match"] === etag) {
-        res.writeHead(304, { "cache-control": "no-cache", etag });
-        res.end();
-        return;
-      }
+    const etag = `"${contentHash}"`;
+    headers.etag = etag;
+    if (req.headers["if-none-match"] === etag) {
+      res.writeHead(304, { "cache-control": headers["cache-control"], etag });
+      res.end();
+      return;
     }
     let body = data;
     if (comprimible && /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""))) {
@@ -1327,6 +1575,7 @@ const onUpgrade = (req, socket, head) => {
 server.on("upgrade", onUpgrade);
 const port = Number(process.env.AEGIS_WEB_PORT || cfg.webPort || 3788);
 server.listen(port, "0.0.0.0", () => {
+  sweepPendingAtStartup();
   console.log(`[aegis-web] UI:      http://${cfg.publicHost}:${port}   (LAN)`);
   console.log(`[aegis-web] UI:      http://127.0.0.1:${port}          (local)`);
   console.log(`[aegis-web] backend: ws://${cfg.publicHost}:${cfg.servePort}/acp   (directo, LAN)`);

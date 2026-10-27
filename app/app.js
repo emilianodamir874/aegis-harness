@@ -609,7 +609,7 @@ async function blobToWav16k(blob) {
             const m = err && err.message ? err.message : String(err);
             const ya = m.indexOf("[metodo: ") >= 0;
             if (err && typeof err === "object") {
-              const detalle = err.data == null ? "" : String(err.data).slice(0, 200);
+              const detalle = err.data == null ? "" : (typeof err.data === "string" ? err.data : JSON.stringify(err.data)).slice(0, 200);
               const base = ya ? m : m + " [metodo: " + method + "]";
               err.message = detalle && !base.includes(detalle) ? base + ": " + detalle : base;
               rej(err);
@@ -638,10 +638,67 @@ async function blobToWav16k(blob) {
     }
   };
   let titleLock = null;
+  const permPendientes = /* @__PURE__ */ new Map();
+  function permPendientesDe(sid) {
+    if (!permPendientes.has(sid)) permPendientes.set(sid, []);
+    return permPendientes.get(sid);
+  }
+  function flushPermPendientes(sid) {
+    const cola = permPendientes.get(sid);
+    if (!cola || !cola.length || state.current?.id !== sid) return;
+    permPendientes.delete(sid);
+    for (const pendiente of cola) showPermCard(pendiente);
+  }
+  const pendientesStore = /* @__PURE__ */ new Map();
+  let pendientesCargados = 0;
+  function pendientesDe(sid) {
+    return pendientesStore.get(sid) || 0;
+  }
+  async function cargarPendientes() {
+    if (Date.now() - pendientesCargados < 6e4) return;
+    pendientesCargados = Date.now();
+    try {
+      const respuesta = await fetch("/pending.json", { cache: "no-store" });
+      if (!respuesta.ok) return;
+      const datos = await respuesta.json();
+      const lista = Array.isArray(datos && datos.sessions) ? datos.sessions : [];
+      const previo = new Set(pendientesStore.keys());
+      pendientesStore.clear();
+      for (const fila of lista) {
+        if (fila && fila.sessionId) pendientesStore.set(String(fila.sessionId), Number(fila.pendientes) || 1);
+      }
+      const nuevas = [...pendientesStore.keys()].filter((id) => !previo.has(id));
+      if (nuevas.length) toast("Hay confirmaciones sin responder en otro chat.", "");
+      const cur = state.current;
+      if (cur) aplicarAvisoPendientes(cur.id);
+    } catch {
+    }
+  }
+  function aplicarAvisoPendientes(sid) {
+    const total = pendientesDe(sid);
+    if (!total) return;
+    const marca = `pendientes-${sid}`;
+    if (document.getElementById(marca)) return;
+    systemNote(
+      `Esta sesión tiene ${total} confirmación${total === 1 ? "" : "es"} sin responder. El proceso que las esperaba ya no existe (reinicio del serve), así que no se pueden aprobar: lo que quedó pendiente no se ejecutó. Si hace falta, repetí el pedido.`
+    );
+    const nodo = document.querySelector("#msgs .sys-note:last-of-type");
+    if (nodo && nodo instanceof HTMLElement) nodo.id = marca;
+  }
   function handleServerMessage(m) {
     if (m.method === "session/update") return onUpdate(m.params || {});
     if (m.method === "_aegis/unstable/session/update") return onAegisUpdate(m.params || {});
-    if (m.method === "session/request_permission") return showPermCard(m);
+    if (m.method === "session/request_permission") {
+      const sid = m.params && m.params.sessionId || "";
+      const cur = state.current;
+      if (sid && sid !== cur?.id) {
+        permPendientesDe(sid).push(m);
+        toast("Otra sesión pide una confirmación.", "");
+        return;
+      }
+      if (!cur || !sid) return;
+      return showPermCard(m);
+    }
     if (m.method === "_aegis/unstable/session/replay_gap") return onReplayGap(m.params || {});
     if (m.id !== void 0) {
       try {
@@ -748,6 +805,7 @@ async function blobToWav16k(blob) {
   function onAegisUpdate(params) {
     const cur = state.current;
     if (!cur) return;
+    if (params.sessionId && params.sessionId !== cur.id) return;
     const u = params.update || {};
     const g = params.aegis || u._meta && u._meta.aegis || params._meta && params._meta.aegis;
     if (g && g.activeRunId !== void 0 && (!params.sessionId || params.sessionId === cur.id)) applyActiveRunId(g.activeRunId || null);
@@ -2067,6 +2125,10 @@ async function blobToWav16k(blob) {
     cardEl.insertBefore(box, cardEl.querySelector(".perm-btns"));
     try {
       const resp = await fetch("/file.json?path=" + encodeURIComponent(String(ruta)), { cache: "no-store" });
+      if (!resp.ok) {
+        box.textContent = resp.status === 401 ? "Iniciá sesión para ver el diff." : "No se puede leer este archivo para calcular el diff.";
+        return;
+      }
       const data = await resp.json();
       if (!data || data.exists === false) {
         if (propuesto && typeof propuesto === "object") {
@@ -3055,6 +3117,12 @@ async function blobToWav16k(blob) {
     debateLoad();
     enforceFixedModel();
     localStorage.setItem("gweb.last", id);
+    setTimeout(() => {
+      if (state.current?.id === id) flushPermPendientes(id);
+    }, 800);
+    setTimeout(() => {
+      if (state.current?.id === id) aplicarAvisoPendientes(id);
+    }, 900);
     if (!opts || !opts.quiet) setPill("Cargando conversación.");
     if (!SOFT.on) {
       state.replayBuf = [];
@@ -5585,6 +5653,12 @@ ${a.text}
       if (tool) tool.classList.toggle("open");
     });
     $("#btn-new").addEventListener("click", () => openWorkspacePicker());
+    cargarPendientes().catch(() => {
+    });
+    setInterval(() => {
+      cargarPendientes().catch(() => {
+      });
+    }, 3e5);
     const wsPop = $("#ws-picker");
     if (wsPop) {
       wsPop.addEventListener("click", (e) => {
