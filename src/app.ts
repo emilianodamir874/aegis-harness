@@ -1570,7 +1570,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (SOFT.on) {
       const sid0 = u.toolCallId || u.id || '';
       const el0 = state.tools.get(sid0);
-      if (!el0 || el0.dataset.state === 'run' || !el0.querySelector('pre') || (u.content || []).some(c => c?.type === 'diff')) {
+      if (!el0 || el0.dataset.state === 'run' || !el0.querySelector('.tool-body > pre:not(.tool-diff-code)') || (u.content || []).some(c => c?.type === 'diff')) {
         const prior = SOFT.tools.get(sid0);
         const previous = prior?.content || [];
         const incoming = u.content || [];
@@ -1642,7 +1642,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     }
     renderInlineToolDiff(el, u, status);
     if (texts.length) {
-      let pre = el.querySelector('pre');
+      let pre = el.querySelector('.tool-body > pre:not(.tool-diff-code)');
       if (!pre) { pre = document.createElement('pre'); el.querySelector('.tool-body').appendChild(pre); }
       const all = texts.join('\n');
       pre.textContent = all.length > 6000 ? all.slice(0, 6000) + '\n…' : all;

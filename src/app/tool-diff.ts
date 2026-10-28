@@ -59,8 +59,9 @@ function diffRow(path: string, oldText: string | undefined, newText: string, req
   summary.append(label, count); row.append(summary);
   const note = document.createElement('p'); note.className = 'tool-diff-note';
   note.textContent = requested
-    ? oldText === undefined ? 'Contenido enviado; la versión anterior no se conoce.' : 'Sustitución solicitada; el archivo completo puede diferir.'
-    : oldText === undefined ? 'La herramienta no informó la versión anterior; no se puede calcular el cambio.' : 'Cambio de esta herramienta; no representa el estado actual de Git.';
+    ? 'Contenido enviado; la versión anterior no se conoce.'
+    : oldText === undefined ? 'La herramienta no informó la versión anterior; no se puede calcular el cambio.'
+      : 'Edición completada; este par muestra el fragmento sustituido, no el diff ni el estado actual del archivo.';
   row.append(note);
   if (view.lines.length) {
     const code = document.createElement('pre'); code.className = 'tool-diff-code';
@@ -97,8 +98,10 @@ export function renderInlineToolDiff(card: ToolCard, update: ToolEvent, status: 
     }
     return;
   }
-  // El replay sólo persiste respuesta de texto de algunas herramientas ACP; no simular un
-  // diff del archivo. Mostrar la solicitud explícita de edición con etiqueta inequívoca.
+  // El camino developer__edit devuelve éxito/error persistidos, pero no emite bloque ACP
+  // Diff: el par before/after identifica exactamente la sustitución aplicada con éxito.
+  // No conocemos el resto del archivo ni su versión actual; write tampoco informa el
+  // contenido anterior. Mostrar esos límites sin atribuir cambios de shell o de Git.
   if (status !== 'completed' || body.querySelector('.tool-diffs')) return;
   const toolName = name || card.dataset.toolName || '';
   if (!/(?:^|__)(?:edit|write)$/.test(toolName)) return;
@@ -106,6 +109,7 @@ export function renderInlineToolDiff(card: ToolCard, update: ToolEvent, status: 
   if (!args || typeof args.path !== 'string') return;
   const before = text(args.before), after = text(args.after) ?? text(args.content);
   if (after === undefined || (before === undefined && !/(?:^|__)write$/.test(toolName))) return;
+  const requested = before === undefined;
   const list = document.createElement('div'); list.className = 'tool-diffs';
-  list.append(diffRow(pathLabel(args.path), before, after, true)); body.append(list);
+  list.append(diffRow(pathLabel(args.path), before, after, requested)); body.append(list);
 }

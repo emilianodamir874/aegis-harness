@@ -128,18 +128,18 @@ try {
     app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call', toolCallId: requestedId, rawInput: { path: 'replay.ts', before: 'viejo', after: 'nuevo' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } } });
     app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: requestedId, status: 'completed' } });
     const request = app.state.tools.get(requestedId) as HTMLElement;
-    const preview = request.querySelector('.tool-diff-request');
+    const preview = request.querySelector('.tool-diff');
     const failureId = 'diff-failed-1';
     app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call', toolCallId: failureId, rawInput: { path: 'fallo.ts', before: 'a', after: 'b' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } } });
     app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: failureId, status: 'failed' } });
-    return { ...initial, visible, isolated, requested: !!preview && /solicitud|solicitada/i.test(preview.textContent || ''), failed: !app.state.tools.get(failureId).querySelector('.tool-diff'), stillOne: card.querySelectorAll('.tool-diff').length === 1 };
+    return { ...initial, visible, isolated, requested: !!preview && /fragmento sustituido|edición completada/i.test(preview.textContent || ''), failed: !app.state.tools.get(failureId).querySelector('.tool-diff'), stillOne: card.querySelectorAll('.tool-diff').length === 1 };
   }, A);
   if (diffCheck.count !== 1 || !diffCheck.title?.includes('+1 −1') || !diffCheck.escaped || !diffCheck.hasPreBefore
     || !diffCheck.textBefore.includes('-uno') || !diffCheck.textBefore.includes('+dos') || !diffCheck.visible
     || !diffCheck.isolated || !diffCheck.requested || !diffCheck.failed || !diffCheck.stillOne) {
     throw new Error('diff ACP en chat: ' + JSON.stringify(diffCheck));
   }
-  console.log('PASS diff ACP inline: autoría por toolCallId, escape, dedupe, vista expandida, solicitud histórica y fallo');
+  console.log('PASS diff ACP inline: toolCallId, escape, dedupe, vista expandida, fragmento persistido y fallo');
   const formulas = await page.evaluate(() => {
     const r = (window as any).__aegisWeb.testUi.rate;
     return [
