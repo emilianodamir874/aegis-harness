@@ -4969,6 +4969,84 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
   let effortGlobal = '';
   let effortMemo: Record<string, string> = {};
   let modeloActual = '';
+
+  // ---- que esfuerzos acepta cada modelo ----------------------------------------------
+  // No es una constante del proveedor: el motor recalcula la opcion `thinking_effort` al aplicar
+  // el modelo. Medido contra el motor: open_design/deepseek-v4.1-flash ofrece off/low/medium/high/
+  // max, y glm-5.3-flash del mismo proveedor ofrece off/low/high/max (no hay "medium"). Ofrecer la
+  // lista del proveedor para todos sus modelos deja elegir niveles que ese modelo no tiene, y el
+  // motor los ignora en silencio.
+  //   - para el modelo ACTIVO la verdad es configOptions (el motor ya la recalculo);
+  //   - para los demas se guarda lo aprendido la ultima vez que se aplicaron;
+  //   - si el catalogo dice `reasoning: false`, no hay nada que elegir.
+  type EffortApi = { values: string[]; at: number };
+  const effortsConocidos: Record<string, EffortApi> = {};
+  const EFFORT_TODOS = ['off', 'low', 'medium', 'high', 'max'];
+  const claveEffort = (pid: string, modelId: string) => String(pid || '') + '/' + String(modelId || '');
+
+  function esfuerzosDeConfigOptions(co: any[]): string[] {
+    const ef = (co || []).find((o) => o && o.id === 'thinking_effort');
+    return ef && Array.isArray(ef.options) ? ef.options.map((o: any) => String(o.value)) : [];
+  }
+  /** Opciones de esfuerzo que el motor acepta para ese modelo (cache, catalogo o viva). */
+  function effortsDe(pid: string, modelId: string): string[] {
+    const p = pid || proveedorActivo();
+    const m = modelId || modeloActivo();
+    const conocido = effortsConocidos[claveEffort(p, m)];
+    if (conocido && conocido.values.length) return conocido.values;
+    // Sin medicion previa, el modelo vigente: configOptions deberia tener sus opciones (si se
+    // aplico por el camino normal, aprenderEfforts ya las midio y estamos en la rama de arriba).
+    if (p === proveedorActivo() && m === modeloActivo() && effortOptions.length) {
+      return effortOptions.map((o) => String(o.value));
+    }
+    // Sin dato (nunca se aplico ese modelo): lo que el motor ofrece para el proveedor activo. Es
+    // una estimacion: se reemplaza por la lista real en cuanto el modelo se aplica una vez.
+    return effortOptions.length ? effortOptions.map((o) => String(o.value)) : EFFORT_TODOS;
+  }
+  /** Guarda los esfuerzos reales del modelo que se acaba de aplicar y devuelve la lista. */
+  async function aprenderEfforts(pid: string, modelId: string): Promise<string[]> {
+    if (!state.current || !modelId) return [];
+    // session/load es la unica respuesta que trae el thinking_effort ya recalculado para ESTE
+    // modelo. Lo que hubiera en state.current.configOptions puede ser del modelo anterior.
+    let valores: string[] = [];
+    try {
+      const r = await rpc.request('session/load', { sessionId: state.current.id, cwd: state.cwd, mcpServers: [] });
+      if (r && Array.isArray(r.configOptions)) state.current.configOptions = r.configOptions;
+      valores = esfuerzosDeConfigOptions((r && r.configOptions) || []);
+      const co = (r && r.configOptions) || [];
+      const ef = co.find((o: any) => o && o.id === 'thinking_effort');
+      if (ef) {
+        if (Array.isArray(ef.options) && ef.options.length) effortOptions = ef.options;
+        if (ef.currentValue) effortGlobal = String(ef.currentValue);
+      }
+    } catch (e) {
+      valores = esfuerzosDeConfigOptions(state.current.configOptions || []);
+    }
+    if (valores.length) effortsConocidos[claveEffort(pid, modelId)] = { values: valores, at: Date.now() };
+    return valores;
+  }
+  /** El esfuerzo efectivo de un modelo, saneado contra lo que acepta. */
+  function effortEfectivo(pid: string, modelId: string, querido?: string): string {
+    const opciones = effortsDe(pid, modelId);
+    const actual = effortActualDe(modelId, effortGlobal || 'off', effortMemo || {});
+    const quiero = String(querido || actual || 'off');
+    if (!opciones.length || opciones.indexOf(quiero) >= 0) return quiero;
+    // Lo pedido no existe para este modelo (p.ej. "medium" en glm-5.3-flash): el mas cercano.
+    const i = EFFORT_TODOS.indexOf(quiero);
+    for (let d = 1; d < EFFORT_TODOS.length; d++) {
+      const abajo = EFFORT_TODOS[i - d], arriba = EFFORT_TODOS[i + d];
+      if (abajo && opciones.indexOf(abajo) >= 0) return abajo;
+      if (arriba && opciones.indexOf(arriba) >= 0) return arriba;
+    }
+    return opciones.indexOf('off') >= 0 ? 'off' : opciones[0];
+  }
+  /** Etiqueta del esfuerzo que va en el chip: vacia si el modelo no razona. */
+  function effortChipDe(pid: string, modelId: string): string {
+    if (!modelId) return '';
+    const opciones = effortsDe(pid, modelId);
+    if (opciones.length <= 1) return ''; // un solo nivel: no hay nada que mostrar
+    return effortActualDe(modelId, effortGlobal || 'off', effortMemo || {});
+  }
   function effortActualDe(model: string, globalEffort: string, memo: Record<string, string>): string {
     const g = globalEffort || 'off';
     if (!model || model === modeloActual) return g;
@@ -5100,7 +5178,8 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     return modelosDe(pid).map((m) => {
       const id = String(m.id);
       const ef = effortActualDe(id, global, memo);
-      const conEsfuerzo = effortOptions.length > 0 && (!!m.reasoning || id === modeloActual);
+      const niveles = effortsDe(pid, id);
+      const conEsfuerzo = niveles.length > 1 || (niveles.length === 1 && niveles[0] !== 'off');
       return {
         value: 'model:' + id,
         label: String(m.name || id),
@@ -5195,16 +5274,26 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     }];
   }
 
-  function seccionesEsfuerzo(modelId: string): ComboSection[] {
+  /** Niveles del modelo elegido, no los del proveedor: cada modelo tiene su subconjunto. */
+  function seccionesEsfuerzo(modelId: string, pid?: string): ComboSection[] {
+    const prov = pid || proveedorActivo();
+    const valores = effortsDe(prov, modelId);
     const ef = effortActualDe(modelId, effortGlobal || 'off', effortMemo || {});
-    const m = modelosDe(proveedorActivo()).find((x) => String(x.id) === modelId);
+    const m = (modelosDe(prov) || []).find((x) => String(x.id) === modelId);
+    if (!valores.length || (valores.length === 1 && valores[0] === 'off')) {
+      return [{
+        label: 'Razonamiento · ' + String((m && m.name) || modelId),
+        hint: 'este modelo no razona',
+        items: [{ value: 'off', label: effortLabel('off'), meta: 'no admite niveles', current: true } as ComboItem],
+      }];
+    }
     return [{
       label: 'Razonamiento · ' + String((m && m.name) || modelId),
-      items: effortOptions.map((o) => ({
-        value: String(o.value),
-        label: effortLabel(String(o.value)) || etiquetaOpcion(o),
-        meta: String(o.value),
-        current: String(o.value) === ef,
+      items: valores.map((v) => ({
+        value: v,
+        label: effortLabel(v),
+        meta: v,
+        current: v === ef,
       } as ComboItem)),
     }];
   }
@@ -5214,8 +5303,12 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
   async function aplicarModelo(pid: string, modelId: string, effort?: string) {
     if (pid && pid !== proveedorActivo()) await aplicarConfig('provider', pid);
     if (modelId && modelId !== modeloActivo()) await aplicarConfig('model', modelId);
-    if (effort && effort !== (effortGlobal || 'off')) await aplicarConfig('thinking_effort', effort);
-    if (modelId && effort) rememberEffort(modelId, effort);
+    // El motor recalculo `thinking_effort` para este modelo: se guarda antes de mandar el esfuerzo,
+    // asi no se pide un nivel que el modelo no tiene (el motor lo ignoraria sin avisar).
+    if (modelId) await aprenderEfforts(pid, modelId);
+    const ef = effortEfectivo(pid, modelId, effort);
+    if (ef && ef !== (effortGlobal || 'off')) await aplicarConfig('thinking_effort', ef);
+    if (modelId && ef) rememberEffort(modelId, ef);
     renderChips();
     enfocarChip('chip-model');
   }
@@ -5293,7 +5386,7 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
         const items = itemsModelo(provSel).map((it) => ({ ...it, value: it.value.slice(6) }));
         return [{ label: nombreProv(provSel), hint: items.length ? items.length + ' modelos' : 'sin catalogo', items }];
       }
-      return seccionesEsfuerzo(modelSel);
+      return seccionesEsfuerzo(modelSel, provSel);
     };
     const miga = (): string => (paso === 'prov' ? '' : paso === 'modelo' ? nombreProv(provSel) : nombreProv(provSel) + ' › ' + modelSel);
     const titulo = (): string => (paso === 'prov' ? 'Proveedor' : paso === 'modelo' ? 'Modelo' : 'Esfuerzo');
@@ -5328,17 +5421,26 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
         }
         if (paso === 'modelo') {
           modelSel = v;
-          if (effortOptions.length > 1) { paso = 'esfuerzo'; mostrar(); return true; }
-          void aplicarModelo(provSel, modelSel);
-          return false;
+          // Se aplica ya: el motor recalcula los niveles de esfuerzo de ESTE modelo y con eso se
+          // decide si hay paso 3 y que opciones ofrecer. El panel sigue abierto mientras tanto.
+          void (async () => {
+            await aplicarModelo(provSel, modelSel);
+            const niveles = effortsDe(provSel, modelSel);
+            if (niveles.length > 1) { paso = 'esfuerzo'; mostrar(); return; }
+            comboVivo.actual?.close();
+          })();
+          return true;
         }
         void aplicarModelo(provSel, modelSel, v);
         return false;
       },
       onAux: (v) => {
         modelSel = v;
-        paso = 'esfuerzo';
-        mostrar();
+        void (async () => {
+          await aplicarModelo(provSel, modelSel);
+          paso = 'esfuerzo';
+          mostrar();
+        })();
         return true;
       },
       onClose: () => { comboVivo.actual = null; },
@@ -5428,7 +5530,9 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     const modelId = modeloActivo();
     const modelCat = modelosDe(provId).find((m) => String(m.id) === modelId);
     const modelNombre = String((modelCat && modelCat.name) || modelId || 'Modelo');
-    const effChip = modelId ? effortActualDe(modelId, effortGlobal || 'off', effortMemo || {}) : '';
+    // Si el modelo no razona, el chip no muestra esfuerzo: un "Sin razonamiento" al lado del
+    // nombre sugeriria que hay algo que elegir.
+    const effChip = effortChipDe(provId, modelId);
 
     // Un solo chip para "con que hablamos": proveedor delante (contexto), modelo, esfuerzo. El
     // panel de ese chip elige modelo de cualquier proveedor o cambia de proveedor.
@@ -5588,7 +5692,14 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     }
     try {
       const res = await rpc.request('session/set_config_option', { sessionId: state.current.id, configId, value });
-      if (res && Array.isArray(res.configOptions)) state.current.configOptions = res.configOptions;
+      if (res && Array.isArray(res.configOptions)) {
+        state.current.configOptions = res.configOptions;
+        // Medicion gratis: el server devolvio la sesion ya recalculada para este modelo.
+        if (configId === 'model') {
+          const vals = esfuerzosDeConfigOptions(res.configOptions);
+          if (vals.length) effortsConocidos[claveEffort(providerNow(), String(value))] = { values: vals, at: Date.now() };
+        }
+      }
       renderChips();
       refreshSessions();
     } catch (e) {
@@ -7048,6 +7159,15 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
       abrirModelo: () => abrirModelo($('#chips .chip-model')),
       abrirModo: () => abrirModo($('#chips .chip-mode')), abierto: () => comboAbierto(),
       secciones: () => ({ modelo: seccionesModelo(), modo: seccionesModo() }),
+      // Mapeo de esfuerzos: lo que la UI ofrece para un modelo y lo que aprendio del motor.
+      efforts: {
+        aplicar: (pid: string, m: string, ef?: string) => aplicarModelo(pid, m, ef),
+        de: (pid: string, m: string) => effortsDe(pid, m),
+        niveles: (pid: string, m: string) => seccionesEsfuerzo(m, pid)[0].items.map((i) => String(i.value)),
+        chip: (pid: string, m: string) => effortChipDe(pid, m),
+        efectivo: (pid: string, m: string, q?: string) => effortEfectivo(pid, m, q),
+        conocidos: () => Object.keys(effortsConocidos).map((k) => ({ key: k, values: effortsConocidos[k].values })),
+      },
       catalogo: () => catalogo, cargarCatalogo, modoActivo, proveedorActivo, modeloActivo,
       // Abrir una sesion existente por id: lo usan los gates para probar el chip con motor real.
       abrirSesion: (entry) => openSession(entry),
