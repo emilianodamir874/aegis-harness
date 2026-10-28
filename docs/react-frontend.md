@@ -1,4 +1,4 @@
-# Frontend React de Aegis: goal, arquitectura y paridad
+﻿# Frontend React de Aegis: goal, arquitectura y paridad
 
 Documento de continuidad. Cualquier chat nuevo puede retomar el trabajo leyendo esto y el estado
 de `web/frontend/` (tests + `npm run build`).
@@ -246,13 +246,14 @@ Gates que faltan para publicar: medir en Android físico y con latencia real de 
 
 ## 9. Medición móvil (emulada) y arranque
 
-`tools/react-mobile-smoke.mjs` mide Pixel 7 e iPhone 12 emulados (Playwright devices) sobre la instancia de prueba. **Es emulación**: no es Android físico y no mide latencia de túnel.
+Herramientas: `tools/react-mobile-smoke.mjs` (primer pintado y errores), `tools/react-mobile-layout.mjs` (posición real de cada panel) y `tools/react-mobile-drawer.mjs` (abrir el drawer). **Es emulación de Playwright** (Pixel 7 e iPhone 12): no es Android físico y no mide latencia de túnel.
 
-| dispositivo | listo | ancho | desborde horizontal | sidebar | composer | errores |
+| dispositivo | listo | composer | sidebar cerrado | tras abrir el drawer | desborde horizontal | errores |
 |---|---|---|---|---|---|---|
-| Pixel 7 (412 px) | 140 ms | 412 | no | visible | **no visible** | 0 |
-| iPhone 12 (390 px) | 116 ms | 390 | no | visible | **no visible** | 0 |
+| Pixel 7 (412 px) | 140 ms | 380×75 visible | x = −312 | x = 0 | no | 0 |
+| iPhone 12 (390 px) | 116 ms | visible | x = −312 | x = 0 | no | 0 |
+| Escritorio 1280 | 121 ms | visible | x = 0 (fijo) | botón de menú oculto | no | 0 |
 
-Sin desborde horizontal en ninguno de los dos. El composer no aparece porque el cliente no abrió sesión al arrancar: agregué ese auto-open (`onReady` abre el chat más reciente una sola vez, con dos tests verdes contra el fixture en `tests/startup.test.ts`), pero **no se verificó contra la instancia real**: en la corrida siguiente la pantalla móvil siguió sin composer. Queda como pendiente concreto, no como hecho.
+Con el motor real el arranque abre el chat más reciente (`session/list` paginado y `session/load` en el alambre; el título «Aegis frontend React rewrite» aparece en la barra). Los dos "defectos" que había anotado antes —composer ausente y sidebar ocupando la pantalla— eran de las herramientas: una medía antes de que montara el composer y la otra buscaba un `aria-label` que no era el del botón de menú. El cliente estaba bien; los scripts se corrigieron y quedan como verificación.
 
-También falta: medir en Android físico (no hay dispositivo accesible desde acá), latencia real de túnel, y el gesto de scroll del transcript en pantalla táctil (la medición programática dio 0 porque no había transcript abierto).
+Lo que sigue sin medir: Android físico real, latencia por túnel, gesto táctil de scroll sobre el transcript, dictado con micrófono y lectura en voz alta con audio reales.
