@@ -841,6 +841,34 @@ export class AegisStore {
     }
   }
 
+  /** Exporta el chat a un archivo. El motor devuelve el texto ya formateado en `data`. */
+  async exportSession(id: SessionId, format: 'markdown' | 'json'): Promise<void> {
+    try {
+      const response = await this.client.request<{ readonly data?: string }>('_aegis/unstable/session/export', {
+        sessionId: id,
+        format,
+      });
+      const text = typeof response?.data === 'string' ? response.data : '';
+      if (!text) {
+        this.dispatch({ type: 'notice/push', level: 'error', text: 'El motor devolvió una exportación vacía' });
+        return;
+      }
+      const title = (this.state.sessionIndex[id]?.summary.title ?? id).replace(/[^\w\-. ]+/g, '_').trim().slice(0, 60) || 'sesion';
+      const extension = format === 'markdown' ? 'md' : 'json';
+      const url = URL.createObjectURL(new Blob([text], { type: format === 'markdown' ? 'text/markdown;charset=utf-8' : 'application/json;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${title}.${extension}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      this.dispatch({ type: 'notice/push', level: 'info', text: `Exportado ${title}.${extension} (${Math.round(text.length / 1024)} KB)` });
+    } catch (error) {
+      this.dispatch({ type: 'notice/push', level: 'error', text: `No se pudo exportar: ${messageOf(error)}` });
+    }
+  }
+
   /** Pedidos de permiso vivos de una sesión, en orden de llegada. */
   permissionsOf(id: SessionId): PermissionRequest[] {
     const session = this.state.sessionIndex[id];

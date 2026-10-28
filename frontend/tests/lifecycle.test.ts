@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHarness, type Harness } from './harness';
 import type { FixtureSession } from '../src/fixtures/server';
 import type { SessionId } from '../src/domain/ids';
@@ -50,5 +50,15 @@ describe('ciclo de vida de sesiones contra el motor', () => {
     expect(state.archived.includes('a1' as SessionId)).toBe(false);
     expect(state.sessions.filter((id) => id === ('a1' as SessionId)).length).toBe(1);
     expect(new Set(state.sessions).size).toBe(state.sessions.length);
+  });
+
+  it('exporta y avisa con el nombre y el tamaño', async () => {
+    const h = await boot([session('x1', 'Chat exportable')]);
+    vi.stubGlobal('URL', Object.assign(Object.create(URL), { createObjectURL: () => 'blob:falso', revokeObjectURL: () => {} }));
+    await h.store.exportSession('x1' as SessionId, 'markdown');
+    await h.flush();
+    const notices = h.store.getState().notices;
+    expect(notices.some((notice) => notice.text.includes('Exportado Chat exportable.md'))).toBe(true);
+    vi.unstubAllGlobals();
   });
 });

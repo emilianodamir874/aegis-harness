@@ -128,7 +128,7 @@ el camino principal pero falta una parte del contrato; `pendiente` = no implemen
 | 31 | Paleta | `palette.ts` | comandos filtrables | `Palette` | UI test Ctrl+Shift+P | hecho |
 | 32 | Split-view | `split-view.ts` | dos chats lado a lado | — | — | pendiente |
 | 33 | Ajustes | local | voz, lectura | panel Ajustes | UI (render) | parcial |
-| 34 | Exportar | `session/export` | markdown/json | botón en info | no probado | parcial |
+| 34 | Exportar | `session/export` | markdown/json | menú de la fila: Exportar `.md` / `.json` (blob + descarga, nombre saneado) | motor real: `{data}` string, 1,3 MB markdown / 3,3 MB JSON; smoke Playwright descargó «Aegis-Proyects disk cleanup.md» de 1 031 340 B con 0 errores | hecho |
 | 35 | Renombrar/archivar/borrar | `_aegis/…` | menú de fila | Sidebar + diálogos | no probado contra motor | parcial |
 | 36 | `/goal` del chat | barra de objetivo | mostrar/limpiar | `domain/goal.ts` + barra en App | `goal.test` 3 casos | hecho |
 | 37 | Onboarding/handoff/artifacts | `onboarding.ts`, `handoff.ts`, `artifacts.ts` | flujos propios | — | — | pendiente |

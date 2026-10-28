@@ -175,6 +175,26 @@ export function Sidebar({
               >
                 {archived ? 'Desarchivar' : 'Archivar'}
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  void store.exportSession(id, 'markdown');
+                }}
+              >
+                Exportar .md
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  void store.exportSession(id, 'json');
+                }}
+              >
+                Exportar .json
+              </button>
               <button type="button" role="menuitem" className="danger" onClick={() => onDelete(id, session.summary.title)}>
                 Borrar
               </button>

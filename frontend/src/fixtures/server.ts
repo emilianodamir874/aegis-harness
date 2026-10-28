@@ -326,6 +326,17 @@ export class FixtureAcpServer {
       case '_aegis/unstable/session/rename':
         return reply({});
 
+      case '_aegis/unstable/session/export': {
+        // Igual que el motor: el texto viene ya formateado en `data`; sin `format` devuelve JSON.
+        const fixt = this.sessions.get(String((params as { sessionId?: string }).sessionId ?? ''));
+        const formato = (params as { format?: string }).format;
+        const data =
+          formato === 'markdown'
+            ? `# Session Export: ${fixt?.title ?? ''}\n\n*Total messages: ${fixt?.messages.length ?? 0}*\n`
+            : JSON.stringify({ id: fixt?.sessionId ?? '', name: fixt?.title ?? '', messages: fixt?.messages ?? [] });
+        return reply({ data });
+      }
+
       case '_aegis/unstable/session/archive':
       case '_aegis/unstable/session/unarchive':
         return reply({});
