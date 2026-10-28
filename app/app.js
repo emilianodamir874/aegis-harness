@@ -1880,6 +1880,7 @@ async function blobToWav16k(blob) {
       state.tools.set(id, el);
       setPill(null);
     }
+    if (u.toolCallId) el.dataset.toolCallId = String(u.toolCallId);
     const status = u.status || "pending";
     const rawIn = u.rawInput || {};
     const shortInput = String(rawIn.command || rawIn.path || rawIn.file_path || rawIn.query || rawIn.url || rawIn.pattern || "").split("\n")[0].slice(0, 90);
@@ -2973,6 +2974,42 @@ async function blobToWav16k(blob) {
     } catch (e) {
       systemNote("No se pudo crear la sesión: " + e.message);
     }
+  }
+  async function openTool(sessionId, toolCallId) {
+    if (!sessionId || !toolCallId) return false;
+    const findCard = () => [...document.querySelectorAll("#msg-inner .tool[data-tool-call-id]")].find((card2) => card2.dataset.toolCallId === toolCallId);
+    const sameSession = state.current?.id === sessionId;
+    const originalScroll = sameSession ? $("#messages")?.scrollTop : void 0;
+    const entry = sameSession ? null : findSession(sessionId) || (state.remote.sessions || []).find((s) => s.sessionId === sessionId);
+    if (!sameSession && !entry) return false;
+    if (!sameSession) {
+      const loaded = await Promise.race([
+        openSession(entry).then(() => true, () => false),
+        new Promise((resolve) => setTimeout(() => resolve(false), 8e3))
+      ]);
+      if (!loaded || state.current?.id !== sessionId) return false;
+    }
+    const until = performance.now() + (sameSession ? 200 : 1800);
+    let card = findCard();
+    while (!card && performance.now() < until && state.current?.id === sessionId) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      card = findCard();
+    }
+    if (!card || state.current?.id !== sessionId) {
+      if (sameSession && originalScroll !== void 0 && state.current?.id === sessionId) $("#messages").scrollTop = originalScroll;
+      return false;
+    }
+    releasePin?.();
+    card.scrollIntoView({ block: "center", behavior: "instant" });
+    card.style.outline = "2px solid var(--accent, #7aa8ff)";
+    card.style.outlineOffset = "3px";
+    setTimeout(() => {
+      if (card.style.outline) {
+        card.style.removeProperty("outline");
+        card.style.removeProperty("outline-offset");
+      }
+    }, 1800);
+    return true;
   }
   async function openSession(entry) {
     const targetId = entry.sessionId || entry.id;
@@ -6458,6 +6495,7 @@ ${a.text}
     else arrancar();
   })();
   window.__aegisWeb = {
+    openTool,
     bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }),
     state,
     setConfig,

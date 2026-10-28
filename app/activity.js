@@ -13,6 +13,8 @@ const CSS = `
 .aegis-activity .row{display:block;width:100%;text-align:left;margin:4px 0;padding:7px 10px;border-radius:6px;background:rgba(255,255,255,.045);overflow-wrap:anywhere}
 .aegis-activity button.row:hover{background:rgba(255,255,255,.13)}
 .aegis-activity .secondary,.aegis-activity .note{color:#b2c5d9;font-size:12px}
+.aegis-activity .timeline{margin:4px 0;padding-left:22px}
+.aegis-activity .timeline li{margin:4px 0;overflow-wrap:anywhere}
 .aegis-activity .note{padding:8px 16px;border-top:1px solid rgba(255,255,255,.12)}
 `;
 let backdrop = null;
@@ -31,11 +33,32 @@ function web() {
 function appendMessage(parent, text) {
   parent.append(el("p", text, "secondary"));
 }
+const SAFE_TOOLS = /* @__PURE__ */ new Set([
+  "shell",
+  "read_file",
+  "write",
+  "edit",
+  "grep",
+  "tree",
+  "read_image",
+  "web_search",
+  "web_fetch",
+  "load_skill",
+  "load",
+  "summon",
+  "final_output",
+  "parallel"
+]);
+function safeToolName(name) {
+  const short = name.slice(name.lastIndexOf(".") + 1);
+  return SAFE_TOOLS.has(short) ? short : "herramienta";
+}
 function summarizeExport(raw, id) {
   const session = raw;
-  if (!session || session.id !== id || !Array.isArray(session.conversation)) return ["Detalle: no registrado"];
+  if (!session || session.id !== id || !Array.isArray(session.conversation)) return { summary: ["Detalle: no registrado"], timeline: [] };
   const requests = /* @__PURE__ */ new Map();
-  let calls = 0, ok = 0, failed = 0, unknown = 0, subagents = 0;
+  const responded = /* @__PURE__ */ new Set();
+  let calls = 0, ok = 0, failed = 0, subagents = 0;
   for (const message of session.conversation) {
     if (message?.metadata?.userVisible === false || !Array.isArray(message?.content)) continue;
     for (const block of message.content) {
@@ -43,25 +66,34 @@ function summarizeExport(raw, id) {
       const name = block.toolCall?.status === "success" ? block.toolCall.value?.name : void 0;
       if (typeof name !== "string") continue;
       calls++;
-      requests.set(block.id, name);
+      requests.set(block.id, { id: block.id, name: safeToolName(name), outcome: "unknown" });
       if (name === "summon" || name.endsWith(".summon")) subagents++;
     }
   }
   for (const message of session.conversation) {
     if (message?.metadata?.userVisible === false || !Array.isArray(message?.content)) continue;
     for (const block of message.content) {
-      if (block?.type !== "toolResponse" || typeof block.id !== "string" || !requests.has(block.id)) continue;
-      requests.delete(block.id);
-      if (block.toolResult?.status === "error" || block.toolResult?.value?.isError === true) failed++;
-      else if (block.toolResult?.status === "success" && block.toolResult?.value?.isError === false) ok++;
-      else unknown++;
+      if (block?.type !== "toolResponse" || typeof block.id !== "string") continue;
+      const request = requests.get(block.id);
+      if (!request || request.outcome !== "unknown" || responded.has(block.id)) continue;
+      responded.add(block.id);
+      if (block.toolResult?.status === "error" || block.toolResult?.value?.isError === true) {
+        failed++;
+        request.outcome = "failure";
+      } else if (block.toolResult?.status === "success" && block.toolResult?.value?.isError === false) {
+        ok++;
+        request.outcome = "success";
+      }
     }
   }
-  return [
-    `Herramientas: ${calls} llamadas; ${ok} resultados correctos explícitos; ${failed} errores explícitos; ${unknown + requests.size} sin resultado registrado`,
-    `Subagentes (llamadas explícitas summon): ${subagents || "no registrado"}`,
-    "Tests: no registrado (el export no tiene campo estructurado de tests)."
-  ];
+  return {
+    summary: [
+      `Herramientas: ${calls} llamadas; ${ok} resultados correctos explícitos; ${failed} errores explícitos; ${calls - ok - failed} sin resultado registrado`,
+      `Subagentes (llamadas explícitas summon): ${subagents || "no registrado"}`,
+      "Tests: no registrado (el export no tiene campo estructurado de tests)."
+    ],
+    timeline: [...requests.values()].slice(-12).reverse()
+  };
 }
 async function showDetails(id, target, generation) {
   target.replaceChildren(el("p", "Leyendo export JSON…", "secondary"));
@@ -69,9 +101,29 @@ async function showDetails(id, target, generation) {
     const client = web()?.rpc;
     if (!client?.ready) throw new Error("ACP no conectado");
     const response = await client.request("_aegis/unstable/session/export", { sessionId: id, format: "json" });
-    const details = typeof response?.data === "string" ? summarizeExport(JSON.parse(response.data), id) : ["Detalle: no registrado"];
+    const details = typeof response?.data === "string" ? summarizeExport(JSON.parse(response.data), id) : { summary: ["Detalle: no registrado"], timeline: [] };
     if (generation !== serial || !target.isConnected) return;
-    target.replaceChildren(...details.map((line) => el("p", line, "secondary")));
+    target.replaceChildren(...details.summary.map((line) => el("p", line, "secondary")));
+    if (!details.timeline.length) return;
+    target.append(el("h3", "Últimas herramientas (export; resultados explícitos)"));
+    const list = el("ol", void 0, "timeline");
+    for (const tool of details.timeline) {
+      const item = el("li");
+      const label = `${tool.name} · ${tool.id} · ${tool.outcome === "success" ? "éxito explícito" : tool.outcome === "failure" ? "fallo explícito" : "resultado desconocido"}`;
+      if (typeof web()?.openTool === "function") {
+        const link = el("button", label);
+        link.type = "button";
+        link.addEventListener("click", async () => {
+          try {
+            if (await web()?.openTool?.(id, tool.id)) close();
+          } catch {
+          }
+        });
+        item.append(link);
+      } else item.textContent = label;
+      list.append(item);
+    }
+    target.append(list);
   } catch {
     if (generation === serial && target.isConnected) target.replaceChildren(el("p", "Detalle: no registrado (export no disponible)", "secondary"));
   }
