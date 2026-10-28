@@ -5275,6 +5275,138 @@ ${a.text}
       migrando = false;
     });
   }
+  const EFFORT_ES = { off: "Sin razonamiento", none: "Sin razonamiento", low: "Bajo", medium: "Medio", high: "Alto", max: "Máximo" };
+  const EFFORT_BARS = { off: 1, none: 1, low: 2, medium: 3, high: 4, max: 5 };
+  const effortByModelKey = "aegis.effortByModel";
+  function effortByModel() {
+    try {
+      const j = JSON.parse(localStorage.getItem(effortByModelKey) || "{}");
+      return j && typeof j === "object" ? j : {};
+    } catch {
+      return {};
+    }
+  }
+  function rememberEffort(model, effort) {
+    if (!model || !effort) return;
+    try {
+      const m = effortByModel();
+      m[model] = effort;
+      localStorage.setItem(effortByModelKey, JSON.stringify(m));
+    } catch {
+    }
+  }
+  function effortLabel(v) {
+    return EFFORT_ES[v] || v;
+  }
+  function effortBars(v) {
+    const n = EFFORT_BARS[v] || 1;
+    let out = '<span class="fly-bars" aria-hidden="true">';
+    for (let i = 1; i <= 5; i++) out += "<i" + (i <= n ? ' class="on"' : "") + "></i>";
+    return out + "</span>";
+  }
+  function openFly(row, fly) {
+    if (fly.parentElement !== document.body) document.body.appendChild(fly);
+    fly.hidden = false;
+    const r = row.getBoundingClientRect();
+    const w = fly.offsetWidth;
+    const h = fly.offsetHeight;
+    const m = 8;
+    let left = r.right + 6;
+    if (left + w > window.innerWidth - m) left = r.left - w - 6;
+    let top = r.top;
+    if (left < m) {
+      left = Math.min(Math.max(m, r.left), Math.max(m, window.innerWidth - m - w));
+      top = r.bottom + 6;
+    }
+    if (top + h > window.innerHeight - m) top = Math.max(m, window.innerHeight - m - h);
+    if (top < m) top = m;
+    fly.style.left = Math.round(left) + "px";
+    fly.style.top = Math.round(top) + "px";
+    fly.style.maxHeight = Math.max(120, window.innerHeight - 2 * m) + "px";
+    row.classList.add("fly-open");
+    row.setAttribute("aria-expanded", "true");
+  }
+  function closeFlys(keep) {
+    document.querySelectorAll("body > .menu-fly").forEach((f) => {
+      if (keep && f === keep) return;
+      f.hidden = true;
+      f.remove();
+    });
+    document.querySelectorAll(".menu-row.fly-open").forEach((r) => {
+      r.classList.remove("fly-open");
+      r.setAttribute("aria-expanded", "false");
+    });
+  }
+  let flyTimer = 0;
+  let flyHover = false;
+  let flySuppressUntil = 0;
+  function cerrarFlyYVolver() {
+    const padre = document.querySelector(".menu-row.fly-open");
+    flySuppressUntil = Date.now() + 350;
+    closeFlys();
+    if (padre && padre.isConnected) {
+      padre.focus();
+      return true;
+    }
+    return false;
+  }
+  let effortOptions = [];
+  let effortGlobal = "";
+  let effortMemo = {};
+  let modeloActual = "";
+  function effortActualDe(model, globalEffort, memo) {
+    const g = globalEffort || "off";
+    if (!model || model === modeloActual) return g;
+    return memo[model] || g;
+  }
+  function abrirFly(row, modelValue, focusPrimero) {
+    const key = modelValue + "|" + row.dataset.rowKey;
+    const ya = document.querySelector("body > .menu-fly");
+    if (ya && ya.dataset.key === key) {
+      if (focusPrimero) (ya.querySelector(".menu-row.sel") || ya.querySelector(".menu-row"))?.focus();
+      return;
+    }
+    closeFlys();
+    const act = effortActualDe(modelValue, effortGlobal, effortMemo);
+    const fly = document.createElement("div");
+    fly.className = "menu menu-fly";
+    fly.dataset.key = key;
+    fly.dataset.model = modelValue;
+    fly.innerHTML = '<div class="menu-label">Esfuerzo · ' + esc(etiquetaOpcion({ value: modelValue, name: modelValue })) + "</div>";
+    for (const e of effortOptions) {
+      const r = document.createElement("button");
+      r.type = "button";
+      r.className = "menu-row" + (e.value === act ? " sel" : "");
+      r.setAttribute("role", "menuitem");
+      r.innerHTML = effortBars(String(e.value)) + "<span>" + esc(effortLabel(String(e.value)) || etiquetaOpcion(e)) + "</span>";
+      r.title = String(e.value);
+      r.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        void elegirModeloYEffort(modelValue, String(e.value));
+      });
+      r.addEventListener("pointerenter", () => {
+        flyHover = true;
+      });
+      fly.appendChild(r);
+    }
+    fly.addEventListener("pointerenter", () => {
+      flyHover = true;
+    });
+    fly.addEventListener("pointerleave", () => {
+      flyHover = false;
+    });
+    wireMenuKeys(fly);
+    openFly(row, fly);
+    if (focusPrimero) (fly.querySelector(".menu-row.sel") || fly.querySelector(".menu-row"))?.focus();
+  }
+  async function elegirModeloYEffort(model, effort) {
+    closeFlys();
+    closeMenus();
+    if (model && model !== modeloActual) await aplicarConfig("model", model);
+    if (effort && effort !== effortGlobal) await aplicarConfig("thinking_effort", effort);
+    rememberEffort(model, effort);
+    renderChips();
+  }
   function renderChips() {
     const wrap = $("#chips");
     wrap.innerHTML = "";
@@ -5286,39 +5418,86 @@ ${a.text}
     if (!deLaSesion && providerOpt && !providerOpt.options.some((o) => o.value === "opencode_go")) {
       providerOpt.options.push({ value: "opencode_go", name: "OpenCode Go" });
     }
+    const effortOpt = opts.find((o) => o && o.id === "thinking_effort" && o.type === "select" && Array.isArray(o.options) && o.options.length > 1);
+    effortOptions = effortOpt && effortOpt.options || [];
+    const effortNow = String(effortOpt && effortOpt.currentValue || "");
+    const memorizado = effortByModel();
+    effortOptions = effortOpt && effortOpt.options || [];
+    effortGlobal = effortNow;
+    effortMemo = memorizado;
+    modeloActual = String((opts.find((o) => o && o.id === "model") || {}).currentValue || "");
     for (const opt of opts) {
       if (opt.type !== "select" || !Array.isArray(opt.options) || opt.options.length <= 1) continue;
+      if (opt.id === "thinking_effort" && effortOpt) continue;
+      const esModelo = opt.id === "model" && !!effortOpt;
       const item = document.createElement("div");
       item.className = "chip-wrap";
       item.dataset.opt = opt.id;
       const btn = document.createElement("button");
-      btn.className = "chip";
+      btn.className = "chip" + (esModelo ? " chip-model" : "");
       btn.type = "button";
       btn.setAttribute("aria-haspopup", "menu");
       btn.setAttribute("aria-expanded", "false");
       const cur = opt.options.find((o) => o.value === opt.currentValue) || opt.options[0];
-      btn.textContent = cur && (cur.name || cur.value) || opt.name || opt.id;
-      btn.title = opt.name || opt.id;
+      const etiqueta = cur && (cur.name || cur.value) || opt.name || opt.id;
+      const effChip = esModelo ? effortActualDe(String(opt.currentValue), effortNow, memorizado) : "";
+      btn.innerHTML = '<span class="chip-t">' + esc(etiqueta) + "</span>" + (esModelo && effChip ? '<span class="chip-eff">' + esc(effortLabel(effChip)) + "</span>" : "");
+      btn.title = (opt.name || opt.id) + (esModelo ? " · el esfuerzo se elige al costado de cada modelo" : "");
       const menu = document.createElement("div");
-      menu.className = "menu";
+      menu.className = "menu" + (esModelo ? " menu-model" : "");
       menu.hidden = true;
-      menu.innerHTML = `<div class="menu-label">${esc(opt.name || opt.id)}</div>`;
+      menu.innerHTML = `<div class="menu-label">${esc(opt.name || opt.id)}</div>` + (esModelo ? '<div class="menu-hint">Pasá por un modelo y elegí el esfuerzo al costado</div>' : "");
       for (const o of opt.options) {
         const row = document.createElement("button");
         row.className = "menu-row" + (o.value === opt.currentValue ? " sel" : "");
         row.type = "button";
         row.setAttribute("role", "menuitem");
-        row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
-        row.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          menu.hidden = true;
-          await setConfig(opt.id, o.value);
-        });
+        row.dataset.rowKey = String(o.value);
+        if (esModelo && effortOptions.length) {
+          const efRow = effortActualDe(String(o.value), effortNow, memorizado);
+          row.innerHTML = '<span class="mr-main"><span class="mr-name">' + esc(etiquetaOpcion(o)) + '</span><span class="mr-eff">' + effortBars(efRow) + '<span class="mr-eff-t">' + esc(effortLabel(efRow)) + '</span></span></span><span class="mr-fly-chev" aria-hidden="true">' + uiIcon("chevron", { size: 11 }) + "</span>";
+          row.setAttribute("aria-haspopup", "menu");
+          row.setAttribute("aria-expanded", "false");
+          row.addEventListener("pointerenter", () => {
+            clearTimeout(flyTimer);
+            flyTimer = setTimeout(() => abrirFly(row, String(o.value)), 90);
+          });
+          row.addEventListener("pointerleave", () => {
+            clearTimeout(flyTimer);
+            flyTimer = setTimeout(() => {
+              if (!flyHover) closeFlys();
+            }, 260);
+          });
+          row.addEventListener("focusin", () => {
+            if (Date.now() > flySuppressUntil) abrirFly(row, String(o.value));
+          });
+          row.addEventListener("click", (e) => {
+            e.stopPropagation();
+            clearTimeout(flyTimer);
+            abrirFly(row, String(o.value));
+          });
+          const onKey = (e) => {
+            if (e.key === "ArrowRight") {
+              e.preventDefault();
+              e.stopPropagation();
+              abrirFly(row, String(o.value), true);
+            }
+          };
+          row.addEventListener("keydown", onKey);
+        } else {
+          row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
+          row.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            menu.hidden = true;
+            await setConfig(opt.id, o.value);
+          });
+        }
         menu.appendChild(row);
       }
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const wasHidden = menu.hidden;
+        closeFlys();
         closeMenus();
         if (wasHidden) openMenu(btn, menu);
       });
@@ -5363,9 +5542,25 @@ ${a.text}
       } else if (e.key === "End") {
         e.preventDefault();
         items[items.length - 1].focus();
+      } else if (e.key === "ArrowLeft" && menu.classList.contains("menu-fly")) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!cerrarFlyYVolver()) closeFlys();
+      } else if (e.key === "ArrowRight" && menu.classList.contains("menu-model")) {
+        const fila = document.activeElement;
+        if (fila && fila.classList.contains("menu-row")) {
+          e.preventDefault();
+          e.stopPropagation();
+          fila.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        }
       } else if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
+        if (menu.classList.contains("menu-fly")) {
+          if (cerrarFlyYVolver()) return;
+          closeFlys();
+          return;
+        }
         if (menu.classList.contains("row-menu")) menu.remove();
         else menu.hidden = true;
         if (menuTrigger && menuTrigger.isConnected) menuTrigger.focus();
@@ -5400,6 +5595,8 @@ ${a.text}
   }
   let menuOpenedAt = 0;
   const closeMenus = () => {
+    closeFlys();
+    clearTimeout(flyTimer);
     document.querySelectorAll(".menu").forEach((m) => {
       m.hidden = true;
     });
@@ -5424,6 +5621,7 @@ ${a.text}
     },
     true
   );
+  let aplicarConfig = (id, value) => setConfig(id, value);
   async function setConfig(configId, value) {
     if (configId === "model") {
       const fijo = FIXED_MODELS[providerNow()];
@@ -6823,6 +7021,17 @@ ${a.text}
     },
     // Iconos: las mismas funciones que usa el render, para que un gate mida el set real.
     icons: { tool: toolIconSvg, kind: toolKindOf, ui: uiIcon, names: () => Object.keys(TOOL_ICON) },
+    // Chips: render para un gate que inyecta configOptions, y el estado vivo del esfuerzo.
+    chips: {
+      render: renderChips,
+      effortNow: () => effortGlobal,
+      options: () => effortOptions.map((o) => o.value),
+      memo: effortByModel,
+      // Un probe reemplaza el aplicador para medir el orden de las llamadas sin red.
+      setAplicar: (fn) => {
+        aplicarConfig = typeof fn === "function" ? fn : ((id, v) => setConfig(id, v));
+      }
+    },
     bargeNow: function() {
       return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 };
     },

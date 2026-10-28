@@ -3038,3 +3038,88 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
   .tool[data-state="run"] .tico.is-running { animation: none !important; opacity: 1; }
   .rw-band-chev { transition: none; }
 }
+
+/* ============================================================================
+   16. chip de modelo: el esfuerzo se elige al costado, no en otro chip
+   ----------------------------------------------------------------------------
+   Un solo chip para "con qué modelo" y "con cuánto esfuerzo": el effort viaja como
+   subtexto del modelo elegido y, al abrir la lista, cada modelo abre su propio flyout
+   con sus esfuerzos. Se gana un botón en la barra y el esfuerzo queda pegado al modelo,
+   que es donde tiene sentido (no todos los modelos aceptan lo mismo).
+   ============================================================================ */
+
+.chip-model { gap: 7px; padding-right: 8px; }
+.chip-model .chip-t { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* el esfuerzo es un sub-chip: mono, tabular y con el color del acento para leerse de reojo */
+.chip-model .chip-eff {
+  flex: none;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.menu-hint {
+  margin: -2px 4px 4px;
+  padding: 0 5px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-4);
+}
+
+/* filas de modelo: nombre arriba, esfuerzo actual abajo, chevron a la derecha */
+.menu-model .menu-row { justify-content: flex-start; gap: 9px; padding: 6px 9px; }
+.menu-model .menu-row.sel::after { display: none; }
+.menu-model .menu-row.sel { background: rgba(245, 244, 239, 0.045); }
+.menu-model .menu-row.fly-open { background: var(--accent-soft); color: var(--text); }
+.mr-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.mr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mr-eff { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-4); }
+.menu-model .menu-row.sel .mr-eff { color: var(--text-3); }
+.mr-fly-chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-4);
+  transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.menu-row.fly-open .mr-fly-chev { color: var(--accent); transform: translateX(2px); }
+
+/* barras de esfuerzo: cinco columnas, encendidas hasta el nivel. Se leen sin leer. */
+.fly-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; flex: none; }
+.fly-bars i { width: 2.5px; height: 4px; border-radius: 1px; background: var(--border-strong); }
+.fly-bars i:nth-child(2) { height: 6px; }
+.fly-bars i:nth-child(3) { height: 8px; }
+.fly-bars i:nth-child(4) { height: 10px; }
+.fly-bars i:nth-child(5) { height: 12px; margin-top: -3px; }
+.fly-bars i.on { background: var(--accent); }
+
+/* flyout: mismo lenguaje que el menu, con una sombra un paso mas alta para leerse como capa */
+.menu-fly {
+  min-width: 186px;
+  max-width: min(70vw, 240px);
+  max-height: min(52vh, 340px);
+  z-index: 410;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+.menu-fly .menu-row { justify-content: flex-start; gap: 9px; }
+.menu-fly .menu-row .fly-bars { width: 26px; }
+.menu-fly .menu-row.sel::after { margin-left: auto; }
+
+@media (max-width: 700px) {
+  /* en el telefono el flyout cae debajo de la fila con el ancho del menu: no hay costado */
+  .menu-fly { min-width: 0; max-width: calc(100vw - 16px); }
+  .chip-model .chip-eff { height: 15px; font-size: 9px; line-height: 13px; }
+  .chip-model .chip-t { max-width: 40vw; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mr-fly-chev { transition: none; }
+}

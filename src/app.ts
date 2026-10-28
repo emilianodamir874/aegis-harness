@@ -4867,6 +4867,126 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       .finally(() => { migrando = false; });
   }
 
+  // Esfuerzo por modelo: en vez de un chip aparte que ocupa lugar en la barra, cada fila del
+  // menu de modelos abre un flyout al costado con sus esfuerzos. El chip de "esfuerzo" del
+  // servidor sigue existiendo como configOption, pero se deja de dibujar: el valor se cambia
+  // desde la fila del modelo (un solo gesto) y se recuerda por modelo.
+  const EFFORT_ES: Record<string, string> = { off: 'Sin razonamiento', none: 'Sin razonamiento', low: 'Bajo', medium: 'Medio', high: 'Alto', max: 'Máximo' };
+  const EFFORT_BARS: Record<string, number> = { off: 1, none: 1, low: 2, medium: 3, high: 4, max: 5 };
+  const effortByModelKey = 'aegis.effortByModel';
+  function effortByModel(): Record<string, string> {
+    try { const j = JSON.parse(localStorage.getItem(effortByModelKey) || '{}'); return j && typeof j === 'object' ? j : {}; } catch { return {}; }
+  }
+  function rememberEffort(model: string, effort: string) {
+    if (!model || !effort) return;
+    try { const m = effortByModel(); m[model] = effort; localStorage.setItem(effortByModelKey, JSON.stringify(m)); } catch {}
+  }
+  function effortLabel(v: string) { return EFFORT_ES[v] || v; }
+  function effortBars(v: string) {
+    const n = EFFORT_BARS[v] || 1;
+    let out = '<span class="fly-bars" aria-hidden="true">';
+    for (let i = 1; i <= 5; i++) out += '<i' + (i <= n ? ' class="on"' : '') + '></i>';
+    return out + '</span>';
+  }
+
+  // Coloca un flyout al costado de su fila: derecha, si no entra izquierda, y si tampoco
+  // (telefono) debajo de la fila con el ancho del menu. Nunca fuera del viewport.
+  function openFly(row: HTMLElement, fly: HTMLElement) {
+    if (fly.parentElement !== document.body) document.body.appendChild(fly);
+    fly.hidden = false;
+    const r = row.getBoundingClientRect();
+    const w = fly.offsetWidth;
+    const h = fly.offsetHeight;
+    const m = 8;
+    let left = r.right + 6;
+    if (left + w > window.innerWidth - m) left = r.left - w - 6;
+    let top = r.top;
+    if (left < m) { left = Math.min(Math.max(m, r.left), Math.max(m, window.innerWidth - m - w)); top = r.bottom + 6; }
+    if (top + h > window.innerHeight - m) top = Math.max(m, window.innerHeight - m - h);
+    if (top < m) top = m;
+    fly.style.left = Math.round(left) + 'px';
+    fly.style.top = Math.round(top) + 'px';
+    fly.style.maxHeight = Math.max(120, window.innerHeight - 2 * m) + 'px';
+    row.classList.add('fly-open');
+    row.setAttribute('aria-expanded', 'true');
+  }
+  function closeFlys(keep?: HTMLElement) {
+    document.querySelectorAll<HTMLElement>('body > .menu-fly').forEach((f) => {
+      if (keep && f === keep) return;
+      f.hidden = true;
+      f.remove();
+    });
+    document.querySelectorAll<HTMLElement>('.menu-row.fly-open').forEach((r) => {
+      r.classList.remove('fly-open');
+      r.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  // Estado del flyout mientras el menú de modelos está abierto.
+  let flyTimer = 0;
+  let flyHover = false;
+  // Volver del flyout a la fila (Escape / flecha izquierda) enfoca la fila, y el focusin de la
+  // fila abriria el flyout otra vez: esta ventana corta ese rebote.
+  let flySuppressUntil = 0;
+  function cerrarFlyYVolver() {
+    const padre = document.querySelector<HTMLElement>('.menu-row.fly-open');
+    flySuppressUntil = Date.now() + 350;
+    closeFlys();
+    if (padre && padre.isConnected) { padre.focus(); return true; }
+    return false;
+  }
+  let effortOptions: any[] = [];
+  let effortGlobal = '';
+  let effortMemo: Record<string, string> = {};
+  let modeloActual = '';
+  function effortActualDe(model: string, globalEffort: string, memo: Record<string, string>): string {
+    const g = globalEffort || 'off';
+    if (!model || model === modeloActual) return g;
+    return memo[model] || g;
+  }
+  function abrirFly(row: HTMLElement, modelValue: string, focusPrimero?: boolean) {
+    const key = modelValue + '|' + row.dataset.rowKey;
+    const ya = document.querySelector<HTMLElement>('body > .menu-fly');
+    if (ya && ya.dataset.key === key) { if (focusPrimero) (ya.querySelector<HTMLElement>('.menu-row.sel') || ya.querySelector<HTMLElement>('.menu-row'))?.focus(); return; }
+    closeFlys();
+    const act = effortActualDe(modelValue, effortGlobal, effortMemo);
+    const fly = document.createElement('div');
+    fly.className = 'menu menu-fly';
+    fly.dataset.key = key;
+    fly.dataset.model = modelValue;
+    fly.innerHTML = '<div class="menu-label">Esfuerzo · ' + esc(etiquetaOpcion({ value: modelValue, name: modelValue })) + '</div>';
+    for (const e of effortOptions) {
+      const r = document.createElement('button');
+      r.type = 'button';
+      r.className = 'menu-row' + (e.value === act ? ' sel' : '');
+      r.setAttribute('role', 'menuitem');
+      // Nombre humano cuando el valor es un nivel conocido; el crudo queda en el title.
+      r.innerHTML = effortBars(String(e.value)) + '<span>' + esc(effortLabel(String(e.value)) || etiquetaOpcion(e)) + '</span>';
+      r.title = String(e.value);
+      r.addEventListener('click', (ev) => { ev.stopPropagation(); void elegirModeloYEffort(modelValue, String(e.value)); });
+      r.addEventListener('pointerenter', () => { flyHover = true; });
+      fly.appendChild(r);
+    }
+    fly.addEventListener('pointerenter', () => { flyHover = true; });
+    fly.addEventListener('pointerleave', () => { flyHover = false; });
+    // El flyout no pasa por openMenu: sin esto no tendría navegación con flechas ni Escape
+    // devolviendo el foco a la fila del modelo.
+    wireMenuKeys(fly);
+    openFly(row, fly);
+    if (focusPrimero) (fly.querySelector<HTMLElement>('.menu-row.sel') || fly.querySelector<HTMLElement>('.menu-row'))?.focus();
+  }
+  // Un solo gesto: modelo + esfuerzo. El orden importa (el modelo primero puede resetear el
+  // esfuerzo soportado). Si el modelo es fijo por proveedor, setConfig lo rechaza y no se
+  // cambia nada: se avisa con la nota que ya existe.
+  async function elegirModeloYEffort(model: string, effort: string) {
+    closeFlys();
+    closeMenus();
+    if (model && model !== modeloActual) await aplicarConfig('model', model);
+    if (effort && effort !== effortGlobal) await aplicarConfig('thinking_effort', effort);
+    rememberEffort(model, effort);
+    renderChips();
+  }
+
   function renderChips() {
     const wrap = $('#chips');
     wrap.innerHTML = '';
@@ -4879,38 +4999,83 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     if (!deLaSesion && providerOpt && !providerOpt.options.some((o) => o.value === 'opencode_go')) {
       providerOpt.options.push({ value: 'opencode_go', name: 'OpenCode Go' });
     }
+    // Esfuerzos disponibles: salen del configOption del server, pero se consumen desde la fila
+    // del modelo (flyout al costado) en vez de un chip propio en la barra.
+    const effortOpt = opts.find((o) => o && o.id === 'thinking_effort' && o.type === 'select' && Array.isArray(o.options) && o.options.length > 1);
+    effortOptions = (effortOpt && effortOpt.options) || [];
+    const effortNow = String((effortOpt && effortOpt.currentValue) || '');
+    const memorizado = effortByModel();
+    effortOptions = (effortOpt && effortOpt.options) || [];
+    effortGlobal = effortNow;
+    effortMemo = memorizado;
+    modeloActual = String(((opts.find((o) => o && o.id === 'model') || {} as any).currentValue) || '');
     for (const opt of opts) {
       if (opt.type !== 'select' || !Array.isArray(opt.options) || opt.options.length <= 1) continue;
+      if (opt.id === 'thinking_effort' && effortOpt) continue; // se elige desde el modelo
+      const esModelo = opt.id === 'model' && !!effortOpt;
       const item = document.createElement('div');
       item.className = 'chip-wrap';
       item.dataset.opt = opt.id;
       const btn = document.createElement('button');
-      btn.className = 'chip';
+      btn.className = 'chip' + (esModelo ? ' chip-model' : '');
       btn.type = 'button';
       btn.setAttribute('aria-haspopup', 'menu');
       btn.setAttribute('aria-expanded', 'false');
       const cur = opt.options.find((o) => o.value === opt.currentValue) || opt.options[0];
-      btn.textContent = (cur && (cur.name || cur.value)) || opt.name || opt.id;
-      btn.title = opt.name || opt.id;
+      const etiqueta = (cur && (cur.name || cur.value)) || opt.name || opt.id;
+      const effChip = esModelo ? effortActualDe(String(opt.currentValue), effortNow, memorizado) : '';
+      btn.innerHTML = '<span class="chip-t">' + esc(etiqueta) + '</span>'
+        + (esModelo && effChip ? '<span class="chip-eff">' + esc(effortLabel(effChip)) + '</span>' : '');
+      btn.title = (opt.name || opt.id) + (esModelo ? ' · el esfuerzo se elige al costado de cada modelo' : '');
       const menu = document.createElement('div');
-      menu.className = 'menu'; menu.hidden = true;
-      menu.innerHTML = `<div class="menu-label">${esc(opt.name || opt.id)}</div>`;
+      menu.className = 'menu' + (esModelo ? ' menu-model' : '');
+      menu.hidden = true;
+      menu.innerHTML = `<div class="menu-label">${esc(opt.name || opt.id)}</div>`
+        + (esModelo ? '<div class="menu-hint">Pasá por un modelo y elegí el esfuerzo al costado</div>' : '');
       for (const o of opt.options) {
         const row = document.createElement('button');
         row.className = 'menu-row' + (o.value === opt.currentValue ? ' sel' : '');
         row.type = 'button';
         row.setAttribute('role', 'menuitem');
-        row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
-        row.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          menu.hidden = true;
-          await setConfig(opt.id, o.value);
-        });
+        row.dataset.rowKey = String(o.value);
+        if (esModelo && effortOptions.length) {
+          const efRow = effortActualDe(String(o.value), effortNow, memorizado);
+          row.innerHTML = '<span class="mr-main"><span class="mr-name">' + esc(etiquetaOpcion(o)) + '</span>'
+            + '<span class="mr-eff">' + effortBars(efRow) + '<span class="mr-eff-t">' + esc(effortLabel(efRow)) + '</span></span></span>'
+            + '<span class="mr-fly-chev" aria-hidden="true">' + uiIcon('chevron', { size: 11 }) + '</span>';
+          row.setAttribute('aria-haspopup', 'menu');
+          row.setAttribute('aria-expanded', 'false');
+          row.addEventListener('pointerenter', () => { clearTimeout(flyTimer); flyTimer = setTimeout(() => abrirFly(row, String(o.value)), 90); });
+          // Al salir de la fila no se cierra de golpe: si el mouse entra al flyout (que esta al
+          // costado, con 6px de aire) la ventana de 260 ms evita el parpadeo.
+          row.addEventListener('pointerleave', () => {
+            clearTimeout(flyTimer);
+            flyTimer = setTimeout(() => { if (!flyHover) closeFlys(); }, 260);
+          });
+          row.addEventListener('focusin', () => { if (Date.now() > flySuppressUntil) abrirFly(row, String(o.value)); });
+          row.addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearTimeout(flyTimer);
+            abrirFly(row, String(o.value));
+          });
+          const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); abrirFly(row, String(o.value), true); }
+          };
+          row.addEventListener('keydown', onKey);
+        } else {
+          row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
+          row.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.hidden = true;
+            await setConfig(opt.id, o.value);
+          });
+        }
         menu.appendChild(row);
       }
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const wasHidden = menu.hidden;
+        closeFlys();
         closeMenus();
         if (wasHidden) openMenu(btn, menu);
       });
@@ -4956,10 +5121,30 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       else if (e.key === 'ArrowUp') move(-1);
       else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
       else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+      else if (e.key === 'ArrowLeft' && menu.classList.contains('menu-fly')) {
+        // Volver del flyout de esfuerzo a la fila del modelo que lo abrio.
+        e.preventDefault();
+        e.stopPropagation();
+        if (!cerrarFlyYVolver()) closeFlys();
+      }
+      else if (e.key === 'ArrowRight' && menu.classList.contains('menu-model')) {
+        const fila = document.activeElement as HTMLElement | null;
+        if (fila && fila.classList.contains('menu-row')) {
+          e.preventDefault();
+          e.stopPropagation();
+          fila.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        }
+      }
       else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        // La fila abre un menu efimero (se recrea en cada apertura): se descarta.
+        // La fila abre un menu efimero (se recrea en cada apertura): se descarta. El flyout
+        // devuelve el foco a la fila que lo abrio (y no se reabre: ver flySuppressUntil).
+        if (menu.classList.contains('menu-fly')) {
+          if (cerrarFlyYVolver()) return;
+          closeFlys();
+          return;
+        }
         if (menu.classList.contains('row-menu')) menu.remove();
         else menu.hidden = true;
         if (menuTrigger && menuTrigger.isConnected) menuTrigger.focus();
@@ -5000,6 +5185,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   }
   let menuOpenedAt = 0;
   const closeMenus = () => {
+    closeFlys();
+    clearTimeout(flyTimer);
     document.querySelectorAll<HTMLElement>('.menu').forEach((m) => { m.hidden = true; });
     document.querySelectorAll<HTMLElement>('[aria-expanded="true"][aria-haspopup="menu"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
     menuTrigger = null;
@@ -5022,6 +5209,10 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     },
     true
   );
+
+  // Atajo de prueba para los gates del chip: un probe puede reemplazar esto y ver el orden
+  // exacto de las llamadas (modelo -> esfuerzo) sin tocar el server.
+  let aplicarConfig: (id: string, value: string) => any = (id, value) => setConfig(id, value);
 
   async function setConfig(configId, value) {
     // Regla: open_design y opencode_go solo con deepseek-v4.1-flash.
@@ -6322,6 +6513,10 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     },
     // Iconos: las mismas funciones que usa el render, para que un gate mida el set real.
     icons: { tool: toolIconSvg, kind: toolKindOf, ui: uiIcon, names: () => Object.keys(TOOL_ICON) },
+    // Chips: render para un gate que inyecta configOptions, y el estado vivo del esfuerzo.
+    chips: { render: renderChips, effortNow: () => effortGlobal, options: () => effortOptions.map((o) => o.value), memo: effortByModel,
+      // Un probe reemplaza el aplicador para medir el orden de las llamadas sin red.
+      setAplicar: (fn) => { aplicarConfig = typeof fn === 'function' ? fn : ((id, v) => setConfig(id, v)); } },
     bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
     micOff: function () { micStop(true); },   // solo para el probe de barge-in
     setRate: function (v) { var n = Number(v); if (n > 0.5 && n < 2) { READ.rate = n; try { localStorage.setItem('aegis.ttsRate', String(n)); } catch (e) {} readReset(true); return n; } return READ.rate; },
