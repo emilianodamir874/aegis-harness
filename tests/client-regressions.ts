@@ -63,6 +63,8 @@ try {
       switch (m.method) {
         case 'initialize': reply({ protocolVersion: 1 }); break;
         case '_aegis/unstable/sources/list': reply({ sources: [] }); break;
+        // El combobox pide el catalogo al dibujar los chips: sin esto el fixture lo trata como inesperado.
+        case '_aegis/unstable/providers/list': reply({ entries: [] }); break;
         case 'tools/list': reply({ tools: [] }); break;
         case 'session/list': reply({ sessions, _meta: { runningSessionIds: running }, nextCursor: null }); break;
         case 'session/load': reply({ configOptions: [], modes: {} }); break;

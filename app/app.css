@@ -3718,3 +3718,125 @@ html[data-motion="reducido"] *::after {
   .runbar-phase .rp-dot { animation: none; }
 }
 html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
+
+/* ============================================================================
+   Chips del topbar: de globos con borde a texto con hover (2026-10-28)
+   ----------------------------------------------------------------------------
+   Lo que habia: dos capsulas de 44 px con borde completo, 220 px de tope y el
+   nombre del modelo comprimido ("deepse..."), el proveedor ocupando media
+   pastilla y el esfuerzo dentro de otra capsula naranja. En el telefono, tres
+   globos se comian dos tercios de la fila.
+   Lo que hay: el chip no tiene borde ni fondo; se lee como una frase con tres
+   niveles (proveedor en versalitas, modelo en semibold, esfuerzo pequeno en
+   acento) y el hover/pressed es lo unico que dibuja una superficie.
+   Va al final del archivo para ganarle por orden a las reglas de .chip de
+   arriba (misma especificidad).
+   ============================================================================ */
+/* Chips del topbar, rediseño: de globos con borde a texto con hover.
+   Mismo DOM (span .chip-t / .chip-sub / .chip-eff + galon ::after). Solo CSS.
+   Se prueba inyectado sobre la pagina real; no toca app/app.css hasta que se apruebe. */
+
+/* --- el grupo: aire entre pastillas, sin mascara de scroll que corte la primera --- */
+.chips { gap: 2px; padding: 0 2px; }
+
+/* --- el chip: deja de ser una capsula con borde --- */
+.chip {
+  height: 26px;
+  max-width: min(300px, 44vw);
+  padding: 0 8px;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  overflow: visible;
+  text-overflow: clip;
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.chip:hover { background: rgba(245, 244, 239, 0.055); border: 0; color: var(--text); }
+.chip:active { background: rgba(245, 244, 239, 0.085); }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; background: rgba(245, 244, 239, 0.055); }
+/* Abierto ya no es "todo naranja": es la misma pastilla, mas marcada, y el galon girado. */
+.chip-wrap.open .chip,
+.chip[aria-expanded="true"] {
+  border: 0;
+  background: rgba(245, 244, 239, 0.075);
+  color: var(--text);
+}
+.chip::after { width: 8px; height: 8px; opacity: 0.38; }
+.chip:hover::after { opacity: 0.6; }
+
+/* --- tres niveles tipograficos, no tres cosas iguales --- */
+.chip-sub {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-4);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 8px;
+  border-right: 1px solid var(--border-soft);
+}
+.chip-model { gap: 8px; }
+.chip-model .chip-t {
+  flex: 0 0 auto;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--text);
+}
+/* El esfuerzo, sin capsula: texto chico con color de acento. La capsula era el globo. */
+.chip-model .chip-eff {
+  flex: none;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: none;
+  color: var(--accent-text);
+  opacity: 0.92;
+}
+.chip-model .chip-eff::before { content: "·"; margin-right: 5px; color: var(--text-4); font-weight: 400; }
+
+/* --- modo: es una eleccion de bajo uso, se lee sin competir con el modelo --- */
+.chip-mode { color: var(--text-4); }
+.chip-mode:hover, .chip-mode[aria-expanded="true"] { color: var(--text-2); }
+.chip-mode .chip-t { font-size: 11.5px; }
+
+/* --- debate: accion, no configuracion --- */
+.debate-chip { font-size: 11.5px; color: var(--text-4); }
+.debate-chip:hover { color: var(--text-2); }
+.debate-chip.on,
+.debate-chip[aria-pressed="true"] {
+  border: 0;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+
+/* --- movil: 384 px. El proveedor es contexto y se calla; el modelo manda. --- */
+@media (max-width: 560px) {
+  .chip { height: 40px; padding: 0 10px; border-radius: var(--r-sm); }
+  .chip::after { width: 9px; height: 9px; }
+  .chip-model { max-width: min(84vw, 320px); gap: 7px; }
+  .chip-model .chip-sub { display: none; }
+  .chip-model .chip-t { font-size: 13px; max-width: 180px; }
+  .chip-model .chip-eff { font-size: 10.5px; }
+  .chip-mode .chip-t { font-size: 12px; }
+}
