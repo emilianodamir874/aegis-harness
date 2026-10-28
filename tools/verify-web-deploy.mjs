@@ -166,9 +166,21 @@ try {
         const changes = await page.locator('.aegis-changes').innerText();
         const changesOk = /Sin sesión activa · no se consultó Git/.test(changes) && /Abrí una conversación/.test(changes)
           && !/Git no informa cambios locales/.test(changes) && !/Panel no disponible/.test(changes);
+        let mobileSwitch = true;
+        if (viewport.width < 500) {
+          await page.locator('.aegis-changes header button').filter({ hasText: 'Cerrar' }).click();
+          await page.locator('#view-files').click();
+          await page.locator('.aegis-art[role="dialog"]').waitFor({ timeout: 8000 });
+          await page.locator('#view-activity').click();
+          await page.locator('.aegis-activity[role="dialog"]').waitFor({ timeout: 8000 });
+          const beforeChat = await page.evaluate(() => ({ active: document.querySelector('#view-activity')?.getAttribute('aria-current'), fileVisible: !!document.querySelector('.aegis-art-backdrop:not([style*="display: none"])') }));
+          await page.locator('#view-chat').click();
+          const afterChat = await page.evaluate(() => ({ active: document.querySelector('#view-chat')?.getAttribute('aria-current'), activity: !!document.querySelector('.aegis-activity-backdrop'), log: !!document.querySelector('#messages')?.getBoundingClientRect().width }));
+          mobileSwitch = beforeChat.active === 'page' && !beforeChat.fileVisible && afterChat.active === 'page' && !afterChat.activity && afterChat.log;
+        }
         const ok = main?.status() === 200 && initial.controls && initial.visible && initial.noSession && initial.ready
-          && wsSeen && wsConnected && activityNoFake && changesOk && Object.values(errors).every(n => n === 0);
-        gate(`Chromium ${label}`, ok, `DOM=${initial.visible} sinSesión=${initial.noSession} ACP=${initial.ready && wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} actividad=${activityNoFake} cambios=${changesOk} errores=${JSON.stringify(errors)}`);
+          && wsSeen && wsConnected && activityNoFake && changesOk && mobileSwitch && Object.values(errors).every(n => n === 0);
+        gate(`Chromium ${label}`, ok, `DOM=${initial.visible} sinSesión=${initial.noSession} ACP=${initial.ready && wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} actividad=${activityNoFake} cambios=${changesOk} vistasMóvil=${mobileSwitch} errores=${JSON.stringify(errors)}`);
       } catch (e) { gate(`Chromium ${label}`, false, `${errorKind(e)} en ${stage} · ACP=${wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} · errores=${JSON.stringify(errors)}`); }
       finally { await context.close(); }
     }
