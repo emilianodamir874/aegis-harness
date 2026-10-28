@@ -1,8 +1,9 @@
-/* Panel de cambios Git observables, sin atribuir autoría ni escribir al repositorio.
- * Contrato propuesto (NO integrado): GET /changes.json?cwd=<cwd autorizado>.
- * Backend debe validar cwd contra allowlist antes de invocar changes-index.mjs --cwd.
- */
-interface ChangeEntry { path: string; staged: string; worktree: string; diff: string; truncated?: boolean }
+/* Estado Git actual en solo lectura. /changes.json valida el cwd permitido antes de consultar Git. */
+interface ChangeEntry {
+  path: string; staged: string; worktree: string; diff: string; truncated?: boolean;
+  stagedAdded?: number | null; stagedRemoved?: number | null;
+  worktreeAdded?: number | null; worktreeRemoved?: number | null;
+}
 interface ChangeResponse {
   kind: 'git' | 'not-git' | 'error';
   cwd?: string; root?: string; entries: ChangeEntry[]; truncated: boolean; error?: string;
@@ -34,6 +35,16 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLE
   if (text !== undefined) node.textContent = text;
   return node;
 }
+function counts(added: unknown, removed: unknown): string {
+  const n = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const a = n(added), r = n(removed);
+  return a === null || r === null ? '+? / −? (no disponible)' : `+${a} / −${r}`;
+}
+function testStatus(): string {
+  // Git status/diff cannot establish whether tests were run. A test-status source
+  // would need separate, verifiable evidence; no such source is in this API.
+  return 'Pruebas: estado desconocido; Git no registra su ejecución';
+}
 function valid(value: unknown): value is ChangeResponse {
   return !!value && typeof value === 'object' && ['git', 'not-git', 'error'].includes((value as ChangeResponse).kind)
     && Array.isArray((value as ChangeResponse).entries) && typeof (value as ChangeResponse).truncated === 'boolean';
@@ -42,7 +53,7 @@ async function refresh(): Promise<void> {
   if (!main || !note) return;
   const version = ++serial, view = main, footer = note;
   view.replaceChildren(el('p', 'Consultando Git…'));
-  footer.textContent = 'Cambios locales observables; no identifica quién los hizo.';
+  footer.textContent = 'Estado actual de Git; autor desconocido. ' + testStatus();
   try {
     if (!selectedCwd) {
       view.replaceChildren(el('p', 'Abrí una conversación para consultar los cambios de su directorio.'));
@@ -60,13 +71,19 @@ async function refresh(): Promise<void> {
       view.append(el('p', 'El directorio no es un repositorio Git.'));
       return;
     }
-    view.append(el('p', 'Git: ' + (payload.root || selectedCwd)));
+    view.append(el('p', 'Estado actual de Git: ' + (payload.root || selectedCwd)));
+    view.append(el('p', testStatus()));
     if (!payload.entries.length) view.append(el('p', 'Git no informa cambios locales.'));
     for (const item of payload.entries.slice(0, 60)) {
       if (!item || typeof item.path !== 'string' || typeof item.diff !== 'string'
         || typeof item.staged !== 'string' || typeof item.worktree !== 'string') continue;
       const row = el('details');
       row.append(el('summary', `${item.staged}${item.worktree} · ${item.path}`));
+      if (item.worktree === '?') row.append(el('p', 'Sin seguimiento · +? / −? (no se lee el contenido).'));
+      else {
+        if (item.staged !== ' ') row.append(el('p', 'Staged: ' + counts(item.stagedAdded, item.stagedRemoved)));
+        if (item.worktree !== ' ') row.append(el('p', 'Sin stage: ' + counts(item.worktreeAdded, item.worktreeRemoved)));
+      }
       row.append(el('pre', item.diff || (item.worktree === '?' ? 'Archivo no rastreado; no se muestra contenido.' : 'Diff no disponible o sin contenido textual.')));
       if (item.truncated) row.append(el('p', 'Diff recortado.'));
       view.append(row);

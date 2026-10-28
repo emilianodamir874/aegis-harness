@@ -113,6 +113,51 @@ try {
       fail(await page.locator('#fixture-transcript').count() === 1, 'Actividad modificó o sustituyó el transcript');
       fail(await page.locator('.aegis-art-backdrop:visible, .aegis-mem-backdrop:visible').count() === 0, 'Actividad abrió un panel no solicitado');
       if (mobile) fail(!await page.locator('#sidebar').evaluate(el => el.classList.contains('open')), 'Actividad dejó el cajón abierto');
+      // El selector solo en móvil y debajo del compositor, con targets alcanzables.
+      if (mobile) {
+        await page.locator('.aegis-activity header button:last-of-type').click();
+        await page.evaluate(() => { document.getElementById('messages')!.scrollTop = 180; });
+        const layout = async () => page.evaluate(() => {
+          const rect = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+          const bar = rect('workspace-switch'), composer = document.querySelector('.composer-wrap')!.getBoundingClientRect();
+          const log = rect('messages'), viewport = window.visualViewport;
+          return { top: bar.top, bottom: bar.bottom, composerBottom: composer.bottom, logBottom: log.bottom,
+            viewportBottom: (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight),
+            widths: ['view-chat', 'view-activity', 'view-files'].map(id => { const r = rect(id); return [r.width, r.height]; }),
+            scroll: document.getElementById('messages')!.scrollTop,
+          };
+        });
+        const initial = await layout();
+        fail(initial.top >= initial.composerBottom - 1 && initial.logBottom <= initial.composerBottom + 1, `selector tapa compositor/transcript: ${JSON.stringify(initial)}`);
+        fail(initial.widths.every(([w, h]) => w >= 44 && h >= 44), `targets pequeños: ${JSON.stringify(initial.widths)}`);
+        fail(Math.abs(initial.bottom - initial.viewportBottom) <= 2, `selector no termina en viewport visual: ${JSON.stringify(initial)}`);
+        await page.locator('#view-files').click();
+        await page.locator('.aegis-art[role="dialog"]').waitFor({ state: 'visible' });
+        await page.locator('#view-activity').click();
+        await page.locator('.aegis-activity[role="dialog"]').waitFor({ state: 'visible' });
+        fail(await page.locator('.aegis-art-backdrop:visible').count() === 0, 'Archivos no se cerró al alternar a Actividad');
+        await page.locator('#view-chat').click();
+        fail(await page.locator('.aegis-activity[role="dialog"]').count() === 0, 'Chat no cerró actividad');
+        fail(await page.locator('#view-chat').getAttribute('aria-current') === 'page', 'Chat no figura seleccionado');
+        await page.locator('#view-chat').focus();
+        const focus = await page.locator('#view-chat').evaluate(el => ({ active: document.activeElement === el, rect: el.getBoundingClientRect().toJSON() }));
+        fail(focus.active && focus.rect.top >= 0 && focus.rect.bottom <= height + 1, `foco no visible al volver a chat: ${JSON.stringify(focus)}`);
+        fail(await page.locator('#fixture-transcript').count() === 1, 'Selector reemplazó transcript');
+        const restored = await layout();
+        fail(restored.scroll === initial.scroll, `se perdió scroll del chat: ${initial.scroll} -> ${restored.scroll}`);
+        // Simular teclado con un visualViewport más bajo sin cambiar el layout viewport.
+        await page.evaluate(() => {
+          const fake = new EventTarget() as EventTarget & { height: number; offsetTop: number };
+          fake.height = 510; fake.offsetTop = 0;
+          Object.defineProperty(window, 'visualViewport', { configurable: true, value: fake });
+          window.dispatchEvent(new Event('resize'));
+        });
+        const keyboard = await layout();
+        fail(Math.abs(keyboard.bottom - 510) <= 2 && keyboard.top >= keyboard.composerBottom - 1, `selector/teclado no acotados: ${JSON.stringify(keyboard)}`);
+        fail(keyboard.scroll === initial.scroll, 'teclado perdió scroll de transcript');
+      } else {
+        fail(!await page.locator('#workspace-switch').isVisible(), 'selector móvil visible en escritorio');
+      }
       fail(!calls.some(call => /session\/(new|prompt|load)/.test(call)), `sesión o prompt inesperado: ${calls.join(', ')}`);
       fail(errors.length === 0, `${width}x${height}: ${errors.join(' | ')}`);
       console.log(`PASS workspace-nav ${width}x${height}: paneles reales, transcript, viewport, cero errores; fixture local`);

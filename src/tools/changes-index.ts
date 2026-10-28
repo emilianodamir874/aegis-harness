@@ -6,13 +6,18 @@
  * node changes-index.mjs --cwd <authorized-directory> -> {kind, cwd, entries, truncated}
  */
 import { execFileSync } from 'node:child_process';
-import { isAbsolute, resolve } from 'node:path';
+import { lstatSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 
 interface Entry {
   path: string;
   staged: string;
   worktree: string;
   diff: string;
+  stagedAdded?: number | null;
+  stagedRemoved?: number | null;
+  worktreeAdded?: number | null;
+  worktreeRemoved?: number | null;
   truncated?: boolean;
 }
 const MAX_FILES = 60;
@@ -28,23 +33,53 @@ function git(cwd: string, args: string[], maxBuffer = 128 * 1024): Buffer {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
-function safePath(path: string): boolean {
-  return !!path && !path.includes('\0') && !path.includes('\\') && !SECRET_PATH.test(path)
-    && !/[\x00-\x1f\x7f]/.test(path)
-    && !path.split('/').some(part => part === '..' || part === '.' || !part);
+function safePath(root: string, path: string): boolean {
+  if (!path || isAbsolute(path) || path.includes('\\') || path.includes(':') || SECRET_PATH.test(path)
+    || /[\x00-\x1f\x7f]/.test(path)) return false;
+  const parts = path.split('/');
+  if (parts.some(part => !part || part === '.' || part === '..')) return false;
+  // Git pathspecs are literal, but never resolve a diff through a linked directory/file.
+  // In particular, Windows junctions can escape the repository without a '..' component.
+  let current = root;
+  for (const part of parts) {
+    current = join(current, part);
+    try {
+      if (lstatSync(current).isSymbolicLink()) return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+    }
+  }
+  return true;
 }
-function diff(cwd: string, path: string, staged: boolean): { text: string; truncated: boolean } {
+type Patch = { text: string; truncated: boolean; added: number | null; removed: number | null };
+function diff(cwd: string, path: string, staged: boolean): Patch {
+  // Git numstat counts the entire patch (not the clipped or redacted display text),
+  // including lines in hunks beyond MAX_DIFF. Binary/unavailable counts stay unknown.
+  const args = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames',
+    ...(staged ? ['--cached'] : []), '--', `:(literal)${path}`];
+  let added: number | null = null, removed: number | null = null;
   try {
-    // Literal pathspec prevents glob/pathspec injection; no external diff or textconv.
-    const output = git(cwd, ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames',
-      '--unified=2', ...(staged ? ['--cached'] : []), '--', `:(literal)${path}`], 256 * 1024);
+    const records = git(cwd, [...args.slice(0, -2), '--numstat', '-z', ...args.slice(-2)], 256 * 1024)
+      .toString('utf8').split('\0').filter(Boolean);
+    if (records.length === 1) {
+      const match = /^(\d+|-)\t(\d+|-)\t(.+)$/s.exec(records[0]);
+      if (match && match[3] === path) {
+        const a = Number(match[1]), r = Number(match[2]);
+        if (match[1] !== '-' && match[2] !== '-' && Number.isSafeInteger(a) && Number.isSafeInteger(r)) {
+          added = a; removed = r;
+        }
+      }
+    }
+  } catch { /* No invented counts when numstat fails. */ }
+  try {
+    const output = git(cwd, [...args.slice(0, -2), '--unified=2', ...args.slice(-2)], 256 * 1024);
     const raw = output.toString('utf8');
     // Fail closed on the whole patch, not just visible lines: clipping first might hide a credential.
     if (raw.split(/\r?\n/).some(line => SECRET_LINE.test(line)))
-      return { text: '[Diff oculto: posible credencial]', truncated: false };
-    return { text: raw.slice(0, MAX_DIFF), truncated: raw.length > MAX_DIFF };
+      return { text: '[Diff oculto: posible credencial]', truncated: false, added, removed };
+    return { text: raw.slice(0, MAX_DIFF), truncated: raw.length > MAX_DIFF, added, removed };
   } catch {
-    return { text: '[Diff no disponible]', truncated: true };
+    return { text: '[Diff no disponible]', truncated: true, added, removed };
   }
 }
 function snapshot(cwd: string): object {
@@ -66,22 +101,25 @@ function snapshot(cwd: string): object {
     if (entries.length >= MAX_FILES) { truncated = true; break; }
     if (record.length < 4 || record[2] !== ' ') { truncated = true; continue; }
     const path = record.slice(3);
-    if (!safePath(path)) continue;
+    if (!safePath(root, path)) continue;
     const staged = record[0], worktree = record[1];
     const entry: Entry = { path, staged, worktree, diff: '' };
-    // Untracked files have no Git diff; never read their contents.
-    if (worktree !== '?' && totalDiff < MAX_TOTAL_DIFF) {
+    // Untracked files have no Git diff; never read their contents. Counts are
+    // independent of the display budget (and never inferred from a clipped patch).
+    if (worktree !== '?') {
       const patches = [
-        ...(staged !== ' ' ? [diff(cwd, path, true)] : []),
-        ...(worktree !== ' ' ? [diff(cwd, path, false)] : []),
+        ...(staged !== ' ' ? [{ patch: diff(cwd, path, true), side: 'staged' as const }] : []),
+        ...(worktree !== ' ' ? [{ patch: diff(cwd, path, false), side: 'worktree' as const }] : []),
       ];
-      for (const patch of patches) {
-        const remaining = MAX_TOTAL_DIFF - totalDiff;
+      for (const { patch, side } of patches) {
+        if (side === 'staged') { entry.stagedAdded = patch.added; entry.stagedRemoved = patch.removed; }
+        else { entry.worktreeAdded = patch.added; entry.worktreeRemoved = patch.removed; }
+        const remaining = Math.max(0, MAX_TOTAL_DIFF - totalDiff);
         entry.diff += patch.text.slice(0, remaining);
         totalDiff += Math.min(remaining, patch.text.length);
-        if (patch.truncated || patch.text.length > remaining) { entry.truncated = true; truncated = true; }
+        if (patch.truncated || patch.text.length > remaining || !remaining) { entry.truncated = true; truncated = true; }
       }
-    } else if (worktree !== '?' && totalDiff >= MAX_TOTAL_DIFF) { entry.truncated = true; truncated = true; }
+    }
     entries.push(entry);
   }
   return { kind: 'git', cwd, root, entries, truncated };

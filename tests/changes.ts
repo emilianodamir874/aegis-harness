@@ -4,7 +4,7 @@
  */
 import { strict as assert } from 'node:assert';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
@@ -38,6 +38,18 @@ try {
   await writeFile(join(fixture, '.env'), 'PASSWORD=otro-secreto\n');
   await writeFile(join(fixture, 'espacio en nombre.txt'), 'sin contenido mostrado\n');
   await writeFile(join(fixture, 'extra.txt'), 'archivo sin trackear\n');
+  await writeFile(join(fixture, 'staged.txt'), 'original\ncambio staged\ncambio local\n');
+  await writeFile(join(fixture, 'bin.dat'), Buffer.from([0, 1, 2]));
+  git('add', 'bin.dat');
+  await mkdir(join(fixture, 'dir'));
+  await writeFile(join(fixture, 'dir', 'inside.txt'), 'visible\n');
+  git('add', 'dir/inside.txt');
+  git('config', 'core.symlinks', 'true');
+  try {
+    await symlink(temp, join(fixture, 'outside'), process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (!['EPERM', 'EACCES', 'ENOTSUP'].includes((error as NodeJS.ErrnoException).code || '')) throw error;
+  }
   const bundle = await build({ entryPoints: [resolve('src/tools/changes-index.ts')], bundle: true,
     write: false, platform: 'node', format: 'esm', packages: 'external', target: 'node22' });
   await writeFile(script, bundle.outputFiles[0].contents);
@@ -49,7 +61,13 @@ try {
   assert(entries.some(item => item.path === 'normal.txt' && item.worktree === 'M'
     && item.diff.includes('+segunda')));
   assert(entries.some(item => item.path === 'staged.txt' && item.staged === 'M'
-    && item.diff.includes('+cambio staged')));
+    && item.diff.includes('+cambio staged') && item.diff.includes('+cambio local')
+    && item.stagedAdded === 1 && item.stagedRemoved === 0
+    && item.worktreeAdded === 1 && item.worktreeRemoved === 0));
+  assert(entries.some(item => item.path === 'normal.txt' && item.worktreeAdded === 1 && item.worktreeRemoved === 0));
+  assert(entries.some(item => item.path === 'dir/inside.txt' && item.stagedAdded === 1 && item.stagedRemoved === 0));
+  assert(entries.some(item => item.path === 'bin.dat' && item.stagedAdded === null && item.stagedRemoved === null));
+  assert(!entries.some(item => item.path === 'outside'), 'no seguir enlace exterior');
   assert(entries.some(item => item.path === 'espacio en nombre.txt' && item.worktree === '?'
     && item.diff === ''));
   assert(!entries.some(item => item.path === '.env'), 'ruta de credencial oculta');

@@ -1,12 +1,10 @@
-// Test aislado: módulo compilado a node_modules/.cache, HTTP simulado, ACP simulado; nunca usa store ni serve.
-// npx esbuild src/activity.ts --bundle --format=esm --platform=browser --outfile=node_modules/.cache/activity-client.js
-// npx esbuild tests/activity.ts --bundle --format=esm --platform=node --packages=external --outfile=node_modules/.cache/activity-test.mjs
-// node node_modules/.cache/activity-test.mjs
+// Test aislado: bundle de dist-ts, HTTP y ACP simulados; nunca usa store ni serve.
+// npm run build && node dist-ts/tests/activity.mjs
 import { chromium } from 'playwright';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-const script = await readFile(resolve('node_modules/.cache/activity-client.js'), 'utf8');
+const script = await readFile(resolve('dist-ts/app/activity.js'), 'utf8');
 const browser = await chromium.launch({ headless: true });
 const assert = (ok: unknown, detail: string) => { if (!ok) throw new Error(detail); };
 try {
@@ -44,6 +42,12 @@ try {
         ], nextCursor: null, _meta: { runningSessionIds: [] } };
       }
       if (method === '_aegis/unstable/session/info') return { session: { _meta: { activeRunId: params.sessionId === 's1' ? null : scope.__activityState.info } } };
+      if (method === '_aegis/unstable/session/export') return { data: JSON.stringify({ id: params.sessionId, conversation: [{ metadata: { userVisible: true }, content: [
+        { type: 'toolRequest', id: 'tool1', toolCall: { status: 'success', value: { name: 'shell', arguments: { secret: 'SECRET_DO_NOT_PRINT' } } } },
+        { type: 'toolRequest', id: 'tool2', toolCall: { status: 'success', value: { name: 'summon' } } },
+        { type: 'toolResponse', id: 'tool1', toolResult: { status: 'success', value: { isError: false, content: ['SECRET_DO_NOT_PRINT'] } } },
+        { type: 'toolResponse', id: 'tool2', toolResult: { status: 'success', value: { isError: true } } },
+      ] }] }) };
       throw new Error('RPC inesperado: ' + method);
     } } };
     document.addEventListener('DOMContentLoaded', () => document.querySelector('.sb-item')?.addEventListener('click', () => scope.__activityState.clicks++));
@@ -58,6 +62,13 @@ try {
   assert(result.includes('Confirmaciones sin respuesta registrada') && result.includes('s2 · 2 sin respuesta registrada'), 'pendientes separados');
   assert(await page.locator('.aegis-activity img').count() === 0, 'texto no escapado');
   assert(await page.locator('.aegis-activity button.row').count() === 1, 'solo filas con botón público de sidebar deben navegar');
+  assert(!calls.includes('ACP _aegis/unstable/session/export'), 'export no debe leerse sin petición explícita');
+  await page.locator('.aegis-activity section').first().getByRole('button', { name: 'Ver detalle' }).first().click();
+  await page.waitForFunction(() => document.querySelector('.aegis-activity section')?.textContent?.includes('Herramientas: 2 llamadas'));
+  const detail = await page.locator('.aegis-activity section').first().innerText();
+  assert(detail.includes('1 resultados correctos explícitos') && detail.includes('1 errores explícitos') && detail.includes('Subagentes (llamadas explícitas summon): 1'), 'detalle export incompleto');
+  assert(!detail.includes('SECRET_DO_NOT_PRINT'), 'detalle filtró contenido confidencial del export');
+  assert(calls.includes('ACP _aegis/unstable/session/export'), 'detalle no pidió export explicitamente');
   assert(calls.filter(x => x === 'ACP session/list').length === 2 && calls.includes('GET /pending.json'), 'no paginó o no leyó pendientes');
   const params = await page.evaluate(() => (window as any).__activityState.calls.filter((x: any) => x.method === 'session/list').map((x: any) => x.params));
   assert(params[1].cursor === 'next' && params[0].meta.aegis.includeLastMessageSnippet === false, 'cursor o meta inválidos');
