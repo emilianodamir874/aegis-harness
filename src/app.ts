@@ -2766,7 +2766,8 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     try {
       const res = await rpc.request('session/new', { cwd: targetCwd, mcpServers: [] });
       if (state.hubWatchSid) { const prev = state.hubWatchSid; state.hubWatchSid = null; await hubUnwatch(prev); }
-      state.current = { id: res.sessionId, title: 'Nuevo chat', cwd: targetCwd || CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
+      densityFollowSession(res.sessionId);
+    state.current = { id: res.sessionId, title: 'Nuevo chat', cwd: targetCwd || CFG.cwd, configOptions: res.configOptions || [], modes: res.modes || {} };
       // Si el usuario eligio modelo/esfuerzo antes de crear el chat, se aplica ahora.
       await aplicarPendientes(res.sessionId);
       resetTransient();
@@ -2982,6 +2983,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       saveDraft();
     }
     if (state.current?.id !== id && state.hubWatchSid) { const prev = state.hubWatchSid; state.hubWatchSid = null; hubUnwatch(prev); }
+    densityFollowSession(id);
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
     clearMessages();
@@ -5692,6 +5694,36 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
   }
   let density: Density = 'comoda';
   try { density = densValid(localStorage.getItem(DENS_KEY)); } catch {}
+
+  // Clave por sesion: la densidad es una decision de lectura, y un chat largo y uno corto no piden
+  // la misma. La global queda como default de chats nuevos.
+  const densKeyFor = (sessionId: string) => DENS_KEY + '.' + sessionId;
+  function densityFor(sessionId: string | null | undefined): Density {
+    if (!sessionId) return density;
+    try {
+      const propia = localStorage.getItem(densKeyFor(sessionId));
+      if (propia) return densValid(propia);
+    } catch {}
+    return density;
+  }
+  function applyDensity(next: Density) {
+    const messages = $('#messages');
+    if (messages) messages.dataset.density = next;
+    document.documentElement.dataset.density = next;
+    const btn = $('#btn-density');
+    if (btn) {
+      btn.setAttribute('aria-label', 'Densidad del chat: ' + DENS_LABEL[next]);
+      btn.title = 'Densidad del chat: ' + DENS_LABEL[next] + ' (click para cambiar)';
+      btn.dataset.density = next;
+    }
+  }
+  /** Al cambiar de sesion: retoma la densidad de ese chat sin tocar la de los demas. */
+  function densityFollowSession(sessionId: string | null | undefined) {
+    const next = densityFor(sessionId);
+    density = next;
+    applyDensity(next);
+    return next;
+  }
   function setDensity(next: Density, announce?: boolean) {
     density = densValid(next);
     const messages = $('#messages');
@@ -5703,7 +5735,13 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       btn.title = 'Densidad del chat: ' + DENS_LABEL[density] + ' (click para cambiar)';
       btn.dataset.density = density;
     }
-    try { localStorage.setItem(DENS_KEY, density); } catch {}
+    // Se guarda en la sesion (si hay) y la global se actualiza igual, para que un chat nuevo
+    // arranque con la ultima eleccion en vez de volver siempre a comoda.
+    try {
+      localStorage.setItem(DENS_KEY, density);
+      const sid = state.current?.id;
+      if (sid) localStorage.setItem(densKeyFor(sid), density);
+    } catch {}
     if (announce) toast('Densidad: ' + DENS_LABEL[density]);
     scrollBottom(true);
     return density;
