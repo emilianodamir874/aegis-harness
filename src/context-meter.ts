@@ -288,8 +288,15 @@ function toggleMap(anchor: HTMLElement): void {
     return;
   }
   const usage = window.__aegisWeb?.usageState?.() || null;
-  const rows = (usage?.contextBreakdown || []).map((row) => ({ label: rowLabel(row), tokens: rowTokens(row) }));
-  rows.sort((a, b) => b.tokens - a.tokens);
+  // "oculto por compactacion" es historial que ya no viaja al modelo: se muestra (el usuario lo
+  // sigue viendo) pero no entra en el total ni puede ser "la mayor" parte del contexto enviado.
+  const fueraDelTotal = (label) => /oculto/i.test(label);
+  const rows = (usage?.contextBreakdown || []).map((row) => {
+    const label = rowLabel(row);
+    const tokens = rowTokens(row);
+    return { label, tokens, aparte: fueraDelTotal(label) };
+  });
+  rows.sort((a, b) => (Number(!!a.aparte) - Number(!!b.aparte)) || (b.tokens - a.tokens));
 
   map = document.createElement('div');
   map.className = 'ctx-map';
@@ -304,7 +311,7 @@ function toggleMap(anchor: HTMLElement): void {
     muted.textContent = 'El server todavia no mando el desglose de este turno.';
     map.appendChild(muted);
   } else {
-    const total = rows.reduce((sum, r) => sum + r.tokens, 0) || used || 1;
+    const total = rows.reduce((sum, r) => sum + (r.aparte ? 0 : r.tokens), 0) || used || 1;
     for (const row of rows) {
       const line = document.createElement('div');
       line.className = 'row';
