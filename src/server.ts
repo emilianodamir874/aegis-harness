@@ -1163,6 +1163,25 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     // SQLiteSync corre en un proceso hijo: lectura read-only, sin crear DB ni bloquear el event loop.
     // El path replica Paths::data_dir()/sessions/sessions.db y SessionStorage::new() del motor.
     // Snapshot Git de un workspace validado; el CLI NO acepta cwd de HTTP sin estos controles.
+    if (url.pathname === '/doctor.json') {
+      const headers = { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC };
+      const reply = (status: number, body: object) => {
+        res.writeHead(status, headers);
+        res.end(JSON.stringify(body));
+      };
+      // Expone paths y pid del operador: misma regla que /changes.json.
+      if (!authed(req)) {
+        reply(401, { error: 'unauthorized', login: '/login' });
+        return;
+      }
+      if (req.method !== 'GET' || !sameOriginRequest(req)) {
+        reply(403, { error: 'forbidden' });
+        return;
+      }
+      reply(200, await doctorReport());
+      return;
+    }
+
     if (url.pathname === '/changes.json') {
       const headers = { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC };
       const reply = (status: number, body: object) => {
@@ -1702,7 +1721,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     // Versionar recursos estaticos con sus bytes reales; config.js es dinamico y queda sin version.
     if (rel === 'index.html') {
       const html = String(data);
-      const assets = ['app.css', 'bundle.js', 'app.js', 'skills.js', 'memory.js', 'artifacts.js', 'workspace-nav.js',
+      const assets = ['app.css', 'bundle.js', 'doctor.js', 'app.js', 'skills.js', 'memory.js', 'artifacts.js', 'workspace-nav.js',
         'context-meter.js', 'session-mode.js', 'palette.js', 'onboarding.js',
         'handoff.js', 'split-view.js', 'stats.js', 'activity.js', 'changes.js'];
       const versions = await Promise.all(assets.map(async (asset) => {
@@ -1753,6 +1772,108 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
     res.end(String(err));
   }
 };
+
+// ---------------------------------------------------------------- /doctor.json
+const ROOT_DIR = DIR; // C:\Aegis-Proyects\web
+const PROJECT_DIR = resolve(ROOT_DIR, '..');
+const CORE_STATE = join(PROJECT_DIR, 'core', 'state');
+const SESSIONS_DB = join(PROJECT_DIR, 'state', 'data', 'sessions', 'sessions.db');
+
+async function leerJsonSilencioso(ruta: string): Promise<any> {
+  try {
+    // Los JSON de core\state se escriben con BOM: JSON.parse no lo tolera.
+    return JSON.parse((await readFile(ruta, 'utf8')).replace(/^\uFEFF/, ''));
+  } catch {
+    return null;
+  }
+}
+
+async function tamano(ruta: string): Promise<number | null> {
+  try {
+    return (await stat(ruta)).size;
+  } catch {
+    return null;
+  }
+}
+
+/// Estado del harness: version desplegada, proceso vivo, store y knob de compactacion.
+/// Cada bloque puede faltar por separado (el serve puede estar caido y el resto seguir bien).
+async function doctorReport(): Promise<object> {
+  const puntero = await leerJsonSilencioso(join(CORE_STATE, 'current-version.json'));
+  const ultimoBuild = await leerJsonSilencioso(join(CORE_STATE, 'last-build.json'));
+  const saludGate = await leerJsonSilencioso(join(CORE_STATE, 'health.json'));
+
+  let salud: any = null;
+  let saludError: string | null = null;
+  try {
+    const respuesta = await fetch(`http://127.0.0.1:${cfg.servePort}/health`, {
+      signal: AbortSignal.timeout(2500),
+    });
+    const cuerpo = (await respuesta.text()).trim();
+    // El serve contesta "ok" en texto plano; si algun dia contesta JSON se toma igual.
+    salud = cuerpo.startsWith('{') ? JSON.parse(cuerpo) : { ok: cuerpo === 'ok', raw: cuerpo };
+  } catch (error) {
+    saludError = String((error as Error).message || error);
+  }
+
+  let techoCompactacion: number | null = null;
+  let umbralCompactacion: number | null = null;
+  try {
+    const yaml = await readFile(join(PROJECT_DIR, 'state', 'config', 'config.yaml'), 'utf8');
+    const techo = /^AEGIS_AUTO_COMPACT_TOKEN_LIMIT:\s*(\d+)/m.exec(yaml);
+    if (techo) techoCompactacion = Number(techo[1]);
+    const umbral = /^AEGIS_AUTO_COMPACT_THRESHOLD:\s*([\d.]+)/m.exec(yaml);
+    if (umbral) umbralCompactacion = Number(umbral[1]);
+  } catch {}
+
+  return {
+    ahora: new Date().toISOString(),
+    version: {
+      desplegada: puntero?.tag ?? null,
+      exe: puntero?.exe ?? null,
+      commit: puntero?.commit ?? null,
+      sha256: puntero?.sha256 ?? null,
+      version: puntero?.version ?? null,
+      promovidaEl: puntero?.set_at ?? null,
+      por: puntero?.set_by ?? null,
+    },
+    ultimoBuild: ultimoBuild
+      ? {
+          tag: ultimoBuild.tag ?? null,
+          perfil: ultimoBuild.profile ?? null,
+          sha256: ultimoBuild.sha256 ?? null,
+          cuando: ultimoBuild.built_at ?? ultimoBuild.at ?? null,
+          dirty: ultimoBuild.dirty ?? null,
+        }
+      : null,
+    // Ultimo informe del health-gate: es el diagnostico completo (incluye canario real).
+    gate: saludGate
+      ? {
+          cuando: saludGate.at ?? null,
+          estado: saludGate.overall ?? null,
+          profundo: saludGate.deep ?? null,
+          tag: saludGate.tag ?? null,
+          motivos: Array.isArray(saludGate.reasons) ? saludGate.reasons : [],
+          chequeos: Array.isArray(saludGate.checks)
+            ? saludGate.checks.map((c: any) => ({
+                nombre: String(c?.name ?? ''),
+                estado: String(c?.status ?? ''),
+                detalle: String(c?.detail ?? ''),
+              }))
+            : [],
+        }
+      : null,
+    serve: salud
+      ? { vivo: true, pid: salud.process?.pid ?? null, uptimeS: salud.uptimeS ?? salud.uptime_s ?? null, backend: salud.backend ?? null }
+      : { vivo: false, error: saludError },
+    store: {
+      dbBytes: await tamano(SESSIONS_DB),
+      walBytes: await tamano(SESSIONS_DB + '-wal'),
+      shmBytes: await tamano(SESSIONS_DB + '-shm'),
+    },
+    compactacion: { techoTokens: techoCompactacion, umbral: umbralCompactacion },
+  };
+}
 
 const server = http.createServer(handler);
 

@@ -24,6 +24,9 @@ const entries = [
   { entry: 'src/onboarding.ts', output: 'app/onboarding.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/handoff.ts', output: 'app/handoff.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/split-view.ts', output: 'app/split-view.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
+  // El doctor se emite aparte (como audio-wav) para que un gate pueda importarlo, y ademas
+  // entra al bundle: el boton vive en el topbar y no necesita carga diferida.
+  { entry: 'src/doctor.ts', output: 'app/doctor.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/stats.ts', output: 'app/stats.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/server.ts', output: 'server.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'src/piper-vivo.ts', output: 'piper-vivo.js', options: { format: 'esm', platform: 'node', packages: 'external' } },

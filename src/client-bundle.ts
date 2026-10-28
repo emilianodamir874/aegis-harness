@@ -22,3 +22,4 @@ import './onboarding';
 import './handoff';
 import './split-view';
 import './stats';
+import './doctor';

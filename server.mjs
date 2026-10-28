@@ -1026,6 +1026,23 @@ ${Buffer.concat(chunks).toString("utf8")}
       res.end(JSON.stringify(data2));
       return;
     }
+    if (url.pathname === "/doctor.json") {
+      const headers2 = { "content-type": "application/json", "cache-control": "no-store", ...SEC };
+      const reply = (status2, body2) => {
+        res.writeHead(status2, headers2);
+        res.end(JSON.stringify(body2));
+      };
+      if (!authed(req)) {
+        reply(401, { error: "unauthorized", login: "/login" });
+        return;
+      }
+      if (req.method !== "GET" || !sameOriginRequest(req)) {
+        reply(403, { error: "forbidden" });
+        return;
+      }
+      reply(200, await doctorReport());
+      return;
+    }
     if (url.pathname === "/changes.json") {
       const headers2 = { "content-type": "application/json", "cache-control": "no-store", ...SEC };
       const reply = (status2, body2) => {
@@ -1549,6 +1566,7 @@ ${Buffer.concat(chunks).toString("utf8")}
       const assets = [
         "app.css",
         "bundle.js",
+        "doctor.js",
         "app.js",
         "skills.js",
         "memory.js",
@@ -1607,6 +1625,89 @@ ${Buffer.concat(chunks).toString("utf8")}
     res.end(String(err));
   }
 };
+const ROOT_DIR = DIR;
+const PROJECT_DIR = resolve(ROOT_DIR, "..");
+const CORE_STATE = join(PROJECT_DIR, "core", "state");
+const SESSIONS_DB = join(PROJECT_DIR, "state", "data", "sessions", "sessions.db");
+async function leerJsonSilencioso(ruta) {
+  try {
+    return JSON.parse((await readFile(ruta, "utf8")).replace(/^\uFEFF/, ""));
+  } catch {
+    return null;
+  }
+}
+async function tamano(ruta) {
+  try {
+    return (await stat(ruta)).size;
+  } catch {
+    return null;
+  }
+}
+async function doctorReport() {
+  const puntero = await leerJsonSilencioso(join(CORE_STATE, "current-version.json"));
+  const ultimoBuild = await leerJsonSilencioso(join(CORE_STATE, "last-build.json"));
+  const saludGate = await leerJsonSilencioso(join(CORE_STATE, "health.json"));
+  let salud = null;
+  let saludError = null;
+  try {
+    const respuesta = await fetch(`http://127.0.0.1:${cfg.servePort}/health`, {
+      signal: AbortSignal.timeout(2500)
+    });
+    const cuerpo = (await respuesta.text()).trim();
+    salud = cuerpo.startsWith("{") ? JSON.parse(cuerpo) : { ok: cuerpo === "ok", raw: cuerpo };
+  } catch (error) {
+    saludError = String(error.message || error);
+  }
+  let techoCompactacion = null;
+  let umbralCompactacion = null;
+  try {
+    const yaml = await readFile(join(PROJECT_DIR, "state", "config", "config.yaml"), "utf8");
+    const techo = /^AEGIS_AUTO_COMPACT_TOKEN_LIMIT:\s*(\d+)/m.exec(yaml);
+    if (techo) techoCompactacion = Number(techo[1]);
+    const umbral = /^AEGIS_AUTO_COMPACT_THRESHOLD:\s*([\d.]+)/m.exec(yaml);
+    if (umbral) umbralCompactacion = Number(umbral[1]);
+  } catch {
+  }
+  return {
+    ahora: (/* @__PURE__ */ new Date()).toISOString(),
+    version: {
+      desplegada: puntero?.tag ?? null,
+      exe: puntero?.exe ?? null,
+      commit: puntero?.commit ?? null,
+      sha256: puntero?.sha256 ?? null,
+      version: puntero?.version ?? null,
+      promovidaEl: puntero?.set_at ?? null,
+      por: puntero?.set_by ?? null
+    },
+    ultimoBuild: ultimoBuild ? {
+      tag: ultimoBuild.tag ?? null,
+      perfil: ultimoBuild.profile ?? null,
+      sha256: ultimoBuild.sha256 ?? null,
+      cuando: ultimoBuild.built_at ?? ultimoBuild.at ?? null,
+      dirty: ultimoBuild.dirty ?? null
+    } : null,
+    // Ultimo informe del health-gate: es el diagnostico completo (incluye canario real).
+    gate: saludGate ? {
+      cuando: saludGate.at ?? null,
+      estado: saludGate.overall ?? null,
+      profundo: saludGate.deep ?? null,
+      tag: saludGate.tag ?? null,
+      motivos: Array.isArray(saludGate.reasons) ? saludGate.reasons : [],
+      chequeos: Array.isArray(saludGate.checks) ? saludGate.checks.map((c) => ({
+        nombre: String(c?.name ?? ""),
+        estado: String(c?.status ?? ""),
+        detalle: String(c?.detail ?? "")
+      })) : []
+    } : null,
+    serve: salud ? { vivo: true, pid: salud.process?.pid ?? null, uptimeS: salud.uptimeS ?? salud.uptime_s ?? null, backend: salud.backend ?? null } : { vivo: false, error: saludError },
+    store: {
+      dbBytes: await tamano(SESSIONS_DB),
+      walBytes: await tamano(SESSIONS_DB + "-wal"),
+      shmBytes: await tamano(SESSIONS_DB + "-shm")
+    },
+    compactacion: { techoTokens: techoCompactacion, umbral: umbralCompactacion }
+  };
+}
 const server = http.createServer(handler);
 const onUpgrade = (req, socket, head) => {
   let url;
