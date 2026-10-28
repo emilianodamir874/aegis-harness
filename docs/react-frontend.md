@@ -101,7 +101,7 @@ el camino principal pero falta una parte del contrato; `pendiente` = no implemen
 | 4 | Herramientas | `tool_call(_update)` | tarjeta con estado/salida | `ToolCard` + `tool/upsert` | `store.test` tool+diffs | hecho |
 | 5 | Diffs | `tool-diff.ts` | par before/after, recorte | `render/diff.ts` | `render.test` 4 casos | hecho |
 | 6 | Permisos | `session/request_permission` | tarjeta, opciones, respuesta | `PermissionCard` + `respondPermission` | UI test responde; otra sesión contada | hecho |
-| 7 | Adjuntos | compositor + base64 | imagen/texto en prompt | `Composer` + `promptBlocks` | `translate.test` bloques | hecho (sin drag&drop) |
+| 7 | Adjuntos | compositor + base64 | imagen/texto en prompt | `Composer` + `promptBlocks` + drag&drop con overlay | `translate.test` bloques; `dragdrop.test` 2 casos | hecho |
 | 8 | Dictado | MediaRecorder→WAV→RPC | texto transcripto | `media/audio.ts` + `store.transcribe` | no probado con micrófono real | parcial |
 | 9 | Lectura en voz alta | `/tts` | reproducir/cortar | `createSpeechPlayer` | no probado en navegador real | parcial |
 | 10 | Compositor | textarea + Enter | enviar, multilinea | `Composer` | UI test Enter envía | hecho |
