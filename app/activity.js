@@ -1,4 +1,6 @@
 const MAX_PAGES = 8;
+const MAX_DETAILS = 30;
+let detailReads = 0;
 const CSS = `
 .aegis-activity-backdrop{position:fixed;inset:0;z-index:9150;background:rgba(6,8,12,.65);display:flex;align-items:center;justify-content:center;padding:16px}
 .aegis-activity{width:min(850px,100%);max-height:min(90dvh,900px);display:flex;flex-direction:column;overflow:hidden;background:var(--panel,#14181f);color:var(--fg,#e7edf5);border:1px solid rgba(255,255,255,.15);border-radius:12px;font:14px/1.45 system-ui,Segoe UI,sans-serif}
@@ -29,8 +31,54 @@ function web() {
 function appendMessage(parent, text) {
   parent.append(el("p", text, "secondary"));
 }
+function summarizeExport(raw, id) {
+  const session = raw;
+  if (!session || session.id !== id || !Array.isArray(session.conversation)) return ["Detalle: no registrado"];
+  const requests = /* @__PURE__ */ new Map();
+  let calls = 0, ok = 0, failed = 0, unknown = 0, subagents = 0;
+  for (const message of session.conversation) {
+    if (message?.metadata?.userVisible === false || !Array.isArray(message?.content)) continue;
+    for (const block of message.content) {
+      if (block?.type !== "toolRequest" || typeof block.id !== "string" || !block.id || requests.has(block.id)) continue;
+      const name = block.toolCall?.status === "success" ? block.toolCall.value?.name : void 0;
+      if (typeof name !== "string") continue;
+      calls++;
+      requests.set(block.id, name);
+      if (name === "summon" || name.endsWith(".summon")) subagents++;
+    }
+  }
+  for (const message of session.conversation) {
+    if (message?.metadata?.userVisible === false || !Array.isArray(message?.content)) continue;
+    for (const block of message.content) {
+      if (block?.type !== "toolResponse" || typeof block.id !== "string" || !requests.has(block.id)) continue;
+      requests.delete(block.id);
+      if (block.toolResult?.status === "error" || block.toolResult?.value?.isError === true) failed++;
+      else if (block.toolResult?.status === "success" && block.toolResult?.value?.isError === false) ok++;
+      else unknown++;
+    }
+  }
+  return [
+    `Herramientas: ${calls} llamadas; ${ok} resultados correctos explícitos; ${failed} errores explícitos; ${unknown + requests.size} sin resultado registrado`,
+    `Subagentes (llamadas explícitas summon): ${subagents || "no registrado"}`,
+    "Tests: no registrado (el export no tiene campo estructurado de tests)."
+  ];
+}
+async function showDetails(id, target, generation) {
+  target.replaceChildren(el("p", "Leyendo export JSON…", "secondary"));
+  try {
+    const client = web()?.rpc;
+    if (!client?.ready) throw new Error("ACP no conectado");
+    const response = await client.request("_aegis/unstable/session/export", { sessionId: id, format: "json" });
+    const details = typeof response?.data === "string" ? summarizeExport(JSON.parse(response.data), id) : ["Detalle: no registrado"];
+    if (generation !== serial || !target.isConnected) return;
+    target.replaceChildren(...details.map((line) => el("p", line, "secondary")));
+  } catch {
+    if (generation === serial && target.isConnected) target.replaceChildren(el("p", "Detalle: no registrado (export no disponible)", "secondary"));
+  }
+}
 async function refresh() {
   const current = ++serial;
+  detailReads = 0;
   if (!main || !note) return;
   const view = main;
   const status = note;
@@ -120,6 +168,24 @@ async function refresh() {
         const signal = !running.has(row.sessionId) ? "Estado de trabajo no informado" : confirmed.get(row.sessionId) === "yes" ? "Trabajando (listado e info)" : confirmed.get(row.sessionId) === "no" ? "Listado marcó trabajo; info no lo confirma" : "Trabajando según listado (info no disponible)";
         item.append(el("div", row.sessionId + " · " + signal + (nav ? "" : " · no está en el sidebar; sin navegación disponible"), "secondary"));
         section.append(item);
+        const expand = el("button", "Ver detalle", "secondary");
+        expand.type = "button";
+        const detail = el("div");
+        expand.addEventListener("click", () => {
+          if (detail.childNodes.length) {
+            detail.replaceChildren();
+            expand.textContent = "Ver detalle";
+            return;
+          }
+          if (detailReads >= MAX_DETAILS) {
+            detail.textContent = "Límite de detalles por recarga alcanzado.";
+            return;
+          }
+          detailReads++;
+          expand.textContent = "Ocultar detalle";
+          void showDetails(row.sessionId, detail, current);
+        });
+        section.append(expand, detail);
       }
       view.append(section);
     }

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { isAbsolute, resolve } from "node:path";
+import { lstatSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 const MAX_FILES = 60;
 const MAX_DIFF = 8192;
 const MAX_TOTAL_DIFF = 96e3;
@@ -16,28 +17,55 @@ function git(cwd2, args2, maxBuffer = 128 * 1024) {
     stdio: ["ignore", "pipe", "pipe"]
   });
 }
-function safePath(path) {
-  return !!path && !path.includes("\0") && !path.includes("\\") && !SECRET_PATH.test(path) && !/[\x00-\x1f\x7f]/.test(path) && !path.split("/").some((part) => part === ".." || part === "." || !part);
+function safePath(root, path) {
+  if (!path || isAbsolute(path) || path.includes("\\") || path.includes(":") || SECRET_PATH.test(path) || /[\x00-\x1f\x7f]/.test(path)) return false;
+  const parts = path.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) return false;
+  let current = root;
+  for (const part of parts) {
+    current = join(current, part);
+    try {
+      if (lstatSync(current).isSymbolicLink()) return false;
+    } catch (error) {
+      if (error.code !== "ENOENT") return false;
+    }
+  }
+  return true;
 }
 function diff(cwd2, path, staged) {
+  const args2 = [
+    "diff",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--no-color",
+    "--no-renames",
+    ...staged ? ["--cached"] : [],
+    "--",
+    `:(literal)${path}`
+  ];
+  let added = null, removed = null;
   try {
-    const output = git(cwd2, [
-      "diff",
-      "--no-ext-diff",
-      "--no-textconv",
-      "--no-color",
-      "--no-renames",
-      "--unified=2",
-      ...staged ? ["--cached"] : [],
-      "--",
-      `:(literal)${path}`
-    ], 256 * 1024);
+    const records = git(cwd2, [...args2.slice(0, -2), "--numstat", "-z", ...args2.slice(-2)], 256 * 1024).toString("utf8").split("\0").filter(Boolean);
+    if (records.length === 1) {
+      const match = /^(\d+|-)\t(\d+|-)\t(.+)$/s.exec(records[0]);
+      if (match && match[3] === path) {
+        const a = Number(match[1]), r = Number(match[2]);
+        if (match[1] !== "-" && match[2] !== "-" && Number.isSafeInteger(a) && Number.isSafeInteger(r)) {
+          added = a;
+          removed = r;
+        }
+      }
+    }
+  } catch {
+  }
+  try {
+    const output = git(cwd2, [...args2.slice(0, -2), "--unified=2", ...args2.slice(-2)], 256 * 1024);
     const raw = output.toString("utf8");
     if (raw.split(/\r?\n/).some((line) => SECRET_LINE.test(line)))
-      return { text: "[Diff oculto: posible credencial]", truncated: false };
-    return { text: raw.slice(0, MAX_DIFF), truncated: raw.length > MAX_DIFF };
+      return { text: "[Diff oculto: posible credencial]", truncated: false, added, removed };
+    return { text: raw.slice(0, MAX_DIFF), truncated: raw.length > MAX_DIFF, added, removed };
   } catch {
-    return { text: "[Diff no disponible]", truncated: true };
+    return { text: "[Diff no disponible]", truncated: true, added, removed };
   }
 }
 function snapshot(cwd2) {
@@ -63,26 +91,30 @@ function snapshot(cwd2) {
       continue;
     }
     const path = record.slice(3);
-    if (!safePath(path)) continue;
+    if (!safePath(root, path)) continue;
     const staged = record[0], worktree = record[1];
     const entry = { path, staged, worktree, diff: "" };
-    if (worktree !== "?" && totalDiff < MAX_TOTAL_DIFF) {
+    if (worktree !== "?") {
       const patches = [
-        ...staged !== " " ? [diff(cwd2, path, true)] : [],
-        ...worktree !== " " ? [diff(cwd2, path, false)] : []
+        ...staged !== " " ? [{ patch: diff(cwd2, path, true), side: "staged" }] : [],
+        ...worktree !== " " ? [{ patch: diff(cwd2, path, false), side: "worktree" }] : []
       ];
-      for (const patch of patches) {
-        const remaining = MAX_TOTAL_DIFF - totalDiff;
+      for (const { patch, side } of patches) {
+        if (side === "staged") {
+          entry.stagedAdded = patch.added;
+          entry.stagedRemoved = patch.removed;
+        } else {
+          entry.worktreeAdded = patch.added;
+          entry.worktreeRemoved = patch.removed;
+        }
+        const remaining = Math.max(0, MAX_TOTAL_DIFF - totalDiff);
         entry.diff += patch.text.slice(0, remaining);
         totalDiff += Math.min(remaining, patch.text.length);
-        if (patch.truncated || patch.text.length > remaining) {
+        if (patch.truncated || patch.text.length > remaining || !remaining) {
           entry.truncated = true;
           truncated = true;
         }
       }
-    } else if (worktree !== "?" && totalDiff >= MAX_TOTAL_DIFF) {
-      entry.truncated = true;
-      truncated = true;
     }
     entries.push(entry);
   }
