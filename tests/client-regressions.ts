@@ -81,6 +81,32 @@ try {
   });
   await page.goto('http://client-regressions.invalid/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => (window as any).__aegisWeb?.state.sessions.length === 2);
+  // Replay fixture: ACP entrega tool_call ANTES de responder session/load.
+  const specialId = 'call-"] [data-tool-call-id="other';
+  const navigation = await page.evaluate(async ({ A, B, specialId }) => {
+    const app = (window as any).__aegisWeb;
+    const before = app.state.current?.id ?? null;
+    const unknown = await app.openTool('unknown-session', 'missing');
+    const afterUnknown = app.state.current?.id ?? null;
+    document.querySelector<HTMLElement>('.sb-row[data-id="mock-session-A"] .sb-item')!.click();
+    await new Promise<void>(resolve => setTimeout(resolve, 300));
+    const ui = app.testUi;
+    ui.update({ sessionId: A, update: { sessionUpdate: 'tool_call', toolCallId: specialId, title: 'Tarjeta especial', status: 'completed' } });
+    const box = document.querySelector<HTMLElement>('#messages')!;
+    box.scrollTop = 37;
+    const position = box.scrollTop;
+    const missing = await app.openTool(A, 'missing');
+    const preserved = box.scrollTop;
+    const found = await app.openTool(A, specialId);
+    const card = [...document.querySelectorAll<HTMLElement>('#msg-inner .tool')].find(el => el.dataset.toolCallId === specialId);
+    return { before, unknown, afterUnknown, missing, preserved, position, found, tagged: !!card, outlined: !!card?.style.outline, current: app.state.current?.id };
+  }, { A, B, specialId });
+  eq(navigation.unknown, false, 'ID de sesion desconocido devuelve false');
+  eq(navigation.afterUnknown, navigation.before, 'ID de sesion desconocido no navega');
+  eq(navigation.missing, false, 'call ausente devuelve false');
+  eq(navigation.preserved, navigation.position, 'fallo conserva scroll');
+  if (!navigation.found || !navigation.tagged || !navigation.outlined || navigation.current !== A) throw new Error('deep-link local sin tarjeta real: ' + JSON.stringify(navigation));
+  console.log('PASS openTool local, ID CSS hostil, ausencia y scroll conservado');
   const formulas = await page.evaluate(() => {
     const r = (window as any).__aegisWeb.testUi.rate;
     return [

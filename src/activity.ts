@@ -15,10 +15,13 @@ interface ActivityList {
   _meta?: { runningSessionIds?: string[] };
 }
 interface ActivityPending { sessions?: { sessionId?: string; pendientes?: number }[]; error?: string }
-interface ActivityWeb { rpc?: ActivityRpc; state?: { current?: { id?: string } } }
+interface ActivityWeb { rpc?: ActivityRpc; state?: { current?: { id?: string } }; openTool?: (sessionId: string, toolCallId: string) => Promise<boolean> }
 interface ExportBlock { type?: string; id?: string; toolCall?: { status?: string; value?: { name?: string } }; toolResult?: { status?: string; value?: { isError?: boolean } } }
 interface ExportMessage { content?: ExportBlock[]; metadata?: { userVisible?: boolean } }
 interface ExportSession { id?: string; conversation?: ExportMessage[] }
+type ToolOutcome = 'success' | 'failure' | 'unknown';
+interface TimelineTool { id: string; name: string; outcome: ToolOutcome }
+interface ExportDetail { summary: string[]; timeline: TimelineTool[] }
 
 declare global {
   interface Window {
@@ -41,6 +44,8 @@ const CSS = `
 .aegis-activity .row{display:block;width:100%;text-align:left;margin:4px 0;padding:7px 10px;border-radius:6px;background:rgba(255,255,255,.045);overflow-wrap:anywhere}
 .aegis-activity button.row:hover{background:rgba(255,255,255,.13)}
 .aegis-activity .secondary,.aegis-activity .note{color:#b2c5d9;font-size:12px}
+.aegis-activity .timeline{margin:4px 0;padding-left:22px}
+.aegis-activity .timeline li{margin:4px 0;overflow-wrap:anywhere}
 .aegis-activity .note{padding:8px 16px;border-top:1px solid rgba(255,255,255,.12)}
 `;
 let backdrop: HTMLDivElement | null = null;
@@ -58,34 +63,44 @@ function web(): ActivityWeb | undefined { return (window as Window & { __aegisWe
 function appendMessage(parent: HTMLElement, text: string): void { parent.append(el('p', text, 'secondary')); }
 
 // Export JSON: contar sólo estructuras y flags explícitos, nunca pintar argumentos ni salidas.
-function summarizeExport(raw: unknown, id: string): string[] {
+// Los nombres arbitrarios del export pueden incluir comandos o secretos: sólo se expone una lista cerrada.
+const SAFE_TOOLS = new Set(['shell', 'read_file', 'write', 'edit', 'grep', 'tree', 'read_image',
+  'web_search', 'web_fetch', 'load_skill', 'load', 'summon', 'final_output', 'parallel']);
+function safeToolName(name: string): string {
+  const short = name.slice(name.lastIndexOf('.') + 1);
+  return SAFE_TOOLS.has(short) ? short : 'herramienta';
+}
+function summarizeExport(raw: unknown, id: string): ExportDetail {
   const session = raw as ExportSession | null;
-  if (!session || session.id !== id || !Array.isArray(session.conversation)) return ['Detalle: no registrado'];
-  const requests = new Map<string, string>();
-  let calls = 0, ok = 0, failed = 0, unknown = 0, subagents = 0;
+  if (!session || session.id !== id || !Array.isArray(session.conversation)) return { summary: ['Detalle: no registrado'], timeline: [] };
+  const requests = new Map<string, TimelineTool>();
+  const responded = new Set<string>();
+  let calls = 0, ok = 0, failed = 0, subagents = 0;
   for (const message of session.conversation) {
     if (message?.metadata?.userVisible === false || !Array.isArray(message?.content)) continue;
     for (const block of message.content) {
       if (block?.type !== 'toolRequest' || typeof block.id !== 'string' || !block.id || requests.has(block.id)) continue;
       const name = block.toolCall?.status === 'success' ? block.toolCall.value?.name : undefined;
       if (typeof name !== 'string') continue;
-      calls++; requests.set(block.id, name);
+      calls++; requests.set(block.id, { id: block.id, name: safeToolName(name), outcome: 'unknown' });
       if (name === 'summon' || name.endsWith('.summon')) subagents++;
     }
   }
   for (const message of session.conversation) {
     if (message?.metadata?.userVisible === false || !Array.isArray(message?.content)) continue;
     for (const block of message.content) {
-      if (block?.type !== 'toolResponse' || typeof block.id !== 'string' || !requests.has(block.id)) continue;
-      requests.delete(block.id);
-      if (block.toolResult?.status === 'error' || block.toolResult?.value?.isError === true) failed++;
-      else if (block.toolResult?.status === 'success' && block.toolResult?.value?.isError === false) ok++;
-      else unknown++;
+      if (block?.type !== 'toolResponse' || typeof block.id !== 'string') continue;
+      const request = requests.get(block.id);
+      if (!request || request.outcome !== 'unknown' || responded.has(block.id)) continue;
+      responded.add(block.id);
+      if (block.toolResult?.status === 'error' || block.toolResult?.value?.isError === true) { failed++; request.outcome = 'failure'; }
+      else if (block.toolResult?.status === 'success' && block.toolResult?.value?.isError === false) { ok++; request.outcome = 'success'; }
     }
   }
-  return [`Herramientas: ${calls} llamadas; ${ok} resultados correctos explícitos; ${failed} errores explícitos; ${unknown + requests.size} sin resultado registrado`,
+  return { summary: [`Herramientas: ${calls} llamadas; ${ok} resultados correctos explícitos; ${failed} errores explícitos; ${calls - ok - failed} sin resultado registrado`,
     `Subagentes (llamadas explícitas summon): ${subagents || 'no registrado'}`,
-    'Tests: no registrado (el export no tiene campo estructurado de tests).'];
+    'Tests: no registrado (el export no tiene campo estructurado de tests).'],
+    timeline: [...requests.values()].slice(-12).reverse() };
 }
 
 async function showDetails(id: string, target: HTMLElement, generation: number): Promise<void> {
@@ -94,9 +109,27 @@ async function showDetails(id: string, target: HTMLElement, generation: number):
     const client = web()?.rpc;
     if (!client?.ready) throw new Error('ACP no conectado');
     const response = await client.request<{ data?: string }>('_aegis/unstable/session/export', { sessionId: id, format: 'json' });
-    const details = typeof response?.data === 'string' ? summarizeExport(JSON.parse(response.data), id) : ['Detalle: no registrado'];
+    const details = typeof response?.data === 'string' ? summarizeExport(JSON.parse(response.data), id) : { summary: ['Detalle: no registrado'], timeline: [] };
     if (generation !== serial || !target.isConnected) return;
-    target.replaceChildren(...details.map(line => el('p', line, 'secondary')));
+    target.replaceChildren(...details.summary.map(line => el('p', line, 'secondary')));
+    if (!details.timeline.length) return;
+    target.append(el('h3', 'Últimas herramientas (export; resultados explícitos)'));
+    const list = el('ol', undefined, 'timeline');
+    for (const tool of details.timeline) {
+      const item = el('li');
+      const label = `${tool.name} · ${tool.id} · ${tool.outcome === 'success' ? 'éxito explícito' : tool.outcome === 'failure' ? 'fallo explícito' : 'resultado desconocido'}`;
+      if (typeof web()?.openTool === 'function') {
+        const link = el('button', label);
+        link.type = 'button';
+        link.addEventListener('click', async () => {
+          try { if (await web()?.openTool?.(id, tool.id)) close(); }
+          catch { /* No afirmar navegación si la herramienta ya no está en el replay. */ }
+        });
+        item.append(link);
+      } else item.textContent = label;
+      list.append(item);
+    }
+    target.append(list);
   } catch {
     if (generation === serial && target.isConnected) target.replaceChildren(el('p', 'Detalle: no registrado (export no disponible)', 'secondary'));
   }

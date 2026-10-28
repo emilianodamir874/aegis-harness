@@ -1502,6 +1502,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       state.tools.set(id, el);
       setPill(null);
     }
+    // La identidad del call viene del protocolo, no de un selector CSS interpolado.
+    if (u.toolCallId) el.dataset.toolCallId = String(u.toolCallId);
     const status = u.status || 'pending';
     const rawIn = u.rawInput || {};
     const shortInput = String(rawIn.command || rawIn.path || rawIn.file_path || rawIn.query || rawIn.url || rawIn.pattern || '').split('\n')[0].slice(0, 90);
@@ -2640,6 +2642,45 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     } catch (e) {
       systemNote('No se pudo crear la sesión: ' + e.message);
     }
+  }
+
+  // Puente de deep-link: el replay se pinta despues de session/load y puede omitir
+  // llamadas antiguas por replayTail. Nunca afirmar exito sin una carta real en DOM.
+  async function openTool(sessionId: string, toolCallId: string): Promise<boolean> {
+    if (!sessionId || !toolCallId) return false;
+    const findCard = () => [...document.querySelectorAll<HTMLElement>('#msg-inner .tool[data-tool-call-id]')]
+      .find((card) => card.dataset.toolCallId === toolCallId);
+    const sameSession = state.current?.id === sessionId;
+    const originalScroll = sameSession ? $('#messages')?.scrollTop : undefined;
+    const entry = sameSession ? null : findSession(sessionId) ||
+      (state.remote.sessions || []).find((s) => s.sessionId === sessionId);
+    if (!sameSession && !entry) return false;
+    if (!sameSession) {
+      // El camino existente carga y reconstruye el replay; un load colgado no bloquea el bridge.
+      const loaded = await Promise.race([
+        openSession(entry).then(() => true, () => false),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8000)),
+      ]);
+      if (!loaded || state.current?.id !== sessionId) return false;
+    }
+    const until = performance.now() + (sameSession ? 200 : 1800);
+    let card = findCard();
+    while (!card && performance.now() < until && state.current?.id === sessionId) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      card = findCard();
+    }
+    if (!card || state.current?.id !== sessionId) {
+      if (sameSession && originalScroll !== undefined && state.current?.id === sessionId) $('#messages').scrollTop = originalScroll;
+      return false;
+    }
+    releasePin?.(); // openSession ancla el fondo durante 1,4 s: no debe pisar el salto.
+    card.scrollIntoView({ block: 'center', behavior: 'instant' });
+    card.style.outline = '2px solid var(--accent, #7aa8ff)';
+    card.style.outlineOffset = '3px';
+    setTimeout(() => {
+      if (card.style.outline) { card.style.removeProperty('outline'); card.style.removeProperty('outline-offset'); }
+    }, 1800);
+    return true;
   }
 
   async function openSession(entry) {
@@ -6061,7 +6102,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
+  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
     bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
     micOff: function () { micStop(true); },   // solo para el probe de barge-in
     setRate: function (v) { var n = Number(v); if (n > 0.5 && n < 2) { READ.rate = n; try { localStorage.setItem('aegis.ttsRate', String(n)); } catch (e) {} readReset(true); return n; } return READ.rate; },

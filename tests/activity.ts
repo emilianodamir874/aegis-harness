@@ -27,7 +27,10 @@ try {
   await page.addInitScript(() => {
     const scope = window as any;
     scope.__activityState = { pages: 2, info: 'run-123', clicks: 0, calls: [] as string[] };
-    scope.__aegisWeb = { state: {}, rpc: { ready: true, request: async (method: string, params: any) => {
+    scope.__aegisWeb = { state: {}, openTool: async (sid: string, toolId: string) => {
+      scope.__activityState.openTool = [sid, toolId];
+      return true;
+    }, rpc: { ready: true, request: async (method: string, params: any) => {
       scope.__activityState.calls.push({ method, params });
       scope.activityCall('ACP ' + method);
       if (method === 'session/list') {
@@ -45,8 +48,10 @@ try {
       if (method === '_aegis/unstable/session/export') return { data: JSON.stringify({ id: params.sessionId, conversation: [{ metadata: { userVisible: true }, content: [
         { type: 'toolRequest', id: 'tool1', toolCall: { status: 'success', value: { name: 'shell', arguments: { secret: 'SECRET_DO_NOT_PRINT' } } } },
         { type: 'toolRequest', id: 'tool2', toolCall: { status: 'success', value: { name: 'summon' } } },
+        { type: 'toolRequest', id: 'tool3', toolCall: { status: 'success', value: { name: 'made-up-SECRET_DO_NOT_PRINT', arguments: { secret: 'SECRET_DO_NOT_PRINT' } } } },
         { type: 'toolResponse', id: 'tool1', toolResult: { status: 'success', value: { isError: false, content: ['SECRET_DO_NOT_PRINT'] } } },
         { type: 'toolResponse', id: 'tool2', toolResult: { status: 'success', value: { isError: true } } },
+        { type: 'toolResponse', id: 'tool3', toolResult: { status: 'success', value: { content: ['SECRET_DO_NOT_PRINT'] } } },
       ] }] }) };
       throw new Error('RPC inesperado: ' + method);
     } } };
@@ -64,9 +69,12 @@ try {
   assert(await page.locator('.aegis-activity button.row').count() === 1, 'solo filas con botón público de sidebar deben navegar');
   assert(!calls.includes('ACP _aegis/unstable/session/export'), 'export no debe leerse sin petición explícita');
   await page.locator('.aegis-activity section').first().getByRole('button', { name: 'Ver detalle' }).first().click();
-  await page.waitForFunction(() => document.querySelector('.aegis-activity section')?.textContent?.includes('Herramientas: 2 llamadas'));
+  await page.waitForFunction(() => document.querySelector('.aegis-activity section')?.textContent?.includes('Herramientas: 3 llamadas'));
   const detail = await page.locator('.aegis-activity section').first().innerText();
-  assert(detail.includes('1 resultados correctos explícitos') && detail.includes('1 errores explícitos') && detail.includes('Subagentes (llamadas explícitas summon): 1'), 'detalle export incompleto');
+  assert(detail.includes('1 resultados correctos explícitos') && detail.includes('1 errores explícitos') && detail.includes('1 sin resultado registrado') && detail.includes('Subagentes (llamadas explícitas summon): 1'), 'detalle export incompleto');
+  assert(detail.includes('Tests: no registrado') && !detail.includes('Tests: éxito'), 'no inferir tests exitosos de llamadas a herramientas');
+  assert(detail.includes('shell · tool1 · éxito explícito') && detail.includes('summon · tool2 · fallo explícito') && detail.includes('herramienta · tool3 · resultado desconocido'), 'timeline debe usar nombre seguro, ids y evidencia explícita');
+  assert(await page.locator('.aegis-activity .timeline button').count() === 3, 'timeline sin enlaces cuando openTool está disponible');
   assert(!detail.includes('SECRET_DO_NOT_PRINT'), 'detalle filtró contenido confidencial del export');
   assert(calls.includes('ACP _aegis/unstable/session/export'), 'detalle no pidió export explicitamente');
   assert(calls.filter(x => x === 'ACP session/list').length === 2 && calls.includes('GET /pending.json'), 'no paginó o no leyó pendientes');
@@ -75,18 +83,24 @@ try {
   await page.locator('.aegis-activity button.row').click();
   assert(await page.locator('.aegis-activity').count() === 0, 'click no cerró el panel');
   assert(await page.evaluate(() => (window as any).__activityState.clicks) === 1, 'click no usó el botón real del sidebar');
+  await page.evaluate(() => (window as any).__aegisActivity.open());
+  await page.locator('.aegis-activity section').first().getByRole('button', { name: 'Ver detalle' }).first().click();
+  await page.waitForFunction(() => document.querySelector('.aegis-activity .timeline button'));
+  await page.locator('.aegis-activity .timeline button').filter({ hasText: 'tool2' }).click();
+  assert(JSON.stringify(await page.evaluate(() => (window as any).__activityState.openTool)) === JSON.stringify(['s1', 'tool2']), 'deep-link no invocó openTool con sesión y toolCallId');
+  assert(await page.locator('.aegis-activity').count() === 0, 'deep-link exitoso no cerró actividad');
   await page.evaluate(() => { (window as any).__activityState.pages = 1; (window as any).__aegisActivity.open(); });
   await page.waitForFunction(() => document.querySelector('.aegis-activity .note')?.textContent?.includes('páginas agotadas'));
   result = await page.locator('.aegis-activity').innerText();
   assert(!result.includes('C:/a · 2') && result.includes('C:/a · 1'), 'recarga no reemplazó resultados anteriores');
   await page.locator('.aegis-activity header button').first().click();
   await page.waitForFunction(() => document.querySelector('.aegis-activity .note')?.textContent?.includes('páginas agotadas'));
-  assert(calls.filter(x => x === 'ACP session/list').length === 4, 'botón de recarga manual no pidió session/list');
+  assert(calls.filter(x => x === 'ACP session/list').length === 6, 'botón de recarga manual no pidió session/list');
   await page.evaluate(() => (window as any).__aegisActivity.close());
   assert(await page.locator('.aegis-activity').count() === 0, 'close falló');
   await page.evaluate(() => { (window as any).__activityState.pages = 'limit'; return (window as any).__aegisActivity.open(); });
   assert((await page.locator('.aegis-activity .note').innerText()).includes('límite de 8 páginas alcanzado; lista incompleta'), 'el límite no se indica');
-  assert(calls.filter(x => x === 'ACP session/list').length === 12, 'no se respetó techo de ocho páginas');
+  assert(calls.filter(x => x === 'ACP session/list').length === 14, 'no se respetó techo de ocho páginas');
   await page.evaluate(() => (window as any).__aegisActivity.close());
   assert(errors.length === 0, `errores de página: ${errors.join(' | ')}`);
   assert(!calls.some(x => /session\/(load|prompt|new|cancel|delete)/.test(x)), 'RPC de escritura o navegación inventada');
