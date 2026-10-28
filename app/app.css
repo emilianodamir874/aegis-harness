@@ -26,16 +26,25 @@
   --bg-active: rgba(245, 244, 239, 0.1);
   --bg-code: #151413;
 
-  /* líneas */
-  --border: rgba(245, 244, 239, 0.1);
-  --border-soft: rgba(245, 244, 239, 0.06);
-  --border-strong: rgba(245, 244, 239, 0.17);
+  /* lineas */
+  --border: rgba(245, 244, 239, 0.17);
+  --border-soft: rgba(245, 244, 239, 0.09);
+  --border-strong: rgba(245, 244, 239, 0.26);
 
-  /* texto (contrastes medidos contra --bg) */
-  --text: #f2f1ec;
-  --text-2: #c3c1b9;
-  --text-3: #9c9a93;
-  --text-4: #86847e;
+  /* texto (contrastes medidos contra --bg; ver tools/contrast-report.mjs)
+     Regla: --text-4 es el nivel mas bajo que puede llevar texto legible y no baja de 6:1.
+     Antes estaba en 4.6:1: cumplia AA en un cuarto oscuro y desaparecia con el sol de
+     frente o con un filtro de luz azul, que es como se usa esta app. */
+  --text: #f6f5f0;
+  --text-2: #d6d4cb;
+  --text-3: #b8b6ad;
+  --text-4: #a2a098;
+
+  /* opacidades del cromo en un solo lugar: el modo alto contraste las sube todas juntas.
+     No aplica a controles deshabilitados: esos tienen que verse apagados. */
+  --o-dim: 0.86;
+  --o-mute: 0.72;
+  --o-faint: 0.6;
 
   /* acento único */
   --accent: #d97757;
@@ -101,6 +110,51 @@
   --line: var(--border);
   --line-strong: var(--border-strong);
 }
+
+/* ---------- 1b. contraste ----------
+   La app se usa con filtro de luz azul y con sol de frente. El modo alto contraste sube los
+   cuatro niveles de texto, los bordes y las opacidades del cromo de una vez, sin tocar ni un
+   selector de mas abajo: es un juego de tokens. Se prende solo con prefers-contrast: more y a
+   mano con el boton del topbar (data-contrast="alto" en <html>). */
+html[data-contrast="alto"] {
+  --bg: #171614;
+  --bg-sidebar: #121110;
+  --bg-card: #252420;
+  --bg-raise: #2d2c28;
+  --bg-code: #100f0e;
+  --border: rgba(245, 244, 239, 0.24);
+  --border-soft: rgba(245, 244, 239, 0.16);
+  --border-strong: rgba(245, 244, 239, 0.4);
+  --text: #ffffff;
+  --text-2: #ecebe5;
+  --text-3: #d2d0c7;
+  --text-4: #bcbab1;
+  --accent: #e8845f;
+  --accent-strong: #f09d7d;
+  --accent-text: #ffd9c6;
+  --accent-line: rgba(232, 132, 95, 0.6);
+  --ok: #a6d6bc;
+  --warn: #f0bc74;
+  --danger: #f0969f;
+  --o-dim: 1;
+  --o-mute: 0.9;
+  --o-faint: 0.78;
+}
+@media (prefers-contrast: more) {
+  html:not([data-contrast="normal"]) {
+    --border: rgba(245, 244, 239, 0.24);
+    --border-soft: rgba(245, 244, 239, 0.16);
+    --border-strong: rgba(245, 244, 239, 0.4);
+    --text: #ffffff;
+    --text-2: #ecebe5;
+    --text-3: #d2d0c7;
+    --text-4: #bcbab1;
+    --o-dim: 1;
+    --o-mute: 0.9;
+    --o-faint: 0.78;
+  }
+}
+
 
 /* ---------- 2. base ---------- */
 * { box-sizing: border-box; }
@@ -282,7 +336,7 @@ textarea:focus-visible { outline: none; }
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .btn-new:hover { background: var(--bg-hover); border-color: var(--border-strong); }
-.btn-new svg { opacity: 0.75; }
+.btn-new svg { opacity: var(--o-dim); }
 .btn-new:active { transform: scale(0.99); }
 
 .sb-search {
@@ -411,7 +465,7 @@ textarea:focus-visible { outline: none; }
 .sb-more:hover { background: var(--bg-active); color: var(--text); }
 .sb-row.confirming .sb-more { display: none; }
 @media (hover: none) {
-  .sb-more { opacity: 0.7; width: 34px; height: 34px; }
+  .sb-more { opacity: var(--o-dim); width: 34px; height: 34px; }
   .sb-item { padding-right: 42px; }
 }
 
@@ -686,7 +740,7 @@ textarea:focus-visible { outline: none; }
 .title-wrap:hover .title-caret,
 .title-wrap:focus-visible .title-caret,
 .title-wrap[aria-expanded="true"] .title-caret { opacity: 1; }
-@media (hover: none) { .title-caret { opacity: 0.45; } }
+@media (hover: none) { .title-caret { opacity: var(--o-mute); } }
 
 .topbar-actions { display: flex; align-items: center; gap: 2px; flex: none; }
 
@@ -1016,7 +1070,7 @@ textarea:focus-visible { outline: none; }
   color: var(--text-3);
 }
 .msg-user .steer-note { display: block; margin-top: 6px; font-size: 11.5px; font-style: italic; color: var(--text-4); }
-.msg-user.queued { opacity: 0.72; }
+.msg-user.queued { opacity: var(--o-faint); }
 
 .rewind-btn {
   position: absolute;
@@ -1033,7 +1087,7 @@ textarea:focus-visible { outline: none; }
 .msg-user:hover .rewind-btn,
 .msg-user:focus-within .rewind-btn { opacity: 0.9; }
 .rewind-btn:hover { background: var(--bg-active); color: var(--text); }
-@media (hover: none) { .rewind-btn { opacity: 0.5; } }
+@media (hover: none) { .rewind-btn { opacity: var(--o-dim); } }
 
 .rw-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--text-3); }
 .rw-confirm button {
@@ -1064,10 +1118,10 @@ textarea:focus-visible { outline: none; }
   color: var(--text-3);
 }
 .rw-toggle:hover { background: var(--bg-hover); color: var(--text); }
-.rw-hidden { display: block; opacity: 0.72; }
+.rw-hidden { display: block; opacity: 0.8; }
 .rw-hidden.collapsed > * { display: none; }
-.hidden-tail { opacity: 0.45; }
-.hidden-from-agent { opacity: 0.62; }
+.hidden-tail { opacity: var(--o-faint); }
+.hidden-from-agent { opacity: 0.78; }
 
 /* --- respuesta del asistente: prosa que manda --- */
 .msg-a {
@@ -1169,7 +1223,7 @@ textarea:focus-visible { outline: none; }
   color: var(--text-4);
   pointer-events: none;
 }
-.code-wrap.lang .copy-code { opacity: 0.7; }
+.code-wrap.lang .copy-code { opacity: var(--o-dim); }
 .code-wrap.lang:hover .copy-code { opacity: 1; }
 .msg-a pre code {
   display: block;
@@ -1201,7 +1255,7 @@ textarea:focus-visible { outline: none; }
 .copy-code:focus-visible { opacity: 1; }
 .copy-code:hover { background: rgba(245, 244, 239, 0.16); }
 .copy-code.done { color: var(--ok); }
-@media (hover: none) { .copy-code { opacity: 0.75; } }
+@media (hover: none) { .copy-code { opacity: var(--o-dim); } }
 
 /* --- tablas --- */
 .msg-a .tbl-wrap {
@@ -2823,7 +2877,7 @@ textarea:focus-visible { outline: none; }
 }
 
 /* el nombre tecnico de la herramienta aparece al pasar el mouse, no antes */
-.tool-title .tname { opacity: 0.55; transition: opacity var(--dur) var(--ease); }
+.tool-title .tname { opacity: var(--o-dim); transition: opacity var(--dur) var(--ease); }
 .tool:hover .tool-title .tname { opacity: 1; }
 
 /* razonamiento: el bloque colapsado respira una vez al aparecer */
@@ -2993,7 +3047,7 @@ textarea:focus-visible { outline: none; }
 }
 .rw-band-body > .msg-a::before { display: none; }
 .rw-band-body > .msg-user::before { left: -2px; }
-.hidden-from-agent { opacity: 0.72; }
+.hidden-from-agent { opacity: 0.78; }
 
 /* ---------- densidad del transcript ----------
    La medida (max-width) es de la densidad; el AIRE va escalado por --chat-space-scale, que es
@@ -3167,7 +3221,7 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
 @media (hover: none) {
   /* en táctil no hay hover: siempre visible pero discreto */
   .msg-a .act-btn,
-  .msg-user .act-btn { opacity: 0.55; }
+  .msg-user .act-btn { opacity: var(--o-mute); }
 }
 
 /* menú de acciones */
@@ -3194,7 +3248,7 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
 
 /* paneles que ya no dibujan botones por fila: el ⋯ queda siempre visible y alineado */
 .gp-item .gp-botones .act-btn,
-.aegis-mem .fact .actions .act-btn { opacity: 0.7; }
+.aegis-mem .fact .actions .act-btn { opacity: var(--o-dim); }
 .gp-item:hover .gp-botones .act-btn,
 .aegis-mem .fact:hover .actions .act-btn { opacity: 1; }
 

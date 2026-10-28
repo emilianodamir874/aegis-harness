@@ -6348,7 +6348,38 @@ ${a.text}
       }
     });
   }
+  const CONTRAST_KEY = "aegis.contrast";
+  function setContrast(v) {
+    const alto = v === "alto";
+    document.documentElement.setAttribute("data-contrast", alto ? "alto" : "normal");
+    try {
+      localStorage.setItem(CONTRAST_KEY, alto ? "alto" : "normal");
+    } catch {
+    }
+    const b = $("#btn-contrast");
+    if (b) {
+      b.setAttribute("aria-pressed", String(alto));
+      b.title = alto ? "Contraste alto activo (click para volver)" : "Contraste alto: mas legible al sol y con filtros de vista (Ctrl+Alt+C)";
+    }
+  }
+  function contrastNow() {
+    return document.documentElement.getAttribute("data-contrast") === "alto" ? "alto" : "normal";
+  }
+  function cycleContrast() {
+    const nuevo = contrastNow() === "alto" ? "normal" : "alto";
+    setContrast(nuevo);
+    toast(nuevo === "alto" ? "Contraste alto: texto y bordes mas fuertes." : "Contraste normal.");
+  }
   function wireView() {
+    let guardado = "";
+    try {
+      guardado = localStorage.getItem(CONTRAST_KEY) || "";
+    } catch {
+    }
+    const sistema = window.matchMedia && window.matchMedia("(prefers-contrast: more)").matches;
+    setContrast(guardado || (sistema ? "alto" : "normal"));
+    const cb = $("#btn-contrast");
+    if (cb) cb.addEventListener("click", () => cycleContrast());
     setDensity(density);
     const db = $("#btn-density");
     if (db) db.addEventListener("click", () => cycleDensity());
@@ -6368,6 +6399,9 @@ ${a.text}
       } else if (k === "u") {
         e.preventDefault();
         toggleHiddenBand();
+      } else if (k === "c") {
+        e.preventDefault();
+        cycleContrast();
       }
     });
   }
@@ -7217,7 +7251,10 @@ ${a.text}
       toggleHiddenBand,
       hiddenBand: () => document.querySelector("#msg-inner .rw-band"),
       phase: () => ({ name: PHASE.name, since: PHASE.since }),
-      setPhase: phaseSet
+      setPhase: phaseSet,
+      contrast: () => contrastNow(),
+      setContrast: (v) => setContrast(v),
+      cycleContrast
     },
     // Iconos: las mismas funciones que usa el render, para que un gate mida el set real.
     icons: { tool: toolIconSvg, kind: toolKindOf, ui: uiIcon, names: () => Object.keys(TOOL_ICON) },
