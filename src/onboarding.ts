@@ -4,10 +4,9 @@
  * no sabe con que modelo habla, cuanto cuesta, que puede hacer el agente en esta maquina ni por donde
  * empezar en ESTE proyecto.
  *
- * Agrega una tarjeta debajo de `#welcome-meta` con datos reales, no copy: modelo y tarifa (del uso de
- * la sesion y `/prices.json`), tools disponibles (rpc `tools/list` si esta), ultimos objetivos
- * (`/goals.json`) y skills del store (rpc de sources). Si un dato no llega, la fila no se dibuja: no
- * inventa.
+ * Agrega una tarjeta debajo de `#welcome-meta` con datos reales: modelo y tarifa (del uso de
+ * la sesion y `/prices.json`), herramientas (rpc `tools/list`) y objetivos (`/goals.json`).
+ * Si un dato no llega, la fila no se dibuja: no se inventa.
  */
 
 interface WelcomeRpc {
@@ -26,9 +25,6 @@ const CSS = `
 .aegis-onboard dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:13px}
 .aegis-onboard dt{color:#93a2b8}
 .aegis-onboard dd{margin:0;color:inherit}
-.aegis-onboard .sug{margin-top:12px;display:flex;flex-direction:column;gap:6px}
-.aegis-onboard .sug button{text-align:left;cursor:pointer;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:7px 10px;color:inherit;font:inherit}
-.aegis-onboard .sug button:hover{background:rgba(255,255,255,.11)}
 `;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -54,18 +50,6 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-function composerInput(): HTMLTextAreaElement | null {
-  return document.querySelector<HTMLTextAreaElement>('.composer textarea');
-}
-
-function fillComposer(text: string): void {
-  const input = composerInput();
-  if (!input) return;
-  input.value = text;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  input.focus();
-}
-
 async function collect(): Promise<Array<[string, string]>> {
   const rows: Array<[string, string]> = [];
 
@@ -86,7 +70,8 @@ async function collect(): Promise<Array<[string, string]>> {
   }
 
   const limit = usage && typeof usage.limit === 'number' ? usage.limit : 0;
-  if (limit) rows.push(['contexto', `${fmtTok(limit)} tok · compacta sola al 80 %`]);
+  const trigger = usage && typeof usage.autoCompactAt === 'number' ? usage.autoCompactAt : 0;
+  if (limit) rows.push(['contexto', `${fmtTok(limit)} tok${trigger ? ` · compacta a ${fmtTok(trigger)} tok` : ''}`]);
 
   const rpc = (window.__aegisWeb as unknown as { rpc?: WelcomeRpc })?.rpc;
   if (rpc) {
@@ -109,15 +94,6 @@ async function collect(): Promise<Array<[string, string]>> {
   return rows;
 }
 
-function suggestions(rows: Array<[string, string]>): string[] {
-  const model = rows.find(([k]) => k === 'modelo')?.[1] || '';
-  const out: string[] = [];
-  out.push('¿En qué está trabajando este proyecto? Leé el README, el AGENTS y los últimos commits, y resumí el estado en cinco líneas.');
-  if (model) out.push(`Corré la suite de evaluación del harness y decime si hay regresiones desde la última corrida.`);
-  out.push('Revisá los últimos errores de los logs y proponé el arreglo más barato, con el archivo y la línea.');
-  return out.slice(0, 3);
-}
-
 async function refresh(): Promise<void> {
   const welcome = document.getElementById('welcome');
   if (!welcome || welcome.hidden || welcome.offsetParent === null) return;
@@ -128,9 +104,7 @@ async function refresh(): Promise<void> {
     document.head.appendChild(style);
   }
   const rows = await collect();
-  // Sin turno abierto todavia no hay modelo ni uso: la tarjeta se dibuja igual, con las sugerencias.
-  // Ocultarla hasta que haya datos dejaba el estado vacio sin nada que ensenar, que es justo el bug.
-
+  // Sin turno abierto todavia no hay modelo ni uso: la tarjeta se dibuja igual.
 
   let card = document.getElementById('aegis-onboard');
   if (card) card.remove();
@@ -148,16 +122,6 @@ async function refresh(): Promise<void> {
   } else {
     card.appendChild(el('p', undefined, 'Todavía no hay turno en esta sesión: el modelo, la tarifa y el consumo aparecen acá después del primero.'));
   }
-
-  const sug = el('div', 'sug');
-  for (const text of suggestions(rows)) {
-    const button = el('button');
-    button.type = 'button';
-    button.textContent = text;
-    button.addEventListener('click', () => fillComposer(text));
-    sug.appendChild(button);
-  }
-  card.appendChild(sug);
 
   const meta = document.getElementById('welcome-meta');
   if (meta && meta.parentElement) meta.parentElement.insertBefore(card, meta.nextSibling);

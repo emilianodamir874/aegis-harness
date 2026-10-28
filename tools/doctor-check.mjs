@@ -71,7 +71,14 @@ if (boton && status === 200) {
   const chequeosGate = await page.$$eval('.aegis-doctor h3', (h) => h.length);
   gate('seccion de chequeos', chequeosGate >= 1);
   await page.screenshot({ path: 'C:/Users/Emiliano/backups/doctor-20261028/panel.png', fullPage: false }).catch(() => {});
-  await page.keyboard.press('Escape').catch(() => {});
+  gate('foco inicial en cerrar', await page.evaluate(() => document.activeElement?.textContent?.trim() === 'Cerrar'));
+  await page.keyboard.press('Tab');
+  gate('Tab vuelve a actualizar', await page.evaluate(() => document.activeElement?.textContent?.trim() === 'Actualizar'));
+  await page.keyboard.press('Shift+Tab');
+  gate('Shift+Tab vuelve a cerrar', await page.evaluate(() => document.activeElement?.textContent?.trim() === 'Cerrar'));
+  gate('fondo inerte', await page.evaluate(() => [...document.body.children].filter((el) => el instanceof HTMLElement && !el.classList.contains('aegis-doctor-shade')).every((el) => el.inert)));
+  await page.keyboard.press('Escape');
+  gate('Escape cierra y devuelve foco', await page.evaluate(() => !document.querySelector('.aegis-doctor-shade') && document.activeElement?.id === 'btn-doctor' && ![...document.body.children].filter((el) => el instanceof HTMLElement).some((el) => el.inert)));
 } else if (boton) {
   // Sin sesion el panel carga pero el endpoint da 401: se verifica que informe el fallo y no rompa.
   await boton.click();

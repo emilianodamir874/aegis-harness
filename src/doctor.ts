@@ -31,6 +31,9 @@ const STYLE = `
 .aegis-doctor header{display:flex;gap:8px;align-items:center;padding:12px;border-bottom:1px solid var(--border,.35)}
 .aegis-doctor h2{font-size:17px;margin:0;flex:1}
 .aegis-doctor button{font:inherit;background:transparent;color:inherit;border:1px solid var(--border,.45);border-radius:6px;padding:4px 10px;cursor:pointer}
+.aegis-doctor button:hover{background:var(--bg-hover,rgba(255,255,255,.06))}
+.aegis-doctor button:focus-visible{outline:2px solid var(--accent,#d97757);outline-offset:2px}
+@media (pointer:coarse){.aegis-doctor header{flex-wrap:wrap}.aegis-doctor h2{flex:1 0 100%}.aegis-doctor button{min-height:44px}}
 .aegis-doctor main{overflow:auto;padding:12px}
 .aegis-doctor table{width:100%;border-collapse:collapse}
 .aegis-doctor th,.aegis-doctor td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--border-soft,.2);vertical-align:top}
@@ -45,6 +48,29 @@ let shade: HTMLDivElement | null = null;
 let main: HTMLElement | null = null;
 let note: HTMLElement | null = null;
 let serial = 0;
+let previousFocus: HTMLElement | null = null;
+const inertBefore = new Map<HTMLElement, boolean>();
+
+function modalKeys(event: KeyboardEvent): void {
+  if (!shade) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const buttons = Array.from(shade.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+  if (!buttons.length) { event.preventDefault(); return; }
+  const first = buttons[0], last = buttons[buttons.length - 1];
+  if (event.shiftKey && (document.activeElement === first || !shade.contains(document.activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (document.activeElement === last || !shade.contains(document.activeElement))) {
+    event.preventDefault();
+    first.focus();
+  }
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -86,6 +112,7 @@ function row(k: string, v: Node | string, clase?: 'ok' | 'bad'): HTMLTableRowEle
 
 function build(): void {
   if (shade) return;
+  previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const style = el('style');
   style.textContent = STYLE;
   document.head.append(style);
@@ -115,12 +142,28 @@ function build(): void {
 
   card.append(header, main, note);
   shade.append(card);
+  // El resto de la aplicación no recibe Tab ni clic mientras el diálogo esté abierto.
+  for (const child of Array.from(document.body.children)) {
+    if (child instanceof HTMLElement && child !== shade) {
+      inertBefore.set(child, child.inert);
+      child.inert = true;
+    }
+  }
   document.body.append(shade);
+  document.addEventListener('keydown', modalKeys, true);
   closeBtn.focus();
 }
 
 function close(): void {
-  if (shade) { shade.remove(); shade = null; main = null; note = null; }
+  if (!shade) return;
+  ++serial; // Ignorar respuestas de fetch que lleguen después del cierre.
+  document.removeEventListener('keydown', modalKeys, true);
+  shade.remove();
+  shade = null; main = null; note = null;
+  for (const [node, wasInert] of inertBefore) node.inert = wasInert;
+  inertBefore.clear();
+  if (previousFocus?.isConnected) previousFocus.focus();
+  previousFocus = null;
 }
 
 async function refresh(): Promise<void> {
@@ -221,7 +264,7 @@ window.__aegisDoctor = { open, close, refresh };
 // modulo se cargue antes de que exista el topbar (el listener espera al DOM).
 function wireButton(): void {
   if (document.getElementById('btn-doctor')) return;
-  const host = document.getElementById('topbar') || document.querySelector('.topbar');
+  const host = document.querySelector('.topbar-actions') || document.querySelector('.topbar');
   if (!host) return;
   const btn = document.createElement('button');
   btn.id = 'btn-doctor';

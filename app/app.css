@@ -1038,8 +1038,6 @@ textarea:focus-visible { outline: none; }
 #aegis-onboard dt { color: var(--text-4); font-size: 11.5px; }
 #aegis-onboard dd { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
 #aegis-onboard p { margin: var(--s3) 0 0; font-size: 12px; line-height: 1.5; color: var(--text-4); }
-/* las sugerencias viven en la bienvenida: acá repetirlas era ruido */
-#aegis-onboard .sug { display: none; }
 @media (max-width: 560px) {
   #aegis-onboard { padding: var(--s3) var(--s4); }
   #aegis-onboard dl { grid-template-columns: 1fr; gap: 2px; }
@@ -2702,7 +2700,8 @@ textarea:focus-visible { outline: none; }
 
 @media (hover: none) and (pointer: coarse) {
   .icon-btn { width: 36px; height: 36px; }
-  .chip { height: 30px; }
+  .chip { height: 44px; }
+  .rw-band-head { min-height: 44px; }
   .sb-tool { min-height: 44px; padding: 9px 9px; }
   .btn-new { padding: 10px 12px; }
 }
@@ -2822,9 +2821,10 @@ textarea:focus-visible { outline: none; }
    Todo por debajo de prefers-reduced-motion, que apaga animaciones y deja los estados fijos. */
 
 .tool {
-  animation: toolIn 0.26s var(--ease) both;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
+/* Sólo pasos nuevos: al reproducir cientos de herramientas históricas no animarlas en masa. */
+.tool.in { animation: toolIn var(--dur-3) var(--ease-out) both; }
 @keyframes toolIn {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: none; }
@@ -2870,7 +2870,7 @@ textarea:focus-visible { outline: none; }
 }
 
 /* terminada: el icono confirma con un pop corto */
-.tool[data-state="ok"] .tool-ic .tico.is-done { animation: okPop 0.34s var(--ease) both; }
+.tool.in[data-state="ok"] .tool-ic .tico.is-done { animation: okPop 0.34s var(--ease) both; }
 @keyframes okPop {
   0% { transform: scale(0.82); opacity: 0.5; }
   55% { transform: scale(1.12); opacity: 1; }
@@ -2878,7 +2878,7 @@ textarea:focus-visible { outline: none; }
 }
 
 /* fallo: dos pixeles de sacudida, una sola vez, y el icono se queda en rojo */
-.tool[data-state="err"] { animation: toolIn 0.26s var(--ease) both, shake 0.32s var(--ease) 0.04s 1; }
+.tool.in[data-state="err"] { animation: toolIn var(--dur-3) var(--ease-out) both, shake 0.32s var(--ease-out) 0.04s 1; }
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-2px); }
@@ -2890,21 +2890,16 @@ textarea:focus-visible { outline: none; }
 .tool-title .tname { opacity: var(--o-dim); transition: opacity var(--dur) var(--ease); }
 .tool:hover .tool-title .tname { opacity: 1; }
 
-/* razonamiento: el bloque colapsado respira una vez al aparecer */
-.msg-a .thought { animation: fadeIn 0.3s var(--ease) both; }
-
-/* turnos nuevos entran con un desplazamiento minimo. Solo los ultimos: en el replay de una
-   sesion larga no queremos 200 mensajes animando a la vez, solo el tramo vivo. */
-.msg-inner > .msg-user:nth-last-child(-n + 2),
-.msg-inner > .msg-a:nth-last-child(-n + 2) { animation: msgIn 0.22s var(--ease) both; }
+/* Sólo el turno vivo entra: :nth-last-child también animaba los últimos mensajes del replay. */
+.msg-inner > .msg-user.in,
+.msg-inner > .msg-a.in { animation: msgIn var(--dur-2) var(--ease-out) both; }
 
 @media (prefers-reduced-motion: reduce) {
   .tool,
-  .tool[data-state="err"],
-  .msg-inner > .msg-user:nth-last-child(-n + 2),
-  .msg-inner > .msg-a:nth-last-child(-n + 2),
-  .msg-a .thought,
-  .tool[data-state="ok"] .tool-ic .tico.is-done { animation: none !important; }
+  .tool.in[data-state="err"],
+  .msg-inner > .msg-user.in,
+  .msg-inner > .msg-a.in,
+  .tool.in[data-state="ok"] .tool-ic .tico.is-done { animation: none !important; }
   .tool[data-state="run"] .tool-ic .tico { animation: none !important; opacity: 1; }
   .tool[data-state="run"] .tool-ic::after { animation: none !important; border-top-color: var(--accent); opacity: 0.5; }
   .tool[data-state="run"]::after { animation: none !important; width: 100%; opacity: 0.35; }
@@ -3264,7 +3259,8 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
 
 @media (max-width: 700px) {
   .acts-menu { min-width: 0; max-width: calc(100vw - 16px); }
-  .act-btn { width: 28px; height: 28px; }
+  .act-btn { width: 44px; height: 44px; }
+  .msg-a .act-btn, .msg-user .act-btn { top: 2px; right: 2px; }
   .act-hint { display: none; }
 }
 
