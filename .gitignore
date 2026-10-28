@@ -44,3 +44,4 @@ dist-ts/
 # cliente React (Vite): deps y salida de build
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
