@@ -270,3 +270,30 @@ Lo que sigue sin medir: Android físico real, latencia por túnel, gesto táctil
 | `rewind`/`retry` con run activo | `-32602 "cannot rewind while a run is active for this session"` | la UI tiene que esperar `endedAt` antes de ofrecerlos (ya lo hace: `isRunning`) |
 
 Arreglo derivado: el texto que devuelven `rewind` y `retry` se perdía. Ahora alimenta al compositor desde el botón del transcript y desde el comando de paleta, así que «Regenerar» deja el prompt listo para editar en vez de reenviarlo a ciegas.
+
+## 11. Publicar con un comando (y volver atrás)
+
+`scripts/publish-app-react.ps1` hace el swap de forma verificable: levanta una instancia nueva con `AEGIS_WEB_ROOT=react`, espera `/healthz`, pide `/` y comprueba que apunte a `/app-react/assets/…` y que ese asset responda 200; sólo entonces deja la nueva. Si cualquiera de esos pasos falla, mata la instancia nueva y la anterior queda intacta: el rollback es no haber hecho nada.
+
+| comando | qué hace |
+|---|---|
+| `powershell -File scripts/publish-app-react.ps1 -Port 3792 -DryRun` | ensayo: publica en un puerto aparte y deja la instancia viva para inspeccionar |
+| `powershell -File scripts/publish-app-react.ps1` | publica en 3788 (el puerto real); exige el puerto libre |
+| `powershell -File scripts/publish-app-react.ps1 -Rollback` | vuelve al cliente actual en ese puerto |
+| `powershell -File scripts/publish-app-react.ps1 -Port 3792 -Rollback` | vuelve atrás en el puerto de ensayo |
+
+Ensayo verificado (2026-10-28, puerto 3792): `raiz -> /app-react/assets/index-B5wHeZbx.js (331166 bytes)`. Lo que **no** se hizo desde este chat es publicar en 3788: bajar ese proceso corta la sesión que lo está usando, así que la publicación real la dispara el operador cuando quiera, con el comando de la primera fila.
+
+Estado de la verificación contra el motor real, por método:
+
+| método | resultado |
+|---|---|
+| `session/list` paginado (50 + cursor) | ok, `_meta` con `messageCount`, `createdAt`, `projectId`, `modelId` |
+| `session/rename` | responde ok pero `session/list` sigue con el título viejo y no hay `session_info_update`: el cliente lo recuerda localmente |
+| `session/archive` / `unarchive` | la sesión sale y vuelve del listado; el wire no manda `archivedAt` |
+| `session/delete` | confirmado por listado completo |
+| `session/export` | `{data}`: markdown 1 031 340 B / json 3 290 957 B en el chat de limpieza |
+| `session/rewind` / `retry` | formas documentadas en la sección 10; retry ya implica rewind |
+| `sources/list|create|update|delete` | CRUD completo verificado con skills desechables (create → `{source}`, update → `{source}` con descripción y contenido nuevos, delete → ok); `target.scope:'global'` escribe en `C:\Users\Emiliano\.agents\skills` y los paths vuelven con prefijo `\\?\` |
+| `tools/permissions/set` | los tres payloads responden ok; no hay getter, el efecto no es legible por ACP |
+| `tools/list` | **no existe** (`-32601`) |
