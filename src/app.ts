@@ -2224,6 +2224,24 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       popRow('cache', cachePct + (mu.timeToFirstTokenMs != null ? '  ·  1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')) +
       popRow('sesion', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok)) +
       popRow('margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok antes de compactar' + (ct.estimated ? ' (estimado)' : '') : '--');
+    // BITACORA DE COMPACTACIONES: cuando compacto, con cuanto contexto y quien lo pidio.
+    // Antes solo existia el contador de llamadas internas; esto responde la pregunta que
+    // importa ("¿esta sesion compacto bien, o se comio el historial?").
+    const clog = Array.isArray(s.compactionLog) ? s.compactionLog : null;
+    if (clog && clog.length) {
+      const quien = (t) => t === 'tool' ? 'modelo' : t === 'manual' ? 'usuario' : 'umbral';
+      const horas = clog.slice(-5).reverse().map((e) => {
+        const hora = typeof e.at === 'string' ? e.at.slice(11, 16) : '--:--';
+        const antesTok = niceTok(e.beforeTokens || 0);
+        const despuesTok = niceTok(e.afterTokens || 0);
+        const nota = e.note ? '  \u00b7  ' + esc(String(e.note).slice(0, 80)) : '';
+        return popRow(quien(e.trigger) + ' ' + hora, antesTok + ' -> ' + despuesTok + nota);
+      }).join('');
+      w.querySelector('.up-rows').innerHTML +=
+        '<div class="up-row" style="border-top:1px solid var(--line,#3a3a3a);margin-top:6px;padding-top:6px">'
+        + '<span class="k">compactaciones</span><span class="v">' + clog.length + '</span></div>'
+        + horas;
+    }
     // DESGLOSE: donde se va la ventana. tool results, MOIM por turno, historial
     // oculto por compactar y el prompt fijo (sistema + esquemas de tools). Las partes
     // las estima el server y suman exactamente el 'usado' de arriba.
@@ -2350,6 +2368,9 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (u.compactionInputTokens != null) s.compactionInputTokens = u.compactionInputTokens;
     if (u.compactionOutputTokens != null) s.compactionOutputTokens = u.compactionOutputTokens;
     if (u.autoCompactPct != null) s.autoCompactPct = u.autoCompactPct;
+    // Bitacora de compactaciones (usage_update -> compactionLog, la manda el server desde el
+    // estado de la sesion). Se guarda tal cual: el popover la muestra cuando se abre.
+    if (Array.isArray(u.compactionLog)) s.compactionLog = u.compactionLog;
     renderUsage();
   }
   // message_usage (aegis-sdk-types): uso POR PASO, con cache y tiempos. El cliente lo ignoraba.

@@ -247,8 +247,8 @@ function renderMeter(usage: UsageState | null): void {
     const ratio = Math.min(1, trigger / limit);
     m.mark.style.display = 'block';
     m.mark.style.left = ratio * 100 + '%';
-    m.label.textContent = `contexto ${fmtTok(used)} / ${fmtTok(limit)} (${Math.round((used / trigger) * 100)}% del techo)`;
-    m.label.title = `compacta sola a ~${fmtTok(trigger)} · margen ${fmtTok(Math.max(0, trigger - used))} tok`;
+    m.label.textContent = `contexto ${fmtTok(used)} de ${fmtTok(trigger)} · ${fmtTok(Math.max(0, trigger - used))} libres`;
+    m.label.title = `ventana ${fmtTok(limit)} · compacta sola a ~${fmtTok(trigger)}`;
   } else {
     m.mark.style.display = 'none';
     m.label.textContent = `contexto ${fmtTok(used)} tok`;
