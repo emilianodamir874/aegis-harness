@@ -40,3 +40,7 @@ tunnel-url-2.txt
 
 # Build TypeScript aislado del servicio activo
 dist-ts/
+
+# cliente React (Vite): deps y salida de build
+frontend/node_modules/
+frontend/dist/
