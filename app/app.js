@@ -207,8 +207,12 @@ var md = (text) => {
   let html = "";
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 1) {
-      const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]* ?\r?\n/, "").replace(/\r?\n$/, "");
-      html += `<div class="code-wrap"><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
+      const head = /^([a-zA-Z0-9+#_.-]*)[ \t]*\r?\n/.exec(parts[i]);
+      const lang = head ? head[1].toLowerCase() : "";
+      const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]*[ \t]*\r?\n/, "").replace(/\r?\n$/, "");
+      const cls = lang ? "code-wrap lang" : "code-wrap";
+      const attr = lang ? ` data-lang="${esc(lang)}"` : "";
+      html += `<div class="${cls}"${attr}><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
     } else {
       const joinedDownloads = parts[i].replace(/\[([^\]\r\n]+)\]\s*\r?\n\s*\((\/dl\/[A-Za-z0-9._-]{1,120})\)/g, "[$1]($2)");
       html += mdBlocks(joinedDownloads);
