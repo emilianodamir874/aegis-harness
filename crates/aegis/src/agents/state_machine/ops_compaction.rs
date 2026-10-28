@@ -18,6 +18,7 @@ use crate::conversation::message::{Message, MessageErrorKind, SystemNotification
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
 use crate::session::extension_data::ExtensionState;
+use crate::session::extension_data::{CompactionLogEntry, CompactionLogState};
 use crate::session::{CompactRequestState, Session, SessionManager};
 use aegis_providers::model::ModelConfig;
 
@@ -103,6 +104,39 @@ impl CompactionOperation {
         CompactRequestState::from_extension_data(&session.extension_data)
             .map(|state| state.is_pending())
             .unwrap_or(false)
+    }
+
+    /// Agrega la compactacion al historial de la sesion. Sin esto la UI solo podia mostrar un
+    /// contador y el costo: no habia forma de ver cuando compacto ni con cuanto contexto.
+    async fn record_compaction(
+        &self,
+        session_id: &str,
+        before_tokens: u64,
+        after_tokens: u64,
+        trigger: &str,
+        note: Option<String>,
+    ) {
+        let Some(session_manager) = self.session_manager.as_ref() else {
+            return;
+        };
+        let Ok(session) = session_manager.get_session(session_id, false).await else {
+            return;
+        };
+        let historial = CompactionLogState::from_extension_data(&session.extension_data)
+            .unwrap_or_default()
+            .append(CompactionLogEntry {
+                at: chrono::Utc::now().to_rfc3339(),
+                before_tokens,
+                after_tokens,
+                trigger: trigger.to_string(),
+                note,
+            });
+        if let Err(error) = session_manager
+            .set_extension_state(session_id, &historial)
+            .await
+        {
+            tracing::warn!("compaction: no se pudo guardar la bitacora: {error:#}");
+        }
     }
 
     /// Consume la marca: sin esto el pedido se repetiria en cada turno.
@@ -232,6 +266,13 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
                 return Self::command_error(conversation, format!("{error:#}"), emit);
             }
         };
+        let before_tokens = self
+            .context_tokens(session, conversation)
+            .await
+            .unwrap_or(0) as u64;
+        let after_tokens = result.retained_context_tokens.max(0) as u64;
+        self.record_compaction(&session.id, before_tokens, after_tokens, "manual", None)
+            .await;
         let compacted = result.conversation;
         let usage = result.usage;
         record_chat_usage(&span, &usage);
@@ -378,9 +419,21 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
         .await
         {
             Ok(result) => {
-                if requested_by_tool {
+                let before_tokens = self
+                    .context_tokens(session, conversation)
+                    .await
+                    .unwrap_or(0) as u64;
+                let after_tokens = result.retained_context_tokens.max(0) as u64;
+                let (trigger, note) = if requested_by_tool {
                     self.clear_compact_request(&session.id).await;
-                }
+                    let nota = CompactRequestState::from_extension_data(&session.extension_data)
+                        .and_then(|state| state.note);
+                    ("tool", nota)
+                } else {
+                    ("auto", None)
+                };
+                self.record_compaction(&session.id, before_tokens, after_tokens, trigger, note)
+                    .await;
                 let compacted = result.conversation;
                 let usage = result.usage;
                 record_chat_usage(&span, &usage);

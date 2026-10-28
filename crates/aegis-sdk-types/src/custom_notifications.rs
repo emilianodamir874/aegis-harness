@@ -105,6 +105,24 @@ pub struct SessionUsageUpdate {
     /// session-level model is not a valid attribution of its cost.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub model_usage: Vec<SessionModelUsage>,
+    /// Compactaciones de la sesion, de la mas vieja a la mas nueva (tope 20). Permite ver
+    /// cuando compacto, cuanto tenia antes y despues y quien lo pidio.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compaction_log: Vec<CompactionLogEntry>,
+}
+
+/// Una compactacion del historial de la sesion.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionLogEntry {
+    /// RFC3339 en UTC.
+    pub at: String,
+    pub before_tokens: u64,
+    pub after_tokens: u64,
+    /// \`auto\` | \`manual\` | \`tool\`.
+    pub trigger: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// One row of SessionUsageUpdate::model_usage.

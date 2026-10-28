@@ -447,3 +447,95 @@ impl CompactRequestState {
         self.active
     }
 }
+
+/// Una compactacion que ocurrio, con lo que hace falta para auditarla despues.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactionLogEntry {
+    /// RFC3339, UTC.
+    pub at: String,
+    /// Tokens que tenia el contexto antes de resumir.
+    pub before_tokens: u64,
+    /// Tokens que quedaron despues (lo que retuvo el resumen).
+    pub after_tokens: u64,
+    /// `auto` (umbral), `manual` (/compact) o `tool` (la pidio el modelo).
+    pub trigger: String,
+    /// Nota que mando el modelo al pedirla por tool; vacia en los otros dos casos.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// Historial de compactaciones de la sesion. Se guarda en el estado de la sesion, no en el
+/// mensaje: no tiene que entrar al prompt ni contarse como contexto.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CompactionLogState {
+    pub entries: Vec<CompactionLogEntry>,
+}
+
+impl ExtensionState for CompactionLogState {
+    const EXTENSION_NAME: &'static str = "compaction_log";
+    const VERSION: &'static str = "v0";
+}
+
+impl CompactionLogState {
+    /// Tope de entradas: es un historial para mirar, no un archivo de auditoria.
+    pub const MAX_ENTRIES: usize = 20;
+
+    pub fn append(mut self, entry: CompactionLogEntry) -> Self {
+        self.entries.push(entry);
+        if self.entries.len() > Self::MAX_ENTRIES {
+            let sobrante = self.entries.len() - Self::MAX_ENTRIES;
+            self.entries.drain(0..sobrante);
+        }
+        self
+    }
+}
+
+#[cfg(test)]
+mod compaction_log_tests {
+    use super::{CompactionLogEntry, CompactionLogState, ExtensionState};
+
+    fn entrada(n: usize) -> CompactionLogEntry {
+        CompactionLogEntry {
+            at: format!("2026-10-28T11:0{n}:00Z"),
+            before_tokens: 400_000,
+            after_tokens: 60_000,
+            trigger: "auto".to_string(),
+            note: None,
+        }
+    }
+
+    #[test]
+    fn el_historial_recorta_al_tope() {
+        // Es un historial para mirar en el popover, no un archivo: 20 es el tope.
+        let mut estado = CompactionLogState::default();
+        for n in 0..(CompactionLogState::MAX_ENTRIES + 5) {
+            estado = estado.append(entrada(n));
+        }
+        assert_eq!(estado.entries.len(), CompactionLogState::MAX_ENTRIES);
+        // Se van las viejas: la ultima en entrar tiene que seguir estando.
+        let ultima = &estado.entries[estado.entries.len() - 1];
+        assert_eq!(ultima.at, entrada(CompactionLogState::MAX_ENTRIES + 4).at);
+    }
+
+    #[test]
+    fn el_historial_viaja_en_el_estado_de_la_sesion() {
+        let estado = CompactionLogState::default().append(CompactionLogEntry {
+            at: "2026-10-28T11:05:00Z".to_string(),
+            before_tokens: 510_000,
+            after_tokens: 70_000,
+            trigger: "tool".to_string(),
+            note: Some("seguir con el build".to_string()),
+        });
+        let mut data = crate::session::ExtensionData::new();
+        estado.to_extension_data(&mut data).unwrap();
+
+        let leido = CompactionLogState::from_extension_data(&data).expect("historial presente");
+        assert_eq!(leido.entries.len(), 1);
+        assert_eq!(leido.entries[0].trigger, "tool");
+        assert_eq!(leido.entries[0].before_tokens, 510_000);
+        assert_eq!(
+            leido.entries[0].note.as_deref(),
+            Some("seguir con el build")
+        );
+    }
+}

@@ -1004,6 +1004,8 @@ pub(super) fn build_usage_updates(
     let (compaction_calls, compaction_input_tokens, compaction_output_tokens) =
         compaction_usage(session);
     let model_usage = model_usage_rows(session);
+    // Bitacora de compactaciones: cuando compacto, cuanto tenia antes y despues y quien lo pidio.
+    let compaction_log = compaction_log_rows(session);
     UsageUpdates {
         custom: AegisSessionNotification {
             session_id: session.id.clone(),
@@ -1018,6 +1020,7 @@ pub(super) fn build_usage_updates(
                 compaction_input_tokens,
                 compaction_output_tokens,
                 model_usage,
+                compaction_log,
                 auto_compact_at,
                 auto_compact_pct,
             }),
@@ -1113,6 +1116,31 @@ fn tool_results_detail(count: u64, largest: u64) -> String {
 /// and the skills, which are not part of the persisted conversation. Messages hidden
 /// by compaction (`agent_visible == false`) are reported but deliberately kept out
 /// of that arithmetic: they are no longer sent to the provider.
+/// Historial de compactaciones de la sesion, tal cual lo guarda `CompactionOperation`.
+pub(super) fn compaction_log_rows(
+    session: &Session,
+) -> Vec<aegis_sdk_types::custom_notifications::CompactionLogEntry> {
+    use crate::session::extension_data::{CompactionLogState, ExtensionState};
+
+    CompactionLogState::from_extension_data(&session.extension_data)
+        .map(|state| {
+            state
+                .entries
+                .into_iter()
+                .map(
+                    |entry| aegis_sdk_types::custom_notifications::CompactionLogEntry {
+                        at: entry.at,
+                        before_tokens: entry.before_tokens,
+                        after_tokens: entry.after_tokens,
+                        trigger: entry.trigger,
+                        note: entry.note,
+                    },
+                )
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(super) fn context_breakdown(session: &Session, used: u64) -> Vec<ContextPart> {
     let Some(conversation) = session.conversation.as_ref() else {
         return Vec::new();
