@@ -13,6 +13,7 @@ import { Palette, panelCommand, type Command } from './ui/Palette';
 import { Dialog } from './ui/Dialog';
 import { WorkspacePanel, type PanelId } from './ui/panels';
 import { HandoffDialog } from './ui/HandoffDialog';
+import { SplitView } from './ui/SplitView';
 
 function ToastStack({ state, onDismiss }: { state: AppState; onDismiss: (id: string) => void }) {
   return (
@@ -166,6 +167,7 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const [chatInfo, setChatInfo] = useState(false);
   const [handoff, setHandoff] = useState(false);
+  const [split, setSplit] = useState(false);
   const [prefill, setPrefill] = useState<string | null>(null);
   const [rename, setRename] = useState<{ id: SessionId; title: string } | null>(null);
   const [deleting, setDeleting] = useState<{ id: SessionId; title: string } | null>(null);
@@ -203,6 +205,9 @@ export function App() {
       } else if (event.altKey && event.key.toLowerCase() === 'h') {
         event.preventDefault();
         setHandoff(true);
+      } else if (event.altKey && event.key === '2') {
+        event.preventDefault();
+        setSplit((value) => !value);
       }
     };
     document.addEventListener('keydown', onKey);
@@ -217,6 +222,7 @@ export function App() {
       { id: 'cancel', title: 'Detener el turno en curso', run: () => void store.cancel() },
       { id: 'info', title: 'Información del chat', run: () => setChatInfo(true) },
       { id: 'handoff', title: 'Pasar contexto de otra sesión', hint: 'Ctrl+Alt+H', run: () => setHandoff(true) },
+      { id: 'split', title: 'Segunda sesión al costado (solo lectura)', hint: 'Ctrl+Alt+2', run: () => setSplit((value) => !value) },
       { id: 'mode-plan', title: 'Modo plan: no escribe, las tools de escritura no se le mandan', hint: 'modo', run: () => void store.setPermissionMode('plan') },
       { id: 'mode-revisar', title: 'Modo revisar: cada escritura pide permiso y muestra el diff', hint: 'modo', run: () => void store.setPermissionMode('revisar') },
       { id: 'mode-ejecutar', title: 'Modo ejecutar: manda permission.yaml', hint: 'modo', run: () => void store.setPermissionMode('ejecutar') },
@@ -338,14 +344,14 @@ export function App() {
           />
         ) : null}
       </main>
+      <SplitView open={split} onClose={() => setSplit(false)} state={state} store={store} />
 
       <ToastStack state={state} onDismiss={(id) => store.dismissNotice(id)} />
       <Palette open={palette} onClose={() => setPalette(false)} commands={commands} />
       <WorkspacePanel panel={panel} onClose={() => setPanel(null)} state={state} session={session} store={store} />
       <ChatInfoDialog open={chatInfo} onClose={() => setChatInfo(false)} session={session} store={store} />
       <HandoffDialog
-        open={handoff}
-        onClose={() => setHandoff(false)}
+        open={handoff}        onClose={() => setHandoff(false)}
         state={state}
         store={store}
         onInsert={(block) => {

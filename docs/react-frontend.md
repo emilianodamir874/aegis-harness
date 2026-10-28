@@ -126,14 +126,14 @@ el camino principal pero falta una parte del contrato; `pendiente` = no implemen
 | 29 | Contexto | `usage_update` | usado/límite/costo | panel Contexto + barra | `translate.test`; motor real mostró string→number | hecho |
 | 30 | Doctor | `/doctor.json` | chequeos | panel Doctor (ruta `gate.chequeos`) | 401 anónimo (requiere login); forma leída en `src/server.ts` + `panels.test` | parcial (falta verlo logueado) |
 | 31 | Paleta | `palette.ts` | comandos filtrables | `Palette` | UI test Ctrl+Shift+P | hecho |
-| 32 | Split-view | `split-view.ts` | dos chats lado a lado | — | — | pendiente |
+| 32 | Split-view | `src/split-view.ts` (207 líneas) | segunda sesión al costado, foto vía `session/export` | `ui/SplitView` (Ctrl+Alt+2 y paleta), `aria-label` propio, refresco manual | `panelsExtra.test` con fixture: export de la otra sesión renderizado y botón Refrescar; build con el CSS nuevo | hecho |
 | 33 | Ajustes | local | voz, lectura | panel Ajustes | UI (render) | parcial |
 | 34 | Exportar | `session/export` | markdown/json | menú de la fila: Exportar `.md` / `.json` (blob + descarga, nombre saneado) | motor real: `{data}` string, 1,3 MB markdown / 3,3 MB JSON; smoke Playwright descargó «Aegis-Proyects disk cleanup.md» de 1 031 340 B con 0 errores | hecho |
 | 35 | Renombrar/archivar/borrar | `_aegis/…` | menú de fila | Sidebar + diálogos | no probado contra motor | parcial |
 | 36 | `/goal` del chat | barra de objetivo | mostrar/limpiar | `domain/goal.ts` + barra en App | `goal.test` 3 casos | hecho |
 | 37 | Handoff entre sesiones | `src/handoff.ts` (263 líneas) | bloque objetivo/estado/decisiones/pasos desde el export del origen | `domain/handoff.ts` + `ui/HandoffDialog` (Ctrl+Alt+H y paleta); inserta en el composer | motor real: export de 1 040 213 caracteres → bloque de 2 781 con 4 secciones; smoke Playwright lo insertó en el composer, 0 errores | hecho |
 | 37b | Onboarding del estado vacío | `src/onboarding.ts` (147 líneas) | `/prices.json` + `/goals.json` | — | — | pendiente |
-| 37c | Galería de artefactos | `src/artifacts.ts` (217 líneas) | `/outbox.json` y `?preview=1` | panel Archivos lista, sin preview | `panels.test` | pendiente el preview |
+| 37c | Galería de artefactos | `src/artifacts.ts` (217 líneas) | `/outbox.json` y `?preview=1` → `{name,bytes,ext,binary,text,dataUrl}` | `ui/OutboxPanel`: lista + preview md/texto/imagen + Descargar `/dl/<nombre>` | endpoint real: preview de un `.md` de 20 147 B con `binary:false` y `text`; `panelsExtra.test` (lista, preview, 500) | hecho |
 | 40 | Modo de permisos (plan/revisar/ejecutar) | `src/session-mode.ts` (183 líneas) | `_aegis/unstable/tools/permissions/set` | `domain/sessionMode.ts` + chip en el composer + 3 comandos de paleta | motor real: los tres payloads responden ok; 5 tests de dominio | hecho (efecto no legible: sin getter, `-32601`) |
 | 38 | Accesibilidad | foco, aria, Escape | navegable por teclado | `Dialog` (trap), roles, skip-link | UI tests por rol | hecho (auditoría formal pendiente) |
 | 39 | Build y publicación | esbuild → `app/` | assets versionados | Vite → `frontend/dist` + `/app-react` | build + curl de assets | hecho (publicación NO) |

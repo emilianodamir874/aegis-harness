@@ -332,7 +332,8 @@ export class FixtureAcpServer {
         const formato = (params as { format?: string }).format;
         const data =
           formato === 'markdown'
-            ? `# Session Export: ${fixt?.title ?? ''}\n\n*Total messages: ${fixt?.messages.length ?? 0}*\n`
+            ? `# Session Export: ${fixt?.title ?? ''}\n\n*Total messages: ${fixt?.messages.length ?? 0}*\n\n` +
+              (fixt?.messages ?? []).map((m) => `### ${m.role === 'user' ? 'User' : 'Assistant'}:\n${m.text}\n`).join('\n')
             : JSON.stringify({ id: fixt?.sessionId ?? '', name: fixt?.title ?? '', messages: fixt?.messages ?? [] });
         return reply({ data });
       }

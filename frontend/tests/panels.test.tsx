@@ -54,8 +54,9 @@ describe('paneles contra formas reales', () => {
   it('archivos lista el outbox', async () => {
     stubFetch();
     renderPanel('archivos');
-    expect(await screen.findByText('informe.html')).toBeTruthy();
-    expect(screen.getByText('/dl/informe.html')).toBeTruthy();
+    // El panel de archivos es ahora la galería del outbox: muestra el nombre del archivo en la lista
+    // y ofrece la descarga real (/dl/<nombre>) al seleccionarlo.
+    expect(await screen.findByRole('button', { name: /informe\.html/ })).toBeTruthy();
   });
 
   it('memoria muestra los hechos', async () => {

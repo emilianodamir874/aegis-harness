@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import type { AegisStore } from '../domain/store';
 import type { AppState, SessionState } from '../domain/types';
 import { Dialog } from './Dialog';
+import { OutboxPanel } from './OutboxPanel';
 
 export type PanelId = 'actividad' | 'cambios' | 'archivos' | 'memoria' | 'skills' | 'doctor' | 'stats' | 'contexto' | 'ajustes' | 'goals';
 
@@ -12,9 +13,8 @@ interface PanelSpec {
   readonly arrayKeys: readonly string[];
 }
 
-const SPECS: Record<Exclude<PanelId, 'actividad' | 'contexto' | 'ajustes'>, PanelSpec> = {
+const SPECS: Record<Exclude<PanelId, 'actividad' | 'contexto' | 'ajustes' | 'archivos'>, PanelSpec> = {
   cambios: { title: 'Cambios Git', endpoint: '/changes.json', arrayKeys: ['entries', 'files', 'changes'] },
-  archivos: { title: 'Archivos del outbox', endpoint: '/outbox.json', arrayKeys: ['items', 'files'] },
   memoria: { title: 'Memoria del operador', endpoint: '/memory.json', arrayKeys: ['facts', 'items'] },
   skills: { title: 'Skills', rpc: { method: '_aegis/unstable/sources/list', params: {} }, arrayKeys: ['sources', 'items', 'skills'] },
   doctor: { title: 'Doctor', endpoint: '/doctor.json', arrayKeys: ['gate.chequeos', 'checks', 'items'] },
@@ -317,6 +317,7 @@ export function WorkspacePanel({
 
   return (
     <Dialog open={panel !== null} title={title} onClose={onClose} wide>
+      {panel === 'archivos' ? <OutboxPanel /> : null}
       {panel === 'actividad' ? <ActivityPanel state={state} /> : null}
       {panel === 'contexto' ? <ContextPanel session={session} /> : null}
       {panel === 'ajustes' ? <SettingsPanel /> : null}
