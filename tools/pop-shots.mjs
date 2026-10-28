@@ -57,9 +57,9 @@ async function abrir(nombre, fn) {
   } catch (e) { console.log(nombre.id, 'ERR', String(e).slice(0, 90)); }
 }
 
-await abrir({ id: 'pop-letra', sel: '#chat-font-pop' }, async () => { await page.click('#btn-chat-font'); });
+await abrir({ id: 'pop-letra', sel: '#font-panel .panel' }, async () => { await page.click('#btn-chat-font'); });
 await abrir({ id: 'pop-objetivos', sel: '#goals' }, async () => { await page.click('#btn-goals'); });
-await abrir({ id: 'pop-uso', sel: '#usage-pop' }, async () => {
+await abrir({ id: 'pop-uso', sel: '#usage-panel .panel' }, async () => {
   await page.evaluate(() => { const b = document.querySelector('#meta-right, .usage-mini, #ctx'); if (b) b.click(); });
 });
 await abrir({ id: 'pop-chatinfo', sel: '#chat-info' }, async () => { await page.click('#btn-chat-info'); });

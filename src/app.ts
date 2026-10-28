@@ -10,6 +10,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
 import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
+import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/panel';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -2124,95 +2125,10 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     state.usage = (sid && cache[sid]) || {};
     renderUsage();
   }
-  // ---------- popover de contexto: chico, anclado al readout, estilo Claude ----------
-  let usagePop = null;
-  const POP_PAD = 8, POP_GAP = 9;
-  // Caja donde el panel tiene que entrar. Se usa `visualViewport` y no `innerWidth/Height`
-  // porque en el telefono (teclado abierto, zoom) la parte visible es mas chica que el
-  // viewport de layout: clampear contra el de layout dejaba el panel fuera de la pantalla.
-  function popBox() {
-    const vv = window.visualViewport;
-    const vw = (vv && vv.width) || window.innerWidth;
-    const vh = (vv && vv.height) || window.innerHeight;
-    return {
-      ox: (vv && vv.offsetLeft) || 0,
-      oy: (vv && vv.offsetTop) || 0,
-      vw, vh,
-      // Techo de alto: el desglose completo (mas las filas por modelo) puede medir mas que
-      // la pantalla; sin techo el panel no entra ni arriba ni abajo del readout.
-      maxH: Math.max(140, vh - POP_PAD * 2)
-    };
-  }
-  function closeUsagePop() { if (usagePop) usagePop.hidden = true; }
-  function buildUsagePop() {
-    if (usagePop) return usagePop;
-    const w = document.createElement('div');
-    w.id = 'usage-pop';
-    w.hidden = true;
-    w.innerHTML =
-      '<div class="up-head">' +
-        '<div class="up-head-l"><span class="up-k">Contexto</span><i class="up-verdict"></i></div>' +
-        '<b class="up-pct">--</b>' +
-      '</div>' +
-      '<div class="up-meter"><i></i><em></em></div>' +
-      '<div class="up-sub"></div>' +
-      '<div class="up-money">' +
-        '<span class="up-money-k">Gasto de este chat</span>' +
-        '<b class="up-money-v">--</b>' +
-        '<span class="up-money-s"></span>' +
-      '</div>' +
-      '<div class="up-grid"></div>' +
-      '<div class="up-rows"></div>' +
-      '<div class="up-foot"></div>';
-    document.body.appendChild(w);
-    usagePop = w;
-    // Nace clampeado: si algo lo pinta antes del primer placeUsagePop, ya esta adentro.
-    const b = popBox();
-    w.style.maxHeight = b.maxH + 'px';
-    w.style.overflowY = 'auto';
-    w.style.overscrollBehavior = 'contain';
-    w.style.left = b.ox + POP_PAD + 'px';
-    w.style.top = b.oy + POP_PAD + 'px';
-    document.addEventListener('pointerdown', (e) => {
-      if (!usagePop || usagePop.hidden) return;
-      const a = $('#meta-right');
-      if (usagePop.contains(e.target) || (a && a.contains(e.target))) return;
-      closeUsagePop();
-    }, true);
-    window.addEventListener('resize', placeUsagePop);
-    window.addEventListener('scroll', placeUsagePop, true);
-    // El teclado del telefono cambia el viewport visible sin disparar resize de window.
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', placeUsagePop);
-      window.visualViewport.addEventListener('scroll', placeUsagePop);
-    }
-    return w;
-  }
-  function placeUsagePop() {
-    const w = usagePop;
-    const a = $('#meta-right');
-    if (!w || w.hidden || !a) return;
-    const b = popBox();
-    // El techo de alto se aplica antes de medir; si no cambio, no toca el layout.
-    const mh = b.maxH + 'px';
-    if (w.style.maxHeight !== mh) { w.style.maxHeight = mh; w.style.overflowY = 'auto'; }
-    const r = a.getBoundingClientRect();
-    const pw = Math.min(w.offsetWidth, Math.max(160, b.vw - POP_PAD * 2));
-    const ph = Math.min(w.offsetHeight, b.maxH);
-    // Prefiere abrirse arriba del readout; si no entra arriba ni abajo, se queda del lado
-    // con mas lugar y el clamp de las coordenadas lo mete entero en la pantalla.
-    const spaceAbove = r.top - POP_GAP - POP_PAD;
-    const spaceBelow = b.oy + b.vh - r.bottom - POP_GAP - POP_PAD;
-    const above = ph <= spaceAbove || spaceAbove >= spaceBelow;
-    let top = above ? r.top - POP_GAP - ph : r.bottom + POP_GAP;
-    let left = r.right - pw;
-    // Clamp al viewport visible: cuatro bordes, nunca afuera.
-    left = Math.max(b.ox + POP_PAD, Math.min(left, b.ox + b.vw - pw - POP_PAD));
-    top = Math.max(b.oy + POP_PAD, Math.min(top, b.oy + b.vh - ph - POP_PAD));
-    w.dataset.above = above ? '1' : '0';
-    w.style.left = Math.round(left) + 'px';
-    w.style.top = Math.round(top) + 'px';
-  }
+  // ---------- panel de contexto: uso, gasto y compactaciones ----------
+  // Va con el chasis de panel.ts (el mismo de la letra y los combobox): cabecera con titulo y
+  // cruz, cuerpo con scroll propio, hoja inferior en el telefono y cierre por Esc / click afuera.
+  let usagePanel: PanelApi | null = null;
   const niceTok = (n) => {
     if (n == null) return '--';
     if (n < 1000) return String(n);
@@ -2220,148 +2136,107 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     return (n / 1000000).toFixed(2).replace(/\.00$/, '') + 'M';
   };
   const popRow = (k, v) => '<div class="up-row"><span class="k">' + esc(k) + '</span><span class="v">' + v + '</span></div>';
+  function closeUsagePop() {
+    if (usagePanel) { const p = usagePanel; usagePanel = null; p.close(); return; }
+    cerrarPanel();
+  }
+
+  // Panel de contexto y gasto. Gramatica de Claude Code (/cost, /status): una cifra grande por
+  // bloque, filas etiqueta/valor en monoespaciada alineadas a la derecha, secciones con regla
+  // fina y sin cajas anidadas.
   function openUsagePop() {
-    const w = buildUsagePop();
-    const s = state.usage || {};
+    const u = state.usage || {};
     const mp: any = modelParts() || {};
-    const pct = s.limit && s.used != null ? Math.min(100, (s.used / s.limit) * 100) : null;
-    const ct = compactTrig(s);
+    const pct = u.limit && u.used != null ? Math.min(100, (u.used / u.limit) * 100) : null;
+    const ct = compactTrig(u);
     const trig = ct.at;
     const trigPct = ct.pct != null ? ct.pct : COMPACT_RATIO * 100;
     const col = pct == null ? 'var(--text-4)' : pct >= trigPct ? 'var(--danger)' : pct >= 50 ? 'var(--warn)' : 'var(--ok)';
-    w.querySelector('.up-pct').textContent = pct == null ? '--' : Math.round(pct) + '%';
-    w.querySelector('.up-pct').style.color = col;
-    const vd = w.querySelector('.up-verdict');
-    vd.textContent = pct == null ? 'sin medir todavia' : pct >= trigPct ? 'va a compactar' : pct >= 50 ? 'mas de la mitad' : 'holgado';
-    const bar = w.querySelector('.up-meter i');
-    bar.style.background = col === 'var(--text-4)' ? 'var(--text-4)' : 'linear-gradient(90deg, ' + col + ', ' + col + ')';
-    w.querySelector('.up-meter em').style.left = Math.round(trigPct) + '%';
-    w.querySelector('.up-sub').innerHTML = s.used == null ? 'todavia sin datos de uso' :
-      '<b>' + niceTok(s.used) + '</b> de ' + niceTok(s.limit) + ' tok' + (trig ? '  ·  compacta a ' + niceTok(trig) + ' (' + Math.round(trigPct) + '%)' + (ct.estimated ? ' (estimado)' : '') : '');
-    const mu = s.last || {};
+    const mu = u.last || {};
     const rate = stepRate(mu);
-    const cachePct = mu.cacheReadTokens != null && (mu.inputTokens || 0) + mu.cacheReadTokens > 0
-      ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--';
-    // Gasto: la cifra que se mira primero. El costo del chat lo acumula el motor; el del ultimo
-    // paso solo aparece si el proveedor lo informa (deepseek lo hace, otros no).
-    const costo = s.cost;
-    w.querySelector('.up-money-v').textContent = costo == null ? '--' : fmtCost(costo);
-    const tokSesion = (s.inTok != null || s.outTok != null) ? (s.inTok || 0) + (s.outTok || 0) : null;
-    const costoPaso = mu.cost != null ? fmtCost(mu.cost) : null;
-    w.querySelector('.up-money-s').textContent =
-      (tokSesion == null ? 'sin tokens medidos' : niceTok(tokSesion) + ' tokens en el chat')
-      + (costoPaso ? '  ·  último paso ' + costoPaso : '');
-    const celda = (k, v, extra) => '<div class="up-cell"><span class="up-cell-k">' + esc(k) + '</span>'
-      + '<span class="up-cell-v">' + v + '</span>'
-      + (extra ? '<span class="up-cell-x">' + esc(extra) + '</span>' : '') + '</div>';
-    // Un guion con " tok" al lado parece un error de formato: si no hay medicion, se dice.
+
+    const fila = (k, v, cls?) => '<div class="cc-r"><span>' + esc(k) + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</b></div>';
+    const sec = (t, extra?) => '<div class="cc-sec"><span>' + esc(t) + '</span>' + (extra ? '<em>' + esc(extra) + '</em>' : '') + '</div>';
     const tok = (n) => (n == null ? 'sin datos' : niceTok(n) + ' tok');
-    w.querySelector('.up-grid').innerHTML =
-      celda('Salida', tok(mu.outputTokens),
-        mu.elapsedMs != null ? (mu.elapsedMs / 1000).toFixed(1) + 's' + (rate ? '  ·  ' + fmtTps(rate.value) : '') : '')
-      + celda('Cache', cachePct, mu.timeToFirstTokenMs != null ? '1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')
-      + celda('Entrada', tok(mu.inputTokens), 'último paso')
-      + celda('Margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok' : '--',
-        'antes de compactar' + (ct.estimated ? ' (estimado)' : ''));
-    w.querySelector('.up-rows').innerHTML =
-      popRow('sesión', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok));
-    // BITACORA DE COMPACTACIONES: cuando compacto, con cuanto contexto y quien lo pidio.
-    // Antes solo existia el contador de llamadas internas; esto responde la pregunta que
-    // importa ("¿esta sesion compacto bien, o se comio el historial?").
-    const clog = Array.isArray(s.compactionLog) ? s.compactionLog : null;
+
+    const cuerpo =
+      '<div class="cc-hero"><b style="color:' + col + '">' + (pct == null ? '--' : Math.round(pct) + '%') + '</b>'
+      + '<span class="cc-hero-k">del contexto</span>'
+      + '<em>' + (pct == null ? 'sin medir' : pct >= trigPct ? 'va a compactar' : pct >= 50 ? 'más de la mitad' : 'holgado') + '</em></div>'
+      + '<div class="cc-bar"><i style="background:' + col + '"></i><em style="left:' + Math.round(trigPct) + '%"></em></div>'
+      + '<div class="cc-nota">' + (u.used == null ? 'todavía sin datos de uso'
+          : '<b>' + niceTok(u.used) + '</b> de ' + niceTok(u.limit) + ' tok'
+            + (trig ? ' · compacta a ' + niceTok(trig) + ' (' + Math.round(trigPct) + '%)' + (ct.estimated ? ' estimado' : '') : '')) + '</div>'
+
+      + sec('Gasto')
+      + '<div class="cc-money"><b' + (u.cost == null ? ' class="dim"' : '') + '>'
+      + (u.cost == null ? 'sin datos' : fmtCost(u.cost)) + '</b>'
+      + '<span>' + ((u.inTok != null || u.outTok != null) ? niceTok((u.inTok || 0) + (u.outTok || 0)) + ' tokens en el chat' : 'sin tokens medidos')
+      + (mu.cost != null ? '<br>último paso ' + fmtCost(mu.cost) : '') + '</span></div>'
+
+      + sec('Último paso')
+      + fila('entrada', tok(mu.inputTokens))
+      + fila('salida', tok(mu.outputTokens))
+      + fila('cache', mu.cacheReadTokens != null && ((mu.inputTokens || 0) + mu.cacheReadTokens) > 0
+          ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--')
+      + fila('tiempo', mu.elapsedMs != null ? (mu.elapsedMs / 1000).toFixed(1) + ' s · ' + (rate ? fmtTps(rate.value) : '--') : '--')
+      + fila('1er token', mu.timeToFirstTokenMs != null ? (mu.timeToFirstTokenMs / 1000).toFixed(1) + ' s' : '--')
+
+      + sec('Sesión')
+      + fila('entrada', tok(u.inTok))
+      + fila('salida', tok(u.outTok))
+      + fila('margen', u.limit && u.used != null && trig ? tok(Math.max(0, trig - u.used)) + ' antes de compactar' : '--');
+
+    let extra = '';
+    // BITÁCORA DE COMPACTACIONES: cuándo compactó, con cuánto contexto y quién lo pidió.
+    const clog = Array.isArray(u.compactionLog) ? u.compactionLog : null;
     if (clog && clog.length) {
       const quien = (t) => t === 'tool' ? 'modelo' : t === 'manual' ? 'usuario' : 'umbral';
-      const horas = clog.slice(-5).reverse().map((e) => {
+      extra += sec('Compactaciones', String(clog.length));
+      extra += clog.slice(-6).reverse().map((e) => {
         const hora = typeof e.at === 'string' ? e.at.slice(11, 16) : '--:--';
-        const antesTok = niceTok(e.beforeTokens || 0);
-        const despuesTok = niceTok(e.afterTokens || 0);
-        const nota = e.note ? '  \u00b7  ' + esc(String(e.note).slice(0, 80)) : '';
-        return popRow(quien(e.trigger) + ' ' + hora, antesTok + ' -> ' + despuesTok + nota);
+        return '<div class="cc-r"><span>' + esc(quien(e.trigger) + ' ' + hora) + '</span><b class="dim">'
+          + niceTok(e.beforeTokens || 0) + ' → ' + niceTok(e.afterTokens || 0) + '</b></div>'
+          + (e.note ? '<div class="cc-nota">' + esc(String(e.note).slice(0, 96)) + '</div>' : '');
       }).join('');
-      w.querySelector('.up-rows').innerHTML +=
-        '<div class="up-row" style="border-top:1px solid var(--line,#3a3a3a);margin-top:6px;padding-top:6px">'
-        + '<span class="k">compactaciones</span><span class="v">' + clog.length + '</span></div>'
-        + horas;
+    }
+    // Gasto por modelo: una sesión puede cambiar de modelo a mitad de camino.
+    if (Array.isArray(u.modelUsage) && u.modelUsage.length) {
+      extra += sec('Por modelo');
+      extra += u.modelUsage.map((m) => '<div class="cc-r"><span>' + esc(String(m.model)) + '</span><b class="dim">'
+        + m.calls + ' llam · ' + niceTok(m.inputTokens) + ' in · ' + niceTok(m.outputTokens) + ' out</b></div>').join('');
+    }
+    if (u.compactionCalls) {
+      extra += sec('Compactación interna');
+      extra += fila('llamadas', String(u.compactionCalls))
+        + fila('entrada', tok(u.compactionInputTokens))
+        + fila('salida', tok(u.compactionOutputTokens));
     }
 
-    // DESGLOSE: vive en UN solo lugar, el drawer del medidor (context-meter.ts). Este popover lo
-    // duplicaba con otro estilo y las dos vistas se desincronizaban. Aca queda el acceso.
-    const verDesglose = document.createElement('button');
-    verDesglose.type = 'button';
-    verDesglose.className = 'up-link';
-    verDesglose.textContent = 'Ver que ocupa el contexto';
-    verDesglose.addEventListener('click', () => {
+    usagePanel = abrirPanel({
+      id: 'usage-panel',
+      anchor: ($('#meta-right') as HTMLElement) || document.body,
+      anchorSel: '#meta-right',
+      title: 'Contexto y gasto',
+      sub: (mp.model || 'modelo ?') + (mp.effort ? ' · ' + mp.effort : ''),
+      body: cuerpo + (extra ? '<div class="cc-cols">' + extra + '</div>' : ''),
+      footer: '<button type="button" class="panel-btn" id="up-desglose">Ver qué ocupa el contexto</button>'
+        + '<span class="panel-hint">Esc cierra</span>',
+      onClose: () => { usagePanel = null; },
+    });
+    const link = usagePanel.foot.querySelector('#up-desglose') as HTMLElement | null;
+    if (link) link.addEventListener('click', () => {
+      closeUsagePop();
       closeMenus();
       const chip = document.getElementById('ctx-chip') || document.querySelector('.ctx-chip');
       if (chip instanceof HTMLElement) chip.click();
     });
-    const pie = w.querySelector('.up-rows');
-    if (pie) {
-      const fila = document.createElement('div');
-      fila.className = 'up-row';
-      fila.style.cssText = 'border-top:1px solid var(--line,#3a3a3a);margin-top:6px;padding-top:6px';
-      fila.append(verDesglose);
-      pie.append(fila);
-    }
-
-    // Gasto real por modelo (una sesion puede cambiar de modelo a mitad de camino) y
-    // compactacion interna, que se cobra pero no deja mensaje: filas aparte.
-    (function () {
-      const mid = '  ' + String.fromCharCode(183) + '  ';
-      // Precios: si prices.json tiene numeros, se muestra el costo por modelo.
-      const price = (m) => {
-        const pr = (pricesCache && pricesCache[m.provider + '/' + m.model]) || null;
-        // Sin entrada de precios para ese modelo la fila muestra solo tokens: nunca
-        // puede romper el popover (antes tiraba TypeError y no abria).
-        if (!pr) return '';
-        const eff = pr.inputEffective != null ? pr.inputEffective : pr.input;
-        if (eff == null) return '';
-        const usd = (m.inputTokens / 1e6) * eff;
-        return '  ' + String.fromCharCode(183) + '  USD ' + usd.toFixed(3);
-      };
-      let extra = '';
-      if (Array.isArray(s.modelUsage) && s.modelUsage.length) {
-        extra += s.modelUsage.map(function (m) {
-          return popRow('  ' + m.model, m.calls + ' llam' + mid + 'entrada ' + niceTok(m.inputTokens) + mid + 'salida ' + niceTok(m.outputTokens) + price(m));
-        }).join('');
-      }
-      if (s.compactionCalls) {
-        extra += popRow('compactacion interna', s.compactionCalls + ' llam' + mid + 'entrada ' + niceTok(s.compactionInputTokens) + mid + 'salida ' + niceTok(s.compactionOutputTokens));
-      }
-      if (extra) w.querySelector('.up-rows').insertAdjacentHTML('beforeend', extra);
-    })();
-    w.querySelector('.up-foot').textContent =
-      (mp.model || 'modelo ?') + (mp.effort ? '  ·  esfuerzo ' + mp.effort + (mp.fromAlias ? ' (alias)' : '') : '') + (s.cost != null ? '  ·  ' + fmtCost(s.cost) : '');
-    w.hidden = false;
-    placeUsagePop();
-    bar.style.transition = 'none';
-    bar.style.width = '0%';
-    requestAnimationFrame(() => { bar.style.transition = ''; bar.style.width = (pct == null ? 0 : pct) + '%'; });
+    requestAnimationFrame(() => {
+      const bar = usagePanel && (usagePanel.body.querySelector('.cc-bar i') as HTMLElement);
+      if (bar) bar.style.width = (pct == null ? 0 : pct) + '%';
+    });
   }
-  // Boton flotante 'ir al final': aparece cuando te alejas del ultimo mensaje.
-  (function initJumpBottom() {
-    const box = $('#messages');
-    if (!box) return;
-    const btn = document.createElement('button');
-    btn.id = 'jump-bottom';
-    btn.type = 'button';
-    btn.setAttribute('aria-label', 'Ir al ultimo mensaje');
-    btn.innerHTML = '<svg viewBox="0 0 16 16" fill="none" width="17" height="17"><path d="M8 3v10M3.6 8.6 8 13l4.4-4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    btn.addEventListener('click', () => scrollBottom(true));
-    const host = document.querySelector('.main') || document.body;
-    host.appendChild(btn);
-    const sync = () => {
-      const gap = box.scrollHeight - box.scrollTop - box.clientHeight;
-      btn.classList.toggle('show', gap > 240);
-    };
-    box.addEventListener('scroll', sync, { passive: true });
-    setInterval(sync, 1200);
-  })();
 
-  if (!(window as any).__usagePopKeys) {
-    (window as any).__usagePopKeys = true;
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && usagePop && !usagePop.hidden) { closeUsagePop(); e.stopPropagation(); } }, true);
-  }
   function renderUsage() {
     const el = $('#meta-right');
     if (!el) return;
@@ -6105,6 +5980,10 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     if (range) range.value = String(chatFont);
     const value = $('#chat-font-value');
     if (value) value.textContent = chatFont + ' px';
+    // El subtitulo del panel abierto tambien es el valor: si no se refresca, dice 16 px con la
+    // muestra en 22.
+    const subPanel = document.querySelector('#font-panel .panel-sub');
+    if (subPanel) subPanel.textContent = chatFont + ' px';
     // La muestra se pinta con el tamano real y su interlineado: elegir a ciegas un numero no dice
     // como queda el texto.
     const muestra = $('#cf-muestra');
@@ -6274,39 +6153,46 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     return on;
   }
 
+  // Panel de letra: mismo chasis que el resto (panel.ts). Antes era un div del HTML que se
+  // mostraba/ocultaba a mano, con su propio cierre por click afuera y sin cabecera.
+  function abrirPanelLetra() {
+    const btn = $('#btn-chat-font') as HTMLElement;
+    const api = abrirPanel({
+      id: 'font-panel',
+      anchor: btn,
+      anchorSel: '#btn-chat-font',
+      title: 'Letra del chat',
+      sub: chatFont + ' px',
+      body:
+        '<div class="lp-muestra"><span id="cf-muestra">El texto se lee así, con este tamaño y este '
+        + 'interlineado. Un párrafo corto alcanza para decidir.</span></div>'
+        + '<div class="lp-controls">'
+        +   '<button id="chat-font-minus" type="button" aria-label="Reducir letra">−</button>'
+        +   '<input id="chat-font-range" type="range" min="2" max="22" step="1" aria-label="Tamaño de letra del chat">'
+        +   '<button id="chat-font-plus" type="button" aria-label="Aumentar letra">+</button>'
+        + '</div>'
+        + '<div class="lp-scale"><span>2</span><span>22</span></div>',
+      footer: '<button type="button" class="panel-btn" id="chat-font-reset">Restablecer</button>'
+        + '<span class="panel-hint">Cambia sólo el texto del chat</span>',
+      onMount: (p) => {
+        const r = p.body.querySelector('#chat-font-range') as HTMLInputElement;
+        r.addEventListener('input', () => setChatFont(Number(r.value)));
+        (p.body.querySelector('#chat-font-minus') as HTMLElement).addEventListener('click', () => setChatFont(chatFont - 1));
+        (p.body.querySelector('#chat-font-plus') as HTMLElement).addEventListener('click', () => setChatFont(chatFont + 1));
+        (p.foot.querySelector('#chat-font-reset') as HTMLElement).addEventListener('click', () => setChatFont(CHAT_FONT_DEFAULT));
+        setChatFont(chatFont);
+        r.focus({ preventScroll: true });
+      },
+    });
+    return api;
+  }
+
   function wireChatFont() {
     setChatFont(chatFont);
-    const pop = $('#chat-font-pop');
     const button = $('#btn-chat-font');
     button.addEventListener('click', () => {
-      pop.hidden = !pop.hidden;
-      button.setAttribute('aria-expanded', String(!pop.hidden));
-      if (!pop.hidden && window.matchMedia('(max-width: 560px)').matches) {
-        const r = pop.getBoundingClientRect();
-        const v = window.visualViewport;
-        const left = v?.offsetLeft ?? 0, width = v?.width ?? innerWidth;
-        pop.style.right = 'auto';
-        pop.style.left = Math.max(left + 8, Math.min(r.left, left + width - r.width - 8)) + 'px';
-        ($('#chat-font-range') as HTMLInputElement).focus({ preventScroll: true });
-      }
-    });
-    ($('#chat-font-range') as HTMLInputElement).addEventListener('input', (e) => setChatFont(Number((e.target as HTMLInputElement).value)));
-    $('#chat-font-minus').addEventListener('click', () => setChatFont(chatFont - 1));
-    $('#chat-font-plus').addEventListener('click', () => setChatFont(chatFont + 1));
-    $('#chat-font-reset').addEventListener('click', () => setChatFont(CHAT_FONT_DEFAULT));
-    document.addEventListener('pointerdown', (e) => {
-      if (!pop.hidden && !pop.contains(e.target as Node) && !button.contains(e.target as Node)) {
-        pop.hidden = true; button.setAttribute('aria-expanded', 'false');
-      }
-    });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !pop.hidden) {
-        e.preventDefault();
-        pop.hidden = true;
-        button.setAttribute('aria-expanded', 'false');
-        const target = button.getClientRects().length === 0 ? $('#btn-topbar-more') : button;
-        target?.focus({ preventScroll: true });
-      }
+      if (panelAbierto()) { cerrarPanel(); return; }
+      abrirPanelLetra();
     });
   }
 

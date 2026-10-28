@@ -3886,53 +3886,132 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .combo-root.is-pop .combo-panel { pointer-events: auto; }
 
 /* ============================================================================
-   Paneles del cromo: letra, uso y gasto, objetivos, estado del chat (2026-10-28)
+   Chasis de paneles del cromo (panel.ts): letra, uso y gasto, objetivos, estado
    ----------------------------------------------------------------------------
-   Los cuatro comparten el lenguaje de los chips y de los combobox: sin capsulas,
-   jerarquia por tamano y color, y una sola superficie por panel. La regla de
-   tipografia: 9.5 px versalitas para rotulos, 12-13 px para texto, 20-22 px
-   tabular para la cifra que se mira primero.
+   Mismo lenguaje que el combobox: una tarjeta anclada al disparador con cabecera
+   de 44 px (titulo + glosa + cruz), cuerpo con scroll propio y un pie de acciones.
+   En el telefono, hoja inferior con telon y grab handle. Nada de capsulas.
    ============================================================================ */
-
-/* ---------- 1. tamano de letra ---------- */
-.chat-font-pop {
-  display: block;
-  width: 296px;
-  padding: 12px 13px 11px;
+.panel-root.is-pop { position: fixed; inset: 0; z-index: 920; pointer-events: none; }
+.panel-root.is-pop .panel-back { display: none; }
+.panel-root.is-pop .panel {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
   border-radius: var(--r-md);
   border: 1px solid var(--border);
   background: var(--bg-raise);
   box-shadow: var(--shadow-2);
+  overflow: hidden;
 }
-.chat-font-pop[hidden] { display: none; }
-.cf-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.cf-title {
+.panel-root.is-sheet { position: fixed; left: 0; right: 0; top: 0; z-index: 920; }
+.panel-root.is-sheet .panel-back {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+.panel-root.is-sheet .panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 10px);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-raise);
+  box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.5);
+  animation: panelUp 180ms var(--ease);
+}
+.panel-grab {
+  flex: none;
+  width: 36px; height: 4px;
+  margin: 7px auto 1px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+@keyframes panelUp { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* cabecera: el nombre del panel a la izquierda, la glosa al lado, la cruz a la derecha */
+.panel-head {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 10px 0 13px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.panel-title {
+  flex: none;
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-4);
 }
-.cf-val {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-2);
+.panel-sub {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-3);
 }
-.cf-muestra {
-  margin: 9px 0 11px;
-  padding: 10px 11px;
+.panel-x {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px; height: 26px;
+  align-self: center;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.panel-x:hover { background: rgba(245, 244, 239, 0.08); color: var(--text); }
+.panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 13px 13px; }
+.panel-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 13px;
+  border-top: 1px solid var(--border-soft);
+  background: rgba(245, 244, 239, 0.018);
+}
+.panel-btn {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: rgba(245, 244, 239, 0.06);
+  color: var(--text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.panel-btn:hover { background: rgba(245, 244, 239, 0.1); color: var(--text); }
+.panel-hint { margin-left: auto; font-size: 10.5px; color: var(--text-4); }
+
+/* ---------- letra del chat ---------- */
+.lp-muestra {
+  padding: 11px 12px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   background: rgba(245, 244, 239, 0.03);
   color: var(--text);
   overflow: hidden;
 }
-.cf-muestra span { display: block; }
-.chat-font-pop .cf-controls { display: flex; align-items: center; gap: 9px; }
-.chat-font-pop .cf-controls button {
-  min-width: 28px; min-height: 28px;
-  padding: 0 8px;
+.lp-muestra span { display: block; }
+.lp-controls { display: flex; align-items: center; gap: 9px; margin-top: 12px; }
+.lp-controls button {
+  min-width: 30px; min-height: 30px;
+  padding: 0 9px;
   border: 0;
   border-radius: var(--r-sm);
   background: rgba(245, 244, 239, 0.06);
@@ -3941,169 +4020,182 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   line-height: 1;
   cursor: pointer;
 }
-.chat-font-pop .cf-controls button:hover { background: rgba(245, 244, 239, 0.1); color: var(--text); }
-.chat-font-pop input[type="range"] { flex: 1 1 auto; width: auto; min-width: 80px; accent-color: var(--accent); }
-.cf-foot { display: flex; justify-content: flex-end; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border-soft); }
-.chat-font-pop .cf-reset {
-  min-height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--text-3);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.chat-font-pop .cf-reset:hover { background: rgba(245, 244, 239, 0.07); color: var(--text); }
-
-/* ---------- 2. uso, gasto y estadisticas ---------- */
-#usage-pop { width: 322px; }
-#usage-pop .up-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-#usage-pop .up-head-l { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-#usage-pop .up-k {
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.lp-controls button:hover { background: rgba(245, 244, 239, 0.1); color: var(--text); }
+.lp-controls input[type="range"] { flex: 1 1 auto; width: auto; min-width: 70px; accent-color: var(--accent); }
+.lp-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  padding: 0 39px;
+  font-family: var(--mono);
+  font-size: 9px;
   color: var(--text-4);
 }
-#usage-pop .up-verdict {
-  font-size: 10.5px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-#usage-pop .up-pct {
-  flex: none;
-  font-size: 21px;
-  font-weight: 600;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-#usage-pop .up-meter { height: 5px; margin: 9px 0 7px; }
-#usage-pop .up-sub { font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
-#usage-pop .up-sub b { color: var(--text); font-weight: 600; }
 
-/* El gasto: una sola cifra grande, con su glosa abajo. Antes el costo no estaba en el panel. */
-#usage-pop .up-money {
-  display: grid;
-  gap: 2px;
-  margin: 11px 0 10px;
-  padding: 9px 11px 10px;
+/* ---------- uso, gasto y compactaciones ---------- */
+#usage-panel .up-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+#usage-panel .up-head-l { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+#usage-panel .up-k {
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-4);
+}
+#usage-panel .up-verdict { font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#usage-panel .up-pct { flex: none; font-size: 22px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+#usage-panel .up-meter { position: relative; height: 5px; margin: 9px 0 7px; border-radius: var(--r-pill); background: rgba(245, 244, 239, 0.08); }
+#usage-panel .up-meter i { display: block; height: 100%; width: 0; border-radius: inherit; }
+#usage-panel .up-meter em { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 2px; background: var(--warn); opacity: 0.85; }
+#usage-panel .up-sub { font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+#usage-panel .up-sub b { color: var(--text); font-weight: 600; }
+#usage-panel .up-money {
+  display: grid; gap: 2px;
+  margin: 11px 0 10px; padding: 10px 11px 11px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-soft);
   background: rgba(245, 244, 239, 0.032);
 }
-#usage-pop .up-money-k {
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-4);
+#usage-panel .up-money-k { font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-4); }
+#usage-panel .up-money-v { font-size: 21px; font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--text); }
+#usage-panel .up-money-s { font-size: 10.5px; color: var(--text-4); }
+#usage-panel .up-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  margin-bottom: 10px; border-radius: var(--r-sm);
+  overflow: hidden; background: var(--border-soft);
 }
-#usage-pop .up-money-v {
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
+#usage-panel .up-cell { display: grid; gap: 1px; padding: 8px 10px 9px; background: var(--bg-raise); }
+#usage-panel .up-cell-k { font-size: 9px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-4); }
+#usage-panel .up-cell-v { font-size: 13.5px; font-weight: 550; font-variant-numeric: tabular-nums; color: var(--text); }
+#usage-panel .up-cell-x { font-size: 10px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#usage-panel .up-rows { display: grid; gap: 4px; }
+#usage-panel .up-row { display: flex; gap: 8px; align-items: baseline; }
+#usage-panel .up-row .k {
+  flex: none; min-width: 64px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-4);
 }
-#usage-pop .up-money-s { font-size: 10.5px; color: var(--text-4); }
+#usage-panel .up-row .v { font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+#usage-panel .up-sep {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 6px 0 1px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--text-4);
+}
+#usage-panel .up-sep::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border-soft); }
+#usage-panel .up-sep em { font-style: normal; font-variant-numeric: tabular-nums; }
+#usage-panel .up-link { margin-left: 0; }
 
-/* Cuatro metricas en grilla: rotulo chico, cifra legible, glosa al pie. */
-#usage-pop .up-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px;
-  margin-bottom: 9px;
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  background: var(--border-soft);
-}
-#usage-pop .up-cell {
-  display: grid;
-  gap: 1px;
-  padding: 7px 9px 8px;
-  background: var(--bg-raise);
-}
-#usage-pop .up-cell-k {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-4);
-}
-#usage-pop .up-cell-v {
-  font-size: 13.5px;
-  font-weight: 550;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-#usage-pop .up-cell-x {
-  font-size: 10px;
-  color: var(--text-4);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#usage-pop .up-rows { margin-top: 8px; padding-top: 8px; }
-#usage-pop .up-row { display: flex; gap: 8px; align-items: baseline; }
-#usage-pop .up-row .k {
-  flex: none;
-  min-width: 62px;
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-4);
-}
-#usage-pop .up-row .v { font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
-
-/* ---------- 3. objetivos del chat ---------- */
-.goals-pop {
-  padding: 12px 13px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--bg-raise);
-  box-shadow: var(--shadow-2);
-}
-.goals-pop .gp-head,
-.goals-pop h3 {
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-4);
-  margin: 0 0 8px;
-}
-.goals-pop .gp-empty,
-.goals-pop .gp-err {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--text-3);
-}
-.goals-pop .gp-err { color: var(--warn); }
-.goals-pop li, .goals-pop p { font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
-
-/* ---------- 4. estado del chat ---------- */
-.chat-info { padding: 12px 13px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--bg-raise); box-shadow: var(--shadow-2); }
-.ci-title { font-size: 9.5px; letter-spacing: 0.1em; }
-.ci-row { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
-.ci-k { font-size: 9.5px; letter-spacing: 0.08em; }
-.ci-v { font-size: 12px; }
-.ci-empty { font-size: 12px; line-height: 1.55; }
-
-/* ---------- 5. movil: los mismos paneles, filas comodas ---------- */
+/* ---------- movil ---------- */
 @media (max-width: 560px) {
-  .chat-font-pop { width: min(92vw, 340px); }
-  .chat-font-pop .cf-controls button { min-width: 40px; min-height: 40px; }
-  /* "Restablecer" tambien es un boton tactil, no una nota al pie. */
-  .chat-font-pop .cf-reset { min-height: 40px; padding: 0 12px; }
-  #usage-pop { width: min(94vw, 360px); }
-  #usage-pop .up-money-v { font-size: 22px; }
-  #usage-pop .up-cell { padding: 9px 10px; }
-  .goals-pop, .chat-info { width: min(94vw, 360px); }
+  .panel-head { min-height: 48px; padding-right: 6px; }
+  .panel-x { width: 40px; height: 40px; }
+  .panel-body { padding: 13px 14px 15px; }
+  .panel-foot { padding: 10px 12px; }
+  .panel-btn { min-height: 40px; padding: 0 14px; font-size: 12.5px; }
+  .panel-hint { display: none; }
+  .lp-controls button { min-width: 42px; min-height: 42px; font-size: 16px; }
+  .lp-scale { padding: 0 52px; }
+  #usage-panel .up-money-v { font-size: 23px; }
+  #usage-panel .up-cell { padding: 10px 11px; }
+  #usage-panel .up-row .k { min-width: 72px; }
+}
+
+/* ============================================================================
+   Contenido de los paneles, con la gramatica de Claude Code
+   ----------------------------------------------------------------------------
+   Lo que cambia respecto de la version anterior: se van las cajas anidadas y las
+   versalitas con tracking. Queda lo que hace legible un panel de estado:
+     - una cifra grande por panel, con su etiqueta al lado;
+     - filas etiqueta/valor alineadas a la derecha, en monoespaciada;
+     - secciones separadas por una regla fina, con el nombre en minuscula;
+     - barras de bloque para lo que es proporcion.
+   ============================================================================ */
+
+/* ---------- filas etiqueta / valor ---------- */
+.cc-cols { display: grid; gap: 3px; }
+.cc-r {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 19px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cc-r > span { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-r > b { flex: none; color: var(--text); font-weight: 500; }
+.cc-r > b.dim { color: var(--text-3); font-weight: 400; }
+.cc-r > b.hot { color: var(--warn); }
+.cc-r > b.bad { color: var(--danger); }
+.cc-r > b.ok { color: var(--ok); }
+
+/* seccion: nombre en minuscula, regla fina arriba */
+.cc-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 13px 0 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-4);
+}
+.cc-sec::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border-soft); transform: translateY(-2px); }
+.cc-sec em { font-style: normal; color: var(--text-3); }
+
+/* cifra principal: numero grande, etiqueta y veredicto al lado */
+.cc-hero { display: flex; align-items: baseline; gap: 9px; font-family: var(--mono); }
+.cc-hero > .cc-hero-k { font-size: 11.5px; color: var(--text-4); }
+.cc-hero > b { font-size: 26px; font-weight: 550; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cc-hero > em { font-style: normal; font-size: 11px; color: var(--text-3); }
+
+/* barra de contexto: 5 px, con la marca de compactacion */
+.cc-bar { position: relative; height: 5px; margin: 9px 0 8px; border-radius: 1px; background: rgba(245, 244, 239, 0.09); overflow: visible; }
+.cc-bar i { display: block; height: 100%; width: 0; border-radius: 1px; background: var(--ok); transition: width 380ms var(--ease); }
+.cc-bar em { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--warn); opacity: 0.9; }
+
+/* el gasto es la cifra del panel: mas grande que cualquier otro numero */
+.cc-money { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-family: var(--mono); }
+.cc-money > b.dim { font-size: 13px; font-weight: 450; color: var(--text-3); letter-spacing: 0; }
+.cc-money > b { font-size: 24px; font-weight: 550; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text); }
+.cc-money > span { font-size: 11px; color: var(--text-4); text-align: right; }
+
+/* pie de seccion con la nota corta */
+.cc-nota { margin-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--text-4); }
+
+/* ---------- letra: muestra + control ---------- */
+.lp-muestra {
+  margin: 0;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text);
+}
+.lp-muestra span { display: block; }
+.lp-controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.lp-controls button {
+  min-width: 30px; min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.lp-controls button:hover { background: rgba(245, 244, 239, 0.07); color: var(--text); border-color: var(--border); }
+.lp-controls input[type="range"] { flex: 1 1 auto; width: auto; min-width: 70px; accent-color: var(--accent); }
+.lp-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding: 0 40px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-4);
+}
+
+@media (max-width: 560px) {
+  .cc-r { font-size: 12.5px; min-height: 22px; }
+  .cc-hero > b { font-size: 28px; }
+  .cc-money > b { font-size: 26px; }
+  .lp-controls button { min-width: 42px; min-height: 42px; font-size: 16px; }
+  .lp-scale { padding: 0 54px; }
 }

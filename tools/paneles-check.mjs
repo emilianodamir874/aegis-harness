@@ -52,55 +52,75 @@ const medir = (sel, roles) => page.evaluate(({ sel, roles }) => {
 }, { sel, roles });
 
 // ---------- 1. letra ----------
-await page.click('#btn-chat-font');
-await page.waitForTimeout(400);
-const letra = await medir('#chat-font-pop', { titulo: '.cf-title', valor: '.cf-val', muestra: '#cf-muestra' });
+await page.evaluate(() => { document.querySelector('.panel-x')?.click(); });
+await page.waitForTimeout(150);
+await page.evaluate(() => document.querySelector('#btn-chat-font')?.click());
+await page.waitForTimeout(450);
+const letra = await medir('#font-panel .panel', { titulo: '.panel-title', valor: '.panel-sub', muestra: '#cf-muestra' });
 console.log('letra:', JSON.stringify(letra));
 check('el panel de letra tiene rotulo, valor y muestra', !!(letra && letra.roles.titulo && letra.roles.valor && letra.roles.muestra), JSON.stringify(letra && letra.roles));
 check('la muestra se pinta con el tamano elegido', letra && Math.abs(letra.roles.muestra - 16) < 0.6, `muestra ${letra && letra.roles.muestra} px`);
 check('el rotulo es mas chico que el valor (jerarquia)', letra && letra.roles.titulo < letra.roles.valor, `${letra && letra.roles.titulo} < ${letra && letra.roles.valor}`);
 check('el panel de letra entra entero en pantalla', letra && letra.dentro && !letra.desborde, `${letra && letra.ancho}x${letra && letra.alto}`);
-// el control mueve la muestra
-await page.evaluate(() => { const r = document.querySelector('#chat-font-range'); r.value = '22'; r.dispatchEvent(new Event('input', { bubbles: true })); });
-await page.waitForTimeout(250);
-const crecida = await page.evaluate(() => ({
-  muestra: parseFloat(getComputedStyle(document.querySelector('#cf-muestra')).fontSize),
-  valor: document.querySelector('#chat-font-value').textContent,
-}));
-check('subir el control agranda la muestra y el valor', Math.abs(crecida.muestra - 22) < 0.6 && /22/.test(crecida.valor), `${crecida.muestra} px / ${crecida.valor}`);
-await page.evaluate(() => document.querySelector('#chat-font-reset').click());
+// el control mueve la muestra: se abre, se mueve y se mide en el mismo gesto
+await page.evaluate(() => { if (!document.querySelector('#font-panel')) document.querySelector('#btn-chat-font')?.click(); });
+await page.waitForTimeout(350);
+const crecida = await page.evaluate(() => {
+  const r = document.querySelector('#font-panel #chat-font-range');
+  if (!r) return { panel: false, muestra: null, valor: '' };
+  r.value = '22';
+  r.dispatchEvent(new Event('input', { bubbles: true }));
+  const m = document.querySelector('#cf-muestra');
+  return {
+    panel: true,
+    muestra: m ? parseFloat(getComputedStyle(m).fontSize) : null,
+    valor: document.querySelector('#font-panel .panel-sub')?.textContent || '',
+  };
+});
+check('subir el control agranda la muestra y el valor', crecida.panel && Math.abs(crecida.muestra - 22) < 0.6 && /22/.test(crecida.valor), `${crecida.muestra} px / ${crecida.valor} / panel=${crecida.panel}`);
+await page.evaluate(() => document.querySelector('#font-panel .panel-foot #chat-font-reset')?.click());
 await page.waitForTimeout(200);
 await page.keyboard.press('Escape');
 
 // ---------- 2. uso y gasto ----------
-await page.evaluate(() => { const a = document.querySelector('#meta-right'); if (a) a.click(); });
+await page.evaluate(() => { document.querySelector('#meta-right')?.click(); });
 await page.waitForTimeout(600);
-const uso = await medir('#usage-pop', {
-  rotulo: '.up-k', pct: '.up-pct', sub: '.up-sub', gasto: '.up-money-v',
-  celdaK: '.up-cell-k', celdaV: '.up-cell-v',
+const uso = await medir('#usage-panel .panel', {
+  rotulo: '.cc-hero-k', pct: '.cc-hero b', gasto: '.cc-money b',
+  filaK: '.cc-r span', filaV: '.cc-r b',
 });
 console.log('uso:', JSON.stringify(uso));
 check('el panel de uso muestra la cifra de gasto', !!(uso && uso.roles.gasto), JSON.stringify(uso && uso.roles));
-check('la cifra de gasto es la mas grande del panel', uso && uso.roles.gasto > uso.roles.celdaV && uso.roles.gasto > uso.roles.sub, `${uso && uso.roles.gasto} px`);
-check('los rotulos son mas chicos que los valores', uso && uso.roles.celdaK < uso.roles.celdaV && uso.roles.rotulo < uso.roles.pct, `${uso && uso.roles.celdaK} < ${uso && uso.roles.celdaV}`);
-const celdas = await page.evaluate(() => [...document.querySelectorAll('#usage-pop .up-cell')].map((c) => c.textContent.trim().replace(/\s+/g, ' ')));
-check('hay cuatro metricas con rotulo y glosa', celdas.length === 4, celdas.join(' | '));
+check('la cifra de gasto es la mas grande del panel', uso && uso.roles.gasto > uso.roles.filaV && uso.roles.gasto > uso.roles.rotulo, `${uso && uso.roles.gasto} px`);
+check('los rotulos son mas chicos que los valores', uso && uso.roles.filaK < uso.roles.filaV && uso.roles.rotulo < uso.roles.pct, `${uso && uso.roles.filaK} < ${uso && uso.roles.filaV}`);
+const secciones = await page.evaluate(() => [...document.querySelectorAll('#usage-panel .cc-sec span')].map((c) => c.textContent.trim()));
+check('el panel tiene las secciones de Claude Code', ['Gasto', 'Último paso', 'Sesión'].every((x) => secciones.includes(x)), secciones.join(' | '));
+const filasPares = await page.evaluate(() => {
+  const f = [...document.querySelectorAll('#usage-panel .cc-r')];
+  const desalineadas = f.filter((r) => {
+    const v = r.querySelector('b');
+    const rr = r.getBoundingClientRect(), rv = v.getBoundingClientRect();
+    return Math.abs(rv.right - rr.right) > 2;
+  }).length;
+  return { n: f.length, desalineadas };
+});
+check('las filas etiqueta/valor quedan alineadas a la derecha', filasPares.n > 4 && filasPares.desalineadas === 0, `${filasPares.n} filas, ${filasPares.desalineadas} desalineadas`);
 check('el panel de uso entra entero en pantalla', uso && uso.dentro && !uso.desborde, `${uso && uso.ancho}x${uso && uso.alto}`);
 const dinero = await page.evaluate(() => ({
-  v: document.querySelector('#usage-pop .up-money-v').textContent.trim(),
-  s: document.querySelector('#usage-pop .up-money-s').textContent.trim(),
+  v: document.querySelector('#usage-panel .cc-money b').textContent.trim(),
+  s: document.querySelector('#usage-panel .cc-money span').textContent.trim(),
 }));
 console.log('gasto:', JSON.stringify(dinero));
 await page.screenshot({ path: 'tools/shots/panel-uso-real.png', clip: await page.evaluate(() => {
-  const r = document.querySelector('#usage-pop').getBoundingClientRect();
+  const r = document.querySelector('#usage-panel .panel').getBoundingClientRect();
   return { x: Math.max(0, r.x - 8), y: Math.max(0, r.y - 8), width: r.width + 16, height: r.height + 16 };
 }) });
 await page.keyboard.press('Escape');
-await page.evaluate(() => { const a = document.querySelector('#meta-right'); if (a) a.click(); });
+await page.evaluate(() => { document.querySelector('#meta-right')?.click(); });
 await page.waitForTimeout(200);
 
 // ---------- 3. objetivos ----------
-await page.click('#btn-goals');
+await page.evaluate(() => document.querySelector('#btn-goals')?.click());
 await page.waitForTimeout(700);
 const obj = await page.evaluate(() => {
   const g = document.querySelector('#goals');
@@ -116,7 +136,7 @@ check('no muestra un error crudo de sesion', !!obj && !/no encontr|error|undefin
 await page.keyboard.press('Escape');
 
 // ---------- 4. estado del chat ----------
-await page.click('#btn-chat-info');
+await page.evaluate(() => document.querySelector('#btn-chat-info')?.click());
 await page.waitForTimeout(500);
 const info = await medir('#chat-info', { titulo: '.ci-title', clave: '.ci-k', valor: '.ci-v' });
 console.log('info:', JSON.stringify(info));
@@ -135,12 +155,12 @@ await m.evaluate((e) => window.__aegisWeb.chips.abrirSesion(e), { sessionId: rea
 await m.waitForSelector('#chips .chip-model', { timeout: 20000 });
 await m.waitForTimeout(1800);
 // En el telefono los botones secundarios viven detras de "mas opciones".
-await m.evaluate(() => { const b = document.querySelector('#btn-topbar-more'); if (b) b.click(); });
+await m.evaluate(() => document.querySelector('#btn-topbar-more')?.click());
 await m.waitForTimeout(350);
-await m.evaluate(() => { const b = document.querySelector('#btn-chat-font'); if (b) b.click(); });
+await m.evaluate(() => document.querySelector('#btn-chat-font')?.click());
 await m.waitForTimeout(450);
 const letraM = await m.evaluate(() => {
-  const p = document.querySelector('#chat-font-pop');
+  const p = document.querySelector('#font-panel .panel');
   const r = p.getBoundingClientRect();
   const btns = [...p.querySelectorAll('button')].map((b) => Math.round(b.getBoundingClientRect().height));
   return { ancho: Math.round(r.width), dentro: r.left >= 0 && r.right <= innerWidth + 1, botones: btns };
@@ -149,7 +169,7 @@ console.log('letra movil:', JSON.stringify(letraM));
 check('en el telefono el panel de letra entra y los botones son tactiles', letraM.dentro && letraM.ancho <= 384 && Math.min(...letraM.botones) >= 36, `${letraM.ancho}px · botones ${letraM.botones.join('/')}`);
 try {
   await m.screenshot({ path: 'tools/shots/panel-letra-a56.png', clip: await m.evaluate(() => {
-    const r = document.querySelector('#chat-font-pop').getBoundingClientRect();
+    const r = document.querySelector('#font-panel .panel').getBoundingClientRect();
     return { x: Math.max(0, r.x - 6), y: Math.max(0, r.y - 6), width: r.width + 12, height: r.height + 12 };
   }) });
 } catch (e) { console.log('captura movil:', String(e).slice(0, 80)); }
