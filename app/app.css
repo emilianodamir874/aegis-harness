@@ -1971,22 +1971,6 @@ body { background: var(--bg); }
 
 }
 
-/* Dos columnas: cada fila es un par etiqueta/valor. table-layout: fixed y el ancho
-   acotado reparten espacio incluso con enlaces o palabras largas; no forzar nowrap. */
-@media (max-width: 640px) {
-  .msg-a table[data-cols="2"] { display: table; width: 100%; min-width: 0; table-layout: fixed; }
-  .msg-a table[data-cols="2"] tbody { display: table-row-group; }
-  .msg-a table[data-cols="2"] tr { display: table-row; border: none; border-radius: 0; background: none; margin: 0; padding: 0; }
-  .msg-a table[data-cols="2"] td {
-    display: table-cell; width: 50%; min-width: 0; border: none; padding: 6px 0;
-    vertical-align: top; white-space: normal; overflow-wrap: anywhere; word-break: normal;
-  }
-  .msg-a table[data-cols="2"] td::before { content: none; display: none; }
-  .msg-a table[data-cols="2"] td:first-child { color: var(--text-2); font-weight: 400; padding-right: 12px; text-align: left !important; }
-  .msg-a table[data-cols="2"] td:last-child { color: var(--text); font-weight: 600; text-align: right !important; }
-  .msg-a table[data-cols="2"] td a, .msg-a table[data-cols="2"] td code { overflow-wrap: anywhere; white-space: normal; }
-  .msg-a table[data-cols="2"] tr + tr td { border-top: 1px solid var(--border-soft); }
-}
 
 /* Aviso de recorte del replay: nota al pie, chica y explicada (el texto lo agrega el servidor). */
 
@@ -2318,8 +2302,8 @@ body { background: var(--bg); }
 .chat-font-pop output { min-width: 34px; text-align: center; }
 .chat-font-pop button:focus-visible, #btn-chat-font:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* En teléfono, conservar las tablas de 3+ columnas como tablas desplazables.
-   La vista de escritorio no se modifica; las tablas de 2 columnas mantienen sus filas. */
+/* En teléfono cada fila Markdown ocupa el ancho disponible: celdas apiladas,
+   sin columnas de texto comprimidas ni desplazamiento horizontal de la página. */
 @media (max-width: 640px) {
   .msg-a .tbl-wrap {
     max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;
@@ -2327,30 +2311,47 @@ body { background: var(--bg); }
     border: 1px solid var(--border-soft); border-radius: 10px;
     background: rgba(245, 244, 239, 0.02);
   }
-  .msg-a table:not([data-cols="2"]) {
-    display: table; width: max-content; min-width: 100%; border-collapse: collapse;
+  .msg-a table[data-cols="2"] { display: block; width: 100%; min-width: 0; table-layout: auto; }
+  .msg-a table[data-cols="2"] thead { display: none; }
+  .msg-a table[data-cols="2"] tbody { display: block; }
+  .msg-a table[data-cols="2"] tr {
+    display: block; width: 100%; margin: 0; padding: 8px 10px;
+    border-bottom: 1px solid var(--border-soft);
   }
-  .msg-a table:not([data-cols="2"]) thead { display: table-header-group; }
-  .msg-a table:not([data-cols="2"]) tbody { display: table-row-group; }
+  .msg-a table[data-cols="2"] tr:last-child { border-bottom: 0; }
+  .msg-a table[data-cols="2"] td,
+  .messages.chat-compact .msg-a table[data-cols="2"] td {
+    display: block; width: 100%; min-width: 0; padding: 2px 0;
+    border: 0; text-align: left !important;
+    white-space: normal; overflow-wrap: break-word; word-break: normal;
+  }
+  .msg-a table[data-cols="2"] td:first-child {
+    color: var(--text-3); font-weight: 500;
+  }
+  .msg-a table[data-cols="2"] td:last-child {
+    color: var(--text); font-weight: 400;
+  }
+  .msg-a table[data-cols="2"] td::before { content: none; display: none; }
+  .msg-a table:not([data-cols="2"]),
+  .msg-a table:not([data-cols="2"]) tbody,
+  .msg-a table:not([data-cols="2"]) tr,
+  .msg-a table:not([data-cols="2"]) td { display: block; width: 100%; min-width: 0; }
+  .msg-a table:not([data-cols="2"]) thead { display: none; }
   .msg-a table:not([data-cols="2"]) tr {
-    display: table-row; border: 0; border-radius: 0; background: none;
-    margin: 0; padding: 0;
+    padding: 8px 10px; border-bottom: 1px solid var(--border-soft);
   }
-  .msg-a table:not([data-cols="2"]) th,
-  .msg-a table:not([data-cols="2"]) td {
-    display: table-cell; width: auto; min-width: 90px; max-width: 240px;
-    padding: 7px 11px; vertical-align: top; text-align: left !important;
-    border: 0; border-bottom: 1px solid var(--border-soft);
-    white-space: normal; overflow-wrap: anywhere;
+  .msg-a table:not([data-cols="2"]) tr:last-child { border-bottom: 0; }
+  .msg-a table:not([data-cols="2"]) td,
+  .messages.chat-compact .msg-a table:not([data-cols="2"]) td {
+    padding: 3px 0; border: 0; max-width: none;
+    text-align: left !important; white-space: normal; overflow-wrap: break-word; word-break: normal;
   }
-  .msg-a table:not([data-cols="2"]) th { white-space: nowrap; }
-  .msg-a table:not([data-cols="2"]) td::before { content: none; display: none; }
+  .msg-a table:not([data-cols="2"]) td::before {
+    content: attr(data-label); display: block; font-size: var(--chat-table-label-font);
+    font-weight: 600; color: var(--text-3); margin: 0 0 2px;
+  }
   .msg-a table:not([data-cols="2"]) td a,
   .msg-a table:not([data-cols="2"]) td code { white-space: normal; overflow-wrap: anywhere; }
-  .messages.chat-compact .msg-a table:not([data-cols="2"]) th,
-  .messages.chat-compact .msg-a table:not([data-cols="2"]) td {
-    padding: calc(7px * var(--chat-space-scale)) calc(11px * var(--chat-space-scale));
-  }
 }
 
 /* Modo debate: mismo lenguaje visual que el boton de lectura encendido. */
@@ -3110,7 +3111,8 @@ input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline:
   .aegis-activity-backdrop, .aegis-art-backdrop { padding-bottom: 64px; }
   /* El safe area físico desaparece con teclado; la altura visual la calcula el módulo. */
   .app:has(#input:focus) .composer-wrap { padding-bottom: 6px; }
-  .app:has(#input:focus) .workspace-switch { padding-bottom: 3px; }
+  .app:has(#input:focus) .workspace-switch { display: none; }
+  .app:has(#input:focus) .main { padding-bottom: 0; }
 }
 
 /* Split view (M9): cuando la segunda sesion esta abierta, el transcript principal deja lugar

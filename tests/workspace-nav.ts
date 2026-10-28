@@ -155,6 +155,17 @@ try {
         const keyboard = await layout();
         fail(Math.abs(keyboard.bottom - 510) <= 2 && keyboard.top >= keyboard.composerBottom - 1, `selector/teclado no acotados: ${JSON.stringify(keyboard)}`);
         fail(keyboard.scroll === initial.scroll, 'teclado perdió scroll de transcript');
+        await page.locator('#input').focus();
+        const typing = await page.evaluate(() => {
+          const composer = document.querySelector('.composer-wrap')!.getBoundingClientRect();
+          const messages = document.getElementById('messages')!.getBoundingClientRect();
+          return { switchVisible: getComputedStyle(document.getElementById('workspace-switch')!).display !== 'none',
+            composerBottom: composer.bottom, messagesBottom: messages.bottom,
+            scroll: document.getElementById('messages')!.scrollTop };
+        });
+        fail(!typing.switchVisible && Math.abs(typing.composerBottom - 510) <= 2
+          && typing.messagesBottom <= typing.composerBottom + 1,
+          `compositor y teclado dejan franja o tapa chat: ${JSON.stringify(typing)}`);
       } else {
         fail(!await page.locator('#workspace-switch').isVisible(), 'selector móvil visible en escritorio');
       }

@@ -178,9 +178,35 @@ try {
           const afterChat = await page.evaluate(() => ({ active: document.querySelector('#view-chat')?.getAttribute('aria-current'), activity: !!document.querySelector('.aegis-activity-backdrop'), log: !!document.querySelector('#messages')?.getBoundingClientRect().width }));
           mobileSwitch = beforeChat.active === 'page' && !beforeChat.fileVisible && afterChat.active === 'page' && !afterChat.activity && afterChat.log;
         }
+        let mobileTable = true, focusedComposer = true;
+        if (viewport.width < 500) {
+          const mobile = await page.evaluate(() => {
+            const parent = document.querySelector('#msg-inner');
+            if (!parent || typeof window.__aegisWeb?.md !== 'function') return { table: false, composer: false };
+            const fixture = document.createElement('div'); fixture.className = 'msg-a';
+            fixture.innerHTML = window.__aegisWeb.md('| Componente | Estado | Evidencia |\n|---|---|---|\n| Actividad | Texto suficientemente largo para comprobar que no se comprime en una columna angosta | Resultado explícito |');
+            parent.append(fixture);
+            const table = fixture.querySelector('table');
+            const td = table?.querySelector('tbody td');
+            const tableOk = !!table && !!td && getComputedStyle(td).display === 'block'
+              && td.getBoundingClientRect().width >= window.innerWidth * .65
+              && document.documentElement.scrollWidth <= window.innerWidth + 1;
+            fixture.remove();
+            const input = document.querySelector('#input');
+            input?.focus();
+            const composer = document.querySelector('.composer-wrap')?.getBoundingClientRect();
+            const view = window.visualViewport;
+            const bottom = (view?.offsetTop ?? 0) + (view?.height ?? window.innerHeight);
+            const composerOk = getComputedStyle(document.querySelector('#workspace-switch')).display === 'none'
+              && !!composer && Math.abs(composer.bottom - bottom) < 3;
+            input?.blur();
+            return { table: tableOk, composer: composerOk };
+          });
+          mobileTable = mobile.table; focusedComposer = mobile.composer;
+        }
         const ok = main?.status() === 200 && initial.controls && initial.visible && initial.noSession && initial.ready
-          && wsSeen && wsConnected && activityNoFake && changesOk && mobileSwitch && Object.values(errors).every(n => n === 0);
-        gate(`Chromium ${label}`, ok, `DOM=${initial.visible} sinSesión=${initial.noSession} ACP=${initial.ready && wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} actividad=${activityNoFake} cambios=${changesOk} vistasMóvil=${mobileSwitch} errores=${JSON.stringify(errors)}`);
+          && wsSeen && wsConnected && activityNoFake && changesOk && mobileSwitch && mobileTable && focusedComposer && Object.values(errors).every(n => n === 0);
+        gate(`Chromium ${label}`, ok, `DOM=${initial.visible} sinSesión=${initial.noSession} ACP=${initial.ready && wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} actividad=${activityNoFake} cambios=${changesOk} vistasMóvil=${mobileSwitch} tablaMóvil=${mobileTable} compositorFoco=${focusedComposer} errores=${JSON.stringify(errors)}`);
       } catch (e) { gate(`Chromium ${label}`, false, `${errorKind(e)} en ${stage} · locator=${String(e?.message || '').match(/waiting for locator\('([^']+)'\)/)?.[1] || 'desconocido'} · ACP=${wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} · errores=${JSON.stringify(errors)}`); }
       finally { await context.close(); }
     }

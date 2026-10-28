@@ -395,6 +395,8 @@ try {
         cells: twoCells.map(c => getComputedStyle(c).display), pseudo: getComputedStyle(resultCell, '::before').display,
         full: resultCell.textContent?.includes(result), noOverflow: two.getBoundingClientRect().width <= widthTotal + 1,
         wrap: getComputedStyle(resultCell).whiteSpace, rowHeight,
+        resultWidth: resultCell.getBoundingClientRect().width, firstWidth: twoCells[0].getBoundingClientRect().width,
+        thirdCellWidth: third.querySelector<HTMLElement>('tbody td')!.getBoundingClientRect().width,
         threeRow: getComputedStyle(third.querySelector('tbody tr')!).display,
         threeTable: getComputedStyle(third).display,
         threeHead: getComputedStyle(third.querySelector('thead')!).display,
@@ -408,14 +410,14 @@ try {
       return data;
     }, { result: longCell, manyColumns });
     if (table.twoCols !== '2' || table.threeCols || !table.full || (width <= 640 &&
-        (table.row !== 'table-row' || table.cells.some(x => x !== 'table-cell') || table.pseudo !== 'none' ||
-          !table.noOverflow || table.wrap !== 'normal' || table.threeRow !== 'table-row' ||
-          table.threeTable !== 'table' || table.threeHead !== 'table-header-group' ||
-          table.threeCell !== 'table-cell' || table.threePseudo !== 'none' || table.scrollMode !== 'auto' ||
-          table.wrapperWidth > width || table.viewportWidth > width || table.tableWidth <= table.wrapperWidth)))
-      throw new Error('tabla de dos columnas larga en ' + width + 'px: ' + JSON.stringify(table));
+        (table.row !== 'block' || table.cells.some(x => x !== 'block') || table.pseudo !== 'none' ||
+          !table.noOverflow || table.wrap !== 'normal' || table.resultWidth < width * 0.65 || table.firstWidth < width * 0.65 || table.thirdCellWidth < width * 0.65 || table.threeRow !== 'block' ||
+          table.threeTable !== 'block' || table.threeHead !== 'none' ||
+          table.threeCell !== 'block' || table.threePseudo !== 'block' || table.scrollMode !== 'auto' ||
+          table.wrapperWidth > width || table.viewportWidth > width || table.tableWidth > table.wrapperWidth + 1)))
+      throw new Error('tabla móvil angosta en ' + width + 'px: ' + JSON.stringify(table));
   }
-  console.log('PASS tablas de dos y tres columnas en móvil sin tarjetas ni desborde global');
+  console.log('PASS tablas móviles con celdas apiladas, sin columnas angostas ni desborde global');
   const font = page.getByRole('button', { name: 'Tamaño de letra', exact: true });
   const checkFont = async (px: number) => page.evaluate((size) => {
     const box = document.querySelector('#msg-inner')!;
