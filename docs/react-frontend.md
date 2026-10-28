@@ -120,7 +120,7 @@ el camino principal pero falta una parte del contrato; `pendiente` = no implemen
 | 23 | Actividad | `activity.ts` | sesiones y estado | panel Actividad (desde estado) | UI abre | parcial (sin export/confirmaciones) |
 | 24 | Cambios Git | `/changes.json` | archivos del cwd | panel Cambios (tabla `entries`, `?cwd=` de la sesión) | 401 anónimo; forma `{kind,cwd,entries,truncated}` leída en `src/server.ts`; `panels.test` del error 401 | parcial (falta repo real logueado) |
 | 25 | Memoria | `/memory.json` | hechos | panel Memoria (tabla `facts`) | real 3790: 200, 186 hechos `{id,text,kind,tags,confidence,pinned,status,…}`; `panels.test` | hecho |
-| 26 | Skills | `sources/*` | listar/crear/editar | panel Skills (list RPC) | `panels.test` con `sources/list`; RPC real sin ejercitar | parcial (CRUD pendiente) |
+| 26 | Skills | `src/skills.ts` (342 líneas) | `sources/{list,create,update,delete}` | `ui/SkillsPanel`: lista con filtro, editor, crear/guardar/borrar | motor real: 41 skills listadas y contenido de 32 010 caracteres cargado (smoke Playwright); CRUD probado por WS: create `{type,name,description,content,target:{scope:'global'}}` → `{source}`, delete `{type,path}` → ok; `update` sin verificar | hecho salvo update |
 | 27 | Archivos | `/outbox.json` | listar/descargar | panel Archivos | real 3790: 200, 161 items `{name,bytes,mtime,ext,url}`; `panels.test` | hecho (descarga `/dl/` sin probar) |
 | 28 | Estadísticas | `/stats.json` | tabla por día | panel Stats (tabla `daily` primero) | real 3790: 200 en 1,97 s, 19 días/14 modelos; `panels.test` | hecho |
 | 29 | Contexto | `usage_update` | usado/límite/costo | panel Contexto + barra | `translate.test`; motor real mostró string→number | hecho |

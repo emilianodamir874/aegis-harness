@@ -3,6 +3,7 @@ import type { AegisStore } from '../domain/store';
 import type { AppState, SessionState } from '../domain/types';
 import { Dialog } from './Dialog';
 import { OutboxPanel } from './OutboxPanel';
+import { SkillsPanel } from './SkillsPanel';
 
 export type PanelId = 'actividad' | 'cambios' | 'archivos' | 'memoria' | 'skills' | 'doctor' | 'stats' | 'contexto' | 'ajustes' | 'goals';
 
@@ -13,10 +14,9 @@ interface PanelSpec {
   readonly arrayKeys: readonly string[];
 }
 
-const SPECS: Record<Exclude<PanelId, 'actividad' | 'contexto' | 'ajustes' | 'archivos'>, PanelSpec> = {
+const SPECS: Record<Exclude<PanelId, 'actividad' | 'contexto' | 'ajustes' | 'archivos' | 'skills'>, PanelSpec> = {
   cambios: { title: 'Cambios Git', endpoint: '/changes.json', arrayKeys: ['entries', 'files', 'changes'] },
   memoria: { title: 'Memoria del operador', endpoint: '/memory.json', arrayKeys: ['facts', 'items'] },
-  skills: { title: 'Skills', rpc: { method: '_aegis/unstable/sources/list', params: {} }, arrayKeys: ['sources', 'items', 'skills'] },
   doctor: { title: 'Doctor', endpoint: '/doctor.json', arrayKeys: ['gate.chequeos', 'checks', 'items'] },
   stats: { title: 'Estadísticas', endpoint: '/stats.json', arrayKeys: ['daily', 'models', 'sessions', 'byProvider', 'items'] },
   goals: { title: 'Objetivos', endpoint: '/goals.json', arrayKeys: ['items', 'goals'] },
@@ -318,6 +318,7 @@ export function WorkspacePanel({
   return (
     <Dialog open={panel !== null} title={title} onClose={onClose} wide>
       {panel === 'archivos' ? <OutboxPanel /> : null}
+      {panel === 'skills' ? <SkillsPanel store={store} /> : null}
       {panel === 'actividad' ? <ActivityPanel state={state} /> : null}
       {panel === 'contexto' ? <ContextPanel session={session} /> : null}
       {panel === 'ajustes' ? <SettingsPanel /> : null}
