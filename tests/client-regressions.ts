@@ -114,12 +114,13 @@ try {
     const update = (event: Record<string, unknown>, sid = sessionId) => app.testUi.update({ sessionId: sid, update: { sessionUpdate: 'tool_call_update', toolCallId: id, ...event } });
     update({ status: 'in_progress', title: 'Editar archivo', rawInput: { path, before: 'uno', after: 'dos' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } });
     update({ content: [{ type: 'diff', path, oldText: 'a\nuno\nz\n', newText: 'a\ndos\nz\n' }] });
-    update({ status: 'completed' });
+    update({ status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Edited src/code.ts (1 lines -> 1 lines)' } }] });
     update({ content: [{ type: 'diff', path, oldText: 'a\nuno\nz\n', newText: 'a\ndos\nz\n' }] });
     const card = app.state.tools.get(id) as HTMLElement;
     const row = card.querySelector<HTMLDetailsElement>('.tool-diff')!;
     const initial = { count: card.querySelectorAll('.tool-diff').length, title: row.querySelector('summary')?.textContent,
-      escaped: !row.querySelector('img'), hasPreBefore: !!card.querySelector('.tool-diff-code'), textBefore: row.querySelector('.tool-diff-code')?.textContent || '' };
+      escaped: !row.querySelector('img'), hasPreBefore: !!card.querySelector('.tool-diff-code'), textBefore: row.querySelector('.tool-diff-code')?.textContent || '',
+      output: card.querySelector('.tool-body > pre:not(.tool-diff-code)')?.textContent, finalStatus: card.dataset.state, cardTitle: card.querySelector('.tool-title')?.textContent };
     row.open = true;
     const visible = !!row.querySelector('.tool-diff-code')?.getBoundingClientRect().width;
     update({ content: [{ type: 'diff', path: 'otro.ts', oldText: 'x', newText: 'y' }] }, 'another-chat');
@@ -135,7 +136,8 @@ try {
     return { ...initial, visible, isolated, requested: !!preview && /fragmento sustituido|edición completada/i.test(preview.textContent || ''), failed: !app.state.tools.get(failureId).querySelector('.tool-diff'), stillOne: card.querySelectorAll('.tool-diff').length === 1 };
   }, A);
   if (diffCheck.count !== 1 || !diffCheck.title?.includes('+1 −1') || !diffCheck.escaped || !diffCheck.hasPreBefore
-    || !diffCheck.textBefore.includes('-uno') || !diffCheck.textBefore.includes('+dos') || !diffCheck.visible
+    || !diffCheck.textBefore.includes('-uno') || !diffCheck.textBefore.includes('+dos') || !diffCheck.output?.includes('Edited src/code.ts')
+    || diffCheck.finalStatus !== 'ok' || diffCheck.cardTitle !== 'Editar archivo' || !diffCheck.visible
     || !diffCheck.isolated || !diffCheck.requested || !diffCheck.failed || !diffCheck.stillOne) {
     throw new Error('diff ACP en chat: ' + JSON.stringify(diffCheck));
   }

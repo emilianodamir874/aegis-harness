@@ -1597,10 +1597,11 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     }
     // La identidad del call viene del protocolo, no de un selector CSS interpolado.
     if (u.toolCallId) el.dataset.toolCallId = String(u.toolCallId);
-    const status = u.status || 'pending';
+    const status = u.status || (el.dataset.state === 'ok' ? 'completed' : el.dataset.state === 'err' ? 'failed' : 'pending');
     const rawIn = u.rawInput || {};
     const shortInput = String(rawIn.command || rawIn.path || rawIn.file_path || rawIn.query || rawIn.url || rawIn.pattern || '').split('\n')[0].slice(0, 90);
-    const title = u.title || u.kind || shortInput || 'Herramienta';
+    const title = u.title || el.dataset.title || u.kind || shortInput || 'Herramienta';
+    el.dataset.title = title;
     const t = el.querySelector('.tool-title');
     t.innerHTML = `${esc(title)}${u.kind && u.kind !== title ? ` <span class="tname">${esc(u.kind)}</span>` : ''}`;
     el.classList.toggle('ok', status === 'completed');
