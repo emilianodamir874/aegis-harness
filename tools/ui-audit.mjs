@@ -1,81 +1,119 @@
+// Auditoría de UI con Playwright: mide lo que se puede medir en lugar de opinar.
+// - contraste real de cada texto visible contra su fondo efectivo (WCAG AA: 4,5 / 3,0 para grande)
+// - targets táctiles chicos (<24 px es el mínimo de WCAG 2.2 AA)
+// - desborde horizontal, medidas de lectura, saltos de foco
+// Uso: node tools/ui-audit.mjs "http://127.0.0.1:3790/app-react/?acp=proxy" [ancho] [alto]
 import { chromium } from 'playwright';
-import fs from 'node:fs';
-const dir = 'C:/Users/Emiliano/tmp/ui-audit';
-fs.mkdirSync(dir, { recursive: true });
-const b = await chromium.launch();
-const out = { viewports: {}, errores: [] };
 
-const medir = () => {
-  const vis = (n) => { const r = n.getBoundingClientRect(); const s = getComputedStyle(n); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
-  const todosCli = [...document.querySelectorAll('button, a, input, textarea, [role="button"], [tabindex]')].filter(vis);
-  // Los controles que estan DENTRO de los mensajes (botones de las herramientas, "Ver todo",
-  // bloques de razonamiento) son contenido, no interfaz: contarlos mezclaba las mediciones.
-  const clicables = todosCli.filter((n) => !n.closest('#messages'));
-  const controlesEnMensajes = todosCli.length - clicables.length;
-  const chicos = clicables.filter((n) => { const r = n.getBoundingClientRect(); return r.width < 40 || r.height < 40; })
-    .map((n) => ({ sel: n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ')[0] : ''), w: Math.round(n.getBoundingClientRect().width), h: Math.round(n.getBoundingClientRect().height), txt: (n.getAttribute('aria-label') || n.textContent || '').trim().slice(0, 24) }));
-  const textos = [...document.querySelectorAll('p, span, div, button, li, small, label, h1, h2, h3')].filter((n) => vis(n) && n.children.length === 0 && (n.textContent || '').trim());
-  const lum = (c) => { const [r, g, bl] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * bl; };
-  const parse = (s) => { const m = /rgba?\(([^)]+)\)/.exec(s || ''); if (!m) return null; const p = m[1].split(',').map((x) => parseFloat(x)); return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 }; };
-  const fondo = (n) => { let e = n; while (e && e !== document.documentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c && c.a > 0.9) return c.rgb; e = e.parentElement; } return [12, 12, 14]; };
-  const contraste = [];
-  const chicosTexto = [];
-  for (const n of textos) {
-    const s = getComputedStyle(n);
-    const px = parseFloat(s.fontSize);
-    if (px < 12) chicosTexto.push({ sel: n.tagName.toLowerCase() + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ')[0] : ''), px, txt: n.textContent.trim().slice(0, 26) });
-    const c = parse(s.color); if (!c) continue;
-    const l1 = lum(c.rgb), l2 = lum(fondo(n));
-    const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
-    const grande = px >= 24 || (px >= 18.66 && parseInt(s.fontWeight) >= 700);
-    if (ratio < (grande ? 3 : 4.5)) contraste.push({ sel: n.tagName.toLowerCase() + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ')[0] : ''), ratio: Math.round(ratio * 100) / 100, px: Math.round(px), txt: n.textContent.trim().slice(0, 26) });
-  }
-  const sinLabel = clicables.filter((n) => !(n.getAttribute('aria-label') || n.getAttribute('title') || (n.textContent || '').trim() || n.getAttribute('placeholder')))
-    .map((n) => n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ')[0] : ''));
-  return {
-    clicables: clicables.length,
-    controlesEnMensajes,
-    chicosTotal: chicos.length, chicos: chicos.slice(0, 8),
-    chicosTexto: chicosTexto.slice(0, 6),
-    contrasteTotal: contraste.length, contraste: contraste.slice(0, 8),
-    sinLabel,
-    scrollPagina: { sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth },
-    fuentes: [...new Set(textos.map((n) => getComputedStyle(n).fontSize))].sort((x, y) => parseFloat(x) - parseFloat(y)),
-    cuerpo: { anchoSidebar: Math.round((document.getElementById('sidebar') || { getBoundingClientRect: () => ({ width: 0 }) }).getBoundingClientRect().width), altoComposer: Math.round((document.querySelector('.composer') || { getBoundingClientRect: () => ({ height: 0 }) }).getBoundingClientRect().height) },
+const url = process.argv[2] || 'http://127.0.0.1:3790/app-react/?acp=proxy';
+const ancho = Number(process.argv[3] || 1440);
+const alto = Number(process.argv[4] || 900);
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: ancho, height: alto } });
+const errores = [];
+page.on('pageerror', (error) => errores.push(String(error).slice(0, 200)));
+page.on('console', (msg) => {
+  if (msg.type() === 'error') errores.push(msg.text().slice(0, 200));
+});
+
+await page.goto(url, { waitUntil: 'domcontentloaded' });
+await page.waitForSelector('.composer', { timeout: 30000 });
+await page.waitForTimeout(1200);
+
+const informe = await page.evaluate(() => {
+  const parse = (color) => {
+    const m = String(color).match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    const [r, g, b, a = 1] = m[1].split(',').map((n) => Number(n.trim()));
+    return { r, g, b, a };
   };
-};
+  const lum = ({ r, g, b }) => {
+    const f = (v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  const fondoEfectivo = (node) => {
+    let actual = node;
+    while (actual) {
+      const estilo = getComputedStyle(actual);
+      const c = parse(estilo.backgroundColor);
+      if (c && c.a > 0.85) return c;
+      actual = actual.parentElement;
+    }
+    return { r: 28, g: 27, b: 25, a: 1 }; // --bg
+  };
+  const ratio = (a, b) => {
+    const la = lum(a);
+    const lb = lum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
 
-for (const [nombre, vp] of Object.entries({ desktop: { width: 1440, height: 900 }, tablet: { width: 1024, height: 768 }, celular: { width: 430, height: 900 }, chico: { width: 360, height: 780 } })) {
-  let ctx;
-  try {
-    ctx = await b.newContext({ viewport: vp, deviceScaleFactor: 1 });
-    const p = await ctx.newPage();
-    p.on('pageerror', (e) => out.errores.push(nombre + ': ' + String(e.message).slice(0, 90)));
-    await p.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded' });
-    await p.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state, null, { timeout: 25000 });
-    await p.waitForTimeout(2500);
-    await p.screenshot({ path: dir + '/' + nombre + '-1-bienvenida.png' });
-    out.viewports[nombre + '|bienvenida'] = await p.evaluate(medir);
-    // abrir la lista si esta en cajon (movil) y despues una conversacion
-    const menu = await p.$('#btn-menu');
-    if (menu && await p.evaluate(() => { const s = document.getElementById('sidebar'); return s ? getComputedStyle(s).transform !== 'none' || s.getBoundingClientRect().left < 0 : false; })) {
-      await menu.click().catch(() => {});
-      await p.waitForTimeout(700);
-      await p.screenshot({ path: dir + '/' + nombre + '-2-menu.png' });
+  const visibles = [...document.querySelectorAll('body *')].filter((node) => {
+    const rect = node.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return false;
+    if (node.children.length > 0) return false; // sólo hojas con texto
+    const texto = (node.textContent ?? '').trim();
+    return texto.length > 1 && getComputedStyle(node).visibility !== 'hidden';
+  });
+
+  const bajos = [];
+  for (const node of visibles) {
+    const estilo = getComputedStyle(node);
+    const color = parse(estilo.color);
+    if (!color) continue;
+    const tamano = parseFloat(estilo.fontSize);
+    const peso = Number(estilo.fontWeight) || 400;
+    const grande = tamano >= 24 || (tamano >= 18.66 && peso >= 700);
+    const minimo = grande ? 3 : 4.5;
+    const r = ratio(color, fondoEfectivo(node));
+    if (r < minimo) {
+      bajos.push({
+        texto: (node.textContent ?? '').trim().slice(0, 40),
+        clase: String(node.className || node.tagName).slice(0, 40),
+        ratio: Number(r.toFixed(2)),
+        minimo,
+        px: tamano,
+      });
     }
-    const fila = await p.$('[data-id]');
-    if (fila) {
-      await fila.click({ timeout: 8000 }).catch(() => {});
-      await p.waitForTimeout(4500);
-      await p.screenshot({ path: dir + '/' + nombre + '-3-chat.png' });
-      out.viewports[nombre + '|chat'] = await p.evaluate(medir);
-    }
-    const btn = await p.$('#btn-goals');
-    if (btn) { await btn.click({ timeout: 5000 }).catch(() => {}); await p.waitForTimeout(1200); await p.screenshot({ path: dir + '/' + nombre + '-4-objetivos.png' }); }
-  } catch (e) {
-    out.errores.push(nombre + ' (bucle): ' + String(e.message).slice(0, 110));
-  } finally { if (ctx) await ctx.close().catch(() => {}); }
-}
-fs.writeFileSync(dir + '/mediciones.json', JSON.stringify(out, null, 1));
-console.log('listo | viewports: ' + Object.keys(out.viewports).length + ' | errores: ' + out.errores.length);
-await b.close();
+  }
+
+  const targets = [...document.querySelectorAll('button, a, select, summary, [role="button"]')]
+    .filter((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    })
+    .map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        texto: (node.getAttribute('aria-label') || node.textContent || '').trim().slice(0, 32),
+        w: Math.round(rect.width),
+        h: Math.round(rect.height),
+      };
+    })
+    .filter((t) => Math.min(t.w, t.h) < 24);
+
+  const transcript = document.querySelector('.transcript');
+  const prosa = [...document.querySelectorAll('.transcript p')].slice(0, 40);
+  const anchos = prosa.map((p) => Math.round(p.getBoundingClientRect().width));
+
+  return {
+    bajos: bajos.slice(0, 14),
+    totalBajos: bajos.length,
+    targetsChicos: targets.slice(0, 10),
+    totalTargetsChicos: targets.length,
+    medidas: {
+      transcript: transcript ? Math.round(transcript.getBoundingClientRect().width) : null,
+      parrafoMax: anchos.length ? Math.max(...anchos) : null,
+      desborde: document.documentElement.scrollWidth > window.innerWidth + 1,
+    },
+    foco: (() => {
+      const activo = document.activeElement;
+      return activo ? activo.tagName.toLowerCase() : null;
+    })(),
+  };
+});
+
+console.log(JSON.stringify({ viewport: `${ancho}x${alto}`, ...informe, errores }, null, 2));
+await browser.close();
