@@ -1122,9 +1122,25 @@ textarea:focus-visible { outline: none; }
 }
 .combo-foot span { margin-right: 4px; }
 
-/* Chip que abre el combobox: mismo chip de siempre, con el valor en semibold. */
+/* Chip que abre el combobox: mismo chip de siempre, con el valor en semibold.
+   El proveedor viaja como sub-chip delante del modelo: es contexto, no una eleccion aparte. */
 .chip-lead .chip-t { font-weight: 550; color: var(--text); }
 .chip-model .chip-t { max-width: 190px; }
+.chip-sub {
+  flex: none;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: var(--text-4);
+  padding-right: 7px;
+  margin-right: 1px;
+  border-right: 1px solid var(--border-soft);
+}
+.chip-model[aria-expanded="true"] .chip-sub { color: var(--text-3); border-right-color: var(--accent-line); }
+@media (max-width: 560px) { .chip-sub { max-width: 64px; } }
 
 /* ---- movil: hoja inferior (targets de 48 px, input sin autofoco) ---- */
 /* La hoja se cuelga del borde inferior con bottom:0 (no con flex): asi queda pegada al

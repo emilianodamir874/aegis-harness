@@ -5094,7 +5094,7 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
       const ef = effortActualDe(id, global, memo);
       const conEsfuerzo = effortOptions.length > 0 && (!!m.reasoning || id === modeloActual);
       return {
-        value: id,
+        value: 'model:' + id,
         label: String(m.name || id),
         meta: metaModelo(pid, m),
         tag: m.recommended ? 'recomendado' : '',
@@ -5121,37 +5121,40 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
       if (!items.length) continue;
       out.push({ label: String(p.providerName || pid), hint: 'cambia de proveedor', items });
     }
+    // Al final, los proveedores como destino: cambiarlo deja el modelo por defecto del motor.
+    const provs = itemsProveedor();
+    if (provs.length > 1) out.push({ label: 'Proveedor', hint: 'cambia sin elegir modelo', items: provs });
     return out;
   }
 
-  function seccionesProveedor(): ComboSection[] {
+  // Los proveedores viven DENTRO del panel de modelo (un solo chip): se elige un modelo de
+  // cualquier proveedor, o un proveedor para que el motor ponga su modelo por defecto.
+  function itemsProveedor(): ComboItem[] {
     const act = proveedorActivo();
     const vistos = new Map<string, ComboItem>();
     for (const o of opcionesDe('provider')) {
       const pid = String(o.value || '');
       if (!pid) continue;
-      vistos.set(pid, { value: pid, label: String(o.name || etiquetaOpcion(o) || pid), current: pid === act } as ComboItem);
+      vistos.set(pid, { value: 'prov:' + pid, label: String(o.name || etiquetaOpcion(o) || pid), current: pid === act } as ComboItem);
     }
-    // Sin sesion (o antes de la primera respuesta) el catalogo es lo unico que dice que hay.
     for (const p of proveedoresListos()) {
       const pid = String(p.providerId || '');
       if (!pid || vistos.has(pid)) continue;
-      vistos.set(pid, { value: pid, label: String(p.providerName || pid), current: pid === act } as ComboItem);
+      vistos.set(pid, { value: 'prov:' + pid, label: String(p.providerName || pid), current: pid === act } as ComboItem);
     }
     for (const it of vistos.values()) {
-      const cat = provDeCatalogo(it.value);
+      const pid = it.value.slice(5);
+      const cat = provDeCatalogo(pid);
       const nM = cat && Array.isArray(cat.models) ? cat.models.length : 0;
       const partes: string[] = [];
       if (nM) partes.push(nM + ' modelos');
       if (cat && cat.defaultModel) partes.push('por defecto ' + String(cat.defaultModel));
       it.meta = partes.join(' · ');
-      it.tag = FIXED_MODELS[it.value] ? 'modelo fijo' : '';
-      // La descripcion del proveedor va de tooltip, no de busqueda: con "codex" traia
-      // cualquier proveedor que la tuviera en su descripcion (Cursor Agent, oMLX, xAI).
-      it.keywords = '';
+      it.tag = FIXED_MODELS[pid] ? 'modelo fijo' : '';
+      it.keywords = pid;
       it.title = cat && cat.description ? String(cat.description) : '';
     }
-    return [{ label: 'Proveedor', hint: 'define que modelos hay', items: [...vistos.values()] }];
+    return [...vistos.values()];
   }
 
   /** Modos del motor: session/new y session/load traen id, nombre y descripcion. */
@@ -5203,10 +5206,11 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     renderChips();
     enfocarChip('chip-model');
   }
-  async function elegirProveedor(pid: string) {
+  /** Cambiar de proveedor sin tocar el modelo: el motor aplica el modelo por defecto de ese. */
+  async function aplicarProveedor(pid: string) {
     if (pid !== proveedorActivo()) await aplicarConfig('provider', pid);
     renderChips();
-    enfocarChip('chip-prov');
+    enfocarChip('chip-model');
   }
   // El modo se cambia con session/set_mode (es lo que habla el motor y lo que usa el debate). La
   // opcion `mode` de configOptions se refleja a mano para que el chip diga la verdad sin volver a
@@ -5253,33 +5257,28 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
       comboVivo.actual.setSections(secciones);
     });
   }
+  // Un solo panel para "con que hablamos": los modelos de todos los proveedores y, al final, los
+  // proveedores como destino. Los valores viajan con prefijo ("model:" / "prov:") para que un solo
+  // onPick distinga los dos casos sin mirar el texto de la fila.
   function abrirModelo(anchor: HTMLElement) {
     comboVivo.actual = abrirCombo({
       anchor,
-      title: 'Modelo',
-      placeholder: 'Buscar por nombre, familia o proveedor…',
+      title: 'Modelo y proveedor',
+      placeholder: 'Buscar modelo o proveedor…',
       sections: seccionesModelo(),
-      empty: 'Ningun modelo coincide. Probá con "flash", "sonnet" o el nombre del proveedor.',
+      empty: 'No coincide ningun modelo ni proveedor. Probá con "flash", "sonnet" o "codex".',
       footer: 'Enter elige · → esfuerzo · Esc cierra',
-      onPick: (v) => { void aplicarModelo(proveedorDeModelo(v) || proveedorActivo(), v); },
-      onAux: (v) => abrirEsfuerzo(anchor, v),
+      onPick: (v) => {
+        if (v.indexOf('prov:') === 0) { void aplicarProveedor(v.slice(5)); return; }
+        const id = v.indexOf('model:') === 0 ? v.slice(6) : v;
+        void aplicarModelo(proveedorDeModelo(id) || proveedorActivo(), id);
+      },
+      onAux: (v) => abrirEsfuerzo(anchor, v.indexOf('model:') === 0 ? v.slice(6) : v),
       onClose: () => { comboVivo.actual = null; },
     });
     // Primera vez: el catalogo trae los otros proveedores con su contexto. Al llegar, se repinta
     // el mismo panel sin cerrarlo (si el usuario esta escribiendo, el filtro se respeta).
     reabrirSiLlegaCatalogo(() => seccionesModelo());
-  }
-  function abrirProveedor(anchor: HTMLElement) {
-    comboVivo.actual = abrirCombo({
-      anchor,
-      title: 'Proveedor',
-      placeholder: 'Buscar proveedor…',
-      sections: seccionesProveedor(),
-      empty: 'Ningun proveedor coincide.',
-      onPick: (v) => { void elegirProveedor(v); },
-      onClose: () => { comboVivo.actual = null; },
-    });
-    reabrirSiLlegaCatalogo(() => seccionesProveedor());
   }
   function abrirModo(anchor: HTMLElement) {
     abrirCombo({
@@ -5318,7 +5317,7 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     if (b && inputByKeyboard) b.focus({ preventScroll: true });
   }
 
-  function chipCombo(cls: string, label: string, valor: string, abrir: () => void, primario?: boolean, esfuerzo?: string): HTMLElement {
+  function chipCombo(cls: string, label: string, valor: string, abrir: () => void, primario?: boolean, esfuerzo?: string, sub?: string): HTMLElement {
     const item = document.createElement('div');
     item.className = 'chip-wrap';
     const btn = document.createElement('button');
@@ -5326,8 +5325,10 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     btn.className = 'chip ' + cls + (primario ? ' chip-lead' : '');
     btn.setAttribute('aria-haspopup', 'dialog');
     btn.setAttribute('aria-expanded', 'false');
-    btn.title = label + ': ' + valor + ' (click o Enter para cambiar)';
-    btn.innerHTML = '<span class="chip-t">' + esc(valor) + '</span>'
+    btn.title = label + ': ' + valor + (sub ? ' · ' + sub : '') + ' (click o Enter para cambiar)';
+    // El proveedor va como sub-chip delante del modelo: es contexto, no una eleccion aparte.
+    btn.innerHTML = (sub ? '<span class="chip-sub">' + esc(sub) + '</span>' : '')
+      + '<span class="chip-t">' + esc(valor) + '</span>'
       + (esfuerzo ? '<span class="chip-eff">' + esc(effortLabel(esfuerzo)) + '</span>' : '');
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -5372,16 +5373,14 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     const modelNombre = String((modelCat && modelCat.name) || modelId || 'Modelo');
     const effChip = modelId ? effortActualDe(modelId, effortGlobal || 'off', effortMemo || {}) : '';
 
-    // Orden: proveedor (de donde salen los modelos), modo (que puede tocar) y modelo al final,
-    // que es el mas largo y el que lleva el esfuerzo pegado.
-    if (provOpts.length > 1 || proveedoresListos().length > 1) {
-      wrap.appendChild(chipCombo('chip-prov', 'Proveedor', provNombre, () => abrirProveedor($('#chips .chip-prov'))));
-    }
+    // Un solo chip para "con que hablamos": proveedor delante (contexto), modelo, esfuerzo. El
+    // panel de ese chip elige modelo de cualquier proveedor o cambia de proveedor.
     if (modosDisponibles.length > 1) {
       wrap.appendChild(chipCombo('chip-mode', 'Modo', modoNombre, () => abrirModo($('#chips .chip-mode'))));
     }
     if (modelId || opcionesDe('model').length || modelosDe(provId).length) {
-      wrap.appendChild(chipCombo('chip-model', 'Modelo', modelNombre, () => abrirModelo($('#chips .chip-model')), true, effortOptions.length ? effChip : ''));
+      wrap.appendChild(chipCombo('chip-model', 'Modelo y proveedor', modelNombre, () => abrirModelo($('#chips .chip-model')), true,
+        effortOptions.length ? effChip : '', provNombre));
     }
 
     // Chip de modo debate: vive con los chips de modelo/modo y no gasta lugar en el composer.
@@ -6989,9 +6988,9 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     // Chips: render para un gate que inyecta configOptions, y el estado vivo del esfuerzo.
     chips: { render: renderChips, effortNow: () => effortGlobal, options: () => effortOptions.map((o) => o.value), memo: effortByModel,
       // Combobox: abrir cada panel y leer lo que va a mostrar, sin pasar por el DOM a ciegas.
-      abrirModelo: () => abrirModelo($('#chips .chip-model')), abrirProveedor: () => abrirProveedor($('#chips .chip-prov')),
+      abrirModelo: () => abrirModelo($('#chips .chip-model')),
       abrirModo: () => abrirModo($('#chips .chip-mode')), abierto: () => comboAbierto(),
-      secciones: () => ({ modelo: seccionesModelo(), proveedor: seccionesProveedor(), modo: seccionesModo() }),
+      secciones: () => ({ modelo: seccionesModelo(), modo: seccionesModo() }),
       catalogo: () => catalogo, cargarCatalogo, modoActivo, proveedorActivo, modeloActivo,
       // Abrir una sesion existente por id: lo usan los gates para probar el chip con motor real.
       abrirSesion: (entry) => openSession(entry),

@@ -90,13 +90,15 @@ const browser = await chromium.launch();
   await page.waitForTimeout(600);
 
   const chips = await page.evaluate(() => ({
-    prov: document.querySelector('#chips .chip-prov .chip-t')?.textContent || '',
+    prov: document.querySelector('#chips .chip-model .chip-sub')?.textContent || '',
+    suelto: !!document.querySelector('#chips .chip-prov'),
     modo: document.querySelector('#chips .chip-mode .chip-t')?.textContent || '',
     modelo: document.querySelector('#chips .chip-model .chip-t')?.textContent || '',
     eff: document.querySelector('#chips .chip-model .chip-eff')?.textContent || '',
   }));
   console.log('chips:', JSON.stringify(chips));
-  check('hay chip de proveedor', !!chips.prov, chips.prov);
+  check('no hay chip de proveedor suelto', !chips.suelto);
+  check('el chip de modelo muestra el proveedor delante', !!chips.prov, chips.prov);
   check('hay chip de modo', !!chips.modo, chips.modo);
   check('hay chip de modelo', !!chips.modelo, chips.modelo);
 
@@ -126,6 +128,11 @@ const browser = await chromium.launch();
   check('filas con segunda linea (contexto/tarifa)', geo.conContexto >= 2, String(geo.conContexto));
   check('el modelo actual viene marcado', !!geo.activa, geo.activa);
   check('la fila activa arranca en el actual', geo.activa.length > 0);
+  const conProv = await page.evaluate(() => {
+    const secs = [...document.querySelectorAll('.combo-sec span')].map((s) => s.textContent.trim());
+    return { hay: secs.includes('Proveedor'), secs };
+  });
+  check('el panel unico ofrece cambiar de proveedor', conProv.hay, conProv.secs.slice(-3).join(' / '));
   await page.screenshot({ path: 'tools/shots/combo-escritorio-abierto.png' });
 
   // 2) buscar "deep" y elegir con Enter
@@ -184,14 +191,20 @@ const browser = await chromium.launch();
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
 
-  // 5) proveedor
-  await page.click('#chips .chip-prov');
+  // 5) proveedor, desde el mismo panel (fila de la seccion Proveedor, por nombre exacto)
+  await page.click('#chips .chip-model');
   await page.waitForSelector('.combo-panel');
   await page.keyboard.type('codex', { delay: 30 });
-  const provOpc = await page.evaluate(() => document.querySelector('.combo-opt.act .co-name')?.textContent || '');
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1400);
-  const chipProv = await page.evaluate(() => document.querySelector('#chips .chip-prov .chip-t')?.textContent || '');
+  const provOpc = await page.evaluate(() => {
+    const fila = [...document.querySelectorAll('.combo-opt')].find((f) => (f.querySelector('.co-name')?.textContent || '').trim() === 'ChatGPT Codex');
+    return fila ? fila.querySelector('.co-name').textContent.trim() : '';
+  });
+  await page.evaluate(() => {
+    const fila = [...document.querySelectorAll('.combo-opt')].find((f) => (f.querySelector('.co-name')?.textContent || '').trim() === 'ChatGPT Codex');
+    fila.click();
+  });
+  await page.waitForTimeout(1600);
+  const chipProv = await page.evaluate(() => document.querySelector('#chips .chip-model .chip-sub')?.textContent || '');
   const motor2 = await engine.opciones(sid);
   check('el proveedor se cambia y el motor lo confirma', /codex/i.test(chipProv) && /codex/i.test(motor2.provider || ''), `${chipProv} / ${motor2.provider}`);
   check('al cambiar de proveedor el modelo se ajusta al suyo', !!motor2.model, JSON.stringify(motor2));
