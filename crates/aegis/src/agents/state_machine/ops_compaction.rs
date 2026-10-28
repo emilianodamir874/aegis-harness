@@ -36,13 +36,17 @@ fn compaction_part(
     }
 
     let compaction_at = (context_limit as f64 * threshold) as i32;
-    if compaction_at <= 0 || (total_tokens as f64 / compaction_at as f64) < 0.5 {
+    // Se avisa desde el 25% del techo, no desde la mitad: la cifra tiene que llegar cuando el
+    // modelo todavia puede planificar, no cuando ya esta encima del corte.
+    if compaction_at <= 0 || (total_tokens as f64 / compaction_at as f64) < 0.25 {
         return None;
     }
 
+    let usado_k = total_tokens / 1000;
+    let libre_k = compaction_at.saturating_sub(total_tokens) / 1000;
+    let techo_k = compaction_at / 1000;
     Some(format!(
-        "<compaction>~{}k tokens remaining</compaction>",
-        compaction_at.saturating_sub(total_tokens) / 1000
+        "<compaction>{usado_k}k de {techo_k}k usados | {libre_k}k libres | auto-compact a {techo_k}k</compaction>"
     ))
 }
 
@@ -402,5 +406,40 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
                 yielded()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compaction_part_tests {
+    use super::compaction_part;
+
+    const LIMIT: usize = 1_000_000;
+    const THRESHOLD: f64 = 0.5;
+
+    #[test]
+    fn compaction_part_reports_used_free_and_ceiling() {
+        // 200k de 500k de techo: el modelo tiene que ver las tres cifras.
+        let parte = compaction_part(Some(200_000), LIMIT, THRESHOLD).expect("avisa desde el 25%");
+        assert!(parte.contains("200k de 500k usados"), "{parte}");
+        assert!(parte.contains("300k libres"), "{parte}");
+        assert!(parte.contains("auto-compact a 500k"), "{parte}");
+        assert!(
+            parte.starts_with("<compaction>") && parte.ends_with("</compaction>"),
+            "{parte}"
+        );
+    }
+
+    #[test]
+    fn compaction_part_silent_below_a_quarter_of_the_ceiling() {
+        assert!(compaction_part(Some(100_000), LIMIT, THRESHOLD).is_none());
+        assert!(compaction_part(Some(130_000), LIMIT, THRESHOLD).is_some());
+    }
+
+    #[test]
+    fn compaction_part_silent_without_usage_or_threshold() {
+        assert!(compaction_part(None, LIMIT, THRESHOLD).is_none());
+        assert!(compaction_part(Some(0), LIMIT, THRESHOLD).is_none());
+        assert!(compaction_part(Some(400_000), LIMIT, 0.0).is_none());
+        assert!(compaction_part(Some(400_000), LIMIT, 1.0).is_none());
     }
 }

@@ -973,7 +973,23 @@ pub(super) fn build_usage_updates(
     totals: &SessionUsageTotals,
     context_limit: usize,
 ) -> UsageUpdates {
-    let used = session.usage.total_tokens.unwrap_or(0).max(0) as u64;
+    // El reporte de la ultima inferencia no incluye lo que entro despues de ella (resultados de
+    // herramientas, mensajes del usuario mientras el modelo pensaba), asi que se queda corto:
+    // la UI mostraba 20k con la sesion en 200k. La conversacion cargada ya se estima por mensaje
+    // para el desglose; nunca reportar menos que eso.
+    let reportado = session.usage.total_tokens.unwrap_or(0).max(0) as u64;
+    let estimado = session
+        .conversation
+        .as_ref()
+        .map(|conversation| {
+            conversation
+                .messages()
+                .iter()
+                .map(estimate_message_tokens)
+                .sum::<u64>()
+        })
+        .unwrap_or(0);
+    let used = reportado.max(estimado);
     let ctx_limit = context_limit as u64;
     let accumulated_input_tokens =
         to_nonnegative_u64(totals.accumulated_usage.input_tokens).unwrap_or(0);
@@ -1389,7 +1405,9 @@ impl AegisAcpAgent {
         });
 
         let permission_manager = Arc::new(PermissionManager::new(options.config_dir.clone()));
-    crate::config::permission::install_global_permission_manager(Arc::clone(&permission_manager));
+        crate::config::permission::install_global_permission_manager(Arc::clone(
+            &permission_manager,
+        ));
         let provider_inventory = ProviderInventoryService::new(session_manager.storage().clone());
         let agent_manager = match options.agent_manager.clone() {
             Some(manager) => manager,
