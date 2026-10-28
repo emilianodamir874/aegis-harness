@@ -40,7 +40,7 @@ interface StoreOptions {
   readonly defaultCwd?: string;
   readonly sleep?: (ms: number) => Promise<void>;
   readonly now?: () => number;
-  /** C髆o se agrupan las notificaciones a React (por defecto rAF en navegador, microtarea en tests). */
+  /** C贸mo se agrupan las notificaciones a React (por defecto rAF en navegador, microtarea en tests). */
   readonly schedule?: (fn: () => void) => void;
 }
 
@@ -70,6 +70,13 @@ export class AegisStore {
   private readonly loaded = new Set<string>();
   private readonly watched = new Set<string>();
   private readonly reloading = new Set<string>();
+  /**
+   * T铆tulos puestos por el usuario en esta sesi贸n del navegador. El motor acepta
+   * `_aegis/unstable/session/rename` pero `session/list` sigue devolviendo el t铆tulo viejo y no emite
+   * `session_info_update` (medido contra el motor real, 2026-10-28), as铆 que sin esta marca el
+   * refresco de cada 4 s borrar铆a el nombre reci茅n puesto.
+   */
+  private readonly renamed = new Map<string, string>();
   private flushing = false;
   private emitScheduled = false;
   private readonly schedule: (fn: () => void) => void;
@@ -183,7 +190,7 @@ export class AegisStore {
           rows.push(
             summaryOf({
               id: sid(row.sessionId),
-              title: row.title ?? 'Sesi贸n',
+              title: this.renamed.get(row.sessionId) ?? row.title ?? 'Sesi贸n',
               updatedAt: row.updatedAt ?? null,
               createdAt: row._meta?.createdAt ?? null,
               messageCount: row._meta?.messageCount ?? null,
@@ -720,6 +727,7 @@ export class AegisStore {
     if (!id || !title.trim()) return;
     try {
       await this.client.request('_aegis/unstable/session/rename', { sessionId: id, title: title.trim() });
+      this.renamed.set(id, title.trim());
       this.dispatch({ type: 'session/title', sessionId: id, title: title.trim() });
     } catch (error) {
       this.dispatch({ type: 'notice/push', level: 'error', text: `No se pudo renombrar: ${messageOf(error)}` });
@@ -813,6 +821,7 @@ export class AegisStore {
     if (!title.trim()) return;
     try {
       await this.client.request('_aegis/unstable/session/rename', { sessionId: id, title: title.trim() });
+      this.renamed.set(id, title.trim());
       this.dispatch({ type: 'session/title', sessionId: id, title: title.trim() });
     } catch (error) {
       this.dispatch({ type: 'notice/push', level: 'error', text: `No se pudo renombrar: ${messageOf(error)}` });

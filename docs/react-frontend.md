@@ -179,9 +179,34 @@ instancia el `Origin` cambia y el serve rechaza el handshake directo con 403.
 - Móvil: no se midió en Android físico ni con latencia real de túnel; sólo viewport de escritorio en
   Chromium headless.
 - Dictado y lectura en voz alta: código completo, sin prueba con micrófono ni audio reales.
-- Paneles que dependen de endpoints (`/changes.json`, `/memory.json`, `/stats.json`, `/doctor.json`,
-  `/outbox.json`, `sources/*`): render probado con respuesta vacía, no contra datos reales.
-- Publicación: `/app-react/` está servido y verificado en una instancia de prueba, pero la app
+- Paneles: `memoria`, `stats`, `archivos` y `goals` verificados contra el endpoint real (200 con datos);
+  `cambios` y `doctor` exigen login y no se vieron poblados; `skills` sólo con el RPC simulado.
+- Publicación: `/app-react/` está servido y verificado en una instancia de prueba (3790), pero la
+  instancia viva (3788) todavía corre un `dist-ts` anterior y devuelve 404 en `/app-react/`. La app
   servida en `/` sigue siendo la actual. No se hizo swap.
-- Regeneración, rewind con prefill, renombrar/archivar/borrar y exportar no se ejercitaron contra el
-  motor real (sí contra el fixture donde aplica).
+- Renombrar se ejercitó contra el motor real (y falló su persistencia en `session/list`: ver §7);
+  archivar/desarchivar se ejercitaron contra el motor real en una sesión desechable. Regeneración,
+  rewind con prefill y exportar siguen sin ejercitarse contra el motor real.
+
+## 7. Hallazgos medidos contra el motor real (2026-10-28)
+
+Scripts de medición, todos contra la instancia viva vía el proxy del servidor web:
+
+| script | qué hace |
+|---|---|
+| `tools/acp-lifecycle.mjs` | crea una sesión desechable, la renombra, archiva, desarchiva, observa, exporta y la borra |
+| `tools/acp-list-shape.mjs` | imprime la forma real de una fila de `session/list` |
+| `tools/panel-shapes.mjs` | imprime claves y conteos de los endpoints JSON de los paneles |
+| `tools/fix-encoding.mjs` | detecta y repara archivos con bytes Latin-1 sueltos (Set-Content de PowerShell) |
+
+Lo que el motor hace de verdad, con la consecuencia que tuvo en el cliente:
+
+| hallazgo | evidencia | consecuencia en el cliente React |
+|---|---|---|
+| `session/list` devuelve 50 filas por página con `nextCursor` | 50 filas, `nextCursor` no nulo | `refreshSessions` pagina hasta 20 páginas; una sola página dejaría chats afuera |
+| la fila es `{sessionId,cwd,title,updatedAt,_meta{messageCount,createdAt,lastMessageAt,userSetName,sessionType,hasRecipe,projectId,providerId,modelId}}` | `acp-list-shape.mjs` | el resumen sale de ahí; no hay `archivedAt` en el wire |
+| `_aegis/unstable/session/rename` responde ok pero el título NO cambia en `session/list` y no llega `session_info_update` | `rename visible=false userSetName=undefined`; la única notificación fue `session/update` | el store guarda el título en un mapa local (`renamed`) y lo aplica al refrescar; sin eso el refresco cada 4 s borraba el nombre |
+| archivar sí oculta la sesión de `session/list`; desarchivar la devuelve | `sigue en la lista=false` tras archivar | el archivado es del motor y además marca local: el reducer conserva el resumen en `archived` y no lo revive con una página vieja |
+| `_aegis/unstable/session/export` existe y devuelve `{data}` | `export ok keys=data bytes=0` en sesión vacía | todavía sin botón en el cliente (fila 34) |
+| una sesión nueva emite `usage_update` y `available_commands_update` sin pedir nada | notificaciones al crear | el arranque no debe asumir silencio hasta el primer prompt |
+| `/changes.json` y `/doctor.json` exigen sesión iniciada (401 anónimo); `/memory.json`, `/stats.json`, `/outbox.json`, `/goals.json`, `/pending.json` no | pedidos directos a 3790 | los paneles con auth no se pueden verificar sin login: queda declarado como no verificado |

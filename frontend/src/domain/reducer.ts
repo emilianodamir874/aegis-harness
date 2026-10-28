@@ -384,13 +384,17 @@ export function reduce(state: AppState, event: AppEvent): AppState {
 
     case 'sessions/replaced': {
       let next: AppState = { ...state, sessions: [], archived: [] };
-      for (const summary of event.sessions) next = ensureSession(next, summary);
+      // Una sesión archivada en el cliente no revive porque una página vieja de `session/list` la
+      // traiga: el motor tarda en ocultarla y el refresco corre cada pocos segundos.
+      const archivedIds = new Set(state.archived.map(String));
+      const live = event.sessions.filter((s) => !archivedIds.has(String(s.id)));
+      for (const summary of live) next = ensureSession(next, summary);
       for (const summary of event.archived) next = ensureSession(next, summary);
-      const live = event.sessions.map((s) => s.id);
       // El chat abierto sigue visible aunque una página de `session/list` no lo traiga: la lista
       // es paginada y una respuesta parcial no puede sacar de pantalla lo que se está leyendo.
       const active = state.activeSessionId;
-      const sessions = active && !live.includes(active) ? [...live, active] : live;
+      const liveIds = live.map((summary) => summary.id);
+      const sessions = active && !liveIds.includes(active) ? [...liveIds, active] : liveIds;
       return { ...next, sessions, archived: event.archived.map((s) => s.id) };
     }
 
@@ -400,6 +404,17 @@ export function reduce(state: AppState, event: AppEvent): AppState {
     }
 
     case 'sessions/removed': {
+      if (event.archived) {
+        const current = state.sessionIndex[event.sessionId];
+        if (!current) return state;
+        const next = ensureSession(state, { ...current.summary, archived: true });
+        return {
+          ...next,
+          sessions: next.sessions.filter((id) => id !== event.sessionId),
+          archived: next.archived.includes(event.sessionId) ? next.archived : [...next.archived, event.sessionId],
+          activeSessionId: state.activeSessionId === event.sessionId ? null : state.activeSessionId,
+        };
+      }
       const sessionIndex = { ...state.sessionIndex };
       delete sessionIndex[event.sessionId];
       return {
