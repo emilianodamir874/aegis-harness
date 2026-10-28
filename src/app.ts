@@ -3091,7 +3091,10 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (!el) return;
     el.dataset.detail = detail || '';
     el.hidden = false;
+    // El punto late solo en las fases donde trabaja el modelo (ver .rp-dot en app.css): es la
+    // diferencia entre "esta trabajando" y "esta esperando que hagas algo vos".
     el.innerHTML = uiIcon(PHASE_ICON[next] || 'dot', { size: 12 })
+      + '<span class="rp-dot" aria-hidden="true"></span>'
       + '<span class="rp-name">' + esc(PHASE_LABEL[next] || next) + '</span>'
       + '<span class="rp-since"></span>';
     phasePaint();
