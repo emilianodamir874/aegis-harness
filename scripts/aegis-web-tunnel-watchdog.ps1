@@ -1,4 +1,4 @@
-# aegis-web: tunel Cloudflare (quick tunnel) + vigilancia del stack web.
+﻿# aegis-web: tunel Cloudflare (quick tunnel) + vigilancia del stack web.
 # - Mantiene vivo el tunel a la UI local (127.0.0.1:3788) y, si hace falta, arranca el stack
 #   (start-aegis-web.ps1 -> aegis serve + server.mjs).
 # - Escribe la URL publica en tunnel-url.txt y las credenciales en tunnel-access.txt.
@@ -12,7 +12,7 @@ $Log     = Join-Path $Root 'logs\tunnel-watchdog.log'
 $UrlFile = Join-Path $Root 'tunnel-url.txt'
 $AccFile = Join-Path $Root 'tunnel-access.txt'
 $CfLog   = Join-Path $Root 'logs\cloudflared-aegis.log'
-$CfExe   = 'C:\Users\Emiliano\AppData\Local\hermes\bin\cloudflared.exe'
+$CfExe   = 'C:\Aegis-Proyects\web\tools\cloudflared.exe'
 $Origin  = 'http://127.0.0.1:3788'
 $StartPs = Join-Path $Root 'scripts\start-aegis-web.ps1'
 $AuthFile = Join-Path $Root 'auth.json'
@@ -217,3 +217,4 @@ do {
 
 if ($owner) { $mtx.ReleaseMutex() }
 $mtx.Dispose()
+

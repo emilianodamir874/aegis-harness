@@ -96,8 +96,6 @@ const pendingCache = new Map<string, { at: number; body: string }>();
 // Ejecutar solo tras escuchar: SQLite puede tardar y el proceso web nunca debe bloquear el
 // health check. El fallback conserva el barrido en instalaciones sin el flag del binario.
 function sweepPendingAtStartup(): void {
-  // El barrido escribe en el store: una instancia de prueba tiene que poder arrancar sin tocarlo.
-  if (process.env.AEGIS_WEB_NO_SWEEP === '1') return;
   const env = { ...process.env, AEGIS_PATH_ROOT: process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state' };
   const bin = process.env.AEGIS_SERVE_BIN || 'C:/Aegis-Proyects/core/bin/aegis-current.exe';
   const run = (command: string, args: string[]): Promise<string> => new Promise((ok, fail) => {
@@ -253,15 +251,6 @@ function brotliBuf(buf: Buffer, key: string) {
 }
 const cfg = JSON.parse(await readFile(join(DIR, 'config.json'), 'utf8')) as WebConfig;
 const APP = join(DIR, 'app');
-// Cliente React (frontend/): se sirve aparte, bajo /app-react/, sin tocar la app actual.
-// Si no hay build, la ruta devuelve 404 y nada más cambia.
-const APP_REACT = join(DIR, 'frontend', 'dist');
-/**
- * Interruptor de publicación del cliente React. Por defecto la raíz sigue sirviendo el cliente
- * actual (`app/`); con `AEGIS_WEB_ROOT=react` la raíz sirve `frontend/dist`. El rollback es sacar la
- * variable y reiniciar: un reinicio, no un deploy, porque el cliente viejo no se toca.
- */
-const REACT_AT_ROOT = String(process.env['AEGIS_WEB_ROOT'] ?? '').toLowerCase() === 'react';
 const OUTBOX = join(DIR, 'outbox');
 const OUTBOX_PREVIEW_MAX = 2_000_000;
 // Artefactos son archivos planos, no accesos indirectos a configuracion, credenciales o al store.
@@ -1710,68 +1699,6 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return;
     }
-    if (url.pathname === '/app-react' || url.pathname.startsWith('/app-react/') || (REACT_AT_ROOT && url.pathname === '/')) {
-      const rel = (REACT_AT_ROOT && url.pathname === '/'
-        ? 'index.html'
-        : normalize(url.pathname.slice('/app-react'.length)).replace(/^[/\\]+/, '') || 'index.html');
-      if (rel.includes('..')) {
-        res.writeHead(400, { 'content-type': 'text/plain' });
-        res.end('bad path');
-        return;
-      }
-      const target = join(APP_REACT, rel);
-      let body: Buffer;
-      let served = target;
-      try {
-        body = await readFile(target);
-      } catch {
-        // Fallback de SPA sólo para navegación: un asset que falta tiene que ser 404, no HTML.
-        if (extname(rel)) {
-          res.writeHead(404, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
-          res.end('not found');
-          return;
-        }
-        try {
-          served = join(APP_REACT, 'index.html');
-          body = await readFile(served);
-        } catch {
-          res.writeHead(404, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
-          res.end('sin build del cliente React: npm --prefix frontend run build');
-          return;
-        }
-      }
-      const type = MIME[extname(served).toLowerCase()] || 'application/octet-stream';
-      // Los assets del build React se sirven precomprimidos (frontend/scripts/precompress.mjs):
-      // el .br/.gz está al lado del archivo y el navegador elige por Accept-Encoding.
-      let payload = body as Buffer;
-      let encoding: string | null = null;
-      const accept = String(req.headers['accept-encoding'] ?? '');
-      if (!extname(served).toLowerCase().match(/\.(png|jpg|jpeg|gif|webp|woff2)$/)) {
-        for (const candidato of [
-          { sufijo: '.br', nombre: 'br' },
-          { sufijo: '.gz', nombre: 'gzip' },
-        ]) {
-          if (!accept.includes(candidato.nombre)) continue;
-          try {
-            payload = await readFile(served + candidato.sufijo);
-            encoding = candidato.nombre;
-            break;
-          } catch {
-            /* sin ese precomprimido: se sigue con el siguiente o con el original */
-          }
-        }
-      }
-      const immutable = url.pathname.startsWith('/app-react/assets/');
-      res.writeHead(200, {
-        'content-type': type,
-        ...(encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {}),
-        'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
-        ...SEC,
-      });
-      res.end(payload);
-      return;
-    }
-
     let pathname = decodeURIComponent(url.pathname);
     if (pathname === '/') pathname = '/index.html';
     const rel = normalize(pathname).replace(/^[/\\]+/, '');

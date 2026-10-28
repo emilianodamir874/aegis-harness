@@ -1,10 +1,10 @@
-# aegis-web: start backend (aegis serve) + web UI if not already listening.
+﻿# aegis-web: start backend (aegis serve) + web UI if not already listening.
 # Idempotent. Hidden-window friendly (used by the Aegis_Web scheduled task).
 $ErrorActionPreference = 'SilentlyContinue'
 
 $root = 'C:\Aegis-Proyects\web'
 $nodeCandidates = @(
-  'C:\Users\Emiliano\AppData\Local\hermes\tools\node-26.7.0-win32-x64\node.exe',
+  'C:\Users\Emiliano\scoop\apps\fnm\current\node-versions\v22.23.2\installation\node.exe',
   'C:\Users\Emiliano\scoop\apps\fnm\current\node-versions\v22.23.2\installation\node.exe',
   'C:\Users\Emiliano\AppData\Local\hermes\tools\.reclaim-b5211fe162ad438ca39ea28e075f9794\node.exe'
 )
@@ -14,6 +14,9 @@ if (-not $node) { Write-Output 'aegis-web: NO hay node.exe disponible'; exit 1 }
 # exige contexto seguro. El 3788 sigue siendo http (origen del tunel y de los enlaces viejos).
 if (-not $env:AEGIS_WEB_TLS_DIR) { $env:AEGIS_WEB_TLS_DIR = 'C:\Aegis-Proyects\core\state\tls' }
 if (-not $env:AEGIS_WEB_HTTPS_PORT) { $env:AEGIS_WEB_HTTPS_PORT = '3789' }
+# Cliente servido en la raíz: si existe el marcador, "/" sirve el cliente React (frontend/dist).
+# Rollback: borrar el marcador y reiniciar. Lo lee el mismo server por AEGIS_WEB_ROOT.
+if (-not $env:AEGIS_WEB_ROOT -and (Test-Path (Join-Path $root 'state\use-react-client'))) { $env:AEGIS_WEB_ROOT = 'react' }
 # Version del serve: sale del PUNTERO (C:\Aegis-Proyects\core\state\current-version.json), no de este archivo.
 # Antes estaba clavada aca (aegis-v34.exe): asi se desincronizo del resto del stack el 14/10.
 $ptrFile = 'C:\Aegis-Proyects\core\state\current-version.json'
@@ -80,6 +83,7 @@ if (-not $webUp) {
 }
 
 Write-Output "aegis-web: URL http://$($cfg.publicHost):$($cfg.webPort)"
+
 
 
 

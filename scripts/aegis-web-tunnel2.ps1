@@ -1,4 +1,4 @@
-# aegis-web: SEGUNDO tunel Cloudflare (quick tunnel) al mismo origen (127.0.0.1:3788).
+﻿# aegis-web: SEGUNDO tunel Cloudflare (quick tunnel) al mismo origen (127.0.0.1:3788).
 # URL de respaldo / acceso alterno. NO toca el tunel principal ni su watchdog.
 # Log: C:\Aegis-Proyects\web\logs\tunnel2-watchdog.log   URL: tunnel-url-2.txt
 param([switch]$Loop)
@@ -9,7 +9,7 @@ $Log      = Join-Path $Root 'logs\tunnel2-watchdog.log'
 $UrlFile  = Join-Path $Root 'tunnel-url-2.txt'
 $AccFile  = Join-Path $Root 'tunnel-access-2.txt'
 $CfLog    = Join-Path $Root 'logs\cloudflared-aegis2.log'
-$CfExe    = 'C:\Users\Emiliano\AppData\Local\hermes\bin\cloudflared.exe'
+$CfExe    = 'C:\Aegis-Proyects\web\tools\cloudflared.exe'
 $Origin   = 'http://127.0.0.1:3788'
 $AuthFile = Join-Path $Root 'auth.json'
 
@@ -83,3 +83,4 @@ do {
 
 if ($owner) { $mtx.ReleaseMutex() }
 $mtx.Dispose()
+

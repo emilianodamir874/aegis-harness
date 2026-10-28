@@ -1,6 +1,6 @@
-$ErrorActionPreference = 'Continue'
+﻿$ErrorActionPreference = 'Continue'
 $root = 'C:\Aegis-Proyects\web'
-$node = 'C:\Users\Emiliano\AppData\Local\hermes\tools\node-26.7.0-win32-x64\node.exe'
+$node = 'C:\Users\Emiliano\scoop\apps\fnm\current\node-versions\v22.23.2\installation\node.exe'
 $cfg = Get-Content "$root\config.json" -Raw | ConvertFrom-Json
 $env:AEGIS_SERVER__SECRET_KEY = $cfg.secretKey
 $env:AEGIS_RUN_STALL_TIMEOUT_SECS = '3'
@@ -17,3 +17,4 @@ Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 Write-Output '--- watchdog log lines ---'
 Select-String -Path "$root\logs\serve-v3wd.err.log" -Pattern 'stalled|watchdog' -SimpleMatch | Select-Object -Last 6 | ForEach-Object { $_.Line }
+
