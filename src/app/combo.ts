@@ -44,13 +44,27 @@ export type ComboOptions = {
   empty?: string;
   footer?: string;
   autofocus?: boolean;
-  onPick: (value: string, item: ComboItem) => void;
-  onAux?: (value: string, item: ComboItem) => void;
+  /** Devolver true deja el panel abierto: lo usa el asistente por pasos del chip de modelo. */
+  onPick: (value: string, item: ComboItem) => boolean | void;
+  /** Devolver true deja el panel abierto (el asistente lo usa para saltar al paso de esfuerzo). */
+  onAux?: (value: string, item: ComboItem) => boolean | void;
   onClose?: (motivo: 'pick' | 'aux' | 'cancel') => void;
+  /** Paso atras del asistente (proveedor -> modelo -> esfuerzo se recorren hacia adelante). */
+  onBack?: () => void;
+};
+
+/** Lo que cambia al moverse de paso: el titulo, la miga de pan y el pie, no solo las filas. */
+export type ComboStep = {
+  title?: string;
+  crumb?: string;
+  placeholder?: string;
+  empty?: string;
+  footer?: string;
+  onBack?: (() => void) | null;
 };
 
 export type ComboHandle = {
-  setSections: (sections: ComboSection[]) => void;
+  setSections: (sections: ComboSection[], step?: ComboStep) => void;
   close: () => void;
 };
 
@@ -71,13 +85,16 @@ type Vivo = {
   onScroll: (e: Event) => void;
   onResize: () => void;
   onViewport?: () => void;
+  title: HTMLElement;
+  crumb: HTMLElement;
+  backBtn: HTMLElement;
 };
 
 let vivo: Vivo | null = null;
 let seq = 0;
 
 /** Minusculas y sin acentos: "Diseno" y "diseno" tienen que caer en el mismo resultado. */
-const norm = (s: unknown): string =>
+export const norm = (s: unknown): string =>
   String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 /**
@@ -90,7 +107,7 @@ const norm = (s: unknown): string =>
  * medio catalogo. Buscar es substring; lo que no esta en el nombre, el id o la familia no
  * aparece, y lo que aparece se explica solo leyendo la fila.
  */
-function puntaje(q: string, it: ComboItem): number {
+export function puntajeDeBusqueda(q: string, it: ComboItem): number {
   if (!q) return 1;
   const nombre = norm(it.label);
   if (nombre.startsWith(q)) return 3;
@@ -145,7 +162,7 @@ function pintar(v: Vivo): void {
   for (const sec of v.opts.sections) {
     // Con consulta, cada grupo se ordena por calidad de coincidencia: primero el que empieza
     // con lo tipeado, despues el que lo contiene, y al final el que lo tiene desparramado.
-    const conPuntaje = sec.items.map((it) => ({ it, s: puntaje(q, it) })).filter((x) => x.s > 0);
+    const conPuntaje = sec.items.map((it) => ({ it, s: puntajeDeBusqueda(q, it) })).filter((x) => x.s > 0);
     if (!conPuntaje.length) continue;
     if (q) conPuntaje.sort((a, b) => b.s - a.s);
     total += sec.items.length;
@@ -170,12 +187,12 @@ function pintar(v: Vivo): void {
       if (!it || it.disabled) return;
       e.stopPropagation();
       if ((e.target as HTMLElement).closest('.co-aux') && v.opts.onAux) {
+        if (v.opts.onAux(it.value, it) === true) return;
         cerrar('aux');
-        v.opts.onAux(it.value, it);
         return;
       }
+      if (v.opts.onPick(it.value, it) === true) return;
       cerrar('pick');
-      v.opts.onPick(it.value, it);
     });
   }
   // Fila activa: lo tipeado manda (el mejor puntaje de todos los grupos, para que un "codex"
@@ -260,7 +277,11 @@ export function abrirCombo(opts: ComboOptions): ComboHandle {
     + '<div class="combo-panel" role="dialog" aria-modal="' + (hoja ? 'true' : 'false') + '"'
     + ' aria-label="' + esc(opts.title) + '">'
     + (hoja ? '<div class="combo-grab" aria-hidden="true"></div>' : '')
-    + '<div class="combo-head"><span class="combo-title">' + esc(opts.title) + '</span>'
+    + '<div class="combo-head">'
+    + '<button type="button" class="combo-back-go" aria-label="Volver un paso" hidden>'
+    + uiIcon('chevron', { size: 12, cls: 'is-left' }) + '</button>'
+    + '<span class="combo-title">' + esc(opts.title) + '</span>'
+    + '<span class="combo-crumb"></span>'
     + '<button type="button" class="combo-close" aria-label="Cerrar">' + uiIcon('cross', { size: 13 }) + '</button></div>'
     + '<div class="combo-search"><span class="combo-search-ic" aria-hidden="true">' + uiIcon('search', { size: 13 }) + '</span>'
     + '<input class="combo-input" type="text" role="combobox" aria-expanded="true" aria-autocomplete="list"'
@@ -305,6 +326,9 @@ export function abrirCombo(opts: ComboOptions): ComboHandle {
     onScroll: () => {},
     onResize: () => {},
     onViewport: ajustarHoja || undefined,
+    title: root.querySelector('.combo-title') as HTMLElement,
+    crumb: root.querySelector('.combo-crumb') as HTMLElement,
+    backBtn: root.querySelector('.combo-back-go') as HTMLElement,
   };
   vivo = v;
 
@@ -328,6 +352,10 @@ export function abrirCombo(opts: ComboOptions): ComboHandle {
   (root.querySelector('.combo-close') as HTMLElement).addEventListener('click', (e) => {
     e.stopPropagation();
     cerrar('cancel');
+  });
+  v.backBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    v.opts.onBack?.();
   });
   v.input.addEventListener('input', () => pintar(v));
   v.input.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -366,21 +394,27 @@ export function abrirCombo(opts: ComboOptions): ComboHandle {
       marcar(v, destino, true);
       return;
     }
+    if ((e.key === 'ArrowLeft' || (e.key === 'Backspace' && !v.input.value)) && v.opts.onBack) {
+      e.preventDefault();
+      e.stopPropagation();
+      v.opts.onBack();
+      return;
+    }
     if (e.key === 'ArrowRight' && v.opts.onAux) {
       const it = v.items[v.activo];
       if (!it || it.disabled) return;
       e.preventDefault();
       e.stopPropagation();
-      cerrar('aux');
-      v.opts.onAux(it.value, it);
+      const sigue = v.opts.onAux(it.value, it) === true;
+      if (!sigue) cerrar('aux');
       return;
     }
     if (e.key === 'Enter') {
       const it = v.items[v.activo];
       e.preventDefault();
       if (!it || it.disabled) return;
+      if (v.opts.onPick(it.value, it) === true) return;
       cerrar('pick');
-      v.opts.onPick(it.value, it);
     }
   });
 
@@ -390,10 +424,23 @@ export function abrirCombo(opts: ComboOptions): ComboHandle {
   if (v.anchor.isConnected) v.anchor.setAttribute('aria-expanded', 'true');
 
   return {
-    setSections(sections: ComboSection[]) {
+    setSections(sections: ComboSection[], step?: ComboStep) {
       if (vivo !== v) return;
       v.opts.sections = sections;
+      if (step) {
+        if (step.title !== undefined) { v.opts.title = step.title; v.title.textContent = step.title; }
+        if (step.crumb !== undefined) v.crumb.textContent = step.crumb;
+        if (step.placeholder !== undefined) v.input.placeholder = step.placeholder;
+        if (step.empty !== undefined) v.opts.empty = step.empty;
+        if (step.footer !== undefined) (v.root.querySelector('.combo-foot') as HTMLElement).innerHTML = step.footer;
+        if (step.onBack !== undefined) v.opts.onBack = step.onBack || undefined;
+        v.backBtn.hidden = !v.opts.onBack;
+      }
       pintar(v);
+      // Al cambiar de paso el buscador arranca limpio y con el foco: se sigue escribiendo.
+      v.input.value = '';
+      pintar(v);
+      v.input.focus({ preventScroll: true });
     },
     close() {
       if (vivo === v) cerrar('cancel');

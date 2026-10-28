@@ -9,7 +9,7 @@ import { remoteResultsHtml, emptyRemote } from './app/search';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
-import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
+import { abrirCombo, comboAbierto, norm, puntajeDeBusqueda, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -5260,25 +5260,102 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
   // Un solo panel para "con que hablamos": los modelos de todos los proveedores y, al final, los
   // proveedores como destino. Los valores viajan con prefijo ("model:" / "prov:") para que un solo
   // onPick distinga los dos casos sin mirar el texto de la fila.
+  // Asistente de tres pasos: proveedor -> modelo de ese proveedor -> esfuerzo. Antes era una
+  // lista de 300 filas con todos los proveedores mezclados; el orden natural de la eleccion es
+  // este, y cada paso entra con el buscador limpio y el foco puesto.
   function abrirModelo(anchor: HTMLElement) {
+    let paso: 'prov' | 'modelo' | 'esfuerzo' = 'prov';
+    let provSel = proveedorActivo();
+    let modelSel = '';
+    const nombreProv = (pid: string) => String((provDeCatalogo(pid) || {}).providerName || pid);
+
+    const secciones = (): ComboSection[] => {
+      if (paso === 'prov') {
+        const items = itemsProveedor().map((it) => ({ ...it, value: it.value.slice(5) }));
+        const out: ComboSection[] = [{ label: 'Proveedor', hint: 'despues elegis el modelo', items }];
+        // Los modelos de todos los proveedores, al final: el arbol esta arriba para recorrerlo,
+        // pero el que ya sabe el nombre lo busca y entra directo al esfuerzo de ese modelo.
+        const cruzados: ComboItem[] = [];
+        for (const pid of [proveedorActivo(), ...proveedoresListos().map((x) => String(x.providerId || ''))]) {
+          if (!pid) continue;
+          const nomProv = String((provDeCatalogo(pid) || {}).providerName || pid);
+          for (const it of itemsModelo(pid)) {
+            cruzados.push({
+              ...it,
+              meta: (it.meta ? it.meta + ' " + MID + " ' : '') + nomProv,
+              keywords: (it.keywords ? it.keywords + ' ' : '') + pid,
+              value: pid + String.fromCharCode(0) + it.value.slice(6),
+            });
+          }
+        }
+        if (cruzados.length) out.push({ label: 'Modelos', hint: 'de cualquier proveedor', items: cruzados });
+        return out;
+      }
+      if (paso === 'modelo') {
+        const items = itemsModelo(provSel).map((it) => ({ ...it, value: it.value.slice(6) }));
+        return [{ label: nombreProv(provSel), hint: items.length ? items.length + ' modelos' : 'sin catalogo', items }];
+      }
+      return seccionesEsfuerzo(modelSel);
+    };
+    const miga = (): string => (paso === 'prov' ? '' : paso === 'modelo' ? nombreProv(provSel) : nombreProv(provSel) + ' › ' + modelSel);
+    const titulo = (): string => (paso === 'prov' ? 'Proveedor' : paso === 'modelo' ? 'Modelo' : 'Esfuerzo');
+    const glosa = (): string => (paso === 'prov' ? 'Buscar proveedor…' : paso === 'modelo' ? 'Buscar modelo…' : 'Buscar nivel…');
+    const pie = (): string => (paso === 'esfuerzo' ? 'Enter elige · ← vuelve · Esc cierra' : 'Enter sigue · ← vuelve · Esc cierra');
+    const vacio = (): string =>
+      paso === 'prov' ? 'Ningun proveedor coincide. Proba con "codex" o "open".'
+        : paso === 'modelo' ? 'Ningun modelo coincide. Proba con "flash", "sonnet" o "mini".'
+          : 'Ese modelo no tiene niveles de razonamiento.';
+
+    const mostrar = (): void => {
+      comboVivo.actual?.setSections(secciones(), {
+        title: titulo(), crumb: miga(), placeholder: glosa(), empty: vacio(), footer: pie(),
+        onBack: paso === 'prov' ? null : () => { paso = paso === 'esfuerzo' ? 'modelo' : 'prov'; mostrar(); },
+      });
+    };
+
     comboVivo.actual = abrirCombo({
       anchor,
-      title: 'Modelo y proveedor',
-      placeholder: 'Buscar modelo o proveedor…',
-      sections: seccionesModelo(),
-      empty: 'No coincide ningun modelo ni proveedor. Probá con "flash", "sonnet" o "codex".',
-      footer: 'Enter elige · → esfuerzo · Esc cierra',
+      title: 'Proveedor',
+      placeholder: 'Buscar proveedor…',
+      sections: secciones(),
+      empty: vacio(),
+      footer: pie(),
+      // Devolver true deja el panel abierto: el paso siguiente se pinta en el mismo panel.
       onPick: (v) => {
-        if (v.indexOf('prov:') === 0) { void aplicarProveedor(v.slice(5)); return; }
-        const id = v.indexOf('model:') === 0 ? v.slice(6) : v;
-        void aplicarModelo(proveedorDeModelo(id) || proveedorActivo(), id);
+        if (paso === 'prov') {
+          const atajo = v.indexOf(String.fromCharCode(0));
+          if (atajo > 0) {
+            provSel = v.slice(0, atajo);
+            modelSel = v.slice(atajo + 1);
+            if (effortOptions.length > 1) { paso = 'esfuerzo'; mostrar(); return true; }
+            void aplicarModelo(provSel, modelSel);
+            return false;
+          }
+          provSel = v;
+          paso = 'modelo';
+          mostrar();
+          return true;
+        }
+        if (paso === 'modelo') {
+          modelSel = v;
+          if (effortOptions.length > 1) { paso = 'esfuerzo'; mostrar(); return true; }
+          void aplicarModelo(provSel, modelSel);
+          return false;
+        }
+        void aplicarModelo(provSel, modelSel, v);
+        return false;
       },
-      onAux: (v) => abrirEsfuerzo(anchor, v.indexOf('model:') === 0 ? v.slice(6) : v),
+      onAux: (v) => {
+        modelSel = v;
+        paso = 'esfuerzo';
+        mostrar();
+        return true;
+      },
       onClose: () => { comboVivo.actual = null; },
     });
-    // Primera vez: el catalogo trae los otros proveedores con su contexto. Al llegar, se repinta
-    // el mismo panel sin cerrarlo (si el usuario esta escribiendo, el filtro se respeta).
-    reabrirSiLlegaCatalogo(() => seccionesModelo());
+    // Primera vez: el catalogo trae el contexto de cada modelo y los proveedores que no estan en
+    // la sesion. Al llegar se repinta el mismo paso sin cerrar ni borrar lo tipeado.
+    reabrirSiLlegaCatalogo(() => secciones());
   }
   function abrirModo(anchor: HTMLElement) {
     abrirCombo({
@@ -5290,17 +5367,7 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
       onPick: (v) => { void elegirModo(v); },
     });
   }
-  function abrirEsfuerzo(anchor: HTMLElement, modelId: string) {
-    const pid = proveedorDeModelo(modelId) || proveedorActivo();
-    abrirCombo({
-      anchor,
-      title: 'Esfuerzo de razonamiento',
-      placeholder: 'Buscar nivel…',
-      sections: seccionesEsfuerzo(modelId),
-      empty: 'Ese modelo no tiene niveles de razonamiento.',
-      onPick: (v) => { void aplicarModelo(pid, modelId, v); },
-    });
-  }
+
   /** Proveedor al que pertenece un modelo del panel (la busqueda cruza proveedores). */
   function proveedorDeModelo(modelId: string): string {
     const act = proveedorActivo();

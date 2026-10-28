@@ -3840,3 +3840,47 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   .chip-model .chip-eff { font-size: 10.5px; }
   .chip-mode .chip-t { font-size: 12px; }
 }
+
+/* --- asistente por pasos: miga de pan + volver --- */
+.combo-head { display: flex; align-items: center; gap: 8px; }
+.combo-crumb {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-4);
+}
+.combo-crumb:empty { display: none; }
+.combo-crumb::before { content: "›"; margin: 0 5px 0 1px; color: var(--border-strong); }
+.combo-back-go {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-left: -4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.combo-back-go:hover { background: rgba(245, 244, 239, 0.07); color: var(--text); }
+.combo-back-go svg.is-left { transform: rotate(90deg); }
+@media (max-width: 560px) {
+  .combo-back-go { width: 44px; height: 44px; margin-left: -10px; }
+  .combo-crumb { font-size: 12px; }
+}
+
+/* En escritorio NO hay telon: tapaba el topbar entero y el segundo click de un gesto normal
+   (mousedown abre el panel, mouseup ya cae en el telon) se perdia. El cierre por click afuera lo
+   hace el listener de pointerdown del componente; el telon queda solo para la hoja del telefono. */
+.combo-root.is-pop .combo-back { display: none; }
+/* El popover no captura el puntero fuera de si mismo: el root cubre la pantalla para dibujar, no
+   para interceptar. Asi el chip sigue siendo clickeable con el panel abierto (cerrar y reabrir en
+   un solo gesto) y el cierre por click afuera lo hace el listener de pointerdown. */
+.combo-root.is-pop { pointer-events: none; }
+.combo-root.is-pop .combo-panel { pointer-events: auto; }
