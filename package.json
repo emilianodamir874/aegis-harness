@@ -6,6 +6,7 @@
   "description": "Herramientas de la web de aegis (probes node/playwright contra el cliente web)",
   "scripts": {
     "pop-clamp-check": "node tools/usage-pop-clamp-check.mjs",
+    "css-check": "node tools/css-check.mjs",
     "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.client.json && tsc -p tsconfig.tests.json",
     "build": "npm run typecheck && node tools/build-typescript.mjs",
     "test": "npm run build && node dist-ts/tests/run.mjs"

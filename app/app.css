@@ -90,6 +90,16 @@
   --measure: 760px;
   --sidebar-w: 272px;
   --topbar-h: 52px;
+
+  /* alias heredados: los módulos (activity, artifacts, memory, palette, changes, stats)
+     inyectan su propio <style> con estos nombres y sus fallbacks son azul-gris.
+     Mapeados acá, todo panel nuevo cae en la paleta del tema sin tocar su código. */
+  --panel: var(--bg-raise);
+  --card: var(--bg-card);
+  --fg: var(--text);
+  --fg-dim: var(--text-3);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
 }
 
 /* ---------- 2. base ---------- */
@@ -325,7 +335,7 @@ textarea:focus-visible { outline: none; }
   display: block;
   width: 100%;
   text-align: left;
-  padding: 7px 34px 7px 10px;
+  padding: 6px 34px 6px 10px;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
@@ -891,7 +901,8 @@ textarea:focus-visible { outline: none; }
 .wsug { display: flex; flex-direction: column; gap: var(--s2); }
 
 .sug {
-  padding: 11px 15px;
+  position: relative;
+  padding: 11px 38px 11px 15px;
   border-radius: var(--r-md);
   border: 1px solid var(--border-soft);
   background: rgba(245, 244, 239, 0.03);
@@ -900,7 +911,24 @@ textarea:focus-visible { outline: none; }
   text-align: left;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
+/* flecha al borde: la sugerencia se lee como acción, no como campo de texto */
+.sug::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 13px;
+  height: 13px;
+  transform: translateY(-50%);
+  background: currentColor;
+  opacity: 0.32;
+  pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 11 11 3M5 3h6v6' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M3 11 11 3M5 3h6v6' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/contain no-repeat;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
 .sug:hover { background: var(--bg-hover); border-color: var(--border); color: var(--text); }
+.sug:hover::after { opacity: 0.75; transform: translate(2px, -50%); }
 .sug:active { transform: scale(0.995); }
 
 .welcome-meta {
@@ -915,6 +943,44 @@ textarea:focus-visible { outline: none; }
 }
 .welcome-meta .wm { display: inline-flex; align-items: center; gap: 5px; }
 .welcome-meta .wm-k { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-4); }
+
+/* ficha de contexto del estado vacío (módulo onboarding: inyecta su propio <style>,
+   por eso se gana con el id) */
+#aegis-onboard {
+  max-width: 600px;
+  margin: var(--s6) auto 0;
+  padding: var(--s4) var(--s5);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-lg);
+  background: rgba(245, 244, 239, 0.022);
+  text-align: left;
+}
+#aegis-onboard h3 {
+  margin: 0 0 var(--s3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+#aegis-onboard dl {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) 1fr;
+  gap: 6px var(--s4);
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+#aegis-onboard dt { color: var(--text-4); font-size: 11.5px; }
+#aegis-onboard dd { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
+#aegis-onboard p { margin: var(--s3) 0 0; font-size: 12px; line-height: 1.5; color: var(--text-4); }
+/* las sugerencias viven en la bienvenida: acá repetirlas era ruido */
+#aegis-onboard .sug { display: none; }
+@media (max-width: 560px) {
+  #aegis-onboard { padding: var(--s3) var(--s4); }
+  #aegis-onboard dl { grid-template-columns: 1fr; gap: 2px; }
+  #aegis-onboard dd { margin-bottom: 6px; }
+}
 
 /* --- mensaje del usuario: burbuja propia, alineada a la derecha --- */
 .msg-user {
@@ -2522,7 +2588,11 @@ textarea:focus-visible { outline: none; }
   .composer-meta { justify-content: flex-end; }
 }
 
-.workspace-switch { display: none;   #jump-bottom { bottom: 148px; right: 14px; }
+.workspace-switch { display: none; }
+
+@media (max-width: 900px) {
+  /* el botón "ir al final" flota sobre el composer: en el teléfono se sube para no tapar Enviar */
+  #jump-bottom { bottom: 148px; right: 14px; }
 }
 
 @media (max-width: 560px) {
