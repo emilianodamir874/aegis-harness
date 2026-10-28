@@ -40,7 +40,7 @@ web/frontend/
   src/media/audio.ts         dictado (MediaRecorder→WAV) y lectura (/tts)
   src/ui/*.tsx               shell, transcript, compositor, permisos, paleta, paneles, diálogos
   src/fixtures/server.ts     serve ACP de mentira (wire real) para tests y modo fixtures
-  tests/                     61 pruebas: reducer, translate, store, render, UI, StrictMode
+  tests/                     59 pruebas: reducer, translate, store, render, UI, StrictMode
 ```
 
 Decisiones:
@@ -144,7 +144,7 @@ endpoints reales.
 | Hito | Qué incluye | Estado |
 |---|---|---|
 | M0 | Inventario, goal registrado, arquitectura, build aislado | hecho |
-| M1 | Cliente ACP tipado + store + reducer + fixtures offline | hecho (61 tests) |
+| M1 | Cliente ACP tipado + store + reducer + fixtures offline | hecho (59 tests) |
 | M2 | Shell React: sesiones, transcript, herramientas, diffs, permisos, compositor, cola, steer | hecho |
 | M3 | Replay/reconexión/adopción/historial largo/dos chats/retry idempotente | hecho (tests) |
 | M4 | Paneles de espacio de trabajo (actividad, cambios, archivos, memoria, skills, stats, doctor, contexto, ajustes, goals) | parcial |
@@ -157,7 +157,7 @@ endpoints reales.
 ```powershell
 cd C:\Aegis-Proyects\web\frontend
 npm run typecheck
-npm test                 # 61 tests
+npm test                 # 59 tests
 npm run build            # dist/ con assets hasheados
 npm run dev              # 5174, proxy /acp al server real
 
