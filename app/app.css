@@ -3299,3 +3299,31 @@ html[data-motion="reducido"] *::after {
   transition-duration: 1ms !important;
   scroll-behavior: auto !important;
 }
+
+/* fases: color y actividad por quien tiene que actuar */
+/* thinking/writing/tool/compacting: trabaja el modelo -> punto que late.
+   waiting/permission/cancel: el turno esta detenido esperando algo -> punto quieto.
+   Asi "esta trabajando" y "esta trabado esperandote" no se ven iguales. */
+.runbar[data-phase="thinking"] .runbar-phase .ui-ico { color: var(--text-3); }
+.runbar[data-phase="writing"] .runbar-phase .ui-ico { color: var(--accent); }
+.runbar[data-phase="tool"] .runbar-phase .ui-ico { color: var(--accent); }
+.runbar[data-phase="compacting"] .runbar-phase .ui-ico { color: var(--accent); }
+.runbar[data-phase="waiting"] .runbar-phase .ui-ico { color: var(--text-4); }
+.runbar[data-phase="permission"] .runbar-phase .ui-ico { color: var(--warn); }
+.runbar[data-phase="permission"] .runbar-phase .rp-name { color: var(--warn); }
+.runbar[data-phase="cancel"] .runbar-phase .ui-ico { color: var(--danger); }
+.runbar[data-phase="done"] .runbar-phase .ui-ico { color: var(--ok); }
+.runbar[data-phase="done"] .runbar-phase .rp-name { color: var(--ok); }
+
+.runbar-phase .rp-dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .75; }
+.runbar[data-phase="thinking"] .runbar-phase .rp-dot,
+.runbar[data-phase="writing"] .runbar-phase .rp-dot,
+.runbar[data-phase="tool"] .runbar-phase .rp-dot,
+.runbar[data-phase="compacting"] .runbar-phase .rp-dot {
+  display: inline-block;
+  animation: breathe 1.6s var(--ease-in-out) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .runbar-phase .rp-dot { animation: none; }
+}
+html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
