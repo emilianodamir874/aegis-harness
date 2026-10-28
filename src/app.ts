@@ -2,6 +2,7 @@
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
 import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, stepRate, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
 import { toolIconSvg, toolKindOf, uiIcon, TOOL_ICON } from './app/icons';
+import { renderInlineToolDiff } from './app/tool-diff';
 import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
 import { remoteResultsHtml, emptyRemote } from './app/search';
@@ -1569,8 +1570,13 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (SOFT.on) {
       const sid0 = u.toolCallId || u.id || '';
       const el0 = state.tools.get(sid0);
-      if (!el0 || el0.dataset.state === 'run' || !el0.querySelector('pre')) {
-        SOFT.tools.set(sid0, u);
+      if (!el0 || el0.dataset.state === 'run' || !el0.querySelector('pre') || (u.content || []).some(c => c?.type === 'diff')) {
+        const prior = SOFT.tools.get(sid0);
+        const previous = prior?.content || [];
+        const incoming = u.content || [];
+        SOFT.tools.set(sid0, { ...prior, ...u, status: u.status || prior?.status, rawInput: u.rawInput || prior?.rawInput,
+          _meta: u._meta || prior?._meta,
+          content: [...previous.filter(c => c?.type === 'diff' && !incoming.some(n => n?.type === 'diff' && n.path === c.path)), ...incoming] });
         softPush('tool', sid0);
       }
       return;
@@ -1633,8 +1639,8 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     const texts = [];
     for (const c of u.content || []) {
       if (c && c.type === 'content' && c.content && c.content.type === 'text') texts.push(c.content.text);
-      else if (c && c.type === 'diff') texts.push('± ' + (c.path || 'archivo'));
     }
+    renderInlineToolDiff(el, u, status);
     if (texts.length) {
       let pre = el.querySelector('pre');
       if (!pre) { pre = document.createElement('pre'); el.querySelector('.tool-body').appendChild(pre); }

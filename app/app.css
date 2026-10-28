@@ -1468,6 +1468,21 @@ textarea:focus-visible { outline: none; }
 }
 .tool-more:hover { background: var(--bg-hover); color: var(--text); }
 
+/* Cambios del propio paso ACP, dentro del hilo; no representan el estado global de Git. */
+.tool-diffs { display: grid; gap: 5px; margin-top: 8px; }
+.tool-diff { border: 1px solid var(--border-soft); border-radius: var(--r-sm); background: var(--bg-code); min-width: 0; }
+.tool-diff summary { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 10px; cursor: pointer; list-style-position: inside; }
+.tool-diff summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tool-diff-path { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); }
+.tool-diff-count { flex: none; color: var(--ok); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.tool-diff-note { margin: 4px 10px 8px; color: var(--text-3); font-size: var(--chat-small-font); }
+.tool .tool-diff-code { max-height: 55vh; overflow: auto; margin: 0 8px 8px; padding: 8px; white-space: pre; overflow-wrap: normal; }
+.tool .tool-diff-code::after { display: none; }
+.tool-diff-code span { display: inline; }
+.tool-diff-code .add { color: var(--ok); background: rgba(90, 176, 130, .12); }
+.tool-diff-code .del { color: var(--danger); background: rgba(210, 100, 100, .12); }
+@media (max-width: 760px) { .tool-diff summary { min-height: 44px; } }
+
 /* --- permiso: la única tarjeta que interrumpe --- */
 .perm {
   display: flex;

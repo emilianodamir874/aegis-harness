@@ -107,6 +107,39 @@ try {
   eq(navigation.preserved, navigation.position, 'fallo conserva scroll');
   if (!navigation.found || !navigation.tagged || !navigation.outlined || navigation.current !== A) throw new Error('deep-link local sin tarjeta real: ' + JSON.stringify(navigation));
   console.log('PASS openTool local, ID CSS hostil, ausencia y scroll conservado');
+  const diffCheck = await page.evaluate((sessionId) => {
+    const app = (window as any).__aegisWeb;
+    const id = 'diff-mock-1';
+    const path = 'src/<img src=x onerror=alert(1)>.ts';
+    const update = (event: Record<string, unknown>, sid = sessionId) => app.testUi.update({ sessionId: sid, update: { sessionUpdate: 'tool_call_update', toolCallId: id, ...event } });
+    update({ status: 'in_progress', title: 'Editar archivo', rawInput: { path, before: 'uno', after: 'dos' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } });
+    update({ content: [{ type: 'diff', path, oldText: 'a\nuno\nz\n', newText: 'a\ndos\nz\n' }] });
+    update({ status: 'completed' });
+    update({ content: [{ type: 'diff', path, oldText: 'a\nuno\nz\n', newText: 'a\ndos\nz\n' }] });
+    const card = app.state.tools.get(id) as HTMLElement;
+    const row = card.querySelector<HTMLDetailsElement>('.tool-diff')!;
+    const initial = { count: card.querySelectorAll('.tool-diff').length, title: row.querySelector('summary')?.textContent,
+      escaped: !row.querySelector('img'), hasPreBefore: !!card.querySelector('.tool-diff-code'), textBefore: row.querySelector('.tool-diff-code')?.textContent || '' };
+    row.open = true;
+    const visible = !!row.querySelector('.tool-diff-code')?.getBoundingClientRect().width;
+    update({ content: [{ type: 'diff', path: 'otro.ts', oldText: 'x', newText: 'y' }] }, 'another-chat');
+    const isolated = card.querySelectorAll('.tool-diff').length === 1;
+    const requestedId = 'diff-request-1';
+    app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call', toolCallId: requestedId, rawInput: { path: 'replay.ts', before: 'viejo', after: 'nuevo' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } } });
+    app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: requestedId, status: 'completed' } });
+    const request = app.state.tools.get(requestedId) as HTMLElement;
+    const preview = request.querySelector('.tool-diff-request');
+    const failureId = 'diff-failed-1';
+    app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call', toolCallId: failureId, rawInput: { path: 'fallo.ts', before: 'a', after: 'b' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } } });
+    app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: failureId, status: 'failed' } });
+    return { ...initial, visible, isolated, requested: !!preview && /solicitud|solicitada/i.test(preview.textContent || ''), failed: !app.state.tools.get(failureId).querySelector('.tool-diff'), stillOne: card.querySelectorAll('.tool-diff').length === 1 };
+  }, A);
+  if (diffCheck.count !== 1 || !diffCheck.title?.includes('+1 −1') || !diffCheck.escaped || !diffCheck.hasPreBefore
+    || !diffCheck.textBefore.includes('-uno') || !diffCheck.textBefore.includes('+dos') || !diffCheck.visible
+    || !diffCheck.isolated || !diffCheck.requested || !diffCheck.failed || !diffCheck.stillOne) {
+    throw new Error('diff ACP en chat: ' + JSON.stringify(diffCheck));
+  }
+  console.log('PASS diff ACP inline: autoría por toolCallId, escape, dedupe, vista expandida, solicitud histórica y fallo');
   const formulas = await page.evaluate(() => {
     const r = (window as any).__aegisWeb.testUi.rate;
     return [
