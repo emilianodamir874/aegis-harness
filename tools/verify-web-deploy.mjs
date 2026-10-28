@@ -84,11 +84,12 @@ try {
     const refs = [...html.matchAll(/<(script|link)\b[^>]*?\b(?:src|href)\s*=\s*(["'])(.*?)\2[^>]*>/gi)]
       .map(m => m[3]).filter(ref => /\.\b(?:js|css)(?:\?|$)/i.test(ref));
     const unique = [...new Set(refs)];
-    gate('referencias HTML', unique.some(x => /^\.\/app\.js\?v=[a-f0-9]{64}$/.test(x))
-      && unique.some(x => /^\.\/workspace-nav\.js\?v=[a-f0-9]{64}$/.test(x))
-      && unique.some(x => /^\.\/activity\.js\?v=[a-f0-9]{64}$/.test(x))
-      && unique.some(x => /^\.\/changes\.js\?v=[a-f0-9]{64}$/.test(x)),
-    `${unique.length} JS/CSS · módulos críticos versionados`);
+    // Contrato 2026-10-28: un solo bundle para el cliente. config.js va sin version porque el
+    // server lo reescribe con la config runtime; el bundle SI va versionado por su hash.
+    gate('referencias HTML', unique.some(x => /^\.\/bundle\.js\?v=[a-f0-9]{64}$/.test(x))
+      && unique.some(x => /^\.\/config\.js$/.test(x))
+      && unique.some(x => /^\.\/app\.css(\?v=[a-f0-9]{64})?$/.test(x)),
+    `${unique.length} JS/CSS · bundle unico versionado`);
     let passed = 0;
     const bad = [];
     for (const ref of unique) {

@@ -173,6 +173,21 @@ function gzipBuf(buf, key) {
   gzipCache.set(key, out);
   return out;
 }
+const brCache = /* @__PURE__ */ new Map();
+function brotliBuf(buf, key) {
+  const hit = brCache.get(key);
+  if (hit) return hit;
+  const out = zlib.brotliCompressSync(buf, {
+    params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+      [zlib.constants.BROTLI_PARAM_SIZE_HINT]: buf.length,
+      [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT
+    }
+  });
+  if (brCache.size > 40) brCache.clear();
+  brCache.set(key, out);
+  return out;
+}
 const cfg = JSON.parse(await readFile(join(DIR, "config.json"), "utf8"));
 const APP = join(DIR, "app");
 const OUTBOX = join(DIR, "outbox");
@@ -1533,6 +1548,7 @@ ${Buffer.concat(chunks).toString("utf8")}
       const html = String(data);
       const assets = [
         "app.css",
+        "bundle.js",
         "app.js",
         "skills.js",
         "memory.js",
@@ -1572,9 +1588,14 @@ ${Buffer.concat(chunks).toString("utf8")}
       return;
     }
     let body = data;
-    if (comprimible && /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""))) {
-      const gzKey = file + ":" + crypto.createHash("sha1").update(data).digest("hex");
-      body = gzipBuf(data, gzKey);
+    const acepta = String(req.headers["accept-encoding"] || "");
+    const claveContenido = file + ":" + crypto.createHash("sha1").update(data).digest("hex");
+    if (comprimible && /\bbr\b/.test(acepta)) {
+      body = brotliBuf(data, claveContenido);
+      headers["content-encoding"] = "br";
+      headers["vary"] = "accept-encoding";
+    } else if (comprimible && /\bgzip\b/.test(acepta)) {
+      body = gzipBuf(data, claveContenido);
       headers["content-encoding"] = "gzip";
       headers["vary"] = "accept-encoding";
     }
