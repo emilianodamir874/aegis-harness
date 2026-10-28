@@ -21,6 +21,7 @@ use crate::context_mgmt::count_context_tokens;
 use crate::conversation::message::Message;
 use crate::conversation::Conversation;
 use crate::providers::base::{stream_from_single_message, MessageStream, Provider};
+use crate::session::extension_data::ExtensionState;
 use crate::session::Session;
 use aegis_providers::conversation::token_usage::{ProviderUsage, Usage};
 use aegis_providers::errors::ProviderError;
@@ -32,12 +33,27 @@ const NOTICE: &str = "Exceeded auto-compact threshold";
 
 /// `validate` en el motor de compactacion rechaza resumenes de menos de 100
 /// caracteres para entradas de mas de 2.000 tokens.
-const SUMMARY_TEXT: &str = "Resumen estructurado del tramo compactado: el operador pidio leer los archivos \
+const SUMMARY_TEXT: &str =
+    "Resumen estructurado del tramo compactado: el operador pidio leer los archivos \
 del proyecto, la herramienta devolvio el contenido y el run siguio desde este resumen.";
 
 const WORDS: [&str; 16] = [
-    "contexto", "operacion", "resultado", "archivo", "linea", "error", "sesion", "turno", "medicion",
-    "registro", "bloque", "valor", "indice", "cadena", "proceso", "limite",
+    "contexto",
+    "operacion",
+    "resultado",
+    "archivo",
+    "linea",
+    "error",
+    "sesion",
+    "turno",
+    "medicion",
+    "registro",
+    "bloque",
+    "valor",
+    "indice",
+    "cadena",
+    "proceso",
+    "limite",
 ];
 
 fn build_words(count: usize) -> String {
@@ -108,21 +124,30 @@ async fn evaluate(
     reported_total: Option<i32>,
     limit: usize,
     threshold: f64,
+    // El pedido que deja la tool `compact_context` en el estado de la sesion.
+    pedido: bool,
 ) -> Result<Outcome> {
     let provider = Arc::new(SummaryProvider {
         limit,
         calls: AtomicUsize::new(0),
     });
-    let operation = CompactionOperation::new(
-        provider.clone(),
-        ModelConfig::new(MODEL),
-        limit,
-        threshold,
-    );
+    let operation =
+        CompactionOperation::new(provider.clone(), ModelConfig::new(MODEL), limit, threshold);
 
+    let mut extension_data = crate::session::ExtensionData::new();
+    if pedido {
+        crate::session::extension_data::CompactRequestState {
+            active: true,
+            note: Some("seguir con el build".to_string()),
+            requested_at: Some("2026-10-28T12:00:00Z".to_string()),
+        }
+        .to_extension_data(&mut extension_data)
+        .expect("estado del pedido");
+    }
     let session = Session {
         id: "compaction-trigger".to_string(),
         usage: Usage::new(reported_total, Some(0), reported_total),
+        extension_data,
         ..Session::default()
     };
 
@@ -144,7 +169,10 @@ async fn evaluate(
             if let Some(text) = message.content.iter().find_map(|content| {
                 content
                     .as_system_notification()
-                    .filter(|notification| notification.msg.contains(NOTICE))
+                    .filter(|notification| {
+                        notification.msg.contains(NOTICE)
+                            || notification.msg.contains("pidio compactar")
+                    })
                     .map(|notification| notification.msg.clone())
             }) {
                 notice = Some(text);
@@ -170,10 +198,10 @@ async fn auto_compaction_fires_on_the_counted_context_not_the_reported_usage() -
     let mut messages = vec![Message::user().with_text("lee los archivos del proyecto y resumilos")];
     for index in 0..10 {
         let output = text_with_tokens(10_000).await;
-        messages.push(
-            Message::assistant()
-                .with_tool_request(format!("call-{index}"), Ok(CallToolRequestParams::new("read_file"))),
-        );
+        messages.push(Message::assistant().with_tool_request(
+            format!("call-{index}"),
+            Ok(CallToolRequestParams::new("read_file")),
+        ));
         messages.push(Message::user().with_tool_response(
             format!("call-{index}"),
             Ok(CallToolResult::success(vec![ContentBlock::text(output)])),
@@ -192,6 +220,7 @@ async fn auto_compaction_fires_on_the_counted_context_not_the_reported_usage() -
         Some(1_200), // lo que reportaria una inferencia que solo vio la cola nueva
         limit,
         THRESHOLD,
+        false,
     )
     .await?;
 
@@ -199,8 +228,14 @@ async fn auto_compaction_fires_on_the_counted_context_not_the_reported_usage() -
         outcome.notice.is_some(),
         "un contexto contado de {counted} tokens contra un techo de {ceiling} tiene que avisar"
     );
-    assert!(outcome.compacted, "tiene que emitir AegisEffect::CompactConversation");
-    assert!(outcome.summary_calls > 0, "la compactacion tiene que llegar a resumir");
+    assert!(
+        outcome.compacted,
+        "tiene que emitir AegisEffect::CompactConversation"
+    );
+    assert!(
+        outcome.summary_calls > 0,
+        "la compactacion tiene que llegar a resumir"
+    );
     Ok(())
 }
 
@@ -214,10 +249,10 @@ async fn auto_compaction_stays_quiet_under_the_ceiling() -> Result<()> {
     let mut messages = vec![Message::user().with_text("arranca el trabajo")];
     for index in 0..20 {
         let output = text_with_tokens(9_700).await;
-        messages.push(
-            Message::assistant()
-                .with_tool_request(format!("call-{index}"), Ok(CallToolRequestParams::new("read_file"))),
-        );
+        messages.push(Message::assistant().with_tool_request(
+            format!("call-{index}"),
+            Ok(CallToolRequestParams::new("read_file")),
+        ));
         messages.push(Message::user().with_tool_response(
             format!("call-{index}"),
             Ok(CallToolResult::success(vec![ContentBlock::text(output)])),
@@ -231,8 +266,11 @@ async fn auto_compaction_stays_quiet_under_the_ceiling() -> Result<()> {
         "el contexto sintetico tiene que quedar por debajo del techo: {counted} >= {ceiling}"
     );
 
-    let outcome = evaluate(&conversation, Some(counted), limit, THRESHOLD).await?;
-    assert!(!outcome.compacted, "195k contra un techo de 350k no compacta");
+    let outcome = evaluate(&conversation, Some(counted), limit, THRESHOLD, false).await?;
+    assert!(
+        !outcome.compacted,
+        "195k contra un techo de 350k no compacta"
+    );
     assert!(outcome.notice.is_none());
     Ok(())
 }
@@ -248,7 +286,7 @@ async fn reported_usage_over_the_ceiling_compacts() -> Result<()> {
         Message::user().with_text("continue"),
     ]);
 
-    let outcome = evaluate(&conversation, Some(400_000), limit, THRESHOLD).await?;
+    let outcome = evaluate(&conversation, Some(400_000), limit, THRESHOLD, false).await?;
     assert!(outcome.compacted);
     assert!(outcome.notice.is_some_and(|notice| notice.contains("350k")));
     Ok(())
@@ -261,11 +299,10 @@ async fn missing_reported_usage_falls_back_to_the_count() -> Result<()> {
     let mut messages = vec![Message::user().with_text("lee y resume")];
     for index in 0..8 {
         let output = text_with_tokens(10_000).await;
-        messages.push(
-            Message::assistant()
-                .with_text("leyendo")
-                .with_tool_request(format!("call-{index}"), Ok(CallToolRequestParams::new("read_file"))),
-        );
+        messages.push(Message::assistant().with_text("leyendo").with_tool_request(
+            format!("call-{index}"),
+            Ok(CallToolRequestParams::new("read_file")),
+        ));
         messages.push(Message::user().with_tool_response(
             format!("call-{index}"),
             Ok(CallToolResult::success(vec![ContentBlock::text(output)])),
@@ -273,8 +310,50 @@ async fn missing_reported_usage_falls_back_to_the_count() -> Result<()> {
     }
     let conversation = Conversation::new_unvalidated(messages);
 
-    let outcome = evaluate(&conversation, None, limit, THRESHOLD).await?;
+    let outcome = evaluate(&conversation, None, limit, THRESHOLD, false).await?;
     assert!(outcome.compacted);
     assert!(outcome.notice.is_some());
+    Ok(())
+}
+
+/// El modelo puede decidir compactar: con la marca de \`compact_context\` en la sesion la
+/// compactacion ocurre aunque el contexto este MUY por debajo del techo, y sin la marca no.
+/// Es el contrato que separa "racionar tokens" de "pedir lugar y seguir".
+#[tokio::test]
+async fn el_pedido_del_modelo_compacta_por_debajo_del_techo() -> Result<()> {
+    let limit = 1_000_000;
+    let conversation = Conversation::new_unvalidated([
+        Message::user().with_text("arranca el trabajo"),
+        Message::assistant()
+            .with_tool_request("call-1", Ok(CallToolRequestParams::new("read_file"))),
+        Message::user().with_tool_response(
+            "call-1",
+            Ok(CallToolResult::success(vec![ContentBlock::text(
+                text_with_tokens(200).await,
+            )])),
+        ),
+    ]);
+
+    let counted = count_context_tokens(conversation.messages()).await?;
+    let sin_pedido = evaluate(&conversation, Some(counted), limit, THRESHOLD, false).await?;
+    assert!(
+        !sin_pedido.compacted,
+        "sin pedido y con el contexto casi vacio no se compacta"
+    );
+
+    let con_pedido = evaluate(&conversation, Some(counted), limit, THRESHOLD, true).await?;
+    assert!(
+        con_pedido.compacted,
+        "con el pedido del modelo se compacta aunque el contexto no llegue al techo"
+    );
+    assert!(
+        con_pedido
+            .notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("pidio compactar"),
+        "el aviso dice que fue a pedido del modelo: {:?}",
+        con_pedido.notice
+    );
     Ok(())
 }

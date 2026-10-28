@@ -344,7 +344,7 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
         emit.message(Message::assistant().with_system_notification(
             SystemNotificationType::InlineMessage,
             if requested_by_tool {
-                "El modelo pidi├ö├Â┬ú├ö├Â├® compactar. Compactando el contexto...".to_string()
+                "El modelo pidio compactar. Compactando el contexto...".to_string()
             } else {
                 format!(
                     "Exceeded auto-compact threshold of {threshold_k_tokens}k tokens. \
