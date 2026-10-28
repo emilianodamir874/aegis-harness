@@ -27,14 +27,22 @@ try {
       return { suggestions: [...document.querySelectorAll('.wsug .sug')].map((el) => el.textContent), duplicates: document.querySelectorAll('#aegis-onboard .sug').length,
         topbar: b('.topbar'), title: b('#btn-chat-info'), chip: b('#chips .chip'), doctor: b('#btn-doctor'),
         docParent: document.querySelector('#btn-doctor')?.parentElement?.className,
+        more: b('#btn-topbar-more'), secondaryVisible: getComputedStyle(document.querySelector('#topbar-secondary')).display !== 'none',
         overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         animation: getComputedStyle(document.querySelector('.welcome')).animationDuration };
     });
     check(`${width}: sin scroll horizontal`, !initial.overflow);
     check(`${width}: sugerencias únicas del proyecto`, initial.suggestions.length === 3 && initial.suggestions[0].includes('proyecto') && initial.duplicates === 0);
-    check(`${width}: cabecera legible`, initial.title?.width >= 80 && initial.doctor?.right <= width && initial.docParent === 'topbar-actions', JSON.stringify({ title: initial.title?.width, doctor: initial.doctor?.right }));
-    check(`${width}: chip táctil`, initial.chip?.height >= 44, String(initial.chip?.height));
+    check(`${width}: cabecera legible`, initial.title?.width >= 80 && initial.more?.right <= width && initial.docParent === 'topbar-secondary' && !initial.secondaryVisible && initial.topbar?.height < 112, JSON.stringify({ title: initial.title?.width, more: initial.more?.right, headerHeight: initial.topbar?.height }));
+    check(`${width}: chip táctil`, initial.chip?.height >= 44 && initial.more?.width >= 44 && initial.more?.height >= 44, JSON.stringify({ chip: initial.chip?.height, more: initial.more }));
     check(`${width}: movimiento reducido`, parseFloat(initial.animation) <= 0.001, initial.animation);
+    await page.locator('#btn-topbar-more').click();
+    const menu = await page.evaluate(() => {
+      const r = document.querySelector('#topbar-secondary').getBoundingClientRect();
+      const children = [...document.querySelectorAll('#topbar-secondary > button')].map(el => ({ id: el.id, height: el.getBoundingClientRect().height }));
+      return { expanded: document.querySelector('#btn-topbar-more').getAttribute('aria-expanded'), visible: r.width > 0, left: r.left, right: r.right, top: r.top, bottom: r.bottom, children };
+    });
+    check(`${width}: opciones alcanzables y táctiles`, menu.expanded === 'true' && menu.visible && menu.left >= 0 && menu.right <= width + 1 && menu.top >= 0 && menu.bottom <= 844 && menu.children.some(b => b.id === 'btn-doctor') && menu.children.every(b => b.height >= 44), JSON.stringify(menu));
     await page.locator('#btn-doctor').click();
     await page.waitForSelector('.aegis-doctor td', { timeout: 12000 });
     const modal = await page.evaluate(() => {
@@ -45,6 +53,15 @@ try {
     check(`${width}: Doctor dentro del viewport`, modal.left >= 0 && modal.right <= width + 1 && modal.top >= 0 && modal.bottom <= 845 && modal.buttons.every((h) => h >= 44), JSON.stringify(modal));
     await page.keyboard.press('Escape');
     check(`${width}: Doctor devuelve foco`, await page.evaluate(() => document.activeElement?.id === 'btn-doctor'));
+    await page.keyboard.press('Escape');
+    check(`${width}: opciones cierran con Escape`, await page.evaluate(() => document.querySelector('#topbar-secondary').dataset.open !== 'true' && document.activeElement?.id === 'btn-topbar-more'));
+    await page.locator('#btn-topbar-more').click();
+    await page.keyboard.press('End');
+    check(`${width}: End navega al Doctor`, await page.evaluate(() => document.activeElement?.id === 'btn-doctor'));
+    await page.keyboard.press('Home');
+    check(`${width}: Home navega a letra`, await page.evaluate(() => document.activeElement?.id === 'btn-chat-font'));
+    await page.locator('#btn-topbar-more').click();
+    check(`${width}: opciones cierran por botón`, await page.evaluate(() => document.querySelector('#topbar-secondary').dataset.open !== 'true' && document.querySelector('#btn-topbar-more').getAttribute('aria-expanded') === 'false'));
     // Fixture efímero que mide el hitbox real sin alterar una sesión persistida.
     const targets = await page.evaluate(() => {
       const host = document.createElement('div');

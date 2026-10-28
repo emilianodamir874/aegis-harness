@@ -445,6 +445,7 @@ try {
       input: getComputedStyle(document.querySelector('#input')!).fontSize,
       expected: size + 'px' };
   }, px);
+  if (await page.locator('#btn-topbar-more').isVisible()) await page.locator('#btn-topbar-more').click();
   await font.click();
   if (await font.getAttribute('aria-expanded') !== 'true') throw new Error('popover de fuente no accesible');
   await page.locator('#chat-font-range').fill('20');
@@ -467,6 +468,7 @@ try {
   await page.waitForFunction(() => (window as any).__aegisWeb?.state.sessions.length === 2);
   typography = await checkFont(20);
   if (typography.sizes.some(([, actual, expected]) => Math.abs(actual - expected) > 0.02) || typography.chrome !== '14.5px') throw new Error('persistencia fuente o cambió chrome: ' + JSON.stringify(typography));
+  if (await page.locator('#btn-topbar-more').isVisible()) await page.locator('#btn-topbar-more').click();
   await font.click();
   await page.locator('#chat-font-range').fill('22');
   await page.locator('#chat-font-plus').click();

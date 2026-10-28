@@ -31,7 +31,7 @@
 |---|---|---|---|
 | P0 | Tiempo de interacción y movimiento con transcript largo | Perf trace de abrir/cambiar/scroll/stream en sesiones de 400 y 1000+ mensajes; contar long tasks, fps y layout shifts, separar tiempo de `session/load` del render. No agregar `will-change` masivo; si aparecen janks, corregir origen. | p50/p95 de respuesta a click/tecla y frames perdidos comparados A/B bajo el mismo perfil; 0 mensajes perdidos/duplicados, 0 animaciones de replay. |
 | P0 | Teclado y paneles en Android real | Captura en Brave/Chrome con teclado cerrado/abierto, visualViewport, foco de input, scroll y selector retirado. | Composer y último mensaje utilizables, sin overlay/scroll horizontal en 320/390 y safe area; grabación + medidas antes/después. |
-| P1 | Jerarquía de cabecera móvil | Inventariar ancho de título y 6 acciones en 320/390, priorizar comandos principales y agrupar secundarios en una acción «Más» **sin perder teclado, lector ni descubribilidad**. Doctor ya se integra al grupo correcto. | Título legible ≥80 px; todos los comandos accesibles en ≤2 gestos y con etiquetas; 0 solapamientos al abrir chips/teclado. |
+| P1 (parcial) | Jerarquía de cabecera móvil | De 144 a 104 px: título, Gasto y Objetivos visibles; cinco opciones secundarias bajo «Más», con icono y etiqueta, foco/teclado y targets de 44 px. | `ui-ux-check.mjs` en 320/390 verifica ancho de título 128/198 px, menú en viewport, Doctor, Escape/Home/End y cero desborde. Falta prueba con teclado físico y chips abiertos a la vez. |
 | P1 (parcial) | Densidad/espacio en desktop | Selector con 3 opciones, ancla de lectura conservada y persistencia ya implementados; falta interacción en split-view y comparación de tablas/código a 1024/1920 px. | `density-check.mjs` 30/30 a 320/390/1024/1440/1920; faltan capturas de tablas/código y split-view. |
 | P1 | Prioridad de información y revisión | En Actividad/Cambios, enlazar evidencia del run al paso y al archivo cuando existe; mostrar explícitamente «sin dato» para pruebas/procedencia, no éxito inventado. | Fixture con cambio, toolCallId, permiso y run final + navegación sin perder scroll; contrato backend persistente antes de mostrar «terminado». |
 | P1 | Consistencia gráfica de módulos inyectados | Auditar tokens de estilos embebidos en Doctor/Actividad/Memoria/etc.; sustituir azules/fallbacks y sombras divergentes por tokens CSS compartidos sin afectar las capturas existentes. | Contraste de textos y controles, foco visible, overlay y escalas de espacio en desktop/móvil y alto contraste. |
@@ -51,7 +51,19 @@
 
 **Prioridad actualizada:** el truncamiento silencioso del historial quedó resuelto por contrato con metadata del backend ya desplegado; el próximo trabajo de rendimiento es obtener un perfil de CPU con source maps e identificar qué lectura de layout cuesta ~28 ms en el tramo medido, antes de modificar el render. El teclado físico y el agrupamiento de acciones del topbar móvil siguen abiertos.
 
-## 5. Referencias de decisión
+## 5. Tercera iteración: cabecera móvil
+
+| Medida en Chromium móvil | Antes | Después | Resultado |
+|---|---:|---:|---|
+| Altura de cabecera a 320/390 px | 144/144 px | 104/104 px | 40 px recuperados para el transcript. |
+| Ancho de título a 320/390 px | 264/334 px, ocupando una fila sola | 128/198 px, en la misma fila que acciones primarias | Entra el título y se trunca con puntos suspensivos; datos completos accesibles al pulsarlo. |
+| Controles del primer renglón | Menú, título y siete iconos en fila aparte | Menú, título, Gasto, Objetivos y «Más» | Los cinco controles secundarios se abren en «Más», con nombre visible y 44 px de alto. |
+
+**Accesibilidad y prueba:** el panel «Más» usa los botones originales (no clones), `aria-expanded`, flechas/Home/End/Escape, restaura foco al cerrar, clampa al `visualViewport` y reubica con el teclado. Doctor sigue recibiendo foco de retorno dentro del menú. `ui-ux-check.mjs` en 320/390 px comprueba posición, cinco acciones de 44 px, navegación, Doctor y ausencia de desborde. El panel de letra se coloca sobre el transcript en móvil y enfoca su rango al abrirse. Capturas de la geometría previa en `C:/Users/Emiliano/backups/ui-ux-20261028-topbar-before-{320,390}.png`. Pendiente: foto real del menú en Android con teclado abierto; no se presenta emulación como evidencia física.
+
+**Regresión:** `npm test` sin smoke: 15/16 suites en la pasada completa; falló `visibility.mjs` mientras consultaba el store vivo, sin diagnóstico de excepción en el log del runner. Repetido por separado inmediatamente: `visibility.mjs` terminó con exit 0 y `PASS visibilidad: vista y predicado inline coinciden`. No se atribuye el fallo transitorio al cambio visual ni se declara 16/16 en esa corrida. `ui-ux-check`, `density-check`, `doctor-check`, `motion-check`, `ui-craft-check` y `verify-web-deploy` pasaron tras corregir los fixtures de los menús móviles.
+
+## 6. Referencias de decisión
 
 - [WAI-ARIA APG: diálogo modal](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/): foco inicial, Tab/Shift+Tab contenidos, Escape y devolución de foco.
 - [WCAG 2.2, SC 2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html): tamaño mínimo 24×24 px o separación equivalente; 44 px es nuestra meta de ergonomía táctil, no una afirmación sobre obligación WCAG AA.

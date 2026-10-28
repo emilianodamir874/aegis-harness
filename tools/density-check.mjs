@@ -52,6 +52,7 @@ try {
       log.scrollTop = log.scrollHeight / 2;
     });
     const button = page.locator('#btn-density');
+    if (width <= 560) await page.locator('#btn-topbar-more').click();
     await button.click();
     const opened = await page.evaluate(() => {
       const menu = document.querySelector('#density-pop'), r = menu.getBoundingClientRect();

@@ -85,18 +85,23 @@
         </button>
         <div id="chips" class="chips" role="group" aria-label="Proveedor, modo y modelo del chat"></div>
         <div class="topbar-actions">
-          <button id="btn-chat-font" class="icon-btn" type="button" aria-label="Tamaño de letra" title="Tamaño de letra del chat" aria-expanded="false" aria-controls="chat-font-pop">Aa</button>
-          <button id="btn-density" class="icon-btn" type="button" aria-label="Densidad del chat" title="Densidad del chat" aria-haspopup="menu" aria-expanded="false" aria-controls="density-pop">
+          <div id="topbar-secondary" class="topbar-secondary" aria-label="Opciones de vista y mantenimiento">
+            <button id="btn-chat-font" class="icon-btn" type="button" aria-label="Tamaño de letra" title="Tamaño de letra del chat" aria-expanded="false" aria-controls="chat-font-pop">Aa</button>
+            <button id="btn-density" class="icon-btn" type="button" aria-label="Densidad del chat" title="Densidad del chat" aria-haspopup="menu" aria-expanded="false" aria-controls="density-pop">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 3.4h10.8M2.6 6.6h10.8M2.6 9.8h7.4M2.6 13h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
-          <button id="btn-contrast" class="icon-btn" type="button" aria-label="Contraste alto" aria-pressed="false" title="Contraste alto: mas legible al sol y con filtros de vista (Ctrl+Alt+C)">
+            <button id="btn-contrast" class="icon-btn" type="button" aria-label="Contraste alto" aria-pressed="false" title="Contraste alto: mas legible al sol y con filtros de vista (Ctrl+Alt+C)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.5"/><path d="M8 2.4a5.6 5.6 0 0 1 0 11.2z" fill="currentColor"/></svg>
           </button>
-          <button id="btn-present" class="icon-btn" type="button" aria-label="Modo presentación" aria-pressed="false" title="Modo presentación: solo el transcript, sin cromo (Ctrl+Alt+P · Esc para salir)">
+            <button id="btn-present" class="icon-btn" type="button" aria-label="Modo presentación" aria-pressed="false" title="Modo presentación: solo el transcript, sin cromo (Ctrl+Alt+P · Esc para salir)">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 3.4h10.8v7.2H2.6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 13.2h4M8 10.6v2.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
+          </div>
           <button id="btn-goals" class="icon-btn" type="button" aria-label="Objetivos del chat (/goal)" title="Objetivos del chat (/goal y /grind)" aria-haspopup="dialog" aria-pressed="false">
             <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="6.6" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.4" fill="currentColor"/></svg>
+          </button>
+          <button id="btn-topbar-more" class="icon-btn only-mobile" type="button" aria-label="Más opciones de la cabecera" title="Más opciones" aria-controls="topbar-secondary" aria-expanded="false">
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="4" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="16" cy="10" r="1.5" fill="currentColor"/></svg>
           </button>
         </div>
       </header>

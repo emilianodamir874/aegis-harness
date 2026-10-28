@@ -5854,6 +5854,14 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     button.addEventListener('click', () => {
       pop.hidden = !pop.hidden;
       button.setAttribute('aria-expanded', String(!pop.hidden));
+      if (!pop.hidden && window.matchMedia('(max-width: 560px)').matches) {
+        const r = pop.getBoundingClientRect();
+        const v = window.visualViewport;
+        const left = v?.offsetLeft ?? 0, width = v?.width ?? innerWidth;
+        pop.style.right = 'auto';
+        pop.style.left = Math.max(left + 8, Math.min(r.left, left + width - r.width - 8)) + 'px';
+        ($('#chat-font-range') as HTMLInputElement).focus({ preventScroll: true });
+      }
     });
     ($('#chat-font-range') as HTMLInputElement).addEventListener('input', (e) => setChatFont(Number((e.target as HTMLInputElement).value)));
     $('#chat-font-minus').addEventListener('click', () => setChatFont(chatFont - 1));
@@ -5906,6 +5914,64 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     toast(nuevo === 'alto' ? 'Contraste alto: texto y bordes mas fuertes.' : 'Contraste normal.');
   }
 
+  function wireMobileTopbar() {
+    const trigger = $('#btn-topbar-more') as HTMLButtonElement | null;
+    const panel = $('#topbar-secondary') as HTMLElement | null;
+    if (!trigger || !panel) return;
+    const mobile = window.matchMedia('(max-width: 560px)');
+    const close = (returnFocus = false) => {
+      if (panel.dataset.open !== 'true') return;
+      panel.dataset.open = 'false';
+      trigger.setAttribute('aria-expanded', 'false');
+      if (returnFocus) trigger.focus({ preventScroll: true });
+    };
+    const place = () => {
+      const r = trigger.getBoundingClientRect();
+      const v = window.visualViewport;
+      const left = v?.offsetLeft ?? 0, top = v?.offsetTop ?? 0;
+      const width = v?.width ?? innerWidth, height = v?.height ?? innerHeight;
+      const menuWidth = panel.offsetWidth, menuHeight = panel.offsetHeight;
+      panel.style.left = Math.max(left + 8, Math.min(r.right - menuWidth, left + width - menuWidth - 8)) + 'px';
+      const down = r.bottom + 6;
+      panel.style.top = (down + menuHeight <= top + height - 8 ? down : Math.max(top + 8, r.top - menuHeight - 6)) + 'px';
+    };
+    trigger.addEventListener('click', () => {
+      if (!mobile.matches) return;
+      if (panel.dataset.open === 'true') { close(true); return; }
+      panel.dataset.open = 'true';
+      trigger.setAttribute('aria-expanded', 'true');
+      place();
+      panel.querySelector<HTMLElement>('button:not([disabled])')?.focus({ preventScroll: true });
+    });
+    panel.addEventListener('click', (event) => {
+      const choice = (event.target as HTMLElement).closest('button');
+      if (choice?.id === 'btn-chat-font' || choice?.id === 'btn-contrast' || choice?.id === 'btn-present') close();
+    });
+    panel.addEventListener('keydown', (event) => {
+      if (!mobile.matches) return;
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; }
+      if (event.key === 'Tab') { close(); return; }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      const choices = [...panel.querySelectorAll<HTMLButtonElement>('button:not([disabled])')];
+      if (!choices.length) return;
+      event.preventDefault();
+      const i = Math.max(0, choices.indexOf(document.activeElement as HTMLButtonElement));
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
+        : (i + (event.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length;
+      choices[next].focus({ preventScroll: true });
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (panel.dataset.open === 'true' && !panel.contains(event.target as Node) && !trigger.contains(event.target as Node)) close();
+    });
+    const update = () => {
+      if (!mobile.matches) close();
+      else if (panel.dataset.open === 'true') place();
+    };
+    mobile.addEventListener('change', update);
+    window.visualViewport?.addEventListener('resize', update);
+    window.visualViewport?.addEventListener('scroll', update);
+  }
+
   function wireView() {
     // Orden: lo guardado manda; si no hay nada guardado y el sistema pide mas contraste, se usa.
     let guardado = '';
@@ -5919,6 +5985,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (cb) cb.addEventListener('click', () => cycleContrast());
     setDensity(density);
     wireDensityMenu();
+    wireMobileTopbar();
     const pb = $('#btn-present');
     if (pb) pb.addEventListener('click', () => setPresentation(!presentationOn()));
     document.addEventListener('keydown', (e) => {

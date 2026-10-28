@@ -264,7 +264,7 @@ window.__aegisDoctor = { open, close, refresh };
 // modulo se cargue antes de que exista el topbar (el listener espera al DOM).
 function wireButton(): void {
   if (document.getElementById('btn-doctor')) return;
-  const host = document.querySelector('.topbar-actions') || document.querySelector('.topbar');
+  const host = document.querySelector('#topbar-secondary') || document.querySelector('.topbar-actions') || document.querySelector('.topbar');
   if (!host) return;
   const btn = document.createElement('button');
   btn.id = 'btn-doctor';
