@@ -14,6 +14,7 @@ import { Dialog } from './ui/Dialog';
 import { WorkspacePanel, type PanelId } from './ui/panels';
 import { HandoffDialog } from './ui/HandoffDialog';
 import { SplitView } from './ui/SplitView';
+import { WelcomeCard } from './ui/WelcomeCard';
 
 function ToastStack({ state, onDismiss }: { state: AppState; onDismiss: (id: string) => void }) {
   return (
@@ -286,14 +287,24 @@ export function App() {
         ) : null}
         <div className="scroll">
           {session ? (
-            <Transcript
-              session={session}
-              onRewind={(mid) => {
-                void store.rewindTo(mid);
-              }}
-              onRetry={() => void store.retry()}
-              onLoadFull={() => void store.loadFullHistory()}
-            />
+            session.messages.length === 0 && session.tools.length === 0 ? (
+              <div className="transcript empty">
+                <div className="welcome">
+                  <h1>Aegis</h1>
+                  <p>Chat nuevo. Escribí abajo para empezar.</p>
+                  <WelcomeCard session={session} store={store} />
+                </div>
+              </div>
+            ) : (
+              <Transcript
+                session={session}
+                onRewind={(mid) => {
+                  void store.rewindTo(mid);
+                }}
+                onRetry={() => void store.retry()}
+                onLoadFull={() => void store.loadFullHistory()}
+              />
+            )
           ) : (
             <div className="transcript empty">
               <div className="welcome">
