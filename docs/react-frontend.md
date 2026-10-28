@@ -213,3 +213,33 @@ Lo que el motor hace de verdad, con la consecuencia que tuvo en el cliente:
 | `_aegis/unstable/session/export` existe y devuelve `{data}` | `export ok keys=data bytes=0` en sesión vacía | todavía sin botón en el cliente (fila 34) |
 | una sesión nueva emite `usage_update` y `available_commands_update` sin pedir nada | notificaciones al crear | el arranque no debe asumir silencio hasta el primer prompt |
 | `/changes.json` y `/doctor.json` exigen sesión iniciada (401 anónimo); `/memory.json`, `/stats.json`, `/outbox.json`, `/goals.json`, `/pending.json` no | pedidos directos a 3790 | los paneles con auth no se pueden verificar sin login: queda declarado como no verificado |
+
+## 8. Publicar en `/` y volver atrás
+
+Interruptor único, sin deploy ni copia de archivos: `AEGIS_WEB_ROOT=react`.
+
+| paso | comando | qué verifica |
+|---|---|---|
+| 1. build del cliente | `npm --prefix frontend run build` | `frontend/dist/index.html` + assets hasheados |
+| 2. precomprimir | `node frontend/scripts/precompress.mjs frontend/dist` | `.br`/`.gz` al lado de cada asset (JS 319,5 KB → 85,8 KB brotli) |
+| 3. build del servidor | `npm run build` (web) | `dist-ts/server.mjs` con el interruptor |
+| 4. probar sin publicar | instancia aparte en 3791 con `AEGIS_WEB_NO_SWEEP=1` y `AEGIS_WEB_ROOT=react` | `/` devuelve el HTML de React (200, `text/html`, asset `/app-react/assets/…` 200) |
+| 5. publicar | poner `AEGIS_WEB_ROOT=react` en el entorno del launcher y reiniciar el servidor fuera del turno que lo hospeda | `/` sirve React; `/app-react/` sigue sirviendo lo mismo |
+| 6. rollback | sacar la variable y reiniciar | `/` vuelve al cliente actual (18 572 B de HTML, sin `/app-react/assets`) |
+
+Verificado en 3791: con la variable, `/` = React (asset de 327 215 B); sin la variable, `/` = cliente actual. El rollback es un reinicio, no un deploy: el cliente viejo no se toca en ningún paso.
+
+Comparación medida (Chromium headless 1280×860, misma instancia, 2026-10-28):
+
+| métrica | cliente actual `/` | cliente React `/app-react/` |
+|---|---|---|
+| listo (sidebar visible) | 873 ms | 121 ms |
+| FCP | 292 ms | 108 ms |
+| DOMContentLoaded | 833 ms | 45 ms |
+| nodos del DOM inicial | 235 | 66 |
+| recursos / bytes | 7 / 102 575 | 3 / 106 080 |
+| errores de consola | 2 (WebSocket a `3284` rechazado en la instancia de prueba) | 0 |
+
+Antes de precomprimir, React tardaba 2 688 ms y transfería 434 497 B; la diferencia era la falta de `content-encoding`, que el servidor ahora resuelve sirviendo los precomprimidos.
+
+Gates que faltan para publicar: medir en Android físico y con latencia real de túnel (hoy sólo Chromium de escritorio), CRUD de skills, drag&drop de adjuntos, y probar dictado/TTS con micrófono y audio reales.

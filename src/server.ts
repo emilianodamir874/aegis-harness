@@ -256,6 +256,12 @@ const APP = join(DIR, 'app');
 // Cliente React (frontend/): se sirve aparte, bajo /app-react/, sin tocar la app actual.
 // Si no hay build, la ruta devuelve 404 y nada más cambia.
 const APP_REACT = join(DIR, 'frontend', 'dist');
+/**
+ * Interruptor de publicación del cliente React. Por defecto la raíz sigue sirviendo el cliente
+ * actual (`app/`); con `AEGIS_WEB_ROOT=react` la raíz sirve `frontend/dist`. El rollback es sacar la
+ * variable y reiniciar: un reinicio, no un deploy, porque el cliente viejo no se toca.
+ */
+const REACT_AT_ROOT = String(process.env['AEGIS_WEB_ROOT'] ?? '').toLowerCase() === 'react';
 const OUTBOX = join(DIR, 'outbox');
 const OUTBOX_PREVIEW_MAX = 2_000_000;
 // Artefactos son archivos planos, no accesos indirectos a configuracion, credenciales o al store.
@@ -1704,8 +1710,10 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return;
     }
-    if (url.pathname === '/app-react' || url.pathname.startsWith('/app-react/')) {
-      const rel = normalize(url.pathname.slice('/app-react'.length)).replace(/^[/\\]+/, '') || 'index.html';
+    if (url.pathname === '/app-react' || url.pathname.startsWith('/app-react/') || (REACT_AT_ROOT && url.pathname === '/')) {
+      const rel = (REACT_AT_ROOT && url.pathname === '/'
+        ? 'index.html'
+        : normalize(url.pathname.slice('/app-react'.length)).replace(/^[/\\]+/, '') || 'index.html');
       if (rel.includes('..')) {
         res.writeHead(400, { 'content-type': 'text/plain' });
         res.end('bad path');
@@ -1733,13 +1741,34 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
       const type = MIME[extname(served).toLowerCase()] || 'application/octet-stream';
+      // Los assets del build React se sirven precomprimidos (frontend/scripts/precompress.mjs):
+      // el .br/.gz está al lado del archivo y el navegador elige por Accept-Encoding.
+      let payload = body as Buffer;
+      let encoding: string | null = null;
+      const accept = String(req.headers['accept-encoding'] ?? '');
+      if (!extname(served).toLowerCase().match(/\.(png|jpg|jpeg|gif|webp|woff2)$/)) {
+        for (const candidato of [
+          { sufijo: '.br', nombre: 'br' },
+          { sufijo: '.gz', nombre: 'gzip' },
+        ]) {
+          if (!accept.includes(candidato.nombre)) continue;
+          try {
+            payload = await readFile(served + candidato.sufijo);
+            encoding = candidato.nombre;
+            break;
+          } catch {
+            /* sin ese precomprimido: se sigue con el siguiente o con el original */
+          }
+        }
+      }
       const immutable = url.pathname.startsWith('/app-react/assets/');
       res.writeHead(200, {
         'content-type': type,
+        ...(encoding ? { 'content-encoding': encoding, vary: 'accept-encoding' } : {}),
         'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
         ...SEC,
       });
-      res.end(body);
+      res.end(payload);
       return;
     }
 
