@@ -168,15 +168,20 @@ try {
           && !/Git no informa cambios locales/.test(changes) && !/Panel no disponible/.test(changes);
         let mobileSwitch = true;
         if (viewport.width < 500) {
+          // La barra inferior Chat/Actividad/Archivos se sacó del móvil (commit 3a56e1c): esas
+          // entradas viven en el cajón de sesiones. Lo que se verifica ahora es el contrato real:
+          // la barra NO ocupa lugar y las vistas se abren desde el cajón.
+          const swHidden = await page.evaluate(() => {
+            const sw = document.querySelector('.workspace-switch');
+            return !sw || getComputedStyle(sw).display === 'none';
+          });
           await page.locator('.aegis-changes header button').filter({ hasText: 'Cerrar' }).click();
-          await page.locator('#view-files').click();
-          await page.locator('.aegis-art-backdrop').waitFor({ timeout: 8000 });
-          await page.locator('#view-activity').click();
-          await page.locator('.aegis-activity[role="dialog"]').waitFor({ timeout: 8000 });
-          const beforeChat = await page.evaluate(() => ({ active: document.querySelector('#view-activity')?.getAttribute('aria-current'), fileVisible: !!document.querySelector('.aegis-art-backdrop') && getComputedStyle(document.querySelector('.aegis-art-backdrop')).display !== 'none' }));
-          await page.locator('#view-chat').click();
-          const afterChat = await page.evaluate(() => ({ active: document.querySelector('#view-chat')?.getAttribute('aria-current'), activity: !!document.querySelector('.aegis-activity-backdrop'), log: !!document.querySelector('#messages')?.getBoundingClientRect().width }));
-          mobileSwitch = beforeChat.active === 'page' && !beforeChat.fileVisible && afterChat.active === 'page' && !afterChat.activity && afterChat.log;
+          await page.locator('#btn-menu').click();
+          await page.locator('#btn-files').click({ timeout: 4000 });
+          const filesOk = await page.locator('.aegis-art-backdrop').waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+          await page.locator('.aegis-art-backdrop button').filter({ hasText: 'Cerrar' }).first().click().catch(() => {});
+          await page.evaluate(() => { const o = document.querySelector('#overlay'); if (o && !o.hidden) o.click(); });
+          mobileSwitch = swHidden && filesOk;
         }
         let mobileTable = true, focusedComposer = true, mobileGeometry = '';
         if (viewport.width < 500) {

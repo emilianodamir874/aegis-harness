@@ -1,7 +1,7 @@
 // aegis-web · cliente de chat ACP v3 (sin dependencias): sesiones, streaming,
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
 import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, stepRate, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
-import { toolIconSvg, toolKindOf } from './app/icons';
+import { toolIconSvg, toolKindOf, uiIcon, TOOL_ICON } from './app/icons';
 import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
 import { remoteResultsHtml, emptyRemote } from './app/search';
@@ -1159,33 +1159,79 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     try { mid ? localStorage.setItem('aegis.resume.' + sid, mid) : localStorage.removeItem('aegis.resume.' + sid); } catch {}
   }
 
-  // Atenua la cola que el modelo dejo de ver. Las filas marcadas por el server
-  // (`agentVisible: false`) delimitan la region; lo que quedo en el medio sin
-  // marca propia (tarjetas de herramientas) se atenua con ellas. Lo que llegue
-  // DESPUES del ultimo mensaje marcado ya es conversacion nueva: no se toca.
+  // Atenua la cola que el modelo dejo de ver y la mete en una banda plegable.
+  //
+  // Regla del producto (2026-10-28): lo que se oculta a la IA NUNCA se oculta al usuario.
+  // Antes los mensajes rebobinados se borraban del DOM y quedaba solo una linea de marca: el
+  // usuario perdia de vista su propia conversacion. Ahora las filas se conservan enteras,
+  // dentro de `.rw-band`, atenuadas y con un encabezado que dice que el modelo no las ve.
+  // La banda se pliega solo si el usuario lo pide (y ese estado se recuerda por sesion).
+  function rwOpenKey(sid) { return 'aegis.rwOpen.' + (sid || 'nuevo'); }
+  function rwOpen(sid) {
+    try { return localStorage.getItem(rwOpenKey(sid)) !== '0'; } catch { return true; }
+  }
+  function rwSetOpen(sid, open) {
+    try { localStorage.setItem(rwOpenKey(sid), open ? '1' : '0'); } catch {}
+  }
+  function rwLabel(n) {
+    return n === 1 ? 'El modelo no ve este mensaje' : 'El modelo no ve estos ' + n + ' mensajes';
+  }
   function markHiddenTail() {
     const inner = $('#msg-inner');
     if (!inner) return;
-    for (const m of inner.querySelectorAll('.rw-marker')) m.remove();
+    const sid = (state.current && state.current.id) || '';
+    // 1) Desarmar lo que hubiera: los nodos vuelven a su lugar y la banda desaparece.
+    //    Asi la funcion es idempotente y se puede llamar en cada refresco suave.
+    for (const band of [...inner.querySelectorAll('.rw-band')]) {
+      const body = band.querySelector('.rw-band-body');
+      if (body) while (body.firstChild) inner.insertBefore(body.firstChild, band);
+      band.remove();
+    }
     const kids = [...inner.children];
     const first = kids.findIndex((k) => k.classList.contains('hidden-from-agent'));
     if (first < 0) {
-      for (const k of kids) k.classList.remove('hidden-tail', 'rw-boundary');
+      for (const k of kids) k.classList.remove('hidden-tail', 'rw-boundary', 'rw-muted');
       return;
     }
     let last = first;
     for (let i = kids.length - 1; i >= first; i--) {
       if (kids[i].classList.contains('hidden-from-agent')) { last = i; break; }
     }
-    // Lo que el modelo dejo de ver NO se muestra atenuado: se saca de la vista (a pedido,
-    // 2026-10-16). Antes quedaba en gris ocupando pantalla y confundia: parecia que la IA lo seguia
-    // teniendo en cuenta. Los mensajes siguen guardados en la sesion (esto es solo la vista).
-    const ocultos = kids.slice(first, last + 1);
-    const marker = document.createElement('div');
-    marker.className = 'rw-marker';
-    marker.textContent = 'Rebobinado: ' + ocultos.length + (ocultos.length === 1 ? ' mensaje oculto' : ' mensajes ocultos') + ' (el modelo no los ve; siguen guardados en la sesion)';
-    inner.insertBefore(marker, kids[first]);
-    for (const k of ocultos) k.remove();
+    const ocultos = kids.slice(first, last + 1) as HTMLElement[];
+    const open = rwOpen(sid);
+    const band = document.createElement('div');
+    band.className = 'rw-band rw-marker';
+    band.dataset.count = String(ocultos.length);
+    band.classList.toggle('collapsed', !open);
+    band.innerHTML =
+      '<button class="rw-band-head" type="button" aria-expanded="' + (open ? 'true' : 'false') + '">'
+      + uiIcon('eyeOff', { size: 13, cls: 'rw-band-ico' })
+      + '<span class="rw-band-t">' + esc(rwLabel(ocultos.length)) + '</span>'
+      + '<span class="rw-band-hint">siguen guardados en la sesión</span>'
+      + uiIcon('chevron', { size: 12, cls: 'rw-band-chev' })
+      + '</button>'
+      + '<div class="rw-band-body"></div>';
+    inner.insertBefore(band, ocultos[0]);
+    const body = band.querySelector('.rw-band-body') as HTMLElement;
+    for (const k of ocultos) { k.classList.add('rw-muted'); body.appendChild(k); }
+    const head = band.querySelector('.rw-band-head') as HTMLButtonElement;
+    head.addEventListener('click', () => {
+      const next = !band.classList.contains('collapsed');
+      band.classList.toggle('collapsed', next);
+      head.setAttribute('aria-expanded', String(!next));
+      rwSetOpen(sid, !next);
+      if (!next) body.querySelector<HTMLElement>(':scope > *')?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
+  // Un solo interruptor para ver/esconder el ultimo tramo oculto (Ctrl+Alt+H y el menu).
+  function toggleHiddenBand(force?: boolean) {
+    const band = document.querySelector<HTMLElement>('#msg-inner .rw-band');
+    if (!band) { systemNote('No hay mensajes ocultos al modelo en esta conversación.'); return false; }
+    const head = band.querySelector<HTMLButtonElement>('.rw-band-head');
+    const abierto = !band.classList.contains('collapsed');
+    if (force === undefined ? true : force !== abierto) head?.click();
+    return true;
   }
 
   function askRewind(el) {
@@ -1464,6 +1510,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       if (!thought) curStream = el;
     }
     rec.text += text;
+    // Fase del turno: el pensamiento y la respuesta se distinguen en la barra sin leer el texto.
+    if (!state.replaying) phaseSet(thought ? 'thinking' : 'writing');
     // Lectura en voz alta: solo el texto de respuesta (no el pensamiento, no lo oculto, no el replay).
     if (!thought && !hidden && !state.replaying) readPump(key, rec.text);
     rec.lastAppend = performance.now();
@@ -1482,7 +1530,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     if (SOFT.on) {
       const sid0 = u.toolCallId || u.id || '';
       const el0 = state.tools.get(sid0);
-      if (!el0 || el0.querySelector('.spin') || !el0.querySelector('pre')) {
+      if (!el0 || el0.dataset.state === 'run' || !el0.querySelector('pre')) {
         SOFT.tools.set(sid0, u);
         softPush('tool', sid0);
       }
@@ -1534,9 +1582,15 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     const declared = String(u.kind || '').split(/[ /]/)[0];
     const kindOf = toolKindOf(declared) !== 'dot' ? declared : (payloadKind || 'dot');
     const running = status === 'pending' || status === 'in_progress';
-    el.dataset.state = running ? 'run' : status === 'failed' ? 'err' : 'ok';
+    const st: 'run' | 'ok' | 'err' = running ? 'run' : status === 'failed' ? 'err' : 'ok';
+    el.dataset.state = st;
     el.dataset.kind = kindOf || 'dot';
-    ic.innerHTML = toolIconSvg(kindOf, status === 'failed' ? 'failed' : 'ok', running ? 'is-running' : status === 'failed' ? 'is-err' : 'is-done');
+    phaseSet(st === 'run' ? 'tool' : 'thinking', title);
+    ic.innerHTML = toolIconSvg(kindOf, st);
+    // Etiqueta de estado para el lector de pantalla: el color y el anillo no se oyen.
+    ic.setAttribute('role', 'img');
+    ic.setAttribute('aria-label', (st === 'run' ? 'en curso: ' : st === 'err' ? 'falló: ' : 'listo: ') + (kindOf || 'herramienta'));
+    el.dataset.step = st === 'run' ? 'trabajando' : st === 'err' ? 'error' : 'listo';
     const texts = [];
     for (const c of u.content || []) {
       if (c && c.type === 'content' && c.content && c.content.type === 'text') texts.push(c.content.text);
@@ -1601,16 +1655,20 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     return res;
   }
 
-  // ¿Quedó alguna herramienta girando y no hay run activo? Es una interrupción real (el
-  // run murió sin dejar resultado): sin esto el replay muestra un spinner eterno.
+  // ¿Quedó alguna herramienta corriendo y no hay run activo? Es una interrupción real (el
+  // run murió sin dejar resultado): sin esto el replay quedaría con el anillo girando para
+  // siempre. El estado vive en `data-state`, no en un spinner hijo: la carta se marca por el
+  // atributo y el icono se repinta con el trazo de fallo.
   function sweepInterruptedTools() {
     if (state.busy) return 0;
     let n = 0;
     for (const el of state.tools.values()) {
-      const spin = el.querySelector('.spin');
-      if (!spin) continue;
-      spin.remove();
+      if (el.dataset.state !== 'run') continue;
+      el.dataset.state = 'err';
+      el.dataset.step = 'interrumpido';
       el.classList.add('err');
+      const ic = el.querySelector('.tool-ic');
+      if (ic) ic.innerHTML = toolIconSvg(el.dataset.kind || 'dot', 'err');
       const t = el.querySelector('.tool-title');
       if (t && !t.querySelector('.tint')) {
         const s = document.createElement('span');
@@ -1633,9 +1691,11 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       if (!t) continue;
       t.remove();
       el.classList.remove('err');
-      // El run sigue vivo: la carta tiene que volver a girar (el sweep le saco el spin).
+      // El run sigue vivo: la carta vuelve a su estado de ejecución con su propio icono.
+      el.dataset.state = 'run';
+      el.dataset.step = 'trabajando';
       const ic = el.querySelector('.tool-ic');
-      if (ic && !ic.querySelector('.spin')) ic.innerHTML = '<span class="spin"></span>';
+      if (ic) ic.innerHTML = toolIconSvg(el.dataset.kind || 'dot', 'run');
       n++;
     }
     return n;
@@ -1687,6 +1747,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 
   function permMarkAnswered(el: HTMLElement, text: string) {
     el.classList.add('answered');
+    // El turno deja de estar esperando al usuario: la barra vuelve a la fase de trabajo.
+    phaseSet('tool');
     el.querySelectorAll<HTMLButtonElement>('.pb').forEach((b) => { b.disabled = true; });
     let ans = el.querySelector<HTMLElement>('.perm-answer');
     if (!ans) {
@@ -1856,6 +1918,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     // del archivo a /file.json y se muestra que queda distinto. El server manda el hash; si el
     // archivo cambio despues del diff, el bloque lo avisa en vez de mentir.
     void renderWriteDiff(el, tc);
+    // El turno queda bloqueado hasta que el usuario responda: la barra lo dice.
+    phaseSet('permission', etiqueta);
 
     const btns = el.querySelector('.perm-btns');
     const labels = {
@@ -2919,6 +2983,58 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     const s = Math.max(0, ms || 0) / 1000;
     return s < 60 ? s.toFixed(1) + ' s' : Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
   };
+
+  // ---- fases del turno: qué está haciendo Aegis AHORA -------------------------
+  // Un solo lugar decide la fase; los handlers solo avisan. La barra muestra icono,
+  // nombre de la fase y segundos transcurridos en ELLA: un paso de tres minutos deja de
+  // parecer colgado, y se ve el cambio de "pensando" a "herramienta" a "escribiendo"
+  // sin leer el detalle. Los nombres son los del protocolo traducidos, no adornos.
+  const PHASE_LABEL: Record<string, string> = {
+    thinking: 'Pensando',
+    writing: 'Escribiendo',
+    tool: 'Herramienta',
+    permission: 'Esperando tu permiso',
+    compacting: 'Compactando contexto',
+    waiting: 'Esperando al proveedor',
+    cancel: 'Deteniendo',
+    done: 'Listo',
+  };
+  const PHASE_ICON: Record<string, string> = {
+    thinking: 'spark', writing: 'doc', tool: 'shell', permission: 'lock',
+    compacting: 'compact', waiting: 'clock', cancel: 'clock', done: 'check',
+  };
+  const PHASE = { name: '', since: 0 };
+  function phasePaint() {
+    const el = $('#runbar-phase');
+    if (!el || el.hidden || !PHASE.name) return;
+    const since = el.querySelector('.rp-since');
+    if (!since) return;
+    const s = Math.max(0, (performance.now() - PHASE.since) / 1000);
+    // menos de 3 s no se escribe: un contador que parpadea distrae mas de lo que informa
+    since.textContent = s >= 3 ? (s < 60 ? Math.round(s) + ' s' : Math.floor(s / 60) + ' min') : '';
+    const det = el.dataset.detail || '';
+    el.title = (PHASE_LABEL[PHASE.name] || PHASE.name) + (det ? ' · ' + det : '');
+  }
+  function phaseSet(name: string, detail?: string) {
+    const el = $('#runbar-phase');
+    const bar = $('#runbar');
+    const next = name || '';
+    if (bar) bar.dataset.phase = next;
+    if (!next) {
+      PHASE.name = '';
+      if (el) { el.hidden = true; el.innerHTML = ''; }
+      return;
+    }
+    if (PHASE.name !== next) PHASE.since = performance.now();
+    PHASE.name = next;
+    if (!el) return;
+    el.dataset.detail = detail || '';
+    el.hidden = false;
+    el.innerHTML = uiIcon(PHASE_ICON[next] || 'dot', { size: 12 })
+      + '<span class="rp-name">' + esc(PHASE_LABEL[next] || next) + '</span>'
+      + '<span class="rp-since"></span>';
+    phasePaint();
+  }
   // Mantener una etiqueta corta en teléfonos, sin perder el diagnóstico completo.
   function setRunBarText(full) {
     const el = $('#runbar-text');
@@ -2963,6 +3079,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     paintQueuedRunBar();
     const t = $('#runbar-time');
     if (t && runStart) t.textContent = fmtElapsed(performance.now() - runStart);
+    phasePaint();
   };
   function runBarShow(text) {
     const bar = $('#runbar');
@@ -2972,6 +3089,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     bar.classList.remove('done', 'cancelling');
     setRunBarText(text || 'Aegis está trabajando…');
     paintQueuedRunBar();
+    if (!PHASE.name) phaseSet('thinking');
     $('#btn-stop').disabled = false;
     if (!runStart) runStart = performance.now();
     paintRunBar();
@@ -2990,6 +3108,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     $('#messages')?.setAttribute('aria-busy', 'false');
     if (bar) { bar.hidden = true; bar.classList.remove('done', 'cancelling'); }
     paintQueuedRunBar();
+    phaseSet('');
     $('#btn-stop').disabled = false;
   }
   function runBarDone(text, ms) {
@@ -3005,6 +3124,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     bar.classList.add('done');
     setRunBarText(text);
     paintQueuedRunBar();
+    phaseSet('done');
     $('#runbar-time').textContent = fmtElapsed(ms);
     speedFinish();
     $('#messages')?.setAttribute('aria-busy', 'false');
@@ -5316,6 +5436,59 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     if (value) value.textContent = chatFont + ' px';
     try { localStorage.setItem(CHAT_FONT_KEY, String(chatFont)); } catch {}
   }
+  // ---- densidad y presentación ----------------------------------------------
+  // Tres densidades del transcript. No son "temas": cambian MEDIDAS del texto (medida,
+  // interlinea, aire entre turnos), no colores, asi que no compiten con el sistema visual.
+  //   comoda    -> lo de siempre (760px, 1.7)
+  //   compacta  -> mas conversacion en pantalla (880px, 1.55, menos aire)
+  //   lectura   -> una sola columna ancha de prosa (660px, 1.85, mas aire)
+  // El tamano de letra sigue mandando por "Aa"; esto mueve el resto.
+  const DENS_KEY = 'aegis.density';
+  const DENSITIES = ['comoda', 'compacta', 'lectura'] as const;
+  type Density = typeof DENSITIES[number];
+  const DENS_LABEL: Record<Density, string> = { comoda: 'Cómoda', compacta: 'Compacta', lectura: 'Lectura' };
+  function densValid(raw: string | null): Density {
+    return (DENSITIES as readonly string[]).includes(String(raw)) ? (raw as Density) : 'comoda';
+  }
+  let density: Density = 'comoda';
+  try { density = densValid(localStorage.getItem(DENS_KEY)); } catch {}
+  function setDensity(next: Density, announce?: boolean) {
+    density = densValid(next);
+    const messages = $('#messages');
+    if (messages) messages.dataset.density = density;
+    document.documentElement.dataset.density = density;
+    const btn = $('#btn-density');
+    if (btn) {
+      btn.setAttribute('aria-label', 'Densidad del chat: ' + DENS_LABEL[density]);
+      btn.title = 'Densidad del chat: ' + DENS_LABEL[density] + ' (click para cambiar)';
+      btn.dataset.density = density;
+    }
+    try { localStorage.setItem(DENS_KEY, density); } catch {}
+    if (announce) toast('Densidad: ' + DENS_LABEL[density]);
+    scrollBottom(true);
+    return density;
+  }
+  function cycleDensity() {
+    const i = DENSITIES.indexOf(density);
+    return setDensity(DENSITIES[(i + 1) % DENSITIES.length], true);
+  }
+
+  // Modo presentación: oculta TODO el cromo (barra de sesiones, topbar, composer, meta) y
+  // deja solo el transcript a pantalla completa, con aire. Sale con Esc o con el mismo
+  // atajo. No se persiste: es una vista, no una preferencia.
+  function presentationOn() { return document.documentElement.classList.contains('presentation'); }
+  function setPresentation(on: boolean) {
+    document.documentElement.classList.toggle('presentation', on);
+    const btn = $('#btn-present');
+    if (btn) btn.setAttribute('aria-pressed', String(on));
+    if (on) {
+      const inner = $('#msg-inner');
+      inner?.scrollIntoView({ block: 'start' });
+      toast('Modo presentación: Esc para salir');
+    }
+    return on;
+  }
+
   function wireChatFont() {
     setChatFont(chatFont);
     const pop = $('#chat-font-pop');
@@ -5338,8 +5511,26 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     });
   }
 
+  // Atajos de vista: Ctrl+Alt+P presentación, Ctrl+Alt+U banda de lo oculto al modelo.
+  // (Ctrl+Alt+H ya es el handoff y Ctrl+Alt+O la galería de artefactos.)
+  function wireView() {
+    setDensity(density);
+    const db = $('#btn-density');
+    if (db) db.addEventListener('click', () => cycleDensity());
+    const pb = $('#btn-present');
+    if (pb) pb.addEventListener('click', () => setPresentation(!presentationOn()));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && presentationOn()) { e.preventDefault(); setPresentation(false); return; }
+      if (!(e.altKey && e.ctrlKey)) return;
+      const k = String(e.key || '').toLowerCase();
+      if (k === 'p') { e.preventDefault(); setPresentation(!presentationOn()); }
+      else if (k === 'u') { e.preventDefault(); toggleHiddenBand(); }
+    });
+  }
+
   function wire() {
     wireChatFont();
+    wireView();
     // Info de la conversacion: abre con click/teclado, cierra con Esc o click afuera y
     // devuelve el foco al titulo.
     const infoBtn = $('#btn-chat-info');
@@ -6122,6 +6313,15 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   })();
 
   (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
+    // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
+    view: {
+      density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),
+      present: () => presentationOn(), setPresent: setPresentation,
+      toggleHiddenBand, hiddenBand: () => document.querySelector('#msg-inner .rw-band'),
+      phase: () => ({ name: PHASE.name, since: PHASE.since }), setPhase: phaseSet,
+    },
+    // Iconos: las mismas funciones que usa el render, para que un gate mida el set real.
+    icons: { tool: toolIconSvg, kind: toolKindOf, ui: uiIcon, names: () => Object.keys(TOOL_ICON) },
     bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
     micOff: function () { micStop(true); },   // solo para el probe de barge-in
     setRate: function (v) { var n = Number(v); if (n > 0.5 && n < 2) { READ.rate = n; try { localStorage.setItem('aegis.ttsRate', String(n)); } catch (e) {} readReset(true); return n; } return READ.rate; },

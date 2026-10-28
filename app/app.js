@@ -101,23 +101,68 @@ var TOOL_ICON = {
   // descarga
   download: '<path d="M8 3v6.4"/><path d="M5.2 7l2.8 2.8L10.8 7"/><path d="M3.4 12.6h9.2"/>',
   // reloj / espera
-  clock: '<circle cx="8" cy="8" r="5.2"/><path d="M8 5v3.2l2.2 1.4"/>'
+  clock: '<circle cx="8" cy="8" r="5.2"/><path d="M8 5v3.2l2.2 1.4"/>',
+  // ---- familia ampliada -------------------------------------------------------
+  // navegador: ventana con barra de direcciones y tres puntos
+  browser: '<rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1.6"/><path d="M2.4 6.2h11.2"/><circle cx="4.4" cy="4.8" r=".55" fill="currentColor" stroke="none"/><circle cx="6.2" cy="4.8" r=".55" fill="currentColor" stroke="none"/><path d="M5 8.4h6"/>',
+  // mcp / conector: dos piezas encastradas
+  mcp: '<path d="M6.4 3v3.2M9.6 3v3.2"/><rect x="4.6" y="6.2" width="6.8" height="3.2" rx="1.2"/><path d="M8 9.4v3.6"/>',
+  // http: flecha de ida y vuelta
+  http: '<path d="M2.6 6.2h8.2"/><path d="M8.6 4.2 10.8 6.2 8.6 8.2"/><path d="M13.4 9.8H5.2"/><path d="M7.4 7.8 5.2 9.8l2.2 2"/>',
+  // base de datos: tres discos
+  db: '<ellipse cx="8" cy="4.2" rx="5" ry="1.8"/><path d="M3 4.2v7.6c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V4.2"/><path d="M3 8c0 1 2.2 1.8 5 1.8s5-.8 5-1.8"/>',
+  // documento de texto
+  doc: '<path d="M4 2.6h5L12 5.6v7.8H4z"/><path d="M9 2.6v3h3"/><path d="M5.8 8h4.4M5.8 10.4h3"/>',
+  // tabla / hoja de calculo
+  table: '<rect x="2.6" y="3.6" width="10.8" height="8.8" rx="1.2"/><path d="M2.6 6.6h10.8M6.6 6.6v5.8"/>',
+  // voz / audio
+  voice: '<rect x="6.2" y="2.6" width="3.6" height="6" rx="1.8"/><path d="M4.4 7.8v.4a3.6 3.6 0 0 0 7.2 0v-.4"/><path d="M8 11.8v1.6"/>',
+  // permiso / candado
+  lock: '<rect x="3.6" y="7.2" width="8.8" height="6.2" rx="1.6"/><path d="M5.8 7.2V5.6a2.2 2.2 0 0 1 4.4 0v1.6"/>',
+  // compactar: dos flechas al centro
+  compact: '<path d="M4 3.4v3.2M4 6.6h3.2"/><path d="M12 12.6v-3.2M12 9.4H8.8"/><path d="M4 6.6 8 10.4M12 9.4 8 5.6"/>',
+  // capas / contexto
+  layers: '<path d="M8 2.6 13.2 5.4 8 8.2 2.8 5.4z"/><path d="M2.8 8.4 8 11.2l5.2-2.8"/><path d="M2.8 11 8 13.8l5.2-2.8"/>',
+  // chispa / generando
+  spark: '<path d="M8 2.4v3.2M8 10.4v3.2M2.4 8h3.2M10.4 8h3.2"/><path d="M4.8 4.8l1.6 1.6M9.6 9.6l1.6 1.6M11.2 4.8 9.6 6.4M6.4 9.6 4.8 11.2"/>',
+  // ojo (visible para el modelo)
+  eye: '<path d="M1.8 8s2.3-3.8 6.2-3.8S14.2 8 14.2 8s-2.3 3.8-6.2 3.8S1.8 8 1.8 8Z"/><circle cx="8" cy="8" r="1.9"/>',
+  // ojo tachado (el modelo no lo ve)
+  eyeOff: '<path d="M2.6 3.2l10.8 9.6"/><path d="M6.4 4.6A7.3 7.3 0 0 1 8 4.4c3.9 0 6.2 3.6 6.2 3.6a10 10 0 0 1-2.4 2.6"/><path d="M4.4 5.9A10.4 10.4 0 0 0 1.8 8s2.3 3.6 6.2 3.6c.9 0 1.7-.2 2.4-.5"/>',
+  // deshacer / reactivar contexto
+  undo: '<path d="M3.2 7.4h6.2a3.2 3.2 0 0 1 0 6.4H6.4"/><path d="M5.6 4.6 3 7.4l2.6 2.6"/>',
+  // chevron a la derecha (plegar/desplegar)
+  chevron: '<path d="M6 4l4 4-4 4"/>',
+  // pila de lineas: densidad / presentacion
+  frame: '<path d="M2.8 3.6h10.4v8.8H2.8z"/><path d="M5 6.4h6M5 9h4"/>',
+  // copiar
+  copy: '<rect x="5.4" y="5.4" width="7" height="8" rx="1.4"/><path d="M10.6 5.4V4.2A1.2 1.2 0 0 0 9.4 3H4.4A1.2 1.2 0 0 0 3.2 4.2v6"/>',
+  // regenerar
+  refresh: '<path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13.2 2.8v2.8h-2.8"/>'
 };
 var RULES = [
-  [/shell|terminal|bash|powershell|exec|cmd|command/, "shell"],
-  [/screenshot|image|vision|photo|ocr/, "image"],
-  [/grep|search|find|query|lookup|recall|glob|ls\b/, "search"],
-  [/memory|remember|recall_/, "memory"],
+  [/shell|terminal|bash|powershell|exec|cmd|command|pty/, "shell"],
+  [/screenshot|image|vision|photo|ocr|canvas/, "image"],
+  [/grep|search|find|query|lookup|recall|glob|ls\b|list/, "search"],
+  [/memory|remember|fact/, "memory"],
   [/skill/, "skill"],
-  [/todo|task|plan|schedul/, "plan"],
-  [/patch|edit|replace|apply/, "edit"],
-  [/delete|remove|unlink|rm\b/, "delete"],
-  [/write|create|save|touch|mkdir|append/, "write"],
+  [/todo|task|plan|schedul|goal|grind/, "plan"],
+  [/patch|edit|replace|apply|diff|hunk/, "edit"],
+  [/delete|remove|unlink|rm\b|trash/, "delete"],
+  [/write|create|save|touch|mkdir|append|upload/, "write"],
+  [/sql|database|query_db|table_/, "db"],
+  [/pdf|docx|document|markdown|report/, "doc"],
+  [/mcp|plugin|connector/, "mcp"],
+  [/http|request|api|rest/, "http"],
+  [/browser|puppeteer|playwright|navigate|click/, "browser"],
+  [/fetch|web|browse|url|curl/, "glob"],
+  [/git|commit|branch|checkout/, "git"],
+  [/download|export/, "download"],
+  [/audio|voice|speech|transcri|tts/, "voice"],
+  [/permission|approve|ask|consent/, "lock"],
+  [/compact|summar|context/, "compact"],
   [/read|file|cat|open|tree|view|stat|head|tail/, "read"],
-  [/fetch|http|web|browse|url|curl|mcp|browser|network/, "glob"],
-  [/git|diff|commit|branch/, "git"],
-  [/download|upload|export/, "download"],
-  [/code|script|typescript|eval|run|test/, "code"]
+  [/code|script|typescript|eval|run|test|lint|build/, "code"]
 ];
 function toolKindOf(kind) {
   const raw = String(kind || "").toLowerCase();
@@ -127,9 +172,18 @@ function toolKindOf(kind) {
   return "dot";
 }
 function toolIconSvg(kind, status, extraClass = "") {
-  const resolved = status === "failed" ? "cross" : toolKindOf(kind);
-  const cls = "tico" + (extraClass ? " " + extraClass : "") + " tico-" + resolved;
-  return '<svg class="' + cls + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + TOOL_ICON[resolved] + "</svg>";
+  const failed = status === "failed" || status === "err";
+  const running = status === "run" || status === "pending";
+  const resolved = failed ? "cross" : toolKindOf(kind);
+  const stateCls = failed ? " is-err" : running ? " is-running" : " is-done";
+  const cls = "tico" + (extraClass ? " " + extraClass : "") + " tico-" + resolved + stateCls;
+  return '<svg class="' + cls + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + TOOL_ICON[resolved] + "</svg>";
+}
+function uiIcon(name, opts) {
+  const path = TOOL_ICON[name] || TOOL_ICON.dot;
+  const size = opts && opts.size ? opts.size : 14;
+  const cls = "ui-ico" + (opts && opts.cls ? " " + opts.cls : "") + " ui-ico-" + name;
+  return '<svg class="' + cls + '" viewBox="0 0 16 16" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + path + "</svg>";
 }
 
 // src/app/markdown.ts
@@ -1602,14 +1656,38 @@ async function blobToWav16k(blob) {
     } catch {
     }
   }
+  function rwOpenKey(sid) {
+    return "aegis.rwOpen." + (sid || "nuevo");
+  }
+  function rwOpen(sid) {
+    try {
+      return localStorage.getItem(rwOpenKey(sid)) !== "0";
+    } catch {
+      return true;
+    }
+  }
+  function rwSetOpen(sid, open) {
+    try {
+      localStorage.setItem(rwOpenKey(sid), open ? "1" : "0");
+    } catch {
+    }
+  }
+  function rwLabel(n) {
+    return n === 1 ? "El modelo no ve este mensaje" : "El modelo no ve estos " + n + " mensajes";
+  }
   function markHiddenTail() {
     const inner = $("#msg-inner");
     if (!inner) return;
-    for (const m of inner.querySelectorAll(".rw-marker")) m.remove();
+    const sid = state.current && state.current.id || "";
+    for (const band2 of [...inner.querySelectorAll(".rw-band")]) {
+      const body2 = band2.querySelector(".rw-band-body");
+      if (body2) while (body2.firstChild) inner.insertBefore(body2.firstChild, band2);
+      band2.remove();
+    }
     const kids = [...inner.children];
     const first = kids.findIndex((k) => k.classList.contains("hidden-from-agent"));
     if (first < 0) {
-      for (const k of kids) k.classList.remove("hidden-tail", "rw-boundary");
+      for (const k of kids) k.classList.remove("hidden-tail", "rw-boundary", "rw-muted");
       return;
     }
     let last = first;
@@ -1620,11 +1698,37 @@ async function blobToWav16k(blob) {
       }
     }
     const ocultos = kids.slice(first, last + 1);
-    const marker = document.createElement("div");
-    marker.className = "rw-marker";
-    marker.textContent = "Rebobinado: " + ocultos.length + (ocultos.length === 1 ? " mensaje oculto" : " mensajes ocultos") + " (el modelo no los ve; siguen guardados en la sesion)";
-    inner.insertBefore(marker, kids[first]);
-    for (const k of ocultos) k.remove();
+    const open = rwOpen(sid);
+    const band = document.createElement("div");
+    band.className = "rw-band rw-marker";
+    band.dataset.count = String(ocultos.length);
+    band.classList.toggle("collapsed", !open);
+    band.innerHTML = '<button class="rw-band-head" type="button" aria-expanded="' + (open ? "true" : "false") + '">' + uiIcon("eyeOff", { size: 13, cls: "rw-band-ico" }) + '<span class="rw-band-t">' + esc(rwLabel(ocultos.length)) + '</span><span class="rw-band-hint">siguen guardados en la sesión</span>' + uiIcon("chevron", { size: 12, cls: "rw-band-chev" }) + '</button><div class="rw-band-body"></div>';
+    inner.insertBefore(band, ocultos[0]);
+    const body = band.querySelector(".rw-band-body");
+    for (const k of ocultos) {
+      k.classList.add("rw-muted");
+      body.appendChild(k);
+    }
+    const head = band.querySelector(".rw-band-head");
+    head.addEventListener("click", () => {
+      const next = !band.classList.contains("collapsed");
+      band.classList.toggle("collapsed", next);
+      head.setAttribute("aria-expanded", String(!next));
+      rwSetOpen(sid, !next);
+      if (!next) body.querySelector(":scope > *")?.scrollIntoView({ block: "nearest" });
+    });
+  }
+  function toggleHiddenBand(force) {
+    const band = document.querySelector("#msg-inner .rw-band");
+    if (!band) {
+      systemNote("No hay mensajes ocultos al modelo en esta conversación.");
+      return false;
+    }
+    const head = band.querySelector(".rw-band-head");
+    const abierto = !band.classList.contains("collapsed");
+    if (force === void 0 ? true : force !== abierto) head?.click();
+    return true;
   }
   function askRewind(el) {
     if (!el || el.querySelector(".rw-confirm")) return;
@@ -1895,6 +1999,7 @@ async function blobToWav16k(blob) {
       if (!thought) curStream = el;
     }
     rec.text += text;
+    if (!state.replaying) phaseSet(thought ? "thinking" : "writing");
     if (!thought && !hidden && !state.replaying) readPump(key, rec.text);
     rec.lastAppend = performance.now();
     rec.live = !state.replaying;
@@ -1913,7 +2018,7 @@ async function blobToWav16k(blob) {
     if (SOFT.on) {
       const sid0 = u.toolCallId || u.id || "";
       const el0 = state.tools.get(sid0);
-      if (!el0 || el0.querySelector(".spin") || !el0.querySelector("pre")) {
+      if (!el0 || el0.dataset.state === "run" || !el0.querySelector("pre")) {
         SOFT.tools.set(sid0, u);
         softPush("tool", sid0);
       }
@@ -1949,9 +2054,14 @@ async function blobToWav16k(blob) {
     const declared = String(u.kind || "").split(/[ /]/)[0];
     const kindOf = toolKindOf(declared) !== "dot" ? declared : payloadKind || "dot";
     const running = status === "pending" || status === "in_progress";
-    el.dataset.state = running ? "run" : status === "failed" ? "err" : "ok";
+    const st = running ? "run" : status === "failed" ? "err" : "ok";
+    el.dataset.state = st;
     el.dataset.kind = kindOf || "dot";
-    ic.innerHTML = toolIconSvg(kindOf, status === "failed" ? "failed" : "ok", running ? "is-running" : status === "failed" ? "is-err" : "is-done");
+    phaseSet(st === "run" ? "tool" : "thinking", title);
+    ic.innerHTML = toolIconSvg(kindOf, st);
+    ic.setAttribute("role", "img");
+    ic.setAttribute("aria-label", (st === "run" ? "en curso: " : st === "err" ? "falló: " : "listo: ") + (kindOf || "herramienta"));
+    el.dataset.step = st === "run" ? "trabajando" : st === "err" ? "error" : "listo";
     const texts = [];
     for (const c of u.content || []) {
       if (c && c.type === "content" && c.content && c.content.type === "text") texts.push(c.content.text);
@@ -2024,10 +2134,12 @@ async function blobToWav16k(blob) {
     if (state.busy) return 0;
     let n = 0;
     for (const el of state.tools.values()) {
-      const spin = el.querySelector(".spin");
-      if (!spin) continue;
-      spin.remove();
+      if (el.dataset.state !== "run") continue;
+      el.dataset.state = "err";
+      el.dataset.step = "interrumpido";
       el.classList.add("err");
+      const ic = el.querySelector(".tool-ic");
+      if (ic) ic.innerHTML = toolIconSvg(el.dataset.kind || "dot", "err");
       const t = el.querySelector(".tool-title");
       if (t && !t.querySelector(".tint")) {
         const s = document.createElement("span");
@@ -2047,8 +2159,10 @@ async function blobToWav16k(blob) {
       if (!t) continue;
       t.remove();
       el.classList.remove("err");
+      el.dataset.state = "run";
+      el.dataset.step = "trabajando";
       const ic = el.querySelector(".tool-ic");
-      if (ic && !ic.querySelector(".spin")) ic.innerHTML = '<span class="spin"></span>';
+      if (ic) ic.innerHTML = toolIconSvg(el.dataset.kind || "dot", "run");
       n++;
     }
     return n;
@@ -2098,6 +2212,7 @@ async function blobToWav16k(blob) {
   const permCards = /* @__PURE__ */ new Map();
   function permMarkAnswered(el, text) {
     el.classList.add("answered");
+    phaseSet("tool");
     el.querySelectorAll(".pb").forEach((b) => {
       b.disabled = true;
     });
@@ -2254,6 +2369,7 @@ async function blobToWav16k(blob) {
     const etiqueta = String(tc.title || tc.kind || "Herramienta");
     el.innerHTML = `<div class="perm-head"><svg class="perm-ico" width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4.2" y="8.6" width="11.6" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M7 8.6V6.4a3 3 0 0 1 6 0v2.2" stroke="currentColor" stroke-width="1.5"/></svg>Aegis pide permiso para usar una herramienta</div><div class="perm-tool">${esc(etiqueta)}${showCmd ? ` — <code>${esc(cmd.slice(0, 220))}</code>` : ""}</div><div class="perm-btns"></div><div class="sr-only" role="status">Aegis pide permiso para ${esc(etiqueta)}. Elegí una opción.</div>`;
     void renderWriteDiff(el, tc);
+    phaseSet("permission", etiqueta);
     const btns = el.querySelector(".perm-btns");
     const labels = {
       allow_once: ["Permitir una vez", "primary"],
@@ -3270,6 +3386,58 @@ async function blobToWav16k(blob) {
     const s = Math.max(0, ms || 0) / 1e3;
     return s < 60 ? s.toFixed(1) + " s" : Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
   };
+  const PHASE_LABEL = {
+    thinking: "Pensando",
+    writing: "Escribiendo",
+    tool: "Herramienta",
+    permission: "Esperando tu permiso",
+    compacting: "Compactando contexto",
+    waiting: "Esperando al proveedor",
+    cancel: "Deteniendo",
+    done: "Listo"
+  };
+  const PHASE_ICON = {
+    thinking: "spark",
+    writing: "doc",
+    tool: "shell",
+    permission: "lock",
+    compacting: "compact",
+    waiting: "clock",
+    cancel: "clock",
+    done: "check"
+  };
+  const PHASE = { name: "", since: 0 };
+  function phasePaint() {
+    const el = $("#runbar-phase");
+    if (!el || el.hidden || !PHASE.name) return;
+    const since = el.querySelector(".rp-since");
+    if (!since) return;
+    const s = Math.max(0, (performance.now() - PHASE.since) / 1e3);
+    since.textContent = s >= 3 ? s < 60 ? Math.round(s) + " s" : Math.floor(s / 60) + " min" : "";
+    const det = el.dataset.detail || "";
+    el.title = (PHASE_LABEL[PHASE.name] || PHASE.name) + (det ? " · " + det : "");
+  }
+  function phaseSet(name, detail) {
+    const el = $("#runbar-phase");
+    const bar = $("#runbar");
+    const next = name || "";
+    if (bar) bar.dataset.phase = next;
+    if (!next) {
+      PHASE.name = "";
+      if (el) {
+        el.hidden = true;
+        el.innerHTML = "";
+      }
+      return;
+    }
+    if (PHASE.name !== next) PHASE.since = performance.now();
+    PHASE.name = next;
+    if (!el) return;
+    el.dataset.detail = detail || "";
+    el.hidden = false;
+    el.innerHTML = uiIcon(PHASE_ICON[next] || "dot", { size: 12 }) + '<span class="rp-name">' + esc(PHASE_LABEL[next] || next) + '</span><span class="rp-since"></span>';
+    phasePaint();
+  }
   function setRunBarText(full) {
     const el = $("#runbar-text");
     const bar = $("#runbar");
@@ -3311,6 +3479,7 @@ async function blobToWav16k(blob) {
     paintQueuedRunBar();
     const t = $("#runbar-time");
     if (t && runStart) t.textContent = fmtElapsed(performance.now() - runStart);
+    phasePaint();
   };
   function runBarShow(text) {
     const bar = $("#runbar");
@@ -3320,6 +3489,7 @@ async function blobToWav16k(blob) {
     bar.classList.remove("done", "cancelling");
     setRunBarText(text || "Aegis está trabajando…");
     paintQueuedRunBar();
+    if (!PHASE.name) phaseSet("thinking");
     $("#btn-stop").disabled = false;
     if (!runStart) runStart = performance.now();
     paintRunBar();
@@ -3344,6 +3514,7 @@ async function blobToWav16k(blob) {
       bar.classList.remove("done", "cancelling");
     }
     paintQueuedRunBar();
+    phaseSet("");
     $("#btn-stop").disabled = false;
   }
   function runBarDone(text, ms) {
@@ -3359,6 +3530,7 @@ async function blobToWav16k(blob) {
     bar.classList.add("done");
     setRunBarText(text);
     paintQueuedRunBar();
+    phaseSet("done");
     $("#runbar-time").textContent = fmtElapsed(ms);
     speedFinish();
     $("#messages")?.setAttribute("aria-busy", "false");
@@ -5660,6 +5832,54 @@ ${a.text}
     } catch {
     }
   }
+  const DENS_KEY = "aegis.density";
+  const DENSITIES = ["comoda", "compacta", "lectura"];
+  const DENS_LABEL = { comoda: "Cómoda", compacta: "Compacta", lectura: "Lectura" };
+  function densValid(raw) {
+    return DENSITIES.includes(String(raw)) ? raw : "comoda";
+  }
+  let density = "comoda";
+  try {
+    density = densValid(localStorage.getItem(DENS_KEY));
+  } catch {
+  }
+  function setDensity(next, announce) {
+    density = densValid(next);
+    const messages = $("#messages");
+    if (messages) messages.dataset.density = density;
+    document.documentElement.dataset.density = density;
+    const btn = $("#btn-density");
+    if (btn) {
+      btn.setAttribute("aria-label", "Densidad del chat: " + DENS_LABEL[density]);
+      btn.title = "Densidad del chat: " + DENS_LABEL[density] + " (click para cambiar)";
+      btn.dataset.density = density;
+    }
+    try {
+      localStorage.setItem(DENS_KEY, density);
+    } catch {
+    }
+    if (announce) toast("Densidad: " + DENS_LABEL[density]);
+    scrollBottom(true);
+    return density;
+  }
+  function cycleDensity() {
+    const i = DENSITIES.indexOf(density);
+    return setDensity(DENSITIES[(i + 1) % DENSITIES.length], true);
+  }
+  function presentationOn() {
+    return document.documentElement.classList.contains("presentation");
+  }
+  function setPresentation(on) {
+    document.documentElement.classList.toggle("presentation", on);
+    const btn = $("#btn-present");
+    if (btn) btn.setAttribute("aria-pressed", String(on));
+    if (on) {
+      const inner = $("#msg-inner");
+      inner?.scrollIntoView({ block: "start" });
+      toast("Modo presentación: Esc para salir");
+    }
+    return on;
+  }
   function wireChatFont() {
     setChatFont(chatFont);
     const pop = $("#chat-font-pop");
@@ -5686,8 +5906,32 @@ ${a.text}
       }
     });
   }
+  function wireView() {
+    setDensity(density);
+    const db = $("#btn-density");
+    if (db) db.addEventListener("click", () => cycleDensity());
+    const pb = $("#btn-present");
+    if (pb) pb.addEventListener("click", () => setPresentation(!presentationOn()));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && presentationOn()) {
+        e.preventDefault();
+        setPresentation(false);
+        return;
+      }
+      if (!(e.altKey && e.ctrlKey)) return;
+      const k = String(e.key || "").toLowerCase();
+      if (k === "p") {
+        e.preventDefault();
+        setPresentation(!presentationOn());
+      } else if (k === "u") {
+        e.preventDefault();
+        toggleHiddenBand();
+      }
+    });
+  }
   function wire() {
     wireChatFont();
+    wireView();
     const infoBtn = $("#btn-chat-info");
     const infoPop = $("#chat-info");
     if (infoBtn && infoPop) {
@@ -6564,6 +6808,21 @@ ${a.text}
     readPump,
     readToggle,
     markHiddenTail,
+    // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
+    view: {
+      density: () => density,
+      cycleDensity,
+      setDensity,
+      densities: () => DENSITIES.slice(),
+      present: () => presentationOn(),
+      setPresent: setPresentation,
+      toggleHiddenBand,
+      hiddenBand: () => document.querySelector("#msg-inner .rw-band"),
+      phase: () => ({ name: PHASE.name, since: PHASE.since }),
+      setPhase: phaseSet
+    },
+    // Iconos: las mismas funciones que usa el render, para que un gate mida el set real.
+    icons: { tool: toolIconSvg, kind: toolKindOf, ui: uiIcon, names: () => Object.keys(TOOL_ICON) },
     bargeNow: function() {
       return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 };
     },

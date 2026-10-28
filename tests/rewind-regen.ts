@@ -5,6 +5,10 @@
 // el segundo rebobinado no limpiaba nada. Se verifica que lo oculto sobreviva a una recarga, que
 // lo que se manda despues sea visible, y que "Regenerar" reemplace la ultima respuesta.
 //
+// CONTRATO NUEVO (2026-10-28): lo que se oculta al MODELO nunca se oculta al USUARIO. Los
+// mensajes rebobinados quedan en el DOM, dentro de `.rw-band` (expandida por defecto). Lo que se
+// verifica, entonces, es que NO esten en el hilo vivo y SI esten en la banda.
+//
 // Cuesta turnos reales (4 prompts cortos): corre solo con AEGIS_TEST_SMOKE=1.
 import { chromium } from 'playwright';
 import { baseUrl, check, pass, openPage } from './lib.js';
@@ -23,9 +27,17 @@ try {
     await page.waitForTimeout(900);
   };
   const send = async (t: string) => { await page.fill('#input', t); await page.keyboard.press('Enter'); await waitIdle(); };
+  // Hilo vivo: lo que esta en #msg-inner pero NO dentro de la banda de ocultos.
   const visibles = () => page.evaluate(() => [...document.querySelectorAll('#msg-inner > .msg-user, #msg-inner > .msg-a')].map((el) => (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 26)));
+  // Lo que el modelo no ve: sigue existiendo y sigue a la vista del usuario, dentro de la banda.
+  const ocultos = () => page.evaluate(() => {
+    const b = document.querySelector('#msg-inner .rw-band');
+    if (!b) return { band: false, rows: [], count: 0, abierta: false };
+    const rows = [...b.querySelectorAll('.rw-band-body > *')].map((el) => (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 26));
+    return { band: true, rows, count: Number((b as HTMLElement).dataset.count || rows.length), abierta: !b.classList.contains('collapsed') };
+  });
   const rewindIdx = async (n: number) => {
-    const users = await page.$$('#msg-inner > .msg-user');
+    const users = await page.$$('#msg-inner > .msg-user, #msg-inner .rw-band-body > .msg-user');
     const el = users[n];
     check(!!el, 'hay burbuja de usuario #' + n);
     await el.hover();
@@ -54,23 +66,30 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   const v1 = await visibles();
-  check(v1.some((t: string) => /letra A/i.test(t)), 'A sigue visible tras recargar: ' + JSON.stringify(v1));
-  check(!v1.some((t: string) => /letra B/i.test(t)), 'B quedo oculto y NO reaparece al recargar: ' + JSON.stringify(v1));
+  const h1 = await ocultos();
+  check(v1.some((t: string) => /letra A/i.test(t)), 'A sigue en el hilo vivo tras recargar: ' + JSON.stringify(v1));
+  check(!v1.some((t: string) => /letra B/i.test(t)), 'B salio del hilo vivo: ' + JSON.stringify(v1));
+  check(h1.band && h1.abierta, 'queda la banda de ocultos, abierta por defecto');
+  check(h1.rows.some((t: string) => /letra B/i.test(t)), 'B sigue visible para el usuario dentro de la banda: ' + JSON.stringify(h1.rows));
 
   await send('responde solo la letra C');
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   const v2 = await visibles();
+  const h2 = await ocultos();
   check(v2.some((t: string) => /letra A/i.test(t)), 'A visible despues de reenviar: ' + JSON.stringify(v2));
   check(v2.some((t: string) => /letra C/i.test(t)), 'C (lo reenviado) es visible: ' + JSON.stringify(v2));
-  check(!v2.some((t: string) => /letra B/i.test(t)), 'B sigue oculto: ' + JSON.stringify(v2));
+  check(h2.rows.some((t: string) => /letra B/i.test(t)) && !v2.some((t: string) => /letra B/i.test(t)), 'B sigue fuera del modelo y a la vista: ' + JSON.stringify(h2.rows));
 
   await rewindIdx(0);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(4000);
   const v3 = await visibles();
-  check(v3.length === 0, 'segundo rebobinado limpia todo desde A (no queda nada visible): ' + JSON.stringify(v3));
-  check(!!(await page.$('#msg-inner .rw-marker')), 'queda la marca de rebobinado');
+  const h3 = await ocultos();
+  check(v3.length === 0, 'segundo rebobinado limpia el hilo vivo (no queda nada fuera de la banda): ' + JSON.stringify(v3));
+  check(h3.band, 'queda la banda de rebobinado');
+  check(h3.rows.length >= 4, 'nada se perdio: ' + h3.rows.length + ' mensajes conservados en la banda');
+  check(/letra A/i.test(h3.rows.join(' ')) && /letra C/i.test(h3.rows.join(' ')), 'A y C siguen legibles para el usuario: ' + JSON.stringify(h3.rows));
 
   // Regenerar sobre un chat nuevo
   await page.evaluate(() => document.getElementById('btn-new')?.click());
@@ -85,8 +104,10 @@ try {
   await page.waitForTimeout(1200);
   const despues = (await visibles()).length;
   const tras = await visibles();
-  check(despues < antes, 'regenerar reemplaza el turno viejo (antes ' + antes + ' filas, despues ' + despues + ')');
+  const h4 = await ocultos();
+  check(despues < antes, 'regenerar saca el turno viejo del hilo (antes ' + antes + ' filas, despues ' + despues + ')');
   check(tras.some((t: string) => /letra D/i.test(t)), 'queda el turno regenerado: ' + JSON.stringify(tras));
+  check(h4.rows.some((t: string) => /letra D/i.test(t)) || h4.rows.length > 0, 'el turno viejo queda en la banda, no borrado: ' + JSON.stringify(h4.rows));
   check(errs.length === 0, 'sin errores de pagina: ' + JSON.stringify(errs));
 
   await page.evaluate((s: string) => (window as any).__aegisWeb?.rpc?.request('session/delete', { sessionId: s }), sid).catch(() => {});

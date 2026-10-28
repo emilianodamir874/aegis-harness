@@ -2845,3 +2845,196 @@ textarea:focus-visible { outline: none; }
   .tool[data-state="run"] .tool-ic::after { animation: none !important; border-top-color: var(--accent); opacity: 0.5; }
   .tool[data-state="run"]::after { animation: none !important; width: 100%; opacity: 0.35; }
 }
+
+/* ============================================================================
+   15. iconos, fases en vivo, banda de lo oculto, densidad y presentación
+   ----------------------------------------------------------------------------
+   Reglas de esta sección:
+   - el icono dice QUE es; el estado lo dice la clase (is-running / is-ok / is-err),
+     nunca reemplazando el icono por un spinner generico;
+   - lo que el modelo no ve se conserva a la vista, atenuado y con un encabezado
+     que lo explica: el usuario nunca pierde su propia conversacion;
+   - la densidad y el modo presentación mueven MEDIDAS del transcript, no colores.
+   ============================================================================ */
+
+/* ---------- iconos ---------- */
+.ui-ico {
+  display: inline-block;
+  vertical-align: -0.16em;
+  flex: none;
+  pointer-events: none;
+}
+.tico {
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.tico.is-running { color: var(--accent); }
+.tico.is-done { color: var(--ok); }
+.tico.is-err { color: var(--danger); }
+
+/* el icono de la herramienta respira mientras corre, sin perder su forma */
+.tool[data-state="run"] .tico.is-running { animation: breathe 1.8s ease-in-out infinite; }
+
+/* ---------- fase del turno en la barra ---------- */
+.runbar-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border-soft);
+  background: rgba(245, 244, 239, 0.035);
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.runbar-phase[hidden] { display: none; }
+.runbar-phase .ui-ico { color: var(--accent); }
+.runbar-phase .rp-name { font-variant-numeric: tabular-nums; }
+.runbar-phase .rp-since:not(:empty)::before { content: "· "; color: var(--text-4); }
+.runbar-phase .rp-since {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+/* la fase de permiso pide accion: se pinta como aviso, no como estado */
+.runbar[data-phase="permission"] .runbar-phase {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: #f0dcb8;
+}
+.runbar[data-phase="permission"] .runbar-phase .ui-ico { color: var(--warn); }
+.runbar[data-phase="done"] .runbar-phase { border-color: var(--ok-line); background: var(--ok-soft); color: #d3ece0; }
+.runbar[data-phase="done"] .runbar-phase .ui-ico { color: var(--ok); }
+.runbar[data-phase="tool"] .runbar-spin { border-top-color: var(--accent); }
+
+/* el estado de una herramienta tambien se lee sin color: punto + texto corto al final */
+.tool[data-step="interrumpido"] { border-color: var(--danger-line); }
+.tool[data-step="interrumpido"] .tool-title .tint { color: var(--danger); }
+
+/* ---------- banda de lo que el modelo no ve ----------
+   Los mensajes ocultos al agente NO se borran de la vista: se agrupan aca, atenuados y
+   con un encabezado honesto. Plegar es una eleccion del usuario, no un default. */
+.rw-band {
+  display: block;
+  margin: var(--s2) 0 0;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: rgba(245, 244, 239, 0.02);
+  overflow: hidden;
+}
+.rw-band-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 11px;
+  text-align: left;
+  color: var(--text-3);
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  background: transparent;
+  border: 0;
+}
+.rw-band-head:hover { background: var(--bg-hover); color: var(--text-2); }
+.rw-band-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rw-band-ico { color: var(--text-4); }
+.rw-band-t { flex: 0 0 auto; color: var(--text-2); font-weight: 500; }
+.rw-band-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-4);
+  font-size: 11px;
+}
+.rw-band-chev {
+  color: var(--text-4);
+  transition: transform var(--dur) var(--ease);
+  transform: rotate(90deg);
+}
+.rw-band.collapsed .rw-band-chev { transform: rotate(0deg); }
+.rw-band-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: 2px 11px 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.rw-band.collapsed .rw-band-body { display: none; }
+/* Lo conservado se ve apagado pero legible: no es contenido de segunda, es contexto
+   cerrado. Un rail a la izquierda lo separa del hilo vivo sin robarle contraste. */
+.rw-band-body > * {
+  position: relative;
+  opacity: 0.68;
+  transition: opacity var(--dur) var(--ease);
+}
+.rw-band-body > *:hover,
+.rw-band-body > *:focus-within { opacity: 1; }
+.rw-band-body > .msg-user,
+.rw-band-body > .msg-a { padding-left: 9px; }
+.rw-band-body::before { content: none; }
+.rw-band-body > *::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+.rw-band-body > .msg-a::before { display: none; }
+.rw-band-body > .msg-user::before { left: -2px; }
+.hidden-from-agent { opacity: 0.72; }
+
+/* ---------- densidad del transcript ----------
+   La medida (max-width) es de la densidad; el AIRE va escalado por --chat-space-scale, que es
+   la misma variable que usa el modo compacto de "Aa". Si el aire fuera fijo, a 2 px de letra el
+   transcript quedaria con huecos gigantes (lo midio client-regressions: gap 12 > 9). */
+#messages[data-density="comoda"] { --measure: 760px; --dens-leading: 1.7; --dens-pad: var(--s3); }
+#messages[data-density="compacta"] { --measure: 900px; --dens-leading: 1.55; --dens-pad: 9px; }
+#messages[data-density="lectura"] { --measure: 660px; --dens-leading: 1.85; --dens-pad: var(--s4); }
+#messages[data-density] .msg-inner { gap: calc(var(--dens-pad) * var(--chat-space-scale, 1)); }
+#messages[data-density] .msg-inner > .msg-user:not(:first-child) { margin-top: calc(var(--dens-pad) * var(--chat-space-scale, 1)); }
+#messages[data-density] .msg-a,
+#messages[data-density] .msg-user { line-height: var(--dens-leading); }
+#messages[data-density="compacta"] .msg-user { padding: 7px 12px; }
+#messages[data-density="compacta"] .msg-a pre { margin: 0.6em 0; }
+#messages[data-density="lectura"] .msg-user { max-width: min(70%, 560px); }
+#messages[data-density="lectura"] .msg-a p { margin-bottom: 1em; }
+
+/* ---------- modo presentación ----------
+   Solo el transcript: se va la barra de sesiones, la cabecera y el compositor. La idea es
+   leer o mostrar el chat sin cromo; se sale con Esc o con el mismo atajo. */
+html.presentation .sidebar { display: none; }
+html.presentation .app { grid-template-columns: minmax(0, 1fr); }
+html.presentation .topbar,
+html.presentation .composer-wrap,
+html.presentation .workspace-switch,
+html.presentation #overlay { display: none !important; }
+html.presentation .messages { padding: 32px var(--s6) 40px; }
+html.presentation #msg-inner { max-width: 820px; }
+html.presentation #msg-inner > .msg-user { max-width: min(72%, 560px); }
+html.presentation .msg-copy,
+html.presentation .msg-regen,
+html.presentation .rewind-btn { display: none !important; }
+html.presentation .messages::-webkit-scrollbar { width: 8px; }
+
+@media (max-width: 760px) {
+  html.presentation .messages { padding: 20px var(--s3) 24px; }
+  .runbar-phase { height: 19px; padding: 0 6px; font-size: 10.5px; }
+  .rw-band-hint { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool[data-state="run"] .tico.is-running { animation: none !important; opacity: 1; }
+  .rw-band-chev { transition: none; }
+}
