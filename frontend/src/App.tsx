@@ -219,7 +219,7 @@ export function App() {
     const list: Command[] = [
       { id: 'new', title: 'Nuevo chat', hint: 'Ctrl+Shift+O', run: () => void store.newSession() },
       { id: 'reload', title: 'Recargar historial de la sesión', run: () => void store.loadFullHistory() },
-      { id: 'retry', title: 'Regenerar la última respuesta', run: () => void store.retry() },
+      { id: 'retry', title: 'Regenerar la última respuesta', run: () => void store.retry().then((text) => { if (text) setPrefill(text); }) },
       { id: 'cancel', title: 'Detener el turno en curso', run: () => void store.cancel() },
       { id: 'info', title: 'Información del chat', run: () => setChatInfo(true) },
       { id: 'handoff', title: 'Pasar contexto de otra sesión', hint: 'Ctrl+Alt+H', run: () => setHandoff(true) },
@@ -299,9 +299,15 @@ export function App() {
               <Transcript
                 session={session}
                 onRewind={(mid) => {
-                  void store.rewindTo(mid);
+                  void store.rewindTo(mid).then((text) => {
+                    if (text) setPrefill(text);
+                  });
                 }}
-                onRetry={() => void store.retry()}
+                onRetry={() =>
+                  void store.retry().then((text) => {
+                    if (text) setPrefill(text);
+                  })
+                }
                 onLoadFull={() => void store.loadFullHistory()}
               />
             )

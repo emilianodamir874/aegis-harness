@@ -257,3 +257,16 @@ Herramientas: `tools/react-mobile-smoke.mjs` (primer pintado y errores), `tools/
 Con el motor real el arranque abre el chat más reciente (`session/list` paginado y `session/load` en el alambre; el título «Aegis frontend React rewrite» aparece en la barra). Los dos "defectos" que había anotado antes —composer ausente y sidebar ocupando la pantalla— eran de las herramientas: una medía antes de que montara el composer y la otra buscaba un `aria-label` que no era el del botón de menú. El cliente estaba bien; los scripts se corrigieron y quedan como verificación.
 
 Lo que sigue sin medir: Android físico real, latencia por túnel, gesto táctil de scroll sobre el transcript, dictado con micrófono y lectura en voz alta con audio reales.
+## 10. Rewind y regeneración, medidos contra el motor (2026-10-28)
+
+`tools/acp-rewind-retry.mjs` crea una sesión desechable, manda un prompt de una palabra, espera el fin de turno (`watch` deja de informar `activeRunId`) y prueba las dos operaciones. La sesión se borra al final.
+
+| operación | respuesta real | consecuencia en el cliente |
+|---|---|---|
+| `session/prompt` con `[{type:'text'}]` | 2 mensajes en 3,3 s, chunks de `agent_message_chunk` capturados | el camino de streaming es el correcto |
+| `session/rewind {back:1}` | `{hidden, messageId, preview, text, remainingTurns}` | `text` es el mensaje del usuario: **es el prefill exacto**, ya cableado a `setPrefill` |
+| `session/retry` | `{text, preview, hidden, profile}` | retry **ya hace el rewind**: el turno del usuario queda oculto y devuelve su texto |
+| `retry` después de `rewind` | `-32602 "nothing to rewind: no user turns the model can see"` | retry y rewind **no se encadenan**; cada uno consume el último turno visible |
+| `rewind`/`retry` con run activo | `-32602 "cannot rewind while a run is active for this session"` | la UI tiene que esperar `endedAt` antes de ofrecerlos (ya lo hace: `isRunning`) |
+
+Arreglo derivado: el texto que devuelven `rewind` y `retry` se perdía. Ahora alimenta al compositor desde el botón del transcript y desde el comando de paleta, así que «Regenerar» deja el prompt listo para editar en vez de reenviarlo a ciegas.
