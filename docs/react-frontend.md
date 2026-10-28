@@ -243,3 +243,16 @@ Comparación medida (Chromium headless 1280×860, misma instancia, 2026-10-28):
 Antes de precomprimir, React tardaba 2 688 ms y transfería 434 497 B; la diferencia era la falta de `content-encoding`, que el servidor ahora resuelve sirviendo los precomprimidos.
 
 Gates que faltan para publicar: medir en Android físico y con latencia real de túnel (hoy sólo Chromium de escritorio), CRUD de skills, drag&drop de adjuntos, y probar dictado/TTS con micrófono y audio reales.
+
+## 9. Medición móvil (emulada) y arranque
+
+`tools/react-mobile-smoke.mjs` mide Pixel 7 e iPhone 12 emulados (Playwright devices) sobre la instancia de prueba. **Es emulación**: no es Android físico y no mide latencia de túnel.
+
+| dispositivo | listo | ancho | desborde horizontal | sidebar | composer | errores |
+|---|---|---|---|---|---|---|
+| Pixel 7 (412 px) | 140 ms | 412 | no | visible | **no visible** | 0 |
+| iPhone 12 (390 px) | 116 ms | 390 | no | visible | **no visible** | 0 |
+
+Sin desborde horizontal en ninguno de los dos. El composer no aparece porque el cliente no abrió sesión al arrancar: agregué ese auto-open (`onReady` abre el chat más reciente una sola vez, con dos tests verdes contra el fixture en `tests/startup.test.ts`), pero **no se verificó contra la instancia real**: en la corrida siguiente la pantalla móvil siguió sin composer. Queda como pendiente concreto, no como hecho.
+
+También falta: medir en Android físico (no hay dispositivo accesible desde acá), latencia real de túnel, y el gesto de scroll del transcript en pantalla táctil (la medición programática dio 0 porque no había transcript abierto).

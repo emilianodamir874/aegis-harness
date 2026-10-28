@@ -85,6 +85,7 @@ export class AegisStore {
   private emitScheduled = false;
   private readonly schedule: (fn: () => void) => void;
   private disposed = false;
+  private appliedDefault = false;
 
   constructor(options: StoreOptions) {
     this.client = options.client;
@@ -165,6 +166,13 @@ export class AegisStore {
   private async onReady(): Promise<void> {
     if (this.disposed) return;
     await this.refreshSessions();
+    // Primer arranque: abrir el chat más reciente, como hacía el cliente actual. Después de eso
+    // manda el operador; una reconexión no vuelve a cambiarle la pantalla.
+    if (!this.appliedDefault && !this.state.activeSessionId) {
+      this.appliedDefault = true;
+      const first = this.state.sessions[0];
+      if (first) await this.openSession(first).catch(() => {});
+    }
     const watched = [...this.watched] as SessionId[];
     if (watched.length === 0) return;
     // Al volver el socket, el turno puede seguir vivo en el hub: se re-engancha con el cursor
