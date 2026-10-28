@@ -10,6 +10,7 @@
  * - `rejected` no se borra: queda con su evidencia y deja de entrar al digest;
  * - `consolidate` corre la pasada determinista del motor y es idempotente.
  */
+import { botonAcciones, type ActItem } from './app/acts';
 
 interface MemoryFact {
   id: string;
@@ -231,17 +232,17 @@ function render(): void {
         busy = false;
       }
     };
-    if (status !== 'confirmed') {
-      actions.appendChild(el('button', { title: 'Entra al prompt desde el proximo turno' }, 'Confirmar')).addEventListener('click', () => act('confirm'));
-    }
-    if (fact.pinned) {
-      actions.appendChild(el('button', { title: 'Dejar de fijarlo' }, 'Soltar')).addEventListener('click', () => act('unpin'));
-    } else {
-      actions.appendChild(el('button', { title: 'Va siempre al digest' }, 'Fijar')).addEventListener('click', () => act('pin'));
-    }
-    if (status !== 'rejected') {
-      actions.appendChild(el('button', { title: 'Deja de entrar al digest; el rastro queda' }, 'Rechazar')).addEventListener('click', () => act('reject'));
-    }
+    // Tres botones por hecho (Confirmar / Fijar / Rechazar) ocupaban toda la fila: ahora hay un
+    // solo ⋯ y las acciones viven adentro, con el efecto de cada una como pista.
+    actions.appendChild(botonAcciones('hecho ' + fact.id, () => {
+      const out: ActItem[] = [];
+      if (status !== 'confirmed') out.push({ label: 'Confirmar', hint: 'entra al prompt', run: () => { void act('confirm'); } });
+      out.push(fact.pinned
+        ? { label: 'Soltar', hint: 'deja de ir al digest', run: () => { void act('unpin'); } }
+        : { label: 'Fijar', hint: 'siempre al digest', run: () => { void act('pin'); } });
+      if (status !== 'rejected') out.push({ label: 'Rechazar', hint: 'el rastro queda', danger: true, run: () => { void act('reject'); } });
+      return out;
+    }));
     row.appendChild(actions);
     mounted.list.appendChild(row);
   }

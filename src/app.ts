@@ -7,6 +7,7 @@ import { sessionListHtml } from './app/sessions';
 import { remoteResultsHtml, emptyRemote } from './app/search';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
+import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -1380,7 +1381,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       rec.dirty = false;
       const _t0 = performance.now();
       rec.body.innerHTML = md(rec.text);
-      { const rd = rec.el.querySelector('.msg-read'); if (rd) rd.hidden = !readBlock(rec.text); }
+      { const rd = rec.el.querySelector('.act-btn'); if (rd) rd.dataset.read = readBlock(rec.text) ? '1' : ''; }
       const _dt = performance.now() - _t0;
       METRICS.renders++; METRICS.renderMs += _dt; METRICS.lastRenderMs = _dt;
       if (_dt > METRICS.maxRenderMs) METRICS.maxRenderMs = _dt;
@@ -1445,6 +1446,49 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     return state.thoughtKey;
   }
 
+  // ---- acciones de una respuesta (un solo disparador, acciones adentro) ---------
+  // Antes cada respuesta podia cargar tres botones flotando sobre el texto (Copiar, Escuchar,
+  // Regenerar). Ahora hay un solo ⋯ y el menu se arma al abrirlo, asi sabe si hay bloque de
+  // lectura, si es la ultima respuesta y si se puede regenerar.
+  function copiarMensaje(el: HTMLElement) {
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('button').forEach((b) => b.remove());
+    return copyText(clone.innerText || clone.textContent || '');
+  }
+  function escucharTexto(txt: string) {
+    const limpio = readClean(txt);
+    if (!limpio) return;
+    const partes: string[] = [];
+    const re = /[^.!?\u2026]+[.!?\u2026]*/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(limpio))) { const p = m[0].trim(); if (p.length > 2) partes.push(p); }
+    if (!partes.length) return;
+    audStop();
+    for (const p of partes) AUD.q.push(p);
+    audNext();
+  }
+  function esRespuestaFinal(el: HTMLElement) {
+    if (el.querySelector('.thought') || el.classList.contains('hidden-from-agent')) return false;
+    const todas = [...document.querySelectorAll<HTMLElement>('#msg-inner > .msg-a')].filter((x) => !x.querySelector('.thought'));
+    return todas[todas.length - 1] === el;
+  }
+  function accionesDeMensaje(el: HTMLElement, rec: any, thought: boolean): ActItem[] {
+    const texto = String((rec && rec.text) || '');
+    const out: ActItem[] = [
+      { label: 'Copiar', icon: uiIcon('copy', { size: 13 }), run: () => { void copiarMensaje(el); } },
+    ];
+    if (!thought) {
+      const bloque = readBlock(texto);
+      if (bloque) out.push({ label: 'Escuchar el bloque', icon: uiIcon('voice', { size: 13 }), hint: 'Para escuchar', run: () => escucharTexto(bloque) });
+      // Sin bloque, la prosa sin codigo se puede leer igual (es lo que hace el manos libres).
+      if (!bloque && readClean(texto).length >= 120) out.push({ label: 'Escuchar', icon: uiIcon('voice', { size: 13 }), run: () => escucharTexto(texto) });
+      if (esRespuestaFinal(el)) {
+        out.push({ label: 'Regenerar', icon: uiIcon('refresh', { size: 13 }), hint: 'ultima respuesta', run: () => { void regenerateLast(); } });
+      }
+    }
+    return out;
+  }
+
   function streamAppend(key, text, thought, hidden?) {
     // (v6.4) Replay del hub: el mismo mensaje parcial puede haberlo traído ya el
     // session/load, así que el texto del replay se acumula aparte y se reconcilia por
@@ -1494,14 +1538,9 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
       const body = document.createElement('div');
       body.className = thought ? 'thought' : 'content';
       el.appendChild(body);
-      const cp = document.createElement('button');
-      cp.className = 'msg-copy'; cp.type = 'button'; cp.textContent = 'Copiar';
-      el.appendChild(cp);
-      if (!thought) {
-        const rd = document.createElement('button');
-        rd.className = 'msg-read'; rd.type = 'button'; rd.textContent = '🔊 Escuchar'; rd.hidden = true;
-        el.appendChild(rd);
-      }
+      // Un solo disparador por respuesta: copiar, escuchar (con sus bloques como submenú) y
+      // regenerar viven adentro. Antes eran hasta tres botones flotando sobre el mensaje.
+      el.appendChild(botonAcciones(thought ? 'razonamiento' : 'respuesta', () => accionesDeMensaje(el, rec, thought)));
       msgWrap().appendChild(el);
       rec = { el, body, text: '', dirty: false, closed: false, live: false, lastAppend: 0 };
       (el as any).__rec = rec;
@@ -3148,18 +3187,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     state.speed.note = el; state.speed.noteMs = ms;
     el.innerHTML = speedNoteHtml(ms, speedSummary());
     msgWrap().appendChild(el);
-    // El boton "Regenerar" vive en la ultima respuesta: se mueve con cada turno.
-    document.querySelectorAll('#msg-inner .msg-regen').forEach((b) => b.remove());
-    const ultimaA = [...document.querySelectorAll<HTMLElement>('#msg-inner > .msg-a')].filter((x) => !x.querySelector('.thought')).pop();
-    if (ultimaA && !ultimaA.classList.contains('hidden-from-agent')) {
-      const rg = document.createElement('button');
-      rg.type = 'button';
-      rg.className = 'msg-copy msg-regen';
-      rg.textContent = '↻ Regenerar';
-      rg.title = 'Regenerar: el modelo vuelve a responder el último mensaje';
-      rg.addEventListener('click', (ev) => { ev.stopPropagation(); regenerateLast(); });
-      ultimaA.appendChild(rg);
-    }
+    // "Regenerar" vive en el menu de acciones de la ultima respuesta: se arma al abrir
+    // (accionesDeMensaje), asi que no hay que mover ningun nodo de turno en turno.
     scrollBottom(true);
   }
   // Llega actividad del agente sin que este cliente haya mandado nada: hay un run vivo.
@@ -5722,6 +5751,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   function wire() {
     wireChatFont();
     wireView();
+    wireAccionesGlobales();
     // Info de la conversacion: abre con click/teclado, cierra con Esc o click afuera y
     // devuelve el foco al titulo.
     const infoBtn = $('#btn-chat-info');
@@ -5750,17 +5780,6 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
           cc.textContent = ok ? '✓ Copiado' : 'No se pudo';
           cc.classList.add('done');
           setTimeout(() => { cc.textContent = 'Copiar'; cc.classList.remove('done'); }, 1400);
-        });
-        return;
-      }
-      const mc = e.target.closest('.msg-copy');
-      if (mc) {
-        const el = mc.parentElement.cloneNode(true);
-        el.querySelectorAll('button').forEach((b) => b.remove());
-        copyText(el.innerText || el.textContent || '').then((ok) => {
-          mc.textContent = ok ? '✓' : 'No';
-          mc.classList.add('done');
-          setTimeout(() => { mc.textContent = 'Copiar'; mc.classList.remove('done'); }, 1400);
         });
         return;
       }
@@ -6231,24 +6250,6 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
   }
 
   // --- Volver a escuchar un mensaje que trae bloque "Para escuchar" -------------------------
-  // Boton "Escuchar" en cada mensaje de la IA que tenga el bloque: lo parte en frases y lo manda
-  // a la misma cola de audio (Piper). Sirve tambien para mensajes del historial.
-  document.addEventListener('click', function (ev) {
-    var b = ev.target && (ev.target as Element).closest ? (ev.target as Element).closest('.msg-read') : null;
-    if (!b) return;
-    var msg = b.closest('.msg-a');
-    var rec = msg && (msg as any).__rec;
-    if (!rec) return;
-    var limpio = readClean(readBlock(rec.text));
-    if (!limpio) return;
-    var partes = [];
-    var re = /[^.!?\u2026]+[.!?\u2026]*/g, m;
-    while ((m = re.exec(limpio))) { var p = m[0].trim(); if (p.length > 2) partes.push(p); }
-    if (!partes.length) return;
-    audStop();
-    for (const parte of partes) AUD.q.push(parte);
-    audNext();
-  });
   if (!wireDraft()) document.addEventListener('DOMContentLoaded', wireDraft, { once: true });
 
   // ---------- panel de objetivos (/goal y /grind, barra derecha) ----------
@@ -6355,31 +6356,19 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     m.textContent = fechaCorta(it.cuando || it.actualizado) + (it.tipo === 'grind' ? ' · a fondo' : '');
     const fila = document.createElement('div');
     fila.className = 'gp-botones';
-    if (it.activo) {
-      const q = document.createElement('button');
-      q.type = 'button';
-      q.className = 'gp-open';
-      q.textContent = 'Quitar';
-      q.title = 'Quitar el objetivo del chat (/goal off)';
-      q.addEventListener('click', () => sendText('/goal off'));
-      fila.append(q);
-    } else {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'gp-open';
-      b.textContent = 'Reactivar';
-      b.title = 'Volver a poner este objetivo en el chat';
-      b.addEventListener('click', () => reactivarObjetivo(it));
-      fila.append(b);
-    }
-    const x = document.createElement('button');
-    x.type = 'button';
-    x.className = 'gp-del';
-    x.textContent = '×';
-    x.title = it.activo ? 'Ocultar del panel (el objetivo sigue activo en el chat)' : 'Borrar del panel (no toca la conversacion)';
-    x.setAttribute('aria-label', 'Borrar del panel');
-    x.addEventListener('click', () => gpOcultar(it));
-    fila.append(x);
+    // "Quitar/Reactivar" + "x" eran dos botones por objetivo. Ahora un solo disparador con las
+    // dos acciones y el efecto de cada una como pista.
+    fila.append(botonAcciones('objetivo', () => {
+      const out: ActItem[] = [];
+      if (it.activo) out.push({ label: 'Quitar del chat', hint: '/goal off', icon: uiIcon('undo', { size: 13 }), run: () => sendText('/goal off') });
+      else out.push({ label: 'Reactivar', hint: 'volver a ponerlo', icon: uiIcon('spark', { size: 13 }), run: () => reactivarObjetivo(it) });
+      out.push({
+        label: it.activo ? 'Ocultar del panel' : 'Borrar del panel',
+        hint: it.activo ? 'sigue activo en el chat' : 'no toca la conversacion',
+        danger: true, icon: uiIcon('eyeOff', { size: 13 }), run: () => gpOcultar(it),
+      });
+      return out;
+    }));
     d.append(t, m, fila);
     return d;
   }
@@ -6513,6 +6502,8 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     },
     // Iconos: las mismas funciones que usa el render, para que un gate mida el set real.
     icons: { tool: toolIconSvg, kind: toolKindOf, ui: uiIcon, names: () => Object.keys(TOOL_ICON) },
+    // Menú de acciones por fila: el mismo módulo que usan las respuestas y los objetivos.
+    acts: { boton: botonAcciones, abrir: abrirAcciones, cerrar: cerrarAcciones },
     // Chips: render para un gate que inyecta configOptions, y el estado vivo del esfuerzo.
     chips: { render: renderChips, effortNow: () => effortGlobal, options: () => effortOptions.map((o) => o.value), memo: effortByModel,
       // Un probe reemplaza el aplicador para medir el orden de las llamadas sin red.

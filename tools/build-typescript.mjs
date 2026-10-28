@@ -11,7 +11,7 @@ const entries = [
   // (app.ts ya lo lleva inlineado en su bundle) y probar MediaRecorder -> WAV sin duplicar codigo.
   { entry: 'src/app/audio-wav.ts', output: 'app/audio-wav.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/skills.ts', output: 'app/skills.js', options: { format: 'esm', platform: 'browser' } },
-  { entry: 'src/memory.ts', output: 'app/memory.js', options: { format: 'esm', platform: 'browser' } },
+  { entry: 'src/memory.ts', output: 'app/memory.js', options: { format: 'esm', platform: 'browser', bundle: true } },
   { entry: 'src/artifacts.ts', output: 'app/artifacts.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/workspace-nav.ts', output: 'app/workspace-nav.js', options: { format: 'esm', platform: 'browser' } },
   { entry: 'src/activity.ts', output: 'app/activity.js', options: { format: 'esm', platform: 'browser' } },

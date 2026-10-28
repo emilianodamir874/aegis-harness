@@ -3123,3 +3123,87 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
 @media (prefers-reduced-motion: reduce) {
   .mr-fly-chev { transition: none; }
 }
+
+/* ============================================================================
+   17. menú de acciones por fila (⋯)
+   ----------------------------------------------------------------------------
+   Un disparador por elemento, acciones adentro y submenú al costado. Es el patrón
+   que reemplaza los botones sueltos sobre cada respuesta, cada hecho de memoria y
+   cada objetivo: el elemento queda limpio y las acciones se buscan en un solo lado.
+   ============================================================================ */
+
+.act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border-radius: var(--r-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-4);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.act-btn:hover { background: var(--bg-hover); color: var(--text-2); border-color: var(--border-soft); }
+.act-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--text); }
+.act-btn[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+
+/* sobre una respuesta: aparece al pasar, no ocupa lugar mientras no se usa */
+.msg-a .act-btn,
+.msg-user .act-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  z-index: 2;
+}
+.msg-a:hover .act-btn,
+.msg-a:focus-within .act-btn,
+.msg-user:hover .act-btn,
+.msg-user:focus-within .act-btn,
+.msg-a .act-btn[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) {
+  /* en táctil no hay hover: siempre visible pero discreto */
+  .msg-a .act-btn,
+  .msg-user .act-btn { opacity: 0.55; }
+}
+
+/* menú de acciones */
+.acts-menu { min-width: 186px; max-width: min(84vw, 290px); }
+.acts-sub { min-width: 168px; max-width: min(80vw, 260px); z-index: 410; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55); }
+.acts-menu .menu-row { justify-content: flex-start; gap: 9px; padding: 6px 9px; }
+.act-main { display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 auto; }
+.act-ico { display: inline-flex; flex: none; color: var(--text-4); }
+.menu-row:hover .act-ico,
+.menu-row.act-open .act-ico { color: var(--accent); }
+.act-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-hint {
+  margin-left: auto;
+  padding-left: 8px;
+  flex: none;
+  font-size: 10px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+.act-chev { display: inline-flex; flex: none; color: var(--text-4); transition: transform var(--dur) var(--ease); }
+.menu-row.act-open .act-chev { color: var(--accent); transform: translateX(2px); }
+.menu-row.act-open { background: var(--accent-soft); color: var(--text); }
+.acts-menu .menu-row.danger .act-ico { color: var(--danger); }
+
+/* paneles que ya no dibujan botones por fila: el ⋯ queda siempre visible y alineado */
+.gp-item .gp-botones .act-btn,
+.aegis-mem .fact .actions .act-btn { opacity: 0.7; }
+.gp-item:hover .gp-botones .act-btn,
+.aegis-mem .fact:hover .actions .act-btn { opacity: 1; }
+
+@media (max-width: 700px) {
+  .acts-menu { min-width: 0; max-width: calc(100vw - 16px); }
+  .act-btn { width: 28px; height: 28px; }
+  .act-hint { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act-btn, .act-chev { transition: none; }
+}

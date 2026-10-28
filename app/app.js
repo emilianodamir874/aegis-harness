@@ -520,6 +520,232 @@ async function blobToWav16k(blob) {
   }
 }
 
+// src/app/acts.ts
+var abierto = null;
+var disparador = null;
+var MARGEN = 8;
+function cerca(sel) {
+  return document.querySelector(sel);
+}
+function cerrarAcciones() {
+  document.querySelectorAll("body > .acts-menu").forEach((m) => m.remove());
+  if (disparador && disparador.isConnected) disparador.setAttribute("aria-expanded", "false");
+  abierto = null;
+  disparador = null;
+}
+function medir(menu, r, lateral, fila) {
+  const w = menu.offsetWidth;
+  const h = menu.offsetHeight;
+  let left;
+  let top;
+  if (lateral && fila) {
+    left = fila.right + 6;
+    if (left + w > window.innerWidth - MARGEN) left = fila.left - w - 6;
+    top = fila.top;
+    if (left < MARGEN) {
+      left = Math.min(Math.max(MARGEN, fila.left), Math.max(MARGEN, window.innerWidth - MARGEN - w));
+      top = fila.bottom + 6;
+    }
+  } else {
+    left = r.right - w;
+    if (left < MARGEN) left = MARGEN;
+    top = r.bottom + 7;
+    if (top + h > window.innerHeight - MARGEN) top = Math.max(MARGEN, r.top - h - 7);
+    else if (r.bottom + 7 + h > window.innerHeight - MARGEN) top = Math.max(MARGEN, r.top - h - 7);
+  }
+  if (top + h > window.innerHeight - MARGEN) top = Math.max(MARGEN, window.innerHeight - MARGEN - h);
+  if (top < MARGEN) top = MARGEN;
+  if (left + w > window.innerWidth - MARGEN) left = Math.max(MARGEN, window.innerWidth - MARGEN - w);
+  menu.style.left = Math.round(left) + "px";
+  menu.style.top = Math.round(top) + "px";
+  menu.style.maxHeight = Math.max(120, window.innerHeight - 2 * MARGEN) + "px";
+}
+function filas(menu) {
+  return [...menu.querySelectorAll(":scope > .menu-row:not([disabled])")];
+}
+function pintar(items, nivel) {
+  const menu = document.createElement("div");
+  menu.className = "menu acts-menu" + (nivel === "sub" ? " acts-sub" : "");
+  menu.setAttribute("role", "menu");
+  for (const it of items) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "menu-row" + (it.danger ? " danger" : "");
+    row.setAttribute("role", "menuitem");
+    row.innerHTML = '<span class="act-main">' + (it.icon ? '<span class="act-ico">' + it.icon + "</span>" : "") + '<span class="act-t">' + it.label + "</span>" + (it.hint ? '<span class="act-hint">' + it.hint + "</span>" : "") + "</span>" + (it.sub ? '<span class="act-chev" aria-hidden="true"><svg viewBox="0 0 12 12" width="11" height="11" fill="none"><path d="M4.5 2.8 7.7 6l-3.2 3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : "");
+    if (it.sub) {
+      row.setAttribute("aria-haspopup", "menu");
+      row.setAttribute("aria-expanded", "false");
+      const abrirSub = () => {
+        if (row.classList.contains("act-open")) return;
+        cerrarSub(menu);
+        const sub = pintar(it.sub, "sub");
+        sub.dataset.parent = "1";
+        document.body.appendChild(sub);
+        menu.dataset.sub = "1";
+        row.classList.add("act-open");
+        row.setAttribute("aria-expanded", "true");
+        medir(sub, row.getBoundingClientRect(), true, row.getBoundingClientRect());
+        abierto = sub;
+        const first = filas(sub)[0];
+        if (first && menu.dataset.kbd === "1") first.focus({ preventScroll: true });
+      };
+      const cerrarEste = () => {
+        cerrarSub(menu);
+        row.classList.remove("act-open");
+        row.setAttribute("aria-expanded", "false");
+      };
+      row.addEventListener("pointerenter", abrirSub);
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (row.classList.contains("act-open")) {
+          cerrarEste();
+          return;
+        }
+        abrirSub();
+      });
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          e.stopPropagation();
+          abrirSub();
+          const f = filas(menu.dataset.sub === "1" ? abierto || menu : menu)[0];
+          f?.focus();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          cerrarEste();
+        }
+      });
+    } else {
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const fn = it.run;
+        cerrarAcciones();
+        fn?.();
+      });
+    }
+    menu.appendChild(row);
+  }
+  if (nivel === "menu") {
+    menu.addEventListener("keydown", (e) => {
+      const items2 = filas(menu);
+      const i = items2.indexOf(document.activeElement);
+      const ir = (n) => {
+        e.preventDefault();
+        items2[(i + n + items2.length) % items2.length].focus();
+      };
+      if (e.key === "ArrowDown") ir(1);
+      else if (e.key === "ArrowUp") ir(-1);
+      else if (e.key === "Home") {
+        e.preventDefault();
+        items2[0]?.focus();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        items2[items2.length - 1]?.focus();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        const back = disparador;
+        cerrarAcciones();
+        if (back && back.isConnected) back.focus();
+      }
+    });
+  } else {
+    menu.addEventListener("keydown", (e) => {
+      const items2 = filas(menu);
+      const i = items2.indexOf(document.activeElement);
+      const ir = (n) => {
+        e.preventDefault();
+        items2[(i + n + items2.length) % items2.length].focus();
+      };
+      if (e.key === "ArrowDown") ir(1);
+      else if (e.key === "ArrowUp") ir(-1);
+      else if (e.key === "Escape" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        e.stopPropagation();
+        const padre = cerca("body > .acts-menu:not(.acts-sub)");
+        cerrarSub();
+        const fila = padre?.querySelector(".menu-row.act-open");
+        fila?.classList.remove("act-open");
+        fila?.setAttribute("aria-expanded", "false");
+        (fila || disparador)?.focus();
+      }
+    });
+  }
+  return menu;
+}
+function cerrarSub(scope) {
+  document.querySelectorAll("body > .acts-sub").forEach((m) => m.remove());
+  (scope || document).querySelectorAll(".menu-row.act-open").forEach((r) => {
+    r.classList.remove("act-open");
+    r.setAttribute("aria-expanded", "false");
+  });
+}
+function abrirAcciones(trigger, items) {
+  cerrarAcciones();
+  if (!items.length) return;
+  disparador = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+  const menu = pintar(items, "menu");
+  document.body.appendChild(menu);
+  abierto = menu;
+  medir(menu, trigger.getBoundingClientRect(), false);
+  const porTeclado = document.documentElement.dataset.kbd === "1" || !!trigger.dataset.kbd;
+  if (porTeclado) filas(menu)[0]?.focus({ preventScroll: true });
+}
+function botonAcciones(etiqueta, items, extraClass = "") {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "act-btn" + (extraClass ? " " + extraClass : "");
+  b.setAttribute("aria-label", "Acciones: " + etiqueta);
+  b.setAttribute("aria-haspopup", "menu");
+  b.setAttribute("aria-expanded", "false");
+  b.title = "Acciones";
+  b.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3.4" cy="8" r="1.35" fill="currentColor"/><circle cx="8" cy="8" r="1.35" fill="currentColor"/><circle cx="12.6" cy="8" r="1.35" fill="currentColor"/></svg>';
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const ya = abierto && disparador === b;
+    if (ya) {
+      cerrarAcciones();
+      return;
+    }
+    abrirAcciones(b, items());
+  });
+  b.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+      e.preventDefault();
+      b.dataset.kbd = "1";
+      abrirAcciones(b, items());
+      delete b.dataset.kbd;
+    }
+  });
+  return b;
+}
+var globalesListas = false;
+function wireAccionesGlobales() {
+  if (globalesListas) return;
+  globalesListas = true;
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t && t.closest && t.closest(".acts-menu, .act-btn")) return;
+    cerrarAcciones();
+  });
+  window.addEventListener("resize", cerrarAcciones);
+  window.addEventListener("scroll", (e) => {
+    const t = e.target;
+    if (t && t.closest && t.closest(".acts-menu")) return;
+    cerrarAcciones();
+  }, true);
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && abierto) {
+      e.stopPropagation();
+      cerrarAcciones();
+    }
+  }, true);
+}
+
 // src/app.ts
 (() => {
   "use strict";
@@ -1726,8 +1952,8 @@ async function blobToWav16k(blob) {
       return false;
     }
     const head = band.querySelector(".rw-band-head");
-    const abierto = !band.classList.contains("collapsed");
-    if (force === void 0 ? true : force !== abierto) head?.click();
+    const abierto2 = !band.classList.contains("collapsed");
+    if (force === void 0 ? true : force !== abierto2) head?.click();
     return true;
   }
   function askRewind(el) {
@@ -1882,8 +2108,8 @@ async function blobToWav16k(blob) {
       const _t0 = performance.now();
       rec.body.innerHTML = md(rec.text);
       {
-        const rd = rec.el.querySelector(".msg-read");
-        if (rd) rd.hidden = !readBlock(rec.text);
+        const rd = rec.el.querySelector(".act-btn");
+        if (rd) rd.dataset.read = readBlock(rec.text) ? "1" : "";
       }
       const _dt = performance.now() - _t0;
       METRICS.renders++;
@@ -1942,6 +2168,50 @@ async function blobToWav16k(blob) {
     state.thoughtRec = null;
     return state.thoughtKey;
   }
+  function copiarMensaje(el) {
+    const clone = el.cloneNode(true);
+    clone.querySelectorAll("button").forEach((b) => b.remove());
+    return copyText(clone.innerText || clone.textContent || "");
+  }
+  function escucharTexto(txt) {
+    const limpio = readClean(txt);
+    if (!limpio) return;
+    const partes = [];
+    const re = /[^.!?\u2026]+[.!?\u2026]*/g;
+    let m;
+    while (m = re.exec(limpio)) {
+      const p = m[0].trim();
+      if (p.length > 2) partes.push(p);
+    }
+    if (!partes.length) return;
+    audStop();
+    for (const p of partes) AUD.q.push(p);
+    audNext();
+  }
+  function esRespuestaFinal(el) {
+    if (el.querySelector(".thought") || el.classList.contains("hidden-from-agent")) return false;
+    const todas = [...document.querySelectorAll("#msg-inner > .msg-a")].filter((x) => !x.querySelector(".thought"));
+    return todas[todas.length - 1] === el;
+  }
+  function accionesDeMensaje(el, rec, thought) {
+    const texto = String(rec && rec.text || "");
+    const out = [
+      { label: "Copiar", icon: uiIcon("copy", { size: 13 }), run: () => {
+        void copiarMensaje(el);
+      } }
+    ];
+    if (!thought) {
+      const bloque = readBlock(texto);
+      if (bloque) out.push({ label: "Escuchar el bloque", icon: uiIcon("voice", { size: 13 }), hint: "Para escuchar", run: () => escucharTexto(bloque) });
+      if (!bloque && readClean(texto).length >= 120) out.push({ label: "Escuchar", icon: uiIcon("voice", { size: 13 }), run: () => escucharTexto(texto) });
+      if (esRespuestaFinal(el)) {
+        out.push({ label: "Regenerar", icon: uiIcon("refresh", { size: 13 }), hint: "ultima respuesta", run: () => {
+          void regenerateLast();
+        } });
+      }
+    }
+    return out;
+  }
   function streamAppend(key, text, thought, hidden) {
     if (state.hubReplay) {
       HUB.text.set(key, (HUB.text.get(key) || "") + text);
@@ -1978,19 +2248,7 @@ async function blobToWav16k(blob) {
       const body = document.createElement("div");
       body.className = thought ? "thought" : "content";
       el.appendChild(body);
-      const cp = document.createElement("button");
-      cp.className = "msg-copy";
-      cp.type = "button";
-      cp.textContent = "Copiar";
-      el.appendChild(cp);
-      if (!thought) {
-        const rd = document.createElement("button");
-        rd.className = "msg-read";
-        rd.type = "button";
-        rd.textContent = "🔊 Escuchar";
-        rd.hidden = true;
-        el.appendChild(rd);
-      }
+      el.appendChild(botonAcciones(thought ? "razonamiento" : "respuesta", () => accionesDeMensaje(el, rec, thought)));
       msgWrap().appendChild(el);
       rec = { el, body, text: "", dirty: false, closed: false, live: false, lastAppend: 0 };
       el.__rec = rec;
@@ -2086,8 +2344,8 @@ async function blobToWav16k(blob) {
         btn.title = "Mostrar el contenido completo de esta herramienta";
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          const abierto = el.classList.toggle("expandido");
-          btn.textContent = abierto ? "Ver menos" : "Ver todo";
+          const abierto2 = el.classList.toggle("expandido");
+          btn.textContent = abierto2 ? "Ver menos" : "Ver todo";
         });
         el.querySelector(".tool-body").appendChild(btn);
       });
@@ -3555,20 +3813,6 @@ async function blobToWav16k(blob) {
     state.speed.noteMs = ms;
     el.innerHTML = speedNoteHtml(ms, speedSummary());
     msgWrap().appendChild(el);
-    document.querySelectorAll("#msg-inner .msg-regen").forEach((b) => b.remove());
-    const ultimaA = [...document.querySelectorAll("#msg-inner > .msg-a")].filter((x) => !x.querySelector(".thought")).pop();
-    if (ultimaA && !ultimaA.classList.contains("hidden-from-agent")) {
-      const rg = document.createElement("button");
-      rg.type = "button";
-      rg.className = "msg-copy msg-regen";
-      rg.textContent = "↻ Regenerar";
-      rg.title = "Regenerar: el modelo vuelve a responder el último mensaje";
-      rg.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        regenerateLast();
-      });
-      ultimaA.appendChild(rg);
-    }
     scrollBottom(true);
   }
   function noteRunActivity() {
@@ -6130,6 +6374,7 @@ ${a.text}
   function wire() {
     wireChatFont();
     wireView();
+    wireAccionesGlobales();
     const infoBtn = $("#btn-chat-info");
     const infoPop = $("#chat-info");
     if (infoBtn && infoPop) {
@@ -6164,20 +6409,6 @@ ${a.text}
           setTimeout(() => {
             cc.textContent = "Copiar";
             cc.classList.remove("done");
-          }, 1400);
-        });
-        return;
-      }
-      const mc = e.target.closest(".msg-copy");
-      if (mc) {
-        const el = mc.parentElement.cloneNode(true);
-        el.querySelectorAll("button").forEach((b) => b.remove());
-        copyText(el.innerText || el.textContent || "").then((ok) => {
-          mc.textContent = ok ? "✓" : "No";
-          mc.classList.add("done");
-          setTimeout(() => {
-            mc.textContent = "Copiar";
-            mc.classList.remove("done");
           }, 1400);
         });
         return;
@@ -6739,25 +6970,6 @@ ${a.text}
     });
     return hay;
   }
-  document.addEventListener("click", function(ev) {
-    var b = ev.target && ev.target.closest ? ev.target.closest(".msg-read") : null;
-    if (!b) return;
-    var msg = b.closest(".msg-a");
-    var rec = msg && msg.__rec;
-    if (!rec) return;
-    var limpio = readClean(readBlock(rec.text));
-    if (!limpio) return;
-    var partes = [];
-    var re = /[^.!?\u2026]+[.!?\u2026]*/g, m;
-    while (m = re.exec(limpio)) {
-      var p = m[0].trim();
-      if (p.length > 2) partes.push(p);
-    }
-    if (!partes.length) return;
-    audStop();
-    for (const parte of partes) AUD.q.push(parte);
-    audNext();
-  });
   if (!wireDraft()) document.addEventListener("DOMContentLoaded", wireDraft, { once: true });
   async function fetchGoals(forzar) {
     const sid = state.current && state.current.id || "";
@@ -6853,31 +7065,19 @@ ${a.text}
     m.textContent = fechaCorta(it.cuando || it.actualizado) + (it.tipo === "grind" ? " · a fondo" : "");
     const fila = document.createElement("div");
     fila.className = "gp-botones";
-    if (it.activo) {
-      const q = document.createElement("button");
-      q.type = "button";
-      q.className = "gp-open";
-      q.textContent = "Quitar";
-      q.title = "Quitar el objetivo del chat (/goal off)";
-      q.addEventListener("click", () => sendText("/goal off"));
-      fila.append(q);
-    } else {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "gp-open";
-      b.textContent = "Reactivar";
-      b.title = "Volver a poner este objetivo en el chat";
-      b.addEventListener("click", () => reactivarObjetivo(it));
-      fila.append(b);
-    }
-    const x = document.createElement("button");
-    x.type = "button";
-    x.className = "gp-del";
-    x.textContent = "×";
-    x.title = it.activo ? "Ocultar del panel (el objetivo sigue activo en el chat)" : "Borrar del panel (no toca la conversacion)";
-    x.setAttribute("aria-label", "Borrar del panel");
-    x.addEventListener("click", () => gpOcultar(it));
-    fila.append(x);
+    fila.append(botonAcciones("objetivo", () => {
+      const out = [];
+      if (it.activo) out.push({ label: "Quitar del chat", hint: "/goal off", icon: uiIcon("undo", { size: 13 }), run: () => sendText("/goal off") });
+      else out.push({ label: "Reactivar", hint: "volver a ponerlo", icon: uiIcon("spark", { size: 13 }), run: () => reactivarObjetivo(it) });
+      out.push({
+        label: it.activo ? "Ocultar del panel" : "Borrar del panel",
+        hint: it.activo ? "sigue activo en el chat" : "no toca la conversacion",
+        danger: true,
+        icon: uiIcon("eyeOff", { size: 13 }),
+        run: () => gpOcultar(it)
+      });
+      return out;
+    }));
     d.append(t, m, fila);
     return d;
   }
@@ -7021,6 +7221,8 @@ ${a.text}
     },
     // Iconos: las mismas funciones que usa el render, para que un gate mida el set real.
     icons: { tool: toolIconSvg, kind: toolKindOf, ui: uiIcon, names: () => Object.keys(TOOL_ICON) },
+    // Menú de acciones por fila: el mismo módulo que usan las respuestas y los objetivos.
+    acts: { boton: botonAcciones, abrir: abrirAcciones, cerrar: cerrarAcciones },
     // Chips: render para un gate que inyecta configOptions, y el estado vivo del esfuerzo.
     chips: {
       render: renderChips,

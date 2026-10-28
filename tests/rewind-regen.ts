@@ -96,10 +96,16 @@ try {
   await page.waitForTimeout(1200);
   await send('responde solo la letra D');
   await page.waitForTimeout(900);
-  const rg = await page.$('#msg-inner .msg-regen');
-  check(!!rg, 'la ultima respuesta tiene boton Regenerar');
+  // Las acciones de la respuesta viven en el menu ⋯ (2026-10-28): se abre y se elige Regenerar.
+  const abrirRegenerar = async () => {
+    const ultima = page.locator('#msg-inner > .msg-a').filter({ hasNot: page.locator('.thought') }).last();
+    await ultima.locator('.act-btn').click({ force: true });
+    const fila = page.locator('body > .acts-menu .menu-row').filter({ hasText: 'Regenerar' });
+    check(await fila.count() === 1, 'el menu de la ultima respuesta ofrece Regenerar');
+    await fila.click();
+  };
   const antes = (await visibles()).length;
-  await rg!.evaluate((x: HTMLElement) => x.click());
+  await abrirRegenerar();
   await waitIdle();
   await page.waitForTimeout(1200);
   const despues = (await visibles()).length;

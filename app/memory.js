@@ -1,10 +1,215 @@
-const STATUS_LABEL = {
+// src/app/acts.ts
+var abierto = null;
+var disparador = null;
+var MARGEN = 8;
+function cerca(sel) {
+  return document.querySelector(sel);
+}
+function cerrarAcciones() {
+  document.querySelectorAll("body > .acts-menu").forEach((m) => m.remove());
+  if (disparador && disparador.isConnected) disparador.setAttribute("aria-expanded", "false");
+  abierto = null;
+  disparador = null;
+}
+function medir(menu, r, lateral, fila) {
+  const w = menu.offsetWidth;
+  const h = menu.offsetHeight;
+  let left;
+  let top;
+  if (lateral && fila) {
+    left = fila.right + 6;
+    if (left + w > window.innerWidth - MARGEN) left = fila.left - w - 6;
+    top = fila.top;
+    if (left < MARGEN) {
+      left = Math.min(Math.max(MARGEN, fila.left), Math.max(MARGEN, window.innerWidth - MARGEN - w));
+      top = fila.bottom + 6;
+    }
+  } else {
+    left = r.right - w;
+    if (left < MARGEN) left = MARGEN;
+    top = r.bottom + 7;
+    if (top + h > window.innerHeight - MARGEN) top = Math.max(MARGEN, r.top - h - 7);
+    else if (r.bottom + 7 + h > window.innerHeight - MARGEN) top = Math.max(MARGEN, r.top - h - 7);
+  }
+  if (top + h > window.innerHeight - MARGEN) top = Math.max(MARGEN, window.innerHeight - MARGEN - h);
+  if (top < MARGEN) top = MARGEN;
+  if (left + w > window.innerWidth - MARGEN) left = Math.max(MARGEN, window.innerWidth - MARGEN - w);
+  menu.style.left = Math.round(left) + "px";
+  menu.style.top = Math.round(top) + "px";
+  menu.style.maxHeight = Math.max(120, window.innerHeight - 2 * MARGEN) + "px";
+}
+function filas(menu) {
+  return [...menu.querySelectorAll(":scope > .menu-row:not([disabled])")];
+}
+function pintar(items, nivel) {
+  const menu = document.createElement("div");
+  menu.className = "menu acts-menu" + (nivel === "sub" ? " acts-sub" : "");
+  menu.setAttribute("role", "menu");
+  for (const it of items) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "menu-row" + (it.danger ? " danger" : "");
+    row.setAttribute("role", "menuitem");
+    row.innerHTML = '<span class="act-main">' + (it.icon ? '<span class="act-ico">' + it.icon + "</span>" : "") + '<span class="act-t">' + it.label + "</span>" + (it.hint ? '<span class="act-hint">' + it.hint + "</span>" : "") + "</span>" + (it.sub ? '<span class="act-chev" aria-hidden="true"><svg viewBox="0 0 12 12" width="11" height="11" fill="none"><path d="M4.5 2.8 7.7 6l-3.2 3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : "");
+    if (it.sub) {
+      row.setAttribute("aria-haspopup", "menu");
+      row.setAttribute("aria-expanded", "false");
+      const abrirSub = () => {
+        if (row.classList.contains("act-open")) return;
+        cerrarSub(menu);
+        const sub = pintar(it.sub, "sub");
+        sub.dataset.parent = "1";
+        document.body.appendChild(sub);
+        menu.dataset.sub = "1";
+        row.classList.add("act-open");
+        row.setAttribute("aria-expanded", "true");
+        medir(sub, row.getBoundingClientRect(), true, row.getBoundingClientRect());
+        abierto = sub;
+        const first = filas(sub)[0];
+        if (first && menu.dataset.kbd === "1") first.focus({ preventScroll: true });
+      };
+      const cerrarEste = () => {
+        cerrarSub(menu);
+        row.classList.remove("act-open");
+        row.setAttribute("aria-expanded", "false");
+      };
+      row.addEventListener("pointerenter", abrirSub);
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (row.classList.contains("act-open")) {
+          cerrarEste();
+          return;
+        }
+        abrirSub();
+      });
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          e.stopPropagation();
+          abrirSub();
+          const f = filas(menu.dataset.sub === "1" ? abierto || menu : menu)[0];
+          f?.focus();
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          cerrarEste();
+        }
+      });
+    } else {
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const fn = it.run;
+        cerrarAcciones();
+        fn?.();
+      });
+    }
+    menu.appendChild(row);
+  }
+  if (nivel === "menu") {
+    menu.addEventListener("keydown", (e) => {
+      const items2 = filas(menu);
+      const i = items2.indexOf(document.activeElement);
+      const ir = (n) => {
+        e.preventDefault();
+        items2[(i + n + items2.length) % items2.length].focus();
+      };
+      if (e.key === "ArrowDown") ir(1);
+      else if (e.key === "ArrowUp") ir(-1);
+      else if (e.key === "Home") {
+        e.preventDefault();
+        items2[0]?.focus();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        items2[items2.length - 1]?.focus();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        const back = disparador;
+        cerrarAcciones();
+        if (back && back.isConnected) back.focus();
+      }
+    });
+  } else {
+    menu.addEventListener("keydown", (e) => {
+      const items2 = filas(menu);
+      const i = items2.indexOf(document.activeElement);
+      const ir = (n) => {
+        e.preventDefault();
+        items2[(i + n + items2.length) % items2.length].focus();
+      };
+      if (e.key === "ArrowDown") ir(1);
+      else if (e.key === "ArrowUp") ir(-1);
+      else if (e.key === "Escape" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        e.stopPropagation();
+        const padre = cerca("body > .acts-menu:not(.acts-sub)");
+        cerrarSub();
+        const fila = padre?.querySelector(".menu-row.act-open");
+        fila?.classList.remove("act-open");
+        fila?.setAttribute("aria-expanded", "false");
+        (fila || disparador)?.focus();
+      }
+    });
+  }
+  return menu;
+}
+function cerrarSub(scope) {
+  document.querySelectorAll("body > .acts-sub").forEach((m) => m.remove());
+  (scope || document).querySelectorAll(".menu-row.act-open").forEach((r) => {
+    r.classList.remove("act-open");
+    r.setAttribute("aria-expanded", "false");
+  });
+}
+function abrirAcciones(trigger, items) {
+  cerrarAcciones();
+  if (!items.length) return;
+  disparador = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+  const menu = pintar(items, "menu");
+  document.body.appendChild(menu);
+  abierto = menu;
+  medir(menu, trigger.getBoundingClientRect(), false);
+  const porTeclado = document.documentElement.dataset.kbd === "1" || !!trigger.dataset.kbd;
+  if (porTeclado) filas(menu)[0]?.focus({ preventScroll: true });
+}
+function botonAcciones(etiqueta, items, extraClass = "") {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "act-btn" + (extraClass ? " " + extraClass : "");
+  b.setAttribute("aria-label", "Acciones: " + etiqueta);
+  b.setAttribute("aria-haspopup", "menu");
+  b.setAttribute("aria-expanded", "false");
+  b.title = "Acciones";
+  b.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3.4" cy="8" r="1.35" fill="currentColor"/><circle cx="8" cy="8" r="1.35" fill="currentColor"/><circle cx="12.6" cy="8" r="1.35" fill="currentColor"/></svg>';
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const ya = abierto && disparador === b;
+    if (ya) {
+      cerrarAcciones();
+      return;
+    }
+    abrirAcciones(b, items());
+  });
+  b.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+      e.preventDefault();
+      b.dataset.kbd = "1";
+      abrirAcciones(b, items());
+      delete b.dataset.kbd;
+    }
+  });
+  return b;
+}
+
+// src/memory.ts
+var STATUS_LABEL = {
   confirmed: "confirmado",
   candidate: "candidato",
   rejected: "rechazado",
   stale: "archivado"
 };
-const STATUS_BADGE = {
+var STATUS_BADGE = {
   confirmed: "ok",
   candidate: "warn",
   rejected: "bad",
@@ -19,7 +224,7 @@ function el(tag, attrs = {}, text) {
   if (text !== void 0) node.textContent = text;
   return node;
 }
-const CSS = `
+var CSS = `
 .aegis-mem-backdrop{position:fixed;inset:0;background:rgba(6,8,12,.62);backdrop-filter:blur(2px);z-index:9100;display:flex;align-items:center;justify-content:center;padding:24px}
 .aegis-mem{width:min(920px,100%);max-height:min(86vh,900px);display:flex;flex-direction:column;background:var(--panel,#14181f);color:var(--fg,#e7edf5);border:1px solid rgba(255,255,255,.08);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.55);font:14px/1.45 system-ui,Segoe UI,sans-serif;overflow:hidden}
 .aegis-mem header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.07)}
@@ -93,9 +298,9 @@ function buildPanel() {
   });
   return { backdrop, list, counts, filter, query, status };
 }
-let mounted = null;
-let facts = [];
-let busy = false;
+var mounted = null;
+var facts = [];
+var busy = false;
 function say(message) {
   if (mounted) mounted.status.textContent = message;
 }
@@ -167,17 +372,21 @@ function render() {
         busy = false;
       }
     };
-    if (status !== "confirmed") {
-      actions.appendChild(el("button", { title: "Entra al prompt desde el proximo turno" }, "Confirmar")).addEventListener("click", () => act("confirm"));
-    }
-    if (fact.pinned) {
-      actions.appendChild(el("button", { title: "Dejar de fijarlo" }, "Soltar")).addEventListener("click", () => act("unpin"));
-    } else {
-      actions.appendChild(el("button", { title: "Va siempre al digest" }, "Fijar")).addEventListener("click", () => act("pin"));
-    }
-    if (status !== "rejected") {
-      actions.appendChild(el("button", { title: "Deja de entrar al digest; el rastro queda" }, "Rechazar")).addEventListener("click", () => act("reject"));
-    }
+    actions.appendChild(botonAcciones("hecho " + fact.id, () => {
+      const out = [];
+      if (status !== "confirmed") out.push({ label: "Confirmar", hint: "entra al prompt", run: () => {
+        void act("confirm");
+      } });
+      out.push(fact.pinned ? { label: "Soltar", hint: "deja de ir al digest", run: () => {
+        void act("unpin");
+      } } : { label: "Fijar", hint: "siempre al digest", run: () => {
+        void act("pin");
+      } });
+      if (status !== "rejected") out.push({ label: "Rechazar", hint: "el rastro queda", danger: true, run: () => {
+        void act("reject");
+      } });
+      return out;
+    }));
     row.appendChild(actions);
     mounted.list.appendChild(row);
   }
