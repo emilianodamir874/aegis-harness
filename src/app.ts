@@ -5001,8 +5001,16 @@ import { abrirCombo, comboAbierto, norm, puntajeDeBusqueda, type ComboHandle, ty
   const catalogoEspera: Array<() => void> = [];
   const provDeCatalogo = (pid: string): ProvCat | null => (catalogo || []).find((p) => p && p.providerId === pid) || null;
   /** Proveedores que el motor ya tiene configurados: los demas solo aparecerian para fallar. */
+  // Proveedores que el catalogo trae como configurados pero que no se quieren ver en el panel:
+  // locales sin servicio corriendo, cuentas que ya no se usan y un proveedor de prueba. El motor
+  // sigue sabiendo de ellos; esto es solo la lista que se ofrece para elegir.
+  const PROVEEDORES_OCULTOS = new Set([
+    'atomic_chat', 'cursor-agent', 'custom_shared_secret_test', 'llama_swap',
+    'lmstudio', 'lynkr', 'omlx', 'openai', 'openrouter', 'xai',
+  ]);
   const proveedoresListos = (): ProvCat[] =>
-    (catalogo || []).filter((p) => p && p.providerId && p.configured && p.available !== false && !p.deprecated);
+    (catalogo || []).filter((p) => p && p.providerId && p.configured && p.available !== false
+      && !p.deprecated && !PROVEEDORES_OCULTOS.has(String(p.providerId)));
 
   /** 1048576 -> "1M", 200000 -> "200k": la ventana de contexto, no tokens medidos. */
   const ctxLabel = (n: number): string =>
@@ -5135,12 +5143,17 @@ import { abrirCombo, comboAbierto, norm, puntajeDeBusqueda, type ComboHandle, ty
     for (const o of opcionesDe('provider')) {
       const pid = String(o.value || '');
       if (!pid) continue;
+      if (PROVEEDORES_OCULTOS.has(pid) && pid !== act) continue;
       vistos.set(pid, { value: 'prov:' + pid, label: String(o.name || etiquetaOpcion(o) || pid), current: pid === act } as ComboItem);
     }
     for (const p of proveedoresListos()) {
       const pid = String(p.providerId || '');
       if (!pid || vistos.has(pid)) continue;
       vistos.set(pid, { value: 'prov:' + pid, label: String(p.providerName || pid), current: pid === act } as ComboItem);
+    }
+    // Si el chat ya esta en un proveedor oculto, su fila se muestra igual: hay que poder volver.
+    if (act && !vistos.has(act)) {
+      vistos.set(act, { value: 'prov:' + act, label: String((provDeCatalogo(act) || {}).providerName || act), current: true } as ComboItem);
     }
     for (const it of vistos.values()) {
       const pid = it.value.slice(5);

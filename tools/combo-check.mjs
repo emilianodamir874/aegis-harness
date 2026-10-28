@@ -89,6 +89,18 @@ await conPagina(PERFILES.escritorio, async (page) => {
   check('paso 1 no muestra el boton atras', !p1.atras);
   check('paso 1 lista los proveedores arriba y los modelos abajo', p1.filas.length >= 3 && p1.filas.some((f) => /Codex|Design|Antigravity/i.test(f)) && p1.secciones.includes('Proveedor') && p1.secciones.includes('Modelos'), `${p1.filas.length} filas, secciones: ${p1.secciones.join(' / ')}`);
   check('el buscador arranca con el foco', p1.foco);
+  // La lista de proveedores ofrecida es exactamente la que el operador dejo a la vista.
+  const ofrecidos = await page.evaluate(() => {
+    const secs = window.__aegisWeb.chips.secciones().modelo || [];
+    const primera = secs.find((x) => x.label === 'Proveedor');
+    return primera ? primera.items.map((i) => String(i.value).replace(/^prov:/, '')) : [];
+  });
+  const ESPERADOS = ['antigravity', 'chatgpt_codex', 'experiential', 'open_design', 'opencode_go'];
+  const OCULTOS = ['atomic_chat', 'cursor-agent', 'custom_shared_secret_test', 'llama_swap', 'lmstudio', 'lynkr', 'omlx', 'openai', 'openrouter', 'xai'];
+  check('el paso 1 ofrece solo los cinco proveedores elegidos', ofrecidos.length === 5 && ESPERADOS.every((x) => ofrecidos.includes(x)), ofrecidos.join(', '));
+  check('ningun proveedor oculto se ofrece', !ofrecidos.some((x) => OCULTOS.includes(x)));
+  const seccionesModelos = await page.evaluate(() => (window.__aegisWeb.chips.secciones().modelo || []).map((x) => x.label));
+  check('las secciones de modelos son solo de los cinco', seccionesModelos.every((l) => l === 'Proveedor' || l === 'Modelos' || ['Antigravity', 'ChatGPT Codex', 'Experiential Labs', 'Open Design', 'OpenCode Go'].includes(l)), seccionesModelos.join(' / '));
   await page.screenshot({ path: 'tools/shots/pasos-1-proveedor.png' });
 
   // Paso 2: filtra proveedor y entra a sus modelos
