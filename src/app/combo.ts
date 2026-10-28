@@ -38,6 +38,8 @@ export type ComboSection = { label: string; hint?: string; items: ComboItem[] };
 
 export type ComboOptions = {
   anchor: HTMLElement;
+  /** Selector del disparador, para reencontrarlo si los chips se reconstruyen con el panel abierto. */
+  anchorSel?: string;
   title: string;
   placeholder?: string;
   sections: ComboSection[];
@@ -223,7 +225,12 @@ function ubicar(v: Vivo): void {
   v.panel.style.width = ancho + 'px';
   v.panel.style.maxHeight = Math.max(200, Math.min(460, window.innerHeight - 2 * m)) + 'px';
   const alto = v.panel.offsetHeight;
-  const r = v.anchor.isConnected ? v.anchor.getBoundingClientRect() : null;
+  // renderChips() reemplaza los botones: el ancla capturada al abrir queda suelta y mediria 0,0
+  // (el panel saltaba a la esquina). Se reencuentra por selector antes de rendirse.
+  const ancla = v.anchor.isConnected ? v.anchor
+    : (v.opts.anchorSel ? document.querySelector<HTMLElement>(v.opts.anchorSel) : null);
+  if (ancla) v.anchor = ancla;
+  const r = ancla ? ancla.getBoundingClientRect() : null;
   const ref = r || ({ left: m, right: m, top: 0, bottom: 0, width: 0, height: 0 } as DOMRect);
   let top = ref.bottom + 7;
   if (top + alto > window.innerHeight - m) {
@@ -250,9 +257,11 @@ function cerrar(motivo: 'pick' | 'aux' | 'cancel'): void {
   }
   v.root.remove();
   document.documentElement.classList.remove('combo-open');
-  if (v.anchor.isConnected) {
-    v.anchor.setAttribute('aria-expanded', 'false');
-    if (motivo === 'cancel') v.anchor.focus({ preventScroll: true });
+  const ancla = v.anchor.isConnected ? v.anchor
+    : (v.opts.anchorSel ? document.querySelector<HTMLElement>(v.opts.anchorSel) : null);
+  if (ancla) {
+    ancla.setAttribute('aria-expanded', 'false');
+    if (motivo === 'cancel') ancla.focus({ preventScroll: true });
   }
   if (v.opts.onClose) v.opts.onClose(motivo);
 }

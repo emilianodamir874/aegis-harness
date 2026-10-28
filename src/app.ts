@@ -5406,6 +5406,7 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
 
     comboVivo.actual = abrirCombo({
       anchor,
+      anchorSel: '#chips .chip-model',
       title: 'Proveedor',
       placeholder: 'Buscar proveedor…',
       sections: secciones(),
@@ -5452,6 +5453,7 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
   function abrirModo(anchor: HTMLElement) {
     abrirCombo({
       anchor,
+      anchorSel: '#chips .chip-mode',
       title: 'Modo',
       placeholder: 'Buscar modo…',
       sections: seccionesModo(),

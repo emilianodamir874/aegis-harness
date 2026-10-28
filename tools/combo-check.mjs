@@ -52,6 +52,17 @@ const panel = (page) => page.evaluate(() => {
     vacio: p.querySelector('.combo-empty')?.textContent || '',
     foco: document.activeElement?.classList.contains('combo-input') || false,
     hoja: !!document.querySelector('.combo-root.is-sheet'),
+    // El panel debe colgar del chip de modelo y no irse a la esquina: los pasos 2 y 3 repintan
+    // el mismo panel y el ancla puede quedar suelta si se reconstruyen los chips.
+    anclado: (() => {
+      const chip = document.querySelector('#chips .chip-model');
+      const rp = p.getBoundingClientRect();
+      if (!chip) return false;
+      const rc = chip.getBoundingClientRect();
+      const abajo = Math.abs(rp.top - (rc.bottom + 7)) <= 8;
+      const alineado = Math.abs(rp.left - rc.left) <= 8;
+      return abajo && alineado;
+    })(),
   };
 });
 
@@ -89,6 +100,7 @@ await conPagina(PERFILES.escritorio, async (page) => {
   check('paso 1 no muestra el boton atras', !p1.atras);
   check('paso 1 lista solo proveedores, sin modelos', p1.filas.length === 5 && p1.secciones.join('/') === 'Proveedor' && p1.filas.some((f) => /Codex|Design|Antigravity/i.test(f)), `${p1.filas.length} filas, secciones: ${p1.secciones.join(' / ')}`);
   check('el buscador arranca con el foco', p1.foco);
+  check('el panel cuelga del chip', p1.anclado);
   // La lista de proveedores ofrecida es exactamente la que el operador dejo a la vista.
   const ofrecidos = await page.evaluate(() => {
     const secs = window.__aegisWeb.chips.secciones().modelo || [];
@@ -116,6 +128,7 @@ await conPagina(PERFILES.escritorio, async (page) => {
   check('paso 2 ofrece volver', p2.atras);
   check('paso 2 lista los modelos de ESE proveedor', p2.filas.length > 0 && p2.filas.some((f) => /gpt/i.test(f)), `${p2.filas.length} modelos`);
   check('al entrar al paso 2 el buscador esta limpio y con foco', p2.foco);
+  check('el paso 2 sigue anclado al chip', p2.anclado);
   await page.screenshot({ path: 'tools/shots/pasos-2-modelos.png' });
 
   // Atras con el boton y con la flecha izquierda
@@ -146,6 +159,7 @@ await conPagina(PERFILES.escritorio, async (page) => {
   const p3 = await panel(page);
   check('paso 3 se titula Esfuerzo', p3.titulo === 'Esfuerzo', p3.titulo);
   check('paso 3 lista los niveles', p3.filas.length >= 3, p3.filas.join(', '));
+  check('el paso 3 sigue anclado al chip', p3.anclado);
   check('paso 3 recuerda proveedor y modelo en la miga', /codex/i.test(p3.miga) && p3.miga.includes('\u203a') && p3.miga.length > 'ChatGPT Codex \u203a'.length, p3.miga);
   await page.screenshot({ path: 'tools/shots/pasos-3-esfuerzo.png' });
   await page.keyboard.press('Home');
