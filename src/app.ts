@@ -2242,32 +2242,27 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
         + '<span class="k">compactaciones</span><span class="v">' + clog.length + '</span></div>'
         + horas;
     }
-    // DESGLOSE: donde se va la ventana. tool results, MOIM por turno, historial
-    // oculto por compactar y el prompt fijo (sistema + esquemas de tools). Las partes
-    // las estima el server y suman exactamente el 'usado' de arriba.
-    const cbd = Array.isArray(s.contextBreakdown) ? s.contextBreakdown : null;
-    if (cbd && cbd.length) {
-      // "oculto por compactacion" es historial que ya no viaja al modelo: entra en el panel como
-      // dato (el usuario lo sigue viendo) pero no en el total del contexto enviado.
-      const fueraDelTotal = (p) => /oculto/i.test(String(p.label || ''));
-      const tot = cbd.reduce((a, p) => a + (fueraDelTotal(p) ? 0 : (p.tokens || 0)), 0) || 1;
-      const sep = '<div class="up-row" style="border-top:1px solid var(--line,#3a3a3a);margin-top:6px;padding-top:6px">'
-        + '<span class="k">desglose del contexto</span><span class="v">' + niceTok(tot) + ' tok</span></div>';
-      const body = cbd.map((p) => {
-        const oculto = fueraDelTotal(p);
-        const share = oculto ? null : Math.round(((p.tokens || 0) / tot) * 100);
-        const d = [p.count ? p.count + ' msj' : null, p.detail || null].filter(Boolean).join(' &middot; ');
-        return '<div class="up-row" style="padding-left:10px"><span class="k">' + esc(p.label) + '</span>'
-          + '<span class="v">' + niceTok(p.tokens) + ' &middot; ' + share + '%'
-          + (d ? '<span style="display:block;font-size:11px;opacity:.62">' + esc(d) + '</span>' : '')
-          + '</span></div>';
-      }).join('');
-      w.querySelector('.up-rows').insertAdjacentHTML('beforeend', sep + body);
-    } else {
-      // El desglose llega al abrir la sesion y al cerrar cada turno. Antes de eso no hay
-      // nada que mostrar: decirlo, en vez de dejar el panel a medias.
-      w.querySelector('.up-rows').insertAdjacentHTML('beforeend', popRow('desglose del contexto', 'se completa al cerrar el proximo turno'));
+
+    // DESGLOSE: vive en UN solo lugar, el drawer del medidor (context-meter.ts). Este popover lo
+    // duplicaba con otro estilo y las dos vistas se desincronizaban. Aca queda el acceso.
+    const verDesglose = document.createElement('button');
+    verDesglose.type = 'button';
+    verDesglose.className = 'up-link';
+    verDesglose.textContent = 'Ver que ocupa el contexto';
+    verDesglose.addEventListener('click', () => {
+      closeMenus();
+      const chip = document.getElementById('ctx-chip') || document.querySelector('.ctx-chip');
+      if (chip instanceof HTMLElement) chip.click();
+    });
+    const pie = w.querySelector('.up-rows');
+    if (pie) {
+      const fila = document.createElement('div');
+      fila.className = 'up-row';
+      fila.style.cssText = 'border-top:1px solid var(--line,#3a3a3a);margin-top:6px;padding-top:6px';
+      fila.append(verDesglose);
+      pie.append(fila);
     }
+
     // Gasto real por modelo (una sesion puede cambiar de modelo a mitad de camino) y
     // compactacion interna, que se cobra pero no deja mensaje: filas aparte.
     (function () {
