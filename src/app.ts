@@ -2150,9 +2150,18 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     w.id = 'usage-pop';
     w.hidden = true;
     w.innerHTML =
-      '<div class="up-h"><span>Contexto</span><i class="up-verdict"></i><b class="up-pct">--</b></div>' +
+      '<div class="up-head">' +
+        '<div class="up-head-l"><span class="up-k">Contexto</span><i class="up-verdict"></i></div>' +
+        '<b class="up-pct">--</b>' +
+      '</div>' +
       '<div class="up-meter"><i></i><em></em></div>' +
       '<div class="up-sub"></div>' +
+      '<div class="up-money">' +
+        '<span class="up-money-k">Gasto de este chat</span>' +
+        '<b class="up-money-v">--</b>' +
+        '<span class="up-money-s"></span>' +
+      '</div>' +
+      '<div class="up-grid"></div>' +
       '<div class="up-rows"></div>' +
       '<div class="up-foot"></div>';
     document.body.appendChild(w);
@@ -2233,13 +2242,27 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     const rate = stepRate(mu);
     const cachePct = mu.cacheReadTokens != null && (mu.inputTokens || 0) + mu.cacheReadTokens > 0
       ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--';
+    // Gasto: la cifra que se mira primero. El costo del chat lo acumula el motor; el del ultimo
+    // paso solo aparece si el proveedor lo informa (deepseek lo hace, otros no).
+    const costo = s.cost;
+    w.querySelector('.up-money-v').textContent = costo == null ? '--' : fmtCost(costo);
+    const tokSesion = (s.inTok != null || s.outTok != null) ? (s.inTok || 0) + (s.outTok || 0) : null;
+    const costoPaso = mu.cost != null ? fmtCost(mu.cost) : null;
+    w.querySelector('.up-money-s').textContent =
+      (tokSesion == null ? 'sin tokens medidos' : niceTok(tokSesion) + ' tokens en el chat')
+      + (costoPaso ? '  ·  último paso ' + costoPaso : '');
+    const celda = (k, v, extra) => '<div class="up-cell"><span class="up-cell-k">' + esc(k) + '</span>'
+      + '<span class="up-cell-v">' + v + '</span>'
+      + (extra ? '<span class="up-cell-x">' + esc(extra) + '</span>' : '') + '</div>';
+    w.querySelector('.up-grid').innerHTML =
+      celda('Salida', niceTok(mu.outputTokens) + ' tok',
+        mu.elapsedMs != null ? (mu.elapsedMs / 1000).toFixed(1) + 's' + (rate ? '  ·  ' + fmtTps(rate.value) : '') : '')
+      + celda('Cache', cachePct, mu.timeToFirstTokenMs != null ? '1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')
+      + celda('Entrada', niceTok(mu.inputTokens) + ' tok', 'último paso')
+      + celda('Margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok' : '--',
+        'antes de compactar' + (ct.estimated ? ' (estimado)' : ''));
     w.querySelector('.up-rows').innerHTML =
-      popRow('ultimo paso', 'entrada ' + niceTok(mu.inputTokens) + '  ·  salida ' + niceTok(mu.outputTokens) +
-        (mu.elapsedMs != null ? '  ·  ' + (mu.elapsedMs / 1000).toFixed(1) + 's' : '') +
-        (rate === null ? '' : '  ·  ' + (rate.kind === 'generation' ? 'generación ' : 'solicitud total ') + fmtTps(rate.value))) +
-      popRow('cache', cachePct + (mu.timeToFirstTokenMs != null ? '  ·  1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')) +
-      popRow('sesion', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok)) +
-      popRow('margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok antes de compactar' + (ct.estimated ? ' (estimado)' : '') : '--');
+      popRow('sesión', 'entrada ' + niceTok(s.inTok) + '  ·  salida ' + niceTok(s.outTok));
     // BITACORA DE COMPACTACIONES: cuando compacto, con cuanto contexto y quien lo pidio.
     // Antes solo existia el contador de llamadas internas; esto responde la pregunta que
     // importa ("¿esta sesion compacto bien, o se comio el historial?").
@@ -6080,6 +6103,15 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     if (range) range.value = String(chatFont);
     const value = $('#chat-font-value');
     if (value) value.textContent = chatFont + ' px';
+    // La muestra se pinta con el tamano real y su interlineado: elegir a ciegas un numero no dice
+    // como queda el texto.
+    const muestra = $('#cf-muestra');
+    if (muestra) {
+      const scale = chatFont / CHAT_FONT_DEFAULT;
+      muestra.style.fontSize = chatFont + 'px';
+      muestra.style.lineHeight = String(Math.round(chatFont * 1.55)) + 'px';
+      muestra.style.setProperty('--cf-sample-small', Math.round(11.5 * scale) + 'px');
+    }
     try { localStorage.setItem(CHAT_FONT_KEY, String(chatFont)); } catch {}
   }
   // ---- densidad y presentación ----------------------------------------------
