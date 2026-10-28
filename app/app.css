@@ -92,8 +92,18 @@
   --shadow-panel: 0 30px 80px rgba(0, 0, 0, 0.6);
 
   /* movimiento */
-  --dur: 130ms;
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Escala de movimiento. Tres duraciones, dos curvas: cualquier animacion nueva tiene que usar
+     estos tokens en vez de un valor suelto (el gate ui-craft lo verifica).
+       dur-1 micro (hover, pressed) · dur-2 transicion (estado, color) · dur-3 entrada de algo
+       que aparece en pantalla. La salida siempre es mas rapida que la entrada. */
+  --dur-1: 90ms;
+  --dur-2: 160ms;
+  --dur-3: 260ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* alias historicos: toda la hoja los usa */
+  --dur: var(--dur-2);
+  --ease: var(--ease-out);
 
   /* medidas del layout */
   --measure: 760px;
@@ -3260,4 +3270,20 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
 
 @media (prefers-reduced-motion: reduce) {
   .act-btn, .act-chev { transition: none; }
+}
+
+/* paneles: entrada con desplazamiento corto y salida mas rapida que la entrada. La asimetria es lo
+   que hace que un panel se sienta "que responde" en vez de "que aparece y desaparece igual". */
+.menu, .ctx-map, .aegis-doctor, .aegis-changes { animation: popIn var(--dur-3) var(--ease-out) both; }
+.menu[hidden], .ctx-map[hidden] { animation-duration: var(--dur-2); }
+
+/* fila de herramienta: abre sin height fijo, para que el contenido pueda cambiar de tamano */
+.tool-body, .tool-detail { animation: msgIn var(--dur-2) var(--ease-out) both; }
+
+/* la barra de contexto no rebota: 400ms y el color acompana el nivel */
+.ctx-fill { transition: width 400ms var(--ease-in-out), background-color var(--dur-3) var(--ease-in-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .menu, .ctx-map, .aegis-doctor, .aegis-changes, .tool-body, .tool-detail { animation: none; }
+  .ctx-fill { transition: none; }
 }
