@@ -2247,11 +2247,15 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     // las estima el server y suman exactamente el 'usado' de arriba.
     const cbd = Array.isArray(s.contextBreakdown) ? s.contextBreakdown : null;
     if (cbd && cbd.length) {
-      const tot = cbd.reduce((a, p) => a + (p.tokens || 0), 0) || 1;
+      // "oculto por compactacion" es historial que ya no viaja al modelo: entra en el panel como
+      // dato (el usuario lo sigue viendo) pero no en el total del contexto enviado.
+      const fueraDelTotal = (p) => /oculto/i.test(String(p.label || ''));
+      const tot = cbd.reduce((a, p) => a + (fueraDelTotal(p) ? 0 : (p.tokens || 0)), 0) || 1;
       const sep = '<div class="up-row" style="border-top:1px solid var(--line,#3a3a3a);margin-top:6px;padding-top:6px">'
         + '<span class="k">desglose del contexto</span><span class="v">' + niceTok(tot) + ' tok</span></div>';
       const body = cbd.map((p) => {
-        const share = Math.round(((p.tokens || 0) / tot) * 100);
+        const oculto = fueraDelTotal(p);
+        const share = oculto ? null : Math.round(((p.tokens || 0) / tot) * 100);
         const d = [p.count ? p.count + ' msj' : null, p.detail || null].filter(Boolean).join(' &middot; ');
         return '<div class="up-row" style="padding-left:10px"><span class="k">' + esc(p.label) + '</span>'
           + '<span class="v">' + niceTok(p.tokens) + ' &middot; ' + share + '%'
