@@ -116,7 +116,7 @@ el camino principal pero falta una parte del contrato; `pendiente` = no implemen
 | 19 | Adopción de runs | `activeRunId` | run de otra conexión | `run/started adopted` | `store.test` | hecho |
 | 20 | Replay parcial | `replayTail`/`replaySkipped` | avisar y cargar todo | tail-pill + `loadFullHistory` | `store.test` 120 omitidos→520 | hecho |
 | 21 | Historial completo | `session/load full` | reemplazo sin duplicar | `openSession({full})` | `store.test` | hecho |
-| 22 | Búsqueda de sesiones | `/search.json` + filtro local | título/id; contenido | filtro local en Sidebar | manual en smoke | parcial (sin FTS) |
+| 22 | Búsqueda de sesiones | `/search.json` + filtro local | título/id; contenido | filtro local + `ui/SearchResults.tsx` (FTS del store, debounce 250 ms, guarda de secuencia, descarta las ya visibles) | `tsc` + 62 tests + build; endpoint real 3790: 3 sesiones y 54 coincidencias con claves `sessionId,title,cwd,updatedAt,archived,titleMatch,matches[{role,ts,snippet}]` | hecho |
 | 23 | Actividad | `activity.ts` | sesiones y estado | panel Actividad (desde estado) | UI abre | parcial (sin export/confirmaciones) |
 | 24 | Cambios Git | `/changes.json` | archivos del cwd | panel Cambios (tabla) | no probado con repo real | parcial |
 | 25 | Memoria | `/memory.json` | hechos | panel Memoria (JSON) | no probado | parcial |

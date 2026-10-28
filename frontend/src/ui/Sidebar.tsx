@@ -3,6 +3,7 @@ import type { AegisStore } from '../domain/store';
 import type { AppState } from '../domain/types';
 import type { SessionId } from '../domain/ids';
 import { isRunning } from '../domain/selectors';
+import { SearchResults } from './SearchResults';
 
 const norm = (value: string): string =>
   String(value ?? '')
@@ -225,6 +226,14 @@ export function Sidebar({
           <div className="sb-empty">Sin sesiones todavía</div>
         ) : null}
         {rows(sessions.live, false)}
+        {filter.trim().length > 1 ? (
+          <SearchResults
+            query={filter}
+            localIds={new Set<string>([...sessions.live, ...sessions.archived])}
+            store={store}
+            onNavigate={onClose}
+          />
+        ) : null}
         {state.archived.length > 0 ? (
           showArchived ? (
             <>
