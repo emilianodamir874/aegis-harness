@@ -3998,39 +3998,111 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .panel-btn:hover { background: rgba(245, 244, 239, 0.1); color: var(--text); }
 .panel-hint { margin-left: auto; font-size: 10.5px; color: var(--text-4); }
 
-/* ---------- letra del chat ---------- */
+/* ---------- letra del chat: la muestra es un mensaje, el control es propio ---------- */
 .lp-muestra {
-  padding: 11px 12px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-soft);
-  background: rgba(245, 244, 239, 0.03);
+  margin: 0;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--border-soft);
   color: var(--text);
-  overflow: hidden;
 }
-.lp-muestra span { display: block; }
-.lp-controls { display: flex; align-items: center; gap: 9px; margin-top: 12px; }
-.lp-controls button {
-  min-width: 30px; min-height: 30px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: var(--r-sm);
+/* La línea de razonamiento va arriba, en gris y más chica: es lo que se ve en el chat real. */
+.lp-muestra-razon {
+  margin-bottom: 7px;
+  font-size: var(--lp-thought-font, 13.5px);
+  line-height: 1.45;
+  color: var(--text-4);
+  font-style: italic;
+}
+.lp-muestra p { margin: 0 0 8px; }
+.lp-muestra p:last-child { margin-bottom: 0; }
+.lp-muestra-code { margin-top: 8px; }
+.lp-muestra-code code {
+  padding: 1px 5px;
+  border-radius: 4px;
   background: rgba(245, 244, 239, 0.06);
+  font-family: var(--mono);
+  font-size: var(--lp-code-font, 12px);
   color: var(--text-2);
+}
+
+/* El control: − [A ———●——— A] +, con una A chica y una A grande como extremos. */
+.lp-controls {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 30px;
+  align-items: center;
+  column-gap: 9px;
+  margin-top: 13px;
+}
+/* El riel: la A chica, la barra y la A grande, en una sola linea. */
+.lp-rail { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.lp-rail input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.lp-controls button {
+  grid-column: span 1;
+  display: grid;
+  place-items: center;
+  min-width: 30px; min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--mono);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
-.lp-controls button:hover { background: rgba(245, 244, 239, 0.1); color: var(--text); }
-.lp-controls input[type="range"] { flex: 1 1 auto; width: auto; min-width: 70px; accent-color: var(--accent); }
-.lp-scale {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 3px;
-  padding: 0 39px;
-  font-family: var(--mono);
-  font-size: 9px;
+.lp-controls button:hover { background: rgba(245, 244, 239, 0.07); color: var(--text); border-color: var(--border); }
+.lp-controls button:active { transform: translateY(1px); }
+/* Las dos A viven dentro del mismo tramo que el slider: la chica a la izquierda del riel y la
+   grande a la derecha, para que el gesto se lea solo. */
+.lp-controls input[type="range"] { width: 100%; }
+.lp-end {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-ui);
   color: var(--text-4);
+  user-select: none;
 }
+.lp-end-min { font-size: 9px; }
+.lp-end-max { font-size: 19px; }
+
+/* Slider propio: riel de 4 px con relleno hasta el pulgar, pulgar redondo con anillo. */
+.lp-controls input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+.lp-controls input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) 0 var(--lp-fill, 70%), rgba(245, 244, 239, 0.12) var(--lp-fill, 70%) 100%);
+}
+.lp-controls input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(245, 244, 239, 0.12);
+}
+.lp-controls input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+.lp-controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px; height: 13px;
+  margin-top: -4.5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 0 4px rgba(224, 122, 95, 0.22);
+}
+.lp-controls input[type="range"]::-moz-range-thumb {
+  width: 13px; height: 13px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.lp-controls input[type="range"]:focus-visible { outline: none; }
+.lp-controls input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35), 0 0 0 5px rgba(224, 122, 95, 0.45); }
 
 /* ---------- uso, gasto y compactaciones ---------- */
 #usage-panel .up-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
@@ -4089,7 +4161,6 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   .panel-btn { min-height: 40px; padding: 0 14px; font-size: 12.5px; }
   .panel-hint { display: none; }
   .lp-controls button { min-width: 42px; min-height: 42px; font-size: 16px; }
-  .lp-scale { padding: 0 52px; }
   #usage-panel .up-money-v { font-size: 23px; }
   #usage-panel .up-cell { padding: 10px 11px; }
   #usage-panel .up-row .k { min-width: 72px; }
@@ -4197,5 +4268,4 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   .cc-hero > b { font-size: 28px; }
   .cc-money > b { font-size: 26px; }
   .lp-controls button { min-width: 42px; min-height: 42px; font-size: 16px; }
-  .lp-scale { padding: 0 54px; }
 }

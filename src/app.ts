@@ -1500,6 +1500,15 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     return out;
   }
 
+  // Cuanto del final de `a` se repite al principio de `b`. Se usa para recortar el modo en que
+  // algunos providers reemiten el texto acumulado con un desfase, sin castigar el caso normal
+  // (delta puro), que no pasa por aca. El tope evita el O(n^2) en textos largos.
+  function solapeFinal(a: string, b: string): number {
+    const max = Math.min(a.length, b.length, 600);
+    for (let n = max; n >= 8; n--) if (a.endsWith(b.slice(0, n))) return n;
+    return 0;
+  }
+
   function streamAppend(key, text, thought, hidden?) {
     // (v6.4) Replay del hub: el mismo mensaje parcial puede haberlo traído ya el
     // session/load, así que el texto del replay se acumula aparte y se reconcilia por
@@ -1530,9 +1539,37 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     if (rec && rec.text) {
       const prev = String(rec.text);
       const inc = String(text == null ? '' : text);
-      if (inc && inc.length >= 12 && prev === inc) return;
-      if (inc && inc.length > prev.length && inc.startsWith(prev)) { text = inc.slice(prev.length); if (!text) return; }
-      else if (inc && inc.length >= 40 && prev.startsWith(inc)) return;
+      if (!inc) return;
+      if (prev === inc) return;
+      if (inc.startsWith(prev)) { text = inc.slice(prev.length); if (!text) return; }
+      else if (prev.startsWith(inc) || prev.endsWith(inc)) return;
+      else {
+        // SIN SOLAPE. Dos casos bien distintos que antes se trataban igual (append ciego):
+        //   a) el chunk CONTINUA la frase -> delta normal, se pega sin separador. Es el caso
+        //      frecuente: un delta cualquiera nunca "solapa" con lo anterior, asi que separar por
+        //      las dudas metia un parrafo en medio de cada oracion.
+        //   b) el provider reemite el texto ACUMULADO de otro tramo (mismo arranque y mas largo):
+        //      se reemplaza, no se suma. Esto es lo que duplicaba el razonamiento.
+        const solape = solapeFinal(prev, inc);
+        const cierra = /[\s\-;,:([{]$/.test(prev);
+        if (solape >= 8) {
+          text = inc.slice(solape);
+          if (!text) return;
+        } else if (prev.length >= 40 && inc.length > prev.length
+          && prev.startsWith(inc.slice(0, Math.min(24, inc.length)))) {
+          rec.text = inc;
+          rec.lastAppend = performance.now();
+          rec.live = !state.replaying;
+          queueRender(rec);
+          return;
+        } else if (!cierra && /^[\-;,:)\]}·]/.test(inc)) {
+          // Arranca con puntuacion de continuacion sin que lo pintado la pida: le falta el
+          // principio (hub reordenado). Soldado se lee como un error de la app; aparte se lee
+          // como lo que es, un tramo que llego tarde.
+          text = '\n\n' + inc;
+        }
+        // (si no, es un delta normal: se pega tal cual)
+      }
     }
     if (rec && rec.closed) {
       // (v6.6) Un cierre a mitad de turno (closeAllRecs) partia el razonamiento en dos
@@ -1609,8 +1646,13 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     if (u.toolCallId) el.dataset.toolCallId = String(u.toolCallId);
     const status = u.status || (el.dataset.state === 'ok' ? 'completed' : el.dataset.state === 'err' ? 'failed' : 'pending');
     const rawIn = u.rawInput || {};
-    const shortInput = String(rawIn.command || rawIn.path || rawIn.file_path || rawIn.query || rawIn.url || rawIn.pattern || '').split('\n')[0].slice(0, 90);
-    const title = u.title || el.dataset.title || u.kind || shortInput || 'Herramienta';
+    // Antes se cortaba a 90 sin avisar y el titulo quedaba en "python tools\_cc1.py; R", que se lee
+    // como un error de la app. Ahora se dice que hay mas.
+    const rawShort = String(rawIn.command || rawIn.path || rawIn.file_path || rawIn.query || rawIn.url || rawIn.pattern || '').split('\n')[0];
+    const shortInput = rawShort.length > 90 ? rawShort.slice(0, 89) + '\u2026' : rawShort;
+    // El comando dice MAS que el tipo: "shell" o "running" no informan nada. Se prefiere el
+    // payload y solo se cae al kind cuando no hay nada mejor.
+    const title = u.title || shortInput || el.dataset.title || u.kind || 'Herramienta';
     el.dataset.title = title;
     const t = el.querySelector('.tool-title');
     t.innerHTML = `${esc(title)}${u.kind && u.kind !== title ? ` <span class="tname">${esc(u.kind)}</span>` : ''}`;
@@ -1661,7 +1703,11 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
       // El contenido de la herramienta se recorta a cierta altura y no habia forma de ver el resto:
       // si el bloque desborda, se agrega un boton para expandirlo (y volver a plegarlo).
       requestAnimationFrame(() => {
-        if (!el.isConnected || el.querySelector('.tool-more')) return;
+        // Un update posterior de la misma herramienta volvia a evaluar el desborde y, si el boton
+        // ya existia, se salia; pero si el texto crecio quedaba desactualizado. Se reemplaza.
+        const viejoBoton = el.querySelector('.tool-more');
+        if (viejoBoton) viejoBoton.remove();
+        if (!el.isConnected) return;
         if (pre.scrollHeight <= pre.clientHeight + 8) return;
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -5977,7 +6023,12 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
       for (const [name, size] of Object.entries(sizes)) messages.style.setProperty(name, size + 'px');
     }
     const range = $('#chat-font-range') as HTMLInputElement | null;
-    if (range) range.value = String(chatFont);
+    if (range) {
+      range.value = String(chatFont);
+      // El riel se pinta hasta el pulgar: sin esto el recorrido elegido no se ve.
+      const pct = ((chatFont - 2) / (22 - 2)) * 100;
+      range.style.setProperty('--lp-fill', pct.toFixed(1) + '%');
+    }
     const value = $('#chat-font-value');
     if (value) value.textContent = chatFont + ' px';
     // El subtitulo del panel abierto tambien es el valor: si no se refresca, dice 16 px con la
@@ -5988,10 +6039,16 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     // como queda el texto.
     const muestra = $('#cf-muestra');
     if (muestra) {
+      // La muestra es el mensaje entero (parrafo + razonamiento + codigo en linea): se escala con
+      // las mismas proporciones que usa el transcript, no con un numero inventado.
       const scale = chatFont / CHAT_FONT_DEFAULT;
       muestra.style.fontSize = chatFont + 'px';
       muestra.style.lineHeight = String(Math.round(chatFont * 1.55)) + 'px';
-      muestra.style.setProperty('--cf-sample-small', Math.round(11.5 * scale) + 'px');
+      const caja = document.querySelector('#font-panel #cf-muestra')?.parentElement;
+      if (caja) {
+        caja.style.setProperty('--lp-thought-font', (13.5 * scale).toFixed(1) + 'px');
+        caja.style.setProperty('--lp-code-font', (12 * scale).toFixed(1) + 'px');
+      }
     }
     try { localStorage.setItem(CHAT_FONT_KEY, String(chatFont)); } catch {}
   }
@@ -6155,6 +6212,10 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
 
   // Panel de letra: mismo chasis que el resto (panel.ts). Antes era un div del HTML que se
   // mostraba/ocultaba a mano, con su propio cierre por click afuera y sin cabecera.
+  // Panel de letra. La muestra es un MENSAJE, no un parrafo de relleno: asi se ve como queda el
+  // texto del chat (prosa, razonamiento, codigo en linea) al tamano elegido. El control es un
+  // slider propio con una A chica y una A grande en los extremos, en vez del control nativo y dos
+  // numeros sueltos.
   function abrirPanelLetra() {
     const btn = $('#btn-chat-font') as HTMLElement;
     const api = abrirPanel({
@@ -6164,16 +6225,23 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
       title: 'Letra del chat',
       sub: chatFont + ' px',
       body:
-        '<div class="lp-muestra"><span id="cf-muestra">El texto se lee así, con este tamaño y este '
-        + 'interlineado. Un párrafo corto alcanza para decidir.</span></div>'
+        '<div class="lp-muestra">'
+        +   '<div class="lp-muestra-razon">Mirando el archivo y el último commit.</div>'
+        +   '<p id="cf-muestra">El panel abre con el tamaño elegido y el interlineado que le corresponde. '
+        +   'Un párrafo así alcanza para decidir sin adivinar.</p>'
+        +   '<p class="lp-muestra-code"><code>$ node tools/paneles-check.mjs</code></p>'
+        + '</div>'
         + '<div class="lp-controls">'
         +   '<button id="chat-font-minus" type="button" aria-label="Reducir letra">−</button>'
-        +   '<input id="chat-font-range" type="range" min="2" max="22" step="1" aria-label="Tamaño de letra del chat">'
+        +   '<div class="lp-rail">'
+        +     '<span class="lp-end lp-end-min" aria-hidden="true">A</span>'
+        +     '<input id="chat-font-range" type="range" min="2" max="22" step="1" aria-label="Tamaño de letra del chat">'
+        +     '<span class="lp-end lp-end-max" aria-hidden="true">A</span>'
+        +   '</div>'
         +   '<button id="chat-font-plus" type="button" aria-label="Aumentar letra">+</button>'
-        + '</div>'
-        + '<div class="lp-scale"><span>2</span><span>22</span></div>',
+        + '</div>',
       footer: '<button type="button" class="panel-btn" id="chat-font-reset">Restablecer</button>'
-        + '<span class="panel-hint">Cambia sólo el texto del chat</span>',
+        + '<span class="panel-hint">Esc cierra</span>',
       onMount: (p) => {
         const r = p.body.querySelector('#chat-font-range') as HTMLInputElement;
         r.addEventListener('input', () => setChatFont(Number(r.value)));
@@ -7062,7 +7130,7 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail,
+  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert,
     // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
     view: {
       density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),
