@@ -52,6 +52,7 @@ function valid(value: unknown): value is ChangeResponse {
 async function refresh(): Promise<void> {
   if (!main || !note) return;
   const version = ++serial, view = main, footer = note;
+  const initialSessionId = (window as Window & { __aegisWeb?: { state?: { current?: { id?: string } } } }).__aegisWeb?.state?.current?.id;
   view.replaceChildren(el('p', 'Consultando Git…'));
   footer.textContent = 'Estado actual de Git; autor desconocido. ' + testStatus();
   try {
@@ -65,7 +66,8 @@ async function refresh(): Promise<void> {
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const payload: unknown = await response.json();
     if (!valid(payload)) throw new Error('Respuesta inválida');
-    if (serial !== version || main !== view) return;
+    const active = (window as Window & { __aegisWeb?: { state?: { current?: { id?: string } } } }).__aegisWeb?.state?.current;
+    if (serial !== version || main !== view || active?.id !== current.id) return;
     view.replaceChildren();
     if (payload.kind === 'error') throw new Error(payload.error || 'Consulta no disponible');
     if (payload.kind === 'not-git') {
@@ -91,7 +93,8 @@ async function refresh(): Promise<void> {
     }
     footer.textContent = `${payload.entries.length} entradas${payload.truncated ? ' · resultado recortado' : ''} · cambios locales, autor desconocido`;
   } catch (error) {
-    if (serial !== version || main !== view) return;
+    const active = (window as Window & { __aegisWeb?: { state?: { current?: { id?: string } } } }).__aegisWeb?.state?.current;
+    if (serial !== version || main !== view || (active?.id || '') !== (initialSessionId || '')) return;
     view.replaceChildren(el('p', 'Panel no disponible: ' + (error instanceof Error ? error.message : String(error))));
     footer.textContent = 'Sin backend validado no hay datos de Git. Nunca inferir ausencia de cambios.';
   }
