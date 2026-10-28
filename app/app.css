@@ -2027,6 +2027,51 @@ textarea:focus-visible { outline: none; }
 .ci-empty { font-size: 12px; line-height: 1.5; color: var(--text-4); }
 @media (max-width: 560px) { .ci-row { grid-template-columns: 76px minmax(0, 1fr); } }
 
+/* --- selector de densidad: tres medidas visibles antes de cambiar el transcript --- */
+.density-pop {
+  position: fixed;
+  z-index: 920;
+  display: grid;
+  gap: 4px;
+  width: min(272px, calc(100vw - 16px));
+  padding: 7px;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  animation: popIn var(--dur-2) var(--ease-out) both;
+}
+.density-pop[hidden] { display: none !important; }
+.density-pop button {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 10px;
+  text-align: left;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+}
+.density-pop button:hover, .density-pop button:focus-visible { background: var(--bg-hover); color: var(--text); }
+.density-pop button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.density-pop button[aria-checked="true"] { background: var(--accent-soft); color: var(--text); }
+.density-pop button[aria-checked="true"] .density-preview { border-color: var(--accent-line); color: var(--accent-strong); }
+.density-copy { display: grid; gap: 1px; }
+.density-copy strong { font-size: 12.5px; font-weight: 600; }
+.density-copy small { font-size: 11px; color: var(--text-4); }
+.density-preview { width: 40px; height: 32px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 1px solid var(--border); border-radius: var(--r-xs); color: var(--text-3); }
+.density-preview i { display: block; width: 70%; height: 2px; border-radius: 2px; background: currentColor; }
+.density-preview i:last-child { width: 40%; }
+.preview-compacta { gap: 2px; }
+.preview-compacta i { width: 86%; }
+.preview-compacta i:last-child { width: 55%; }
+.preview-lectura { gap: 4px; }
+.preview-lectura i { width: 53%; }
+.preview-lectura i:last-child { width: 32%; }
+@media (prefers-reduced-motion: reduce) { .density-pop { animation: none; } }
+html[data-motion="reducido"] .density-pop { animation: none; }
+
 /* --- tamaño de letra --- */
 .chat-font-pop {
   position: absolute;
@@ -2049,6 +2094,22 @@ textarea:focus-visible { outline: none; }
 .chat-font-pop button:hover { background: var(--bg-hover); }
 .chat-font-pop input { width: 100px; min-width: 55px; accent-color: var(--accent); }
 .chat-font-pop output { min-width: 40px; font-size: 12px; text-align: center; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* tramo de historial omitido: acción explícita sin consumir el ancho del transcript */
+.tail-pill {
+  max-width: var(--measure);
+  margin: var(--s3) auto var(--s5);
+  padding: var(--s3) var(--s4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  color: var(--text-3);
+  background: var(--bg-card);
+  font-size: 12px;
+  text-align: center;
+}
+.tail-pill button { color: var(--accent-text); font-weight: 600; }
+.tail-pill button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (pointer: coarse) { .tail-pill button { min-height: 44px; padding-inline: 10px; } }
 
 /* --- popover de contexto y costo --- */
 #usage-pop {

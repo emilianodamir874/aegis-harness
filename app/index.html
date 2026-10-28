@@ -86,7 +86,7 @@
         <div id="chips" class="chips" role="group" aria-label="Proveedor, modo y modelo del chat"></div>
         <div class="topbar-actions">
           <button id="btn-chat-font" class="icon-btn" type="button" aria-label="Tamaño de letra" title="Tamaño de letra del chat" aria-expanded="false" aria-controls="chat-font-pop">Aa</button>
-          <button id="btn-density" class="icon-btn" type="button" aria-label="Densidad del chat" title="Densidad del chat (click para cambiar)">
+          <button id="btn-density" class="icon-btn" type="button" aria-label="Densidad del chat" title="Densidad del chat" aria-haspopup="menu" aria-expanded="false" aria-controls="density-pop">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.6 3.4h10.8M2.6 6.6h10.8M2.6 9.8h7.4M2.6 13h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </button>
           <button id="btn-contrast" class="icon-btn" type="button" aria-label="Contraste alto" aria-pressed="false" title="Contraste alto: mas legible al sol y con filtros de vista (Ctrl+Alt+C)">
@@ -100,6 +100,12 @@
           </button>
         </div>
       </header>
+
+      <div id="density-pop" class="density-pop" role="menu" aria-label="Densidad del chat" hidden>
+        <button type="button" role="menuitemradio" data-density="comoda" aria-checked="true"><span class="density-preview preview-comoda" aria-hidden="true"><i></i><i></i><i></i></span><span class="density-copy"><strong>Cómoda</strong><small>760 px · equilibrio</small></span></button>
+        <button type="button" role="menuitemradio" data-density="compacta" aria-checked="false"><span class="density-preview preview-compacta" aria-hidden="true"><i></i><i></i><i></i></span><span class="density-copy"><strong>Compacta</strong><small>900 px · más conversación</small></span></button>
+        <button type="button" role="menuitemradio" data-density="lectura" aria-checked="false"><span class="density-preview preview-lectura" aria-hidden="true"><i></i><i></i><i></i></span><span class="density-copy"><strong>Lectura</strong><small>660 px · más aire</small></span></button>
+      </div>
 
       <div id="chat-font-pop" class="chat-font-pop" role="group" aria-label="Tamaño de letra del chat" hidden>
         <button id="chat-font-minus" type="button" aria-label="Reducir letra">−</button>

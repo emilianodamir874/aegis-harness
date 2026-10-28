@@ -2952,22 +2952,29 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       : { replayTail: REPLAY_TAIL, replayMaxBlockBytes: REPLAY_MAX_BLOCK },
   });
 
-  function tailPill(show) {
+  function tailPill(skipped: number, sessionId: string) {
     const box = $('#messages');
     if (!box) return;
     let el = box.querySelector('#tail-pill');
-    if (!show) { if (el) el.remove(); return; }
-    if (el) return;
+    if (skipped <= 0) { el?.remove(); return; }
+    if (el) el.remove();
     el = document.createElement('div');
     el.id = 'tail-pill';
-    el.style.cssText = 'text-align:center;font-size:12px;opacity:.8;margin:6px 0 12px';
-    el.innerHTML = 'Para abrir rapido se cargaron los ultimos ' + REPLAY_TAIL +
-      ' mensajes. <button class="sk-btn" id="tail-full">Ver historial completo</button>';
-    el.querySelector('#tail-full').onclick = (ev) => {
-      ev.stopPropagation();
-      el.remove();
-      renderSession(state.current, { quiet: true, full: true });
-    };
+    el.className = 'tail-pill';
+    const label = document.createElement('span');
+    label.textContent = `${skipped.toLocaleString('es-AR')} mensajes anteriores no se cargaron para abrir rápido. `;
+    const button = document.createElement('button');
+    button.id = 'tail-full';
+    button.className = 'sk-btn';
+    button.type = 'button';
+    button.textContent = 'Ver historial completo';
+    button.addEventListener('click', () => {
+      if (state.current?.id !== sessionId) return;
+      button.disabled = true;
+      button.textContent = 'Cargando historial…';
+      void renderSession(state.current, { quiet: true, full: true });
+    });
+    el.append(label, button);
     box.insertBefore(el, box.firstChild);
   }
 
@@ -3009,13 +3016,17 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       }, 8000);
     }
     state.replaying = true;
+    let replaySkipped = 0;
+    let loadFailed = false;
     try {
       const res = await rpc.request('session/load', { sessionId: id, cwd: state.current.cwd || CFG.cwd, mcpServers: [], ...replayMeta(!!(opts && opts.full)) });
+      replaySkipped = Number(res?._meta?.replaySkipped) || 0;
       if (gen !== renderGen || state.current?.id !== id) return;
       if (res && Array.isArray(res.configOptions)) state.current.configOptions = res.configOptions;
       if (res && res.modes) state.current.modes = res.modes;
       renderChips();
     } catch (e) {
+      loadFailed = true;
       if (gen === renderGen && state.current?.id === id) systemNote('No se pudo cargar la sesión: ' + e.message);
     }
     if (gen !== renderGen || state.current?.id !== id) return; // otra carga mas nueva ya tomo el DOM: no pintar esta
@@ -3028,8 +3039,9 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (state.msgs.size) hideWelcome();
     else showWelcome('empty', state.current.title);
     updateMetaHints();
-    // Si llegaron tantos mensajes como pedimos de cola, es probable que haya mas arriba.
-    tailPill(!(opts && opts.full) && state.msgs.size >= REPLAY_TAIL);
+    // El servidor informa cuántos mensajes se omitieron; state.msgs cuenta bloques renderizados,
+    // no mensajes de conversación, por eso nunca sirve para inferir truncamiento.
+    if (!loadFailed) tailPill(opts?.full ? 0 : replaySkipped, id);
     scrollBottom(true);
     pinBottom(1400);
   }
@@ -5716,9 +5728,12 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     const btn = $('#btn-density');
     if (btn) {
       btn.setAttribute('aria-label', 'Densidad del chat: ' + DENS_LABEL[next]);
-      btn.title = 'Densidad del chat: ' + DENS_LABEL[next] + ' (click para cambiar)';
+      btn.title = 'Densidad del chat: ' + DENS_LABEL[next];
       btn.dataset.density = next;
     }
+    document.querySelectorAll('#density-pop [data-density]').forEach((choice: HTMLButtonElement) => {
+      choice.setAttribute('aria-checked', String(choice.dataset.density === next));
+    });
   }
   /** Al cambiar de sesion: retoma la densidad de ese chat sin tocar la de los demas. */
   function densityFollowSession(sessionId: string | null | undefined) {
@@ -5730,14 +5745,12 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
   function setDensity(next: Density, announce?: boolean) {
     density = densValid(next);
     const messages = $('#messages');
-    if (messages) messages.dataset.density = density;
-    document.documentElement.dataset.density = density;
-    const btn = $('#btn-density');
-    if (btn) {
-      btn.setAttribute('aria-label', 'Densidad del chat: ' + DENS_LABEL[density]);
-      btn.title = 'Densidad del chat: ' + DENS_LABEL[density] + ' (click para cambiar)';
-      btn.dataset.density = density;
-    }
+    const pinned = !!messages && messages.scrollHeight - messages.scrollTop - messages.clientHeight < 60;
+    const viewportTop = messages?.getBoundingClientRect().top ?? 0;
+    const anchor: HTMLElement | undefined = pinned ? undefined : [...(messages?.querySelectorAll('#msg-inner > .msg-user, #msg-inner > .msg-a, #msg-inner > .tool') || [])]
+      .find((node: HTMLElement) => node.getBoundingClientRect().bottom > viewportTop + 8);
+    const offset = anchor?.getBoundingClientRect().top;
+    applyDensity(density);
     // Se guarda en la sesion (si hay) y la global se actualiza igual, para que un chat nuevo
     // arranque con la ultima eleccion en vez de volver siempre a comoda.
     try {
@@ -5746,12 +5759,76 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       if (sid) localStorage.setItem(densKeyFor(sid), density);
     } catch {}
     if (announce) toast('Densidad: ' + DENS_LABEL[density]);
-    scrollBottom(true);
+    if (pinned) scrollBottom(true);
+    else if (messages && anchor && offset !== undefined) {
+      messages.scrollTop += anchor.getBoundingClientRect().top - offset;
+    }
     return density;
   }
   function cycleDensity() {
     const i = DENSITIES.indexOf(density);
     return setDensity(DENSITIES[(i + 1) % DENSITIES.length], true);
+  }
+
+  function wireDensityMenu() {
+    const trigger = $('#btn-density') as HTMLButtonElement | null;
+    const menu = $('#density-pop') as HTMLElement | null;
+    if (!trigger || !menu) return;
+    const choices = [...menu.querySelectorAll<HTMLButtonElement>('[data-density]')];
+    const close = (returnFocus = false) => {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      if (returnFocus) trigger.focus({ preventScroll: true });
+    };
+    const place = () => {
+      const triggerBox = trigger.getBoundingClientRect();
+      const vv = window.visualViewport;
+      const left = vv?.offsetLeft ?? 0, top = vv?.offsetTop ?? 0;
+      const width = vv?.width ?? innerWidth, height = vv?.height ?? innerHeight;
+      const menuWidth = menu.offsetWidth, menuHeight = menu.offsetHeight;
+      menu.style.left = Math.max(left + 8, Math.min(triggerBox.right - menuWidth, left + width - menuWidth - 8)) + 'px';
+      const down = triggerBox.bottom + 8;
+      menu.style.top = (down + menuHeight <= top + height - 8 ? down : Math.max(top + 8, triggerBox.top - menuHeight - 8)) + 'px';
+    };
+    const open = () => {
+      menu.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true');
+      place();
+      choices.find((choice) => choice.dataset.density === density)?.focus({ preventScroll: true });
+    };
+    trigger.addEventListener('click', () => { if (menu.hidden) open(); else close(true); });
+    choices.forEach((choice) => choice.addEventListener('click', () => {
+      setDensity(choice.dataset.density as Density, true);
+      close(true);
+    }));
+    menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); return; }
+      if (event.key === 'Tab') { close(); return; }
+      const keys = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
+      if (!keys.includes(event.key)) return;
+      event.preventDefault();
+      const current = Math.max(0, choices.indexOf(document.activeElement as HTMLButtonElement));
+      const index = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1
+        : (current + (event.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length;
+      choices[index]?.focus({ preventScroll: true });
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!menu.hidden && !menu.contains(event.target as Node) && !trigger.contains(event.target as Node)) close();
+    });
+    window.addEventListener('resize', () => { if (!menu.hidden) place(); });
+    window.visualViewport?.addEventListener('resize', () => { if (!menu.hidden) place(); });
+    window.visualViewport?.addEventListener('scroll', () => { if (!menu.hidden) place(); });
+    // El manejador global de chips cierra aria-haspopup=menu en cada click; sincronizar
+    // la fuente de verdad (hidden) después de que termine la propagación del evento.
+    document.addEventListener('click', (event) => {
+      if (menu.hidden) return;
+      if (!menu.contains(event.target as Node) && !trigger.contains(event.target as Node)) {
+        close();
+      } else {
+        queueMicrotask(() => trigger.setAttribute('aria-expanded', String(!menu.hidden)));
+      }
+    });
   }
 
   // Modo presentación: oculta TODO el cromo (barra de sesiones, topbar, composer, meta) y
@@ -5841,8 +5918,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     const cb = $('#btn-contrast');
     if (cb) cb.addEventListener('click', () => cycleContrast());
     setDensity(density);
-    const db = $('#btn-density');
-    if (db) db.addEventListener('click', () => cycleDensity());
+    wireDensityMenu();
     const pb = $('#btn-present');
     if (pb) pb.addEventListener('click', () => setPresentation(!presentationOn()));
     document.addEventListener('keydown', (e) => {
