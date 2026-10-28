@@ -1,0 +1,389 @@
+/* Capa visual del cliente React.
+ *
+ * Reemplaza la apariencia de app.css sin tocar sus tokens ni sus componentes de base: acá sólo hay
+ * layout, densidad y jerarquía. Se importa DESPUÉS de ../../app/app.css y de ./styles.css para ganar
+ * por orden de cascada.
+ *
+ * Los tres problemas que arregla, medidos en la captura de 1440×900 del 2026-10-28:
+ *   1. el transcript llegaba a 1500 px de ancho (medida de lectura rota);
+ *   2. el sidebar tenía filas de 60 px y una navegación de paneles que comía media pantalla;
+ *   3. cada bloque tenía borde y fondo propios, así que la pantalla parecía una pila de cajas.
+ */
+
+:root {
+  --ui-sidebar: 256px;
+  --ui-measure: 760px;
+  --ui-radius: 10px;
+  --ui-surface: color-mix(in srgb, #0f1117 88%, #ffffff);
+  --ui-surface-2: color-mix(in srgb, #0f1117 78%, #ffffff);
+  --ui-hairline: color-mix(in srgb, #ffffff 8%, transparent);
+  --ui-hairline-strong: color-mix(in srgb, #ffffff 14%, transparent);
+  --ui-ink: #e7edf5;
+  --ui-ink-dim: #93a2b8;
+  --ui-accent: #d97757;
+}
+
+/* ---------------------------------------------------------------- layout */
+
+.app {
+  grid-template-columns: var(--ui-sidebar) minmax(0, 1fr);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: radial-gradient(120% 90% at 50% -10%, rgba(255, 255, 255, 0.03), transparent 60%), #0b0d12;
+}
+
+/* La medida de lectura: el transcript se centra y nunca pasa de 760 px.
+   Ojo: nada de flex+justify-content acá. Con contenido más alto que el viewport, centrar en un
+   contenedor scrolleable recorta el principio (era el "bloque cortado" de la captura anterior). */
+.scroll {
+  display: block;
+  overflow-y: auto;
+  padding: 8px 24px 0;
+  scrollbar-gutter: stable;
+}
+
+.transcript {
+  width: 100%;
+  max-width: var(--ui-measure);
+  margin: 0 auto;
+  padding: 0;
+  font-size: 15.5px;
+  line-height: 1.72;
+}
+
+.transcript .msg,
+.transcript .tool {
+  border: 0;
+  background: none;
+  padding: 0 0 4px;
+}
+
+/* ---------------------------------------------------------------- topbar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--ui-hairline);
+  background: color-mix(in srgb, #0b0d12 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.topbar-title h1,
+.topbar-title .topbar-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-path {
+  font-size: 11.5px;
+  color: var(--ui-ink-dim);
+}
+
+.topbar-chips {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Los <select> nativos se veían como controles de Windows: se les da forma propia. */
+.topbar-chips select,
+.chip-select select,
+select {
+  appearance: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ui-ink);
+  background: var(--ui-surface-2);
+  border: 1px solid var(--ui-hairline);
+  border-radius: 999px;
+  padding: 4px 24px 4px 10px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ui-ink-dim) 50%),
+    linear-gradient(135deg, var(--ui-ink-dim) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 52%, calc(100% - 8px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.topbar-chips select:hover,
+select:hover {
+  border-color: var(--ui-hairline-strong);
+}
+
+/* ---------------------------------------------------------------- sidebar */
+
+.sidebar {
+  width: var(--ui-sidebar);
+  background: #0a0c10;
+  border-right: 1px solid var(--ui-hairline);
+}
+
+.sb-head {
+  padding: 12px 12px 8px;
+  gap: 8px;
+}
+
+.sb-head .brand,
+.sb-head strong {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.sb-tools {
+  padding: 0 12px 8px;
+  gap: 6px;
+}
+
+.sb-new,
+.sidebar button.sb-new {
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-hairline);
+  background: var(--ui-surface);
+  font-size: 12.5px;
+  padding: 8px 10px;
+}
+
+.sb-tools input {
+  font-size: 12.5px;
+  padding: 6px 9px;
+  border-radius: 8px;
+}
+
+/* Sesiones: filas densas, sin bordes por ítem. */
+.sb-group {
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ui-ink-dim);
+  padding: 10px 14px 4px;
+}
+
+.sb-row .sb-item,
+.sb-item {
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  gap: 1px;
+}
+
+.sb-item .sb-name,
+.sb-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-item .sb-sub,
+.sb-sub {
+  font-size: 10.5px;
+  color: var(--ui-ink-dim);
+}
+
+.sb-row .sb-more {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.sb-row:hover .sb-more,
+.sb-row:focus-within .sb-more {
+  opacity: 1;
+}
+
+/* Navegación de paneles: compacta y al pie, no una lista que compite con los chats. */
+.sb-foot {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--ui-hairline);
+}
+
+.sb-foot nav,
+.sb-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+
+.sb-foot a,
+.sb-foot button,
+.sb-nav button {
+  font-size: 11.5px;
+  color: var(--ui-ink-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.sb-foot button:hover,
+.sb-nav button:hover {
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+}
+
+/* ---------------------------------------------------------------- composer */
+
+.composer-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 10px 24px 16px;
+  background: linear-gradient(to top, #0b0d12 70%, transparent);
+}
+
+.composer {
+  width: 100%;
+  max-width: var(--ui-measure);
+  border: 1px solid var(--ui-hairline-strong);
+  border-radius: 14px;
+  background: var(--ui-surface);
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+.composer textarea {
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 44px;
+  max-height: 220px;
+  padding: 6px 4px;
+  background: transparent;
+  border: 0;
+  resize: none;
+}
+
+.composer textarea:focus {
+  outline: none;
+}
+
+.composer-tools {
+  gap: 6px;
+  align-items: center;
+}
+
+.composer-tools .icon-btn {
+  color: var(--ui-ink-dim);
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+
+.composer-tools .icon-btn:hover {
+  color: var(--ui-ink);
+  background: var(--ui-surface-2);
+}
+
+.composer-meta {
+  font-size: 11px;
+  color: var(--ui-ink-dim);
+}
+
+/* Un solo botón primario por pantalla: Enviar. */
+.composer .primary,
+.composer button.primary {
+  border-radius: 9px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- piezas */
+
+.runbar,
+.goalbar {
+  max-width: var(--ui-measure);
+  margin: 8px auto 0;
+  border-radius: 999px;
+  border: 1px solid var(--ui-hairline);
+  background: var(--ui-surface);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Los toasts no deben tapar el compositor ni el final del transcript. */
+.toasts {
+  position: fixed;
+  inset: auto auto 96px 16px;
+  width: auto;
+  max-width: min(420px, 40vw);
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 40;
+}
+
+.toasts .toast {
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-hairline-strong);
+  background: var(--ui-surface-2);
+  font-size: 12px;
+}
+
+/* Tablas del transcript: cómodas pero contenidas. */
+.transcript table {
+  font-size: 13.5px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.transcript table th,
+.transcript table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--ui-hairline);
+  text-align: left;
+}
+
+.transcript table th {
+  color: var(--ui-ink-dim);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.transcript pre {
+  border-radius: var(--ui-radius);
+  border: 1px solid var(--ui-hairline);
+  background: #080a0e;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.transcript h1,
+.transcript h2,
+.transcript h3 {
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+/* ---------------------------------------------------------------- móvil */
+
+@media (max-width: 880px) {
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .scroll,
+  .composer-wrap {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .toasts {
+    left: 10px;
+    right: 10px;
+    max-width: none;
+    bottom: 108px;
+  }
+}

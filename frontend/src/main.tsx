@@ -9,6 +9,8 @@ import { loadConfig } from './config';
 // escala tipográfica. styles.css sólo agrega las piezas nuevas.
 import '../../app/app.css';
 import './styles.css';
+// Última capa: layout, densidad y jerarquía. Gana por orden de cascada sobre app.css y styles.css.
+import './theme.css';
 
 /**
  * Arranque: configuración inyectada por el server Node, cliente ACP, store y React.

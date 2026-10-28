@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+﻿import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from 'react';
 import type { AegisStore } from '../domain/store';
 import type { Attachment, SessionState } from '../domain/types';
 import { isRunning } from '../domain/selectors';
@@ -95,6 +95,21 @@ export function Composer({
     } finally {
       setSending(false);
     }
+  };
+
+  // Pegar desde el portapapeles: una captura de pantalla llega como archivo, no como texto.
+  // Sin esto, Ctrl+V de una imagen no adjunta nada (el textarea la descarta en silencio).
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const items = Array.from(event.clipboardData?.items ?? []);
+    const archivos = items
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    if (archivos.length === 0) return;
+    event.preventDefault();
+    const lista = new DataTransfer();
+    for (const archivo of archivos) lista.items.add(archivo);
+    void addFiles(lista.files);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -206,6 +221,7 @@ export function Composer({
           value={text}
           onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setText(event.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           placeholder={running ? 'Indicación para el turno en curso…' : 'Escribí un mensaje…'}
           rows={1}
           spellCheck
