@@ -2886,10 +2886,15 @@ html[data-motion="reducido"] .density-pop { animation: none; }
   .msg-a .content a.dl-chip .dl-ico { width: 17px; height: 17px; }
 }
 
-/* split view: la segunda sesión empuja el transcript, no lo tapa */
-@media (min-width: 901px) {
-  html.aegis-split-open #msg-inner,
-  html.aegis-split-open .composer-wrap { padding-right: var(--aegis-split-pad, 0); }
+/* Dos columnas sólo cuando queda ancho legible para chat + sidebar. El espacio se reserva
+   en la grilla completa: cabecera, transcript y compositor comparten el mismo borde. */
+@media (min-width: 1361px) {
+  html.aegis-split-open .app { padding-right: var(--aegis-split-pad, 0); }
+}
+/* Por debajo de ese umbral no caben ambas columnas: panel de lectura a pantalla completa,
+   con Cerrar/Escape para volver al chat sin deformar el transcript. */
+@media (max-width: 1360px) {
+  html.aegis-split-open .aegis-split { width: 100vw; }
 }
 
 /* targets táctiles cómodos en pantallas chicas */
