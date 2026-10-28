@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState, useConfig, useStore } from './state/context';
 import type { AppState, SessionState } from './domain/types';
 import type { SessionId } from './domain/ids';
+import { currentGoal } from './domain/goal';
 import { Sidebar } from './ui/Sidebar';
 import { Topbar } from './ui/Topbar';
 import { Transcript } from './ui/Transcript';
@@ -166,6 +167,7 @@ export function App() {
   const [deleting, setDeleting] = useState<{ id: SessionId; title: string } | null>(null);
 
   const session = state.activeSessionId ? state.sessionIndex[state.activeSessionId] ?? null : null;
+  const goal = session ? currentGoal(session) : null;
   const permissions = session ? store.permissionsOf(session.summary.id) : [];
 
   useEffect(() => {
@@ -248,6 +250,23 @@ export function App() {
           onPalette={() => setPalette(true)}
         />
         {session ? <RunBar session={session} onCancel={() => void store.cancel()} /> : null}
+        {session && goal ? (
+          <div className="runbar goalbar" role="status">
+            <span className="runbar-dot" aria-hidden="true" />
+            <span className="goalbar-tag">{goal.kind === 'grind' ? 'grind' : 'objetivo'}</span>
+            <span className="runbar-text" title={goal.text}>
+              {goal.text}
+            </span>
+            <button
+              type="button"
+              className="xbtn"
+              aria-label="Quitar el objetivo del chat"
+              onClick={() => void store.submit('/goal off')}
+            >
+              Quitar
+            </button>
+          </div>
+        ) : null}
         <div className="scroll">
           {session ? (
             <Transcript

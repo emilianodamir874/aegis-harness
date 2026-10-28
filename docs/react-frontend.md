@@ -130,7 +130,7 @@ el camino principal pero falta una parte del contrato; `pendiente` = no implemen
 | 33 | Ajustes | local | voz, lectura | panel Ajustes | UI (render) | parcial |
 | 34 | Exportar | `session/export` | markdown/json | botón en info | no probado | parcial |
 | 35 | Renombrar/archivar/borrar | `_aegis/…` | menú de fila | Sidebar + diálogos | no probado contra motor | parcial |
-| 36 | `/goal` del chat | barra de objetivo | mostrar/limpiar | — | — | pendiente |
+| 36 | `/goal` del chat | barra de objetivo | mostrar/limpiar | `domain/goal.ts` + barra en App | `goal.test` 3 casos | hecho |
 | 37 | Onboarding/handoff/artifacts | `onboarding.ts`, `handoff.ts`, `artifacts.ts` | flujos propios | — | — | pendiente |
 | 38 | Accesibilidad | foco, aria, Escape | navegable por teclado | `Dialog` (trap), roles, skip-link | UI tests por rol | hecho (auditoría formal pendiente) |
 | 39 | Build y publicación | esbuild → `app/` | assets versionados | Vite → `frontend/dist` + `/app-react` | build + curl de assets | hecho (publicación NO) |
