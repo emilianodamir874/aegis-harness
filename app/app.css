@@ -3277,13 +3277,25 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
 .menu, .ctx-map, .aegis-doctor, .aegis-changes { animation: popIn var(--dur-3) var(--ease-out) both; }
 .menu[hidden], .ctx-map[hidden] { animation-duration: var(--dur-2); }
 
-/* fila de herramienta: abre sin height fijo, para que el contenido pueda cambiar de tamano */
-.tool-body, .tool-detail { animation: msgIn var(--dur-2) var(--ease-out) both; }
+/* fila de herramienta al abrirse. No se anima .tool-body: se re-renderiza durante el streaming y
+   animarla hace parpadear cada chunk. */
+.tool.expandido { animation: msgIn var(--dur-2) var(--ease-out) both; }
 
 /* la barra de contexto no rebota: 400ms y el color acompana el nivel */
 .ctx-fill { transition: width 400ms var(--ease-in-out), background-color var(--dur-3) var(--ease-in-out); }
 
 @media (prefers-reduced-motion: reduce) {
-  .menu, .ctx-map, .aegis-doctor, .aegis-changes, .tool-body, .tool-detail { animation: none; }
+  .menu, .ctx-map, .aegis-doctor, .aegis-changes, .tool.expandido { animation: none; }
   .ctx-fill { transition: none; }
+}
+
+/* Interruptor propio, ademas de la preferencia del sistema: hay gente que quiere el sistema con
+   animaciones y esta app quieta (o al reves). Se guarda en localStorage['aegis.motion']. */
+html[data-motion="reducido"] *,
+html[data-motion="reducido"] *::before,
+html[data-motion="reducido"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
 }

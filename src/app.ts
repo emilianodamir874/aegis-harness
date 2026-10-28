@@ -5767,6 +5767,21 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     }
   }
   function contrastNow() { return document.documentElement.getAttribute('data-contrast') === 'alto' ? 'alto' : 'normal'; }
+
+  // Movimiento: ademas de prefers-reduced-motion hay un interruptor propio, porque hay quien
+  // quiere el sistema con animaciones y esta app quieta (o al reves). Se guarda por navegador.
+  const MOTION_KEY = 'aegis.motion';
+  function setMotion(v: string) {
+    const reducido = v === 'reducido';
+    document.documentElement.setAttribute('data-motion', reducido ? 'reducido' : 'normal');
+    try { localStorage.setItem(MOTION_KEY, reducido ? 'reducido' : 'normal'); } catch {}
+  }
+  function motionNow() { return document.documentElement.getAttribute('data-motion') === 'reducido' ? 'reducido' : 'normal'; }
+  function cycleMotion() {
+    const nuevo = motionNow() === 'reducido' ? 'normal' : 'reducido';
+    setMotion(nuevo);
+    toast(nuevo === 'reducido' ? 'Animaciones apagadas.' : 'Animaciones encendidas.');
+  }
   function cycleContrast() {
     const nuevo = contrastNow() === 'alto' ? 'normal' : 'alto';
     setContrast(nuevo);
@@ -5777,6 +5792,9 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     // Orden: lo guardado manda; si no hay nada guardado y el sistema pide mas contraste, se usa.
     let guardado = '';
     try { guardado = localStorage.getItem(CONTRAST_KEY) || ''; } catch {}
+    let motionGuardado = '';
+    try { motionGuardado = localStorage.getItem(MOTION_KEY) || ''; } catch {}
+    setMotion(motionGuardado || (window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reducido' : 'normal'));
     const sistema = window.matchMedia && window.matchMedia('(prefers-contrast: more)').matches;
     setContrast(guardado || (sistema ? 'alto' : 'normal'));
     const cb = $('#btn-contrast');
@@ -5793,6 +5811,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       if (k === 'p') { e.preventDefault(); setPresentation(!presentationOn()); }
       else if (k === 'u') { e.preventDefault(); toggleHiddenBand(); }
       else if (k === 'c') { e.preventDefault(); cycleContrast(); }
+      else if (k === 'm') { e.preventDefault(); cycleMotion(); }
     });
   }
 
