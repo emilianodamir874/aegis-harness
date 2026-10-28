@@ -426,3 +426,24 @@ mod frame_profile_tests {
         assert!(back.phrase().is_some());
     }
 }
+
+/// Pedido de compactacion hecho por el modelo (tool `compact_context`).
+/// `active` en true significa "compacta antes de la proxima inferencia"; lo consume
+/// `CompactionOperation::run`, que ademas lo apaga para que no se repita.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CompactRequestState {
+    pub active: bool,
+    pub note: Option<String>,
+    pub requested_at: Option<String>,
+}
+
+impl ExtensionState for CompactRequestState {
+    const EXTENSION_NAME: &'static str = "compact";
+    const VERSION: &'static str = "v0";
+}
+
+impl CompactRequestState {
+    pub fn is_pending(&self) -> bool {
+        self.active
+    }
+}

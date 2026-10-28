@@ -4,6 +4,7 @@ pub mod analyze;
 pub mod apps;
 #[cfg(feature = "chat-recall")]
 pub mod chatrecall;
+pub mod compact;
 pub mod developer;
 pub mod ext_manager;
 pub mod memory;
@@ -45,6 +46,20 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| Some(Box::new(analyze::AnalyzeClient::new(ctx).unwrap())),
+            },
+        );
+
+        map.insert(
+            compact::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: compact::EXTENSION_NAME,
+                display_name: "Compact",
+                description:
+                    "Deja que el modelo compacte su propio contexto cuando la ventana se llena",
+                default_enabled: true,
+                unprefixed_tools: true,
+                hidden: false,
+                client_factory: |ctx| Some(Box::new(compact::CompactClient::new(ctx).unwrap())),
             },
         );
 
@@ -186,7 +201,9 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: false,
                 hidden: false,
                 client_factory: |ctx| {
-                    mode::ModeClient::new(ctx).ok().map(|c| Box::new(c) as Box<dyn McpClientTrait>)
+                    mode::ModeClient::new(ctx)
+                        .ok()
+                        .map(|c| Box::new(c) as Box<dyn McpClientTrait>)
                 },
             },
         );

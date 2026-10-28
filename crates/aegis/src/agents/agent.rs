@@ -681,12 +681,15 @@ impl Agent {
             Arc::new(BangShellOperation::new()),
         ];
         if !manages_own_context {
-            operations.push(Arc::new(CompactionOperation::new(
-                provider.clone(),
-                model_config.clone(),
-                context_limit,
-                compaction_threshold,
-            )));
+            operations.push(Arc::new(
+                CompactionOperation::new(
+                    provider.clone(),
+                    model_config.clone(),
+                    context_limit,
+                    compaction_threshold,
+                )
+                .with_session_manager(self.config.session_manager.clone()),
+            ));
         }
         let remaining_operations: Vec<Arc<dyn Operation<Session, AegisEffect> + '_>> = vec![
             Arc::new(ToolPairCompactionOperation::new(
@@ -734,9 +737,13 @@ impl Agent {
                 stop_hook_block_cap,
             )),
             Arc::new(ExitOnErrorOperation),
-            Arc::new(TurnCeilingOperation::new(turn_tool_call_limit, turn_deadline_seconds)),
+            Arc::new(TurnCeilingOperation::new(
+                turn_tool_call_limit,
+                turn_deadline_seconds,
+            )),
             Arc::new(MaxTurnsOperation::new(max_turns)),
-        ];        operations.extend(remaining_operations);
+        ];
+        operations.extend(remaining_operations);
         let request_preparer = AegisInferenceRequestPreparer {
             extension_manager: Arc::clone(&self.extension_manager),
             extension_lease,
@@ -2494,7 +2501,9 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     ) -> Result<(Agent, String)> {
         let session_manager = Arc::new(SessionManager::new(data_dir.clone()));
         let permission_manager = Arc::new(PermissionManager::new(data_dir));
-    crate::config::permission::install_global_permission_manager(Arc::clone(&permission_manager));
+        crate::config::permission::install_global_permission_manager(Arc::clone(
+            &permission_manager,
+        ));
         let config = AgentConfig::new(
             session_manager.clone(),
             permission_manager,

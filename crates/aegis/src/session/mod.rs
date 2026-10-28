@@ -5,8 +5,8 @@ mod export_markdown;
 pub mod extension_data;
 pub mod import_formats;
 mod last_message_snippet;
-pub mod pending_confirmations;
 mod legacy;
+pub mod pending_confirmations;
 pub mod session_manager;
 mod session_naming;
 pub mod workspaces;
@@ -22,8 +22,8 @@ pub use export_markdown::{
     export_session_to_markdown, message_to_markdown, user_projected_message_to_markdown,
 };
 pub use extension_data::{
-    phrase_for, EnabledExtensionsState, ExtensionData, ExtensionState, FrameProfileState,
-    GoalState, TodoState,
+    phrase_for, CompactRequestState, EnabledExtensionsState, ExtensionData, ExtensionState,
+    FrameProfileState, GoalState, TodoState,
 };
 pub use session_manager::{
     Session, SessionInsights, SessionManager, SessionNameUpdate, SessionType, SessionUpdateBuilder,

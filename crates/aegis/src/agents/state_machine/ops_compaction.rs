@@ -17,7 +17,8 @@ use crate::context_mgmt::{compact_messages, count_context_tokens};
 use crate::conversation::message::{Message, MessageErrorKind, SystemNotificationType};
 use crate::conversation::{Conversation, EffectiveRole};
 use crate::providers::base::Provider;
-use crate::session::Session;
+use crate::session::extension_data::ExtensionState;
+use crate::session::{CompactRequestState, Session, SessionManager};
 use aegis_providers::model::ModelConfig;
 
 const COMPACTION_THINKING_TEXT: &str = "aegis is compacting the conversation...";
@@ -65,6 +66,8 @@ pub struct CompactionOperation {
     context_limit: usize,
     threshold: f64,
     manages_own_context: bool,
+    /// Para apagar la marca que deja la tool `compact_context` (los tests corren sin store).
+    session_manager: Option<Arc<SessionManager>>,
 }
 
 impl CompactionOperation {
@@ -81,6 +84,34 @@ impl CompactionOperation {
             context_limit,
             threshold,
             manages_own_context,
+            session_manager: None,
+        }
+    }
+
+    /// Sin esto la marca del pedido no se puede apagar; la compactacion en si no lo necesita.
+    pub fn with_session_manager(mut self, session_manager: Arc<SessionManager>) -> Self {
+        self.session_manager = Some(session_manager);
+        self
+    }
+
+    /// `true` si el modelo pidio compactar con la tool `compact_context` en este turno.
+    fn compact_requested(&self, session: &Session) -> bool {
+        CompactRequestState::from_extension_data(&session.extension_data)
+            .map(|state| state.is_pending())
+            .unwrap_or(false)
+    }
+
+    /// Consume la marca: sin esto el pedido se repetiria en cada turno.
+    async fn clear_compact_request(&self, session_id: &str) {
+        let Some(session_manager) = self.session_manager.as_ref() else {
+            return;
+        };
+        let cleared = CompactRequestState::default();
+        if let Err(error) = session_manager
+            .set_extension_state(session_id, &cleared)
+            .await
+        {
+            tracing::warn!("compaction: no se pudo apagar el pedido de la tool: {error:#}");
         }
     }
 
@@ -248,6 +279,9 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
             return not_applicable();
         }
 
+        // Un pedido explicito del modelo (tool `compact_context`) compacta ahora: no tiene sentido
+        // hacerlo esperar al umbral cuando ya sabe que va a necesitar la ventana.
+        let requested_by_tool = self.compact_requested(session);
         let messages = messages_since_kickoff(conversation)?;
         let reactive_context_error = matches!(
             trailing_error(conversation),
@@ -270,10 +304,13 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
             // awaits tool responses, hiding an unanswered request orphans its result,
             // and RecipeOperation delivers a successful final output from a tool tail.
             let tail = last_effective_role(messages)?;
-            if tail == EffectiveRole::Assistant
-                || awaits_tool_responses(messages)
-                || (tail == EffectiveRole::Tool
-                    && FinalOutputTool::successful_output(messages).is_some())
+            // Con un pedido explicito se compacta aunque el turno espere el resultado de una tool:
+            // `compact_context` ya respondio y lo que sigue es la inferencia que necesita la ventana.
+            if !requested_by_tool
+                && (tail == EffectiveRole::Assistant
+                    || awaits_tool_responses(messages)
+                    || (tail == EffectiveRole::Tool
+                        && FinalOutputTool::successful_output(messages).is_some()))
             {
                 return not_applicable();
             }
@@ -285,7 +322,7 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
                 total_reportado = ?session.usage.total_tokens,
                 "compaction: evaluando umbral"
             );
-            if tokens <= 0 || !self.over_threshold(tokens as usize) {
+            if !requested_by_tool && (tokens <= 0 || !self.over_threshold(tokens as usize)) {
                 return not_applicable();
             }
         }
@@ -306,10 +343,14 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
         let threshold_k_tokens = (self.context_limit as f64 * self.threshold / 1000.0) as usize;
         emit.message(Message::assistant().with_system_notification(
             SystemNotificationType::InlineMessage,
-            format!(
-                "Exceeded auto-compact threshold of {threshold_k_tokens}k tokens. \
-                     Performing auto-compaction..."
-            ),
+            if requested_by_tool {
+                "El modelo pidi├ö├Â┬ú├ö├Â├® compactar. Compactando el contexto...".to_string()
+            } else {
+                format!(
+                    "Exceeded auto-compact threshold of {threshold_k_tokens}k tokens. \
+                         Performing auto-compaction..."
+                )
+            },
         ));
         emit.message(Message::assistant().with_system_notification(
             SystemNotificationType::ThinkingMessage,
@@ -333,6 +374,9 @@ impl Operation<Session, AegisEffect> for CompactionOperation {
         .await
         {
             Ok(result) => {
+                if requested_by_tool {
+                    self.clear_compact_request(&session.id).await;
+                }
                 let compacted = result.conversation;
                 let usage = result.usage;
                 record_chat_usage(&span, &usage);
