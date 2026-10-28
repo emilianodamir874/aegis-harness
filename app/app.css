@@ -2607,11 +2607,14 @@ textarea:focus-visible { outline: none; }
   .composer-meta { justify-content: flex-end; }
 }
 
-.workspace-switch { display: none; }
+/* La barra Chat/Actividad/Archivos del móvil se sacó: esas entradas ya están en el sidebar
+   (Actividad, Archivos), así que era una segunda navegación igual y robaba espacio al chat.
+   El elemento queda en el DOM porque workspace-nav.js lo usa, pero no se muestra nunca. */
+.workspace-switch { display: none !important; }
 
 @media (max-width: 900px) {
   /* el botón "ir al final" flota sobre el composer: en el teléfono se sube para no tapar Enviar */
-  #jump-bottom { bottom: 148px; right: 14px; }
+  #jump-bottom { bottom: 100px; right: 14px; }
 }
 
 @media (max-width: 560px) {
