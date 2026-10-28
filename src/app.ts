@@ -1,7 +1,7 @@
 // aegis-web · cliente de chat ACP v3 (sin dependencias): sesiones, streaming,
 // permisos con botones, adjuntar imágenes, tool cards, chips de modelo.
 import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, stepRate, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
-import { toolIconSvg } from './app/icons';
+import { toolIconSvg, toolKindOf } from './app/icons';
 import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
 import { remoteResultsHtml, emptyRemote } from './app/search';
@@ -1517,7 +1517,26 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
     const stale = el.querySelector('.tool-title .tint');
     if (stale && status !== 'pending' && status !== 'in_progress') stale.remove();
     const ic = el.querySelector('.tool-ic');
-    ic.innerHTML = status === 'pending' || status === 'in_progress' ? '<span class="spin"></span>' : toolIconSvg(String(u.kind || (rawIn.command ? 'shell' : (rawIn.path || rawIn.file_path) ? 'read' : (rawIn.query || rawIn.pattern) ? 'search' : rawIn.url ? 'glob' : (u.title || ''))).split(/[ /]/)[0], status === 'failed' ? 'failed' : 'ok');
+    // El icono del tipo se queda durante la ejecucion: asi se lee que esta corriendo sin
+    // perder de vista que herramienta es. El estado va como clase para que el CSS anime
+    // (pulso mientras corre, trazo que se dibuja al completar, sacudida corta si falla).
+    // El kind del protocolo llega vacio o con nombres genericos ("running", "tool"): si no
+    // resuelve a un icono propio, se infiere del payload (command -> shell, path -> read,
+    // query -> search, url -> web). Asi la tarjeta dice que herramienta es aun cuando el
+    // server no la clasifique.
+    const payloadKind = rawIn.command ? 'shell'
+      : rawIn.old_string || rawIn.new_string ? 'edit'
+      : rawIn.path || rawIn.file_path ? 'read'
+      : rawIn.query || rawIn.pattern || rawIn.glob ? 'search'
+      : rawIn.url ? 'glob'
+      : rawIn.todos || rawIn.plan ? 'plan'
+      : '';
+    const declared = String(u.kind || '').split(/[ /]/)[0];
+    const kindOf = toolKindOf(declared) !== 'dot' ? declared : (payloadKind || 'dot');
+    const running = status === 'pending' || status === 'in_progress';
+    el.dataset.state = running ? 'run' : status === 'failed' ? 'err' : 'ok';
+    el.dataset.kind = kindOf || 'dot';
+    ic.innerHTML = toolIconSvg(kindOf, status === 'failed' ? 'failed' : 'ok', running ? 'is-running' : status === 'failed' ? 'is-err' : 'is-done');
     const texts = [];
     for (const c of u.content || []) {
       if (c && c.type === 'content' && c.content && c.content.type === 'text') texts.push(c.content.text);

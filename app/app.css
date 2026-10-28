@@ -2748,3 +2748,100 @@ textarea:focus-visible { outline: none; }
   .aegis-art { grid-template-columns: 1fr; }
   .aegis-art .list { max-height: 34vh; border-right: 0; border-bottom: 1px solid var(--border-soft); }
 }
+/* ---------- 14. movimiento: el estado se ve sin leer ----------
+   Premisa: mientras una herramienta corre, el usuario tiene que entender qué está pasando
+   de un vistazo. Tres señales, ninguna ruidosa:
+     1. el icono del tipo nunca desaparece (antes se cambiaba por un spinner genérico)
+     2. un anillo de acento gira alrededor del icono mientras trabaja
+     3. una barra indeterminada recorre el borde inferior de la tarjeta
+   Al terminar: el icono hace un pop corto (ok) o la tarjeta se sacude 2px (fallo).
+   Todo por debajo de prefers-reduced-motion, que apaga animaciones y deja los estados fijos. */
+
+.tool {
+  animation: toolIn 0.26s var(--ease) both;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+@keyframes toolIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* el icono del tipo manda: color propio, sin spinner que lo tape */
+.tool-ic { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.tool .tool-ic .tico { width: 15px; height: 15px; }
+
+/* corriendo: anillo de acento + icono con aliento lento */
+.tool[data-state="run"] .tool-ic .tico { color: var(--accent); opacity: 1; animation: breathe 1.8s ease-in-out infinite; }
+.tool[data-state="run"] .tool-ic::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  border-top-color: var(--accent);
+  border-right-color: var(--accent-soft);
+  animation: rot 0.85s linear infinite;
+  opacity: 0.9;
+}
+@keyframes breathe { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.45; } }
+
+/* barra indeterminada en el borde inferior, solo mientras corre */
+.tool[data-state="run"] { position: relative; overflow: hidden; }
+.tool[data-state="run"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 1.5px;
+  width: 38%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: runSlide 1.25s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes runSlide {
+  0% { transform: translateX(-105%); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(275%); opacity: 0; }
+}
+
+/* terminada: el icono confirma con un pop corto */
+.tool[data-state="ok"] .tool-ic .tico.is-done { animation: okPop 0.34s var(--ease) both; }
+@keyframes okPop {
+  0% { transform: scale(0.82); opacity: 0.5; }
+  55% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* fallo: dos pixeles de sacudida, una sola vez, y el icono se queda en rojo */
+.tool[data-state="err"] { animation: toolIn 0.26s var(--ease) both, shake 0.32s var(--ease) 0.04s 1; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  55% { transform: translateX(2px); }
+  80% { transform: translateX(-1px); }
+}
+
+/* el nombre tecnico de la herramienta aparece al pasar el mouse, no antes */
+.tool-title .tname { opacity: 0.55; transition: opacity var(--dur) var(--ease); }
+.tool:hover .tool-title .tname { opacity: 1; }
+
+/* razonamiento: el bloque colapsado respira una vez al aparecer */
+.msg-a .thought { animation: fadeIn 0.3s var(--ease) both; }
+
+/* turnos nuevos entran con un desplazamiento minimo. Solo los ultimos: en el replay de una
+   sesion larga no queremos 200 mensajes animando a la vez, solo el tramo vivo. */
+.msg-inner > .msg-user:nth-last-child(-n + 2),
+.msg-inner > .msg-a:nth-last-child(-n + 2) { animation: msgIn 0.22s var(--ease) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tool,
+  .tool[data-state="err"],
+  .msg-inner > .msg-user:nth-last-child(-n + 2),
+  .msg-inner > .msg-a:nth-last-child(-n + 2),
+  .msg-a .thought,
+  .tool[data-state="ok"] .tool-ic .tico.is-done { animation: none !important; }
+  .tool[data-state="run"] .tool-ic .tico { animation: none !important; opacity: 1; }
+  .tool[data-state="run"] .tool-ic::after { animation: none !important; border-top-color: var(--accent); opacity: 0.5; }
+  .tool[data-state="run"]::after { animation: none !important; width: 100%; opacity: 0.35; }
+}
