@@ -2254,11 +2254,13 @@ import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboS
     const celda = (k, v, extra) => '<div class="up-cell"><span class="up-cell-k">' + esc(k) + '</span>'
       + '<span class="up-cell-v">' + v + '</span>'
       + (extra ? '<span class="up-cell-x">' + esc(extra) + '</span>' : '') + '</div>';
+    // Un guion con " tok" al lado parece un error de formato: si no hay medicion, se dice.
+    const tok = (n) => (n == null ? 'sin datos' : niceTok(n) + ' tok');
     w.querySelector('.up-grid').innerHTML =
-      celda('Salida', niceTok(mu.outputTokens) + ' tok',
+      celda('Salida', tok(mu.outputTokens),
         mu.elapsedMs != null ? (mu.elapsedMs / 1000).toFixed(1) + 's' + (rate ? '  ·  ' + fmtTps(rate.value) : '') : '')
       + celda('Cache', cachePct, mu.timeToFirstTokenMs != null ? '1er token ' + (mu.timeToFirstTokenMs / 1000).toFixed(1) + 's' : '')
-      + celda('Entrada', niceTok(mu.inputTokens) + ' tok', 'último paso')
+      + celda('Entrada', tok(mu.inputTokens), 'último paso')
       + celda('Margen', s.limit && s.used != null && trig ? niceTok(Math.max(0, trig - s.used)) + ' tok' : '--',
         'antes de compactar' + (ct.estimated ? ' (estimado)' : ''));
     w.querySelector('.up-rows').innerHTML =
