@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "aegis-web-tools",
     "version":  "1.0.0",
     "private":  true,
@@ -11,7 +11,7 @@
                     "tool-states-check":  "node tools/tool-states-check.mjs",
                     "typecheck":  "tsc -p tsconfig.server.json \u0026\u0026 tsc -p tsconfig.client.json \u0026\u0026 tsc -p tsconfig.tests.json",
                     "build":  "npm run typecheck \u0026\u0026 node tools/build-typescript.mjs",
-                    "test":  "npm run build \u0026\u0026 node dist-ts/tests/run.mjs",                },
+                    "test":  "npm run build \u0026\u0026 node dist-ts/tests/run.mjs"                },
     "devDependencies":  {
                             "@types/node":  "^22.18.6",
                             "esbuild":  "^0.28.2",

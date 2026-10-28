@@ -885,6 +885,307 @@ textarea:focus-visible { outline: none; }
 .menu-sep { height: 1px; background: var(--border-soft); margin: 5px 6px; }
 .row-menu { min-width: 216px; }
 
+/* ---------- 7b. combobox de chips (proveedor, modo, modelo) ----------
+   Un solo componente para los tres selectores del topbar. Desktop: popover anclado al chip.
+   Movil: hoja inferior. Los nombres de clase son del componente (co-*, combo-*) para no
+   mezclarse con .menu, que sigue siendo el menu de filas de sesion y de acciones. */
+
+.combo-root { position: fixed; inset: 0; z-index: 960; }
+.combo-back { position: absolute; inset: 0; }
+
+.combo-panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  animation: popIn 0.14s var(--ease-out) both;
+}
+
+.combo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 6px 13px;
+  flex: none;
+}
+.combo-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+.combo-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  flex: none;
+  border-radius: var(--r-xs);
+  color: var(--text-4);
+}
+.combo-close:hover { background: var(--bg-hover); color: var(--text); }
+
+.combo-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px 8px;
+  padding: 0 10px;
+  height: 36px;
+  flex: none;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.combo-search:focus-within { border-color: var(--accent-line); background: rgba(217, 119, 87, 0.05); }
+.combo-search-ic { display: inline-flex; color: var(--text-4); flex: none; }
+.combo-search:focus-within .combo-search-ic { color: var(--accent); }
+.combo-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.combo-input::placeholder { color: var(--text-4); }
+.combo-count {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.combo-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 244, 239, 0.16) transparent;
+}
+.combo-list::-webkit-scrollbar { width: 8px; }
+.combo-list::-webkit-scrollbar-thumb { background: rgba(245, 244, 239, 0.16); border-radius: var(--r-pill); }
+
+/* Encabezado de grupo: queda pegado arriba mientras se recorre el grupo. */
+.combo-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 7px 4px;
+  background: linear-gradient(var(--bg-raise) 72%, rgba(42, 41, 38, 0.86));
+  backdrop-filter: blur(6px);
+}
+.combo-sec span {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.combo-sec em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-4);
+  opacity: 0.85;
+}
+
+.combo-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--text-2);
+  transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+/* La fila activa (teclado o puntero) es la misma: un solo estado, sin ambiguedad. */
+.combo-opt.act { background: var(--bg-hover); color: var(--text); }
+.combo-opt.sel { color: var(--text); }
+.combo-opt.is-off { opacity: 0.45; cursor: default; }
+
+.co-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.co-l1 { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.co-name {
+  font-size: 13px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combo-opt.sel .co-name { font-weight: 500; }
+.co-tag {
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-radius: var(--r-pill);
+  padding: 1px 6px;
+}
+.co-l2 {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.combo-opt.sel .co-l2 { color: var(--text-3); }
+
+/* Esfuerzo al costado de la fila: se toca de una, sin abrir otro panel. */
+.co-aux {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-pill);
+  font-size: 10.5px;
+  color: var(--text-3);
+  background: transparent;
+  transition: border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.co-aux:hover { border-color: var(--accent-line); color: var(--accent-text); background: var(--accent-soft); }
+.co-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; }
+.co-bars i { width: 2.5px; height: 4px; border-radius: 1px; background: var(--border-strong); }
+.co-bars i:nth-child(2) { height: 6px; }
+.co-bars i:nth-child(3) { height: 8px; }
+.co-bars i:nth-child(4) { height: 9px; }
+.co-bars i:nth-child(5) { height: 10px; }
+.co-bars i.on { background: var(--accent); }
+
+.co-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex: none;
+  color: var(--accent);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity var(--dur-1) var(--ease), transform var(--dur-1) var(--ease);
+}
+.combo-opt.sel .co-check { opacity: 1; transform: none; }
+
+.combo-empty {
+  padding: 18px 12px 22px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-4);
+  text-align: center;
+}
+
+.combo-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 7px 11px 8px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+.combo-foot kbd {
+  font: inherit;
+  font-size: 10px;
+  min-width: 16px;
+  padding: 1px 4px;
+  text-align: center;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-3);
+}
+.combo-foot span { margin-right: 4px; }
+
+/* Chip que abre el combobox: mismo chip de siempre, con el valor en semibold. */
+.chip-lead .chip-t { font-weight: 550; color: var(--text); }
+.chip-model .chip-t { max-width: 190px; }
+
+/* ---- movil: hoja inferior (targets de 48 px, input sin autofoco) ---- */
+/* La hoja se cuelga del borde inferior con bottom:0 (no con flex): asi queda pegada al
+   viewport aunque el alto medido cambie, y el alto/desplazamiento se ajustan desde JS al
+   viewport VISUAL para que el teclado del telefono no la tape. */
+.combo-root.is-sheet { display: block; height: 100dvh; }
+.combo-root.is-sheet .combo-back {
+  background: rgba(10, 9, 8, 0.5);
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.16s var(--ease-out) both;
+}
+.combo-root.is-sheet .combo-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100% - 12px);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  border-bottom: 0;
+  padding-bottom: max(6px, env(safe-area-inset-bottom));
+  animation: sheetUp 0.2s var(--ease-out) both;
+}
+.combo-root.is-sheet .combo-grab {
+  width: 38px;
+  height: 4px;
+  margin: 7px auto 1px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--border-strong);
+}
+.combo-root.is-sheet .combo-head { padding: 5px 12px 4px 16px; }
+.combo-root.is-sheet .combo-title { font-size: 10.5px; }
+.combo-root.is-sheet .combo-close { width: 44px; height: 44px; margin-right: -8px; }
+.combo-root.is-sheet .combo-search { height: 44px; margin: 0 12px 8px; padding: 0 12px; }
+.combo-root.is-sheet .combo-input { font-size: 16px; }  /* <16 px hace zoom automatico en el telefono */
+.combo-root.is-sheet .combo-list { padding: 0 8px 8px; }
+.combo-root.is-sheet .combo-opt { min-height: 48px; padding: 9px 10px; }
+.combo-root.is-sheet .co-name { font-size: 14px; }
+.combo-root.is-sheet .co-l2 { font-size: 11.5px; }
+.combo-root.is-sheet .co-aux { height: 32px; padding: 0 10px; font-size: 11px; }
+.combo-root.is-sheet .combo-sec { padding: 10px 8px 5px; }
+.combo-root.is-sheet .combo-foot { display: none; }  /* en el telefono no hay teclas que explicar */
+
+@keyframes sheetUp {
+  from { transform: translateY(14px); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* En pantallas con teclado fisico el popover es la forma correcta aunque el ancho sea chico. */
+@media (max-width: 640px) {
+  .combo-root.is-pop .combo-panel { width: calc(100vw - 20px) !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .combo-panel, .combo-root.is-sheet .combo-panel, .combo-root.is-sheet .combo-back { animation: none; }
+}
+
 /* ---------- 8. transcript ---------- */
 .messages {
   flex: 1 1 auto;
@@ -3227,12 +3528,12 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
 }
 
 /* ============================================================================
-   16. chip de modelo: el esfuerzo se elige al costado, no en otro chip
+   16. chip de modelo: el esfuerzo viaja pegado al modelo
    ----------------------------------------------------------------------------
-   Un solo chip para "con qué modelo" y "con cuánto esfuerzo": el effort viaja como
-   subtexto del modelo elegido y, al abrir la lista, cada modelo abre su propio flyout
-   con sus esfuerzos. Se gana un botón en la barra y el esfuerzo queda pegado al modelo,
-   que es donde tiene sentido (no todos los modelos aceptan lo mismo).
+   Un solo chip para "con qué modelo" y "con cuánto esfuerzo": el esfuerzo va como
+   sub-chip del modelo elegido y se cambia desde la fila del modelo en el panel (boton
+   al costado o tecla →), no como chip aparte en la barra. El panel es el combobox de
+   la seccion 7b; aca solo queda el chip que lo abre.
    ============================================================================ */
 
 .chip-model { gap: 7px; padding-right: 8px; }
@@ -3254,61 +3555,11 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
   font-variant-numeric: tabular-nums;
 }
 
-.menu-hint {
-  margin: -2px 4px 4px;
-  padding: 0 5px;
-  font-size: 10.5px;
-  line-height: 1.4;
-  color: var(--text-4);
-}
-
-/* filas de modelo: nombre arriba, esfuerzo actual abajo, chevron a la derecha */
-.menu-model .menu-row { justify-content: flex-start; gap: 9px; padding: 6px 9px; }
-.menu-model .menu-row.sel::after { display: none; }
-.menu-model .menu-row.sel { background: rgba(245, 244, 239, 0.045); }
-.menu-model .menu-row.fly-open { background: var(--accent-soft); color: var(--text); }
-.mr-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
-.mr-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mr-eff { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-4); }
-.menu-model .menu-row.sel .mr-eff { color: var(--text-3); }
-.mr-fly-chev {
-  display: inline-flex;
-  flex: none;
-  color: var(--text-4);
-  transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
-}
-.menu-row.fly-open .mr-fly-chev { color: var(--accent); transform: translateX(2px); }
-
-/* barras de esfuerzo: cinco columnas, encendidas hasta el nivel. Se leen sin leer. */
-.fly-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 10px; flex: none; }
-.fly-bars i { width: 2.5px; height: 4px; border-radius: 1px; background: var(--border-strong); }
-.fly-bars i:nth-child(2) { height: 6px; }
-.fly-bars i:nth-child(3) { height: 8px; }
-.fly-bars i:nth-child(4) { height: 10px; }
-.fly-bars i:nth-child(5) { height: 12px; margin-top: -3px; }
-.fly-bars i.on { background: var(--accent); }
-
-/* flyout: mismo lenguaje que el menu, con una sombra un paso mas alta para leerse como capa */
-.menu-fly {
-  min-width: 186px;
-  max-width: min(70vw, 240px);
-  max-height: min(52vh, 340px);
-  z-index: 410;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
-}
-.menu-fly .menu-row { justify-content: flex-start; gap: 9px; }
-.menu-fly .menu-row .fly-bars { width: 26px; }
-.menu-fly .menu-row.sel::after { margin-left: auto; }
-
+/* Las filas del menu de modelos y el flyout de esfuerzo se fueron con el combobox (7b): el
+   esfuerzo ahora vive como boton dentro de la fila, con las barras .co-bars del componente. */
 @media (max-width: 700px) {
-  /* en el telefono el flyout cae debajo de la fila con el ancho del menu: no hay costado */
-  .menu-fly { min-width: 0; max-width: calc(100vw - 16px); }
   .chip-model .chip-eff { height: 15px; font-size: 9px; line-height: 13px; }
   .chip-model .chip-t { max-width: 40vw; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mr-fly-chev { transition: none; }
 }
 
 /* ============================================================================

@@ -9,6 +9,7 @@ import { remoteResultsHtml, emptyRemote } from './app/search';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
+import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -1354,8 +1355,10 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
   const dirty = new Set<any>();
   let rafId = 0;
   let renderTimer = 0;
-  const STREAM_RENDER_MS = 90;
-  const STREAM_RENDER_MS_TYPING = 260; // tecleando: menos re-render, mas respuesta del teclado // el mensaje que está creciendo se re-renderiza ~11 veces/s
+  const STREAM_RENDER_MS_TYPING = 260; // tecleando: menos re-render, mas respuesta del teclado
+  // Cada cuanto se repinta el mensaje que sigue creciendo: ~4,5 veces/s alcanza para que el
+  // markdown (tablas, listas, negritas) se lea formado mientras llega, sin saturar el telefono.
+  const STREAM_MD_MS = 220;
   // El replay de una sesión enorme marca miles de registros dirty a la vez; pintarlos todos en un
   // frame cuesta ~2,3 s de main thread (medido) y en el teléfono las teclas llegan tarde. Se pinta
   // por tramos: se sigue hasta agotar el presupuesto de tiempo del frame y el resto va al próximo.
@@ -1373,14 +1376,20 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       // No re-parseamos markdown + innerHTML del texto entero en cada frame para el
       // mensaje que se está streameando: en un teléfono eso satura el main thread
       // (60 renders/s del texto completo) y el teclado empieza a perder teclas.
-      const age = now - (rec.lastAppend || 0);
-      const streamMs = (performance.now() - lastTypedAt < 400) ? STREAM_RENDER_MS_TYPING : STREAM_RENDER_MS;
-      if (rec.live && age < streamMs) { wait = Math.max(wait, streamMs - age); continue; }
+      // PERO tampoco se espera a que el stream se calle: antes el freno era `age < 90 ms`
+      // contra el último chunk, y un provider que manda cada 20 ms nunca dejaba ese hueco,
+      // asi que las tablas y las listas se veian crudas hasta cerrar el turno o recargar.
+      // Ahora el mensaje vivo se repinta a cadencia fija (STREAM_MD_MS; mas lento si el
+      // usuario esta tecleando) y el markdown se ve formado DURANTE la respuesta.
+      const desdeRender = now - (rec.lastRender || 0);
+      const cadencia = (performance.now() - lastTypedAt < 400) ? STREAM_RENDER_MS_TYPING : STREAM_MD_MS;
+      if (rec.live && desdeRender < cadencia) { wait = Math.max(wait, cadencia - desdeRender); continue; }
       if (done >= RENDER_MIN_PER_FRAME && performance.now() - frameT0 >= RENDER_BUDGET_MS) break;
       done++;
       dirty.delete(rec);
       rec.dirty = false;
       const _t0 = performance.now();
+      rec.lastRender = _t0;
       rec.body.innerHTML = md(rec.text);
       { const rd = rec.el.querySelector('.act-btn'); if (rd) rd.dataset.read = readBlock(rec.text) ? '1' : ''; }
       const _dt = performance.now() - _t0;
@@ -1543,7 +1552,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       // regenerar viven adentro. Antes eran hasta tres botones flotando sobre el mensaje.
       el.appendChild(botonAcciones(thought ? 'razonamiento' : 'respuesta', () => accionesDeMensaje(el, rec, thought)));
       msgWrap().appendChild(el);
-      rec = { el, body, text: '', dirty: false, closed: false, live: false, lastAppend: 0 };
+      rec = { el, body, text: '', dirty: false, closed: false, live: false, lastAppend: 0, lastRender: 0 };
       (el as any).__rec = rec;
       state.msgs.set(key, rec);
       if (thought) state.thoughtRec = rec;
@@ -4955,59 +4964,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     try { const m = effortByModel(); m[model] = effort; localStorage.setItem(effortByModelKey, JSON.stringify(m)); } catch {}
   }
   function effortLabel(v: string) { return EFFORT_ES[v] || v; }
-  function effortBars(v: string) {
-    const n = EFFORT_BARS[v] || 1;
-    let out = '<span class="fly-bars" aria-hidden="true">';
-    for (let i = 1; i <= 5; i++) out += '<i' + (i <= n ? ' class="on"' : '') + '></i>';
-    return out + '</span>';
-  }
 
-  // Coloca un flyout al costado de su fila: derecha, si no entra izquierda, y si tampoco
-  // (telefono) debajo de la fila con el ancho del menu. Nunca fuera del viewport.
-  function openFly(row: HTMLElement, fly: HTMLElement) {
-    if (fly.parentElement !== document.body) document.body.appendChild(fly);
-    fly.hidden = false;
-    const r = row.getBoundingClientRect();
-    const w = fly.offsetWidth;
-    const h = fly.offsetHeight;
-    const m = 8;
-    let left = r.right + 6;
-    if (left + w > window.innerWidth - m) left = r.left - w - 6;
-    let top = r.top;
-    if (left < m) { left = Math.min(Math.max(m, r.left), Math.max(m, window.innerWidth - m - w)); top = r.bottom + 6; }
-    if (top + h > window.innerHeight - m) top = Math.max(m, window.innerHeight - m - h);
-    if (top < m) top = m;
-    fly.style.left = Math.round(left) + 'px';
-    fly.style.top = Math.round(top) + 'px';
-    fly.style.maxHeight = Math.max(120, window.innerHeight - 2 * m) + 'px';
-    row.classList.add('fly-open');
-    row.setAttribute('aria-expanded', 'true');
-  }
-  function closeFlys(keep?: HTMLElement) {
-    document.querySelectorAll<HTMLElement>('body > .menu-fly').forEach((f) => {
-      if (keep && f === keep) return;
-      f.hidden = true;
-      f.remove();
-    });
-    document.querySelectorAll<HTMLElement>('.menu-row.fly-open').forEach((r) => {
-      r.classList.remove('fly-open');
-      r.setAttribute('aria-expanded', 'false');
-    });
-  }
-
-  // Estado del flyout mientras el menú de modelos está abierto.
-  let flyTimer = 0;
-  let flyHover = false;
-  // Volver del flyout a la fila (Escape / flecha izquierda) enfoca la fila, y el focusin de la
-  // fila abriria el flyout otra vez: esta ventana corta ese rebote.
-  let flySuppressUntil = 0;
-  function cerrarFlyYVolver() {
-    const padre = document.querySelector<HTMLElement>('.menu-row.fly-open');
-    flySuppressUntil = Date.now() + 350;
-    closeFlys();
-    if (padre && padre.isConnected) { padre.focus(); return true; }
-    return false;
-  }
   let effortOptions: any[] = [];
   let effortGlobal = '';
   let effortMemo: Record<string, string> = {};
@@ -5017,53 +4974,373 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (!model || model === modeloActual) return g;
     return memo[model] || g;
   }
-  function abrirFly(row: HTMLElement, modelValue: string, focusPrimero?: boolean) {
-    const key = modelValue + '|' + row.dataset.rowKey;
-    const ya = document.querySelector<HTMLElement>('body > .menu-fly');
-    if (ya && ya.dataset.key === key) { if (focusPrimero) (ya.querySelector<HTMLElement>('.menu-row.sel') || ya.querySelector<HTMLElement>('.menu-row'))?.focus(); return; }
-    closeFlys();
-    const act = effortActualDe(modelValue, effortGlobal, effortMemo);
-    const fly = document.createElement('div');
-    fly.className = 'menu menu-fly';
-    fly.dataset.key = key;
-    fly.dataset.model = modelValue;
-    fly.innerHTML = '<div class="menu-label">Esfuerzo · ' + esc(etiquetaOpcion({ value: modelValue, name: modelValue })) + '</div>';
-    for (const e of effortOptions) {
-      const r = document.createElement('button');
-      r.type = 'button';
-      r.className = 'menu-row' + (e.value === act ? ' sel' : '');
-      r.setAttribute('role', 'menuitem');
-      // Nombre humano cuando el valor es un nivel conocido; el crudo queda en el title.
-      r.innerHTML = effortBars(String(e.value)) + '<span>' + esc(effortLabel(String(e.value)) || etiquetaOpcion(e)) + '</span>';
-      r.title = String(e.value);
-      r.addEventListener('click', (ev) => { ev.stopPropagation(); void elegirModeloYEffort(modelValue, String(e.value)); });
-      r.addEventListener('pointerenter', () => { flyHover = true; });
-      fly.appendChild(r);
-    }
-    fly.addEventListener('pointerenter', () => { flyHover = true; });
-    fly.addEventListener('pointerleave', () => { flyHover = false; });
-    // El flyout no pasa por openMenu: sin esto no tendría navegación con flechas ni Escape
-    // devolviendo el foco a la fila del modelo.
-    wireMenuKeys(fly);
-    openFly(row, fly);
-    if (focusPrimero) (fly.querySelector<HTMLElement>('.menu-row.sel') || fly.querySelector<HTMLElement>('.menu-row'))?.focus();
+
+  // ---- catalogo de modelos/proveedores, tarifas y contexto --------------------------
+  // `_aegis/unstable/providers/list` es la unica fuente que trae `contextLimit` y `reasoning`:
+  // `configOptions` solo lista los modelos del proveedor activo y sin metadatos. Son ~160 KB de
+  // 85 proveedores, asi que se pide una vez por pestana; mientras llega, el combobox funciona con
+  // lo que el motor informo y el catalogo solo completa la segunda linea de cada fila.
+  type ModeloCat = { id?: string; name?: string; family?: string; contextLimit?: number; reasoning?: boolean; recommended?: boolean };
+  type ProvCat = { providerId?: string; providerName?: string; description?: string; defaultModel?: string; configured?: boolean; available?: boolean; deprecated?: boolean; models?: ModeloCat[] };
+  let catalogo: ProvCat[] | null = null;
+  let catalogoPedido = false;
+  function cargarCatalogo(done?: () => void) {
+    if (catalogo) { if (done) done(); return; }
+    if (done) catalogoEspera.push(done);
+    if (catalogoPedido) return;
+    catalogoPedido = true;
+    rpc.request('_aegis/unstable/providers/list', {})
+      .then((r) => { catalogo = Array.isArray(r && r.entries) ? r.entries : []; })
+      .catch(() => { catalogo = []; })
+      .then(() => {
+        catalogoPedido = false;
+        const cola = catalogoEspera.splice(0);
+        for (const f of cola) { try { f(); } catch (e) {} }
+      });
   }
-  // Un solo gesto: modelo + esfuerzo. El orden importa (el modelo primero puede resetear el
-  // esfuerzo soportado). Si el modelo es fijo por proveedor, setConfig lo rechaza y no se
-  // cambia nada: se avisa con la nota que ya existe.
-  async function elegirModeloYEffort(model: string, effort: string) {
-    closeFlys();
-    closeMenus();
-    if (model && model !== modeloActual) await aplicarConfig('model', model);
-    if (effort && effort !== effortGlobal) await aplicarConfig('thinking_effort', effort);
-    rememberEffort(model, effort);
+  const catalogoEspera: Array<() => void> = [];
+  const provDeCatalogo = (pid: string): ProvCat | null => (catalogo || []).find((p) => p && p.providerId === pid) || null;
+  /** Proveedores que el motor ya tiene configurados: los demas solo aparecerian para fallar. */
+  const proveedoresListos = (): ProvCat[] =>
+    (catalogo || []).filter((p) => p && p.providerId && p.configured && p.available !== false && !p.deprecated);
+
+  /** 1048576 -> "1M", 200000 -> "200k": la ventana de contexto, no tokens medidos. */
+  const ctxLabel = (n: number): string =>
+    n >= 1000000 ? (Math.round(n / 100000) / 10).toString().replace(/\.0$/, '') + 'M' : Math.round(n / 1000) + 'k';
+
+  /** Tarifa por 1M tokens si el store la conoce; vacio cuando no hay dato (no se inventa). */
+  function tarifaDe(pid: string, modelId: string): string {
+    const t = (pricesCache && pricesCache[pid + '/' + modelId]) || null;
+    if (!t) return '';
+    const inp = typeof t.input === 'number' ? t.input : null;
+    const sal = typeof t.output === 'number' ? t.output : null;
+    if (inp != null && sal != null) return '$' + inp + ' / $' + sal + ' por Mtok';
+    const eff = typeof t.inputEffective === 'number' ? t.inputEffective : null;
+    if (eff != null) return '≈$' + (eff < 0.01 ? eff.toFixed(4) : eff.toFixed(2)) + '/Mtok efectivo';
+    return '';
+  }
+  function metaModelo(pid: string, m: ModeloCat): string {
+    const out: string[] = [];
+    if (m.contextLimit) out.push(ctxLabel(m.contextLimit) + ' de contexto');
+    const t = tarifaDe(pid, String(m.id || ''));
+    if (t) out.push(t);
+    if (m.family) out.push(String(m.family));
+    return out.join(' · ');
+  }
+
+  // Options tal como las ve el chip: la sesion manda; sin chat todavia, la cache del ultimo chat.
+  const opcionesChips = (): any[] =>
+    (state.current && Array.isArray(state.current.configOptions) && state.current.configOptions.length
+      ? state.current.configOptions
+      : leerCacheChips()) || [];
+  const opcionDe = (id: string): any => opcionesChips().find((x) => x && x.id === id) || null;
+  const opcionesDe = (id: string): any[] => {
+    const o = opcionDe(id);
+    return o && Array.isArray(o.options) ? o.options : [];
+  };
+  /** Proveedor con el que se va a hablar: el de la sesion, el pendiente o el ultimo cacheado. */
+  function proveedorActivo(): string {
+    const directo = providerNow();
+    if (directo) return directo;
+    if (state.pendingConfig && state.pendingConfig.provider) return String(state.pendingConfig.provider);
+    const o = opcionDe('provider');
+    if (o && o.currentValue) return String(o.currentValue);
+    const cat = (catalogo || []).find((p) => p && p.configured && p.available !== false && !p.deprecated);
+    return cat ? String(cat.providerId || '') : '';
+  }
+  /** Modelo con el que se va a hablar. Sin chat todavia manda lo pendiente y, si no hay nada
+   *  elegido, el default del proveedor (el mismo que va a aplicar el motor al crear la sesion). */
+  function modeloActivo(): string {
+    if (modeloActual) return modeloActual;
+    const deCache = String((opcionDe('model') || {}).currentValue || '');
+    if (deCache) return deCache;
+    if (state.pendingConfig && state.pendingConfig.model) return String(state.pendingConfig.model);
+    const pid = proveedorActivo();
+    const fijo = FIXED_MODELS[pid];
+    if (fijo) return fijo;
+    return String((provDeCatalogo(pid) || {}).defaultModel || '');
+  }
+
+  /** Modelos de `pid`: los del motor para el proveedor activo, los del catalogo para el resto. */
+  function modelosDe(pid: string): ModeloCat[] {
+    const mapa = new Map<string, ModeloCat>();
+    if (pid && pid === proveedorActivo()) {
+      for (const o of opcionesDe('model')) {
+        const id = String(o.value || '');
+        if (id) mapa.set(id, { id, name: String(o.name || id) });
+      }
+    }
+    const cat = provDeCatalogo(pid);
+    for (const m of (cat && cat.models) || []) {
+      const id = String((m && m.id) || '');
+      if (!id) continue;
+      const prev = mapa.get(id);
+      // El catalogo aporta metadatos; el nombre del motor manda cuando el catalogo repite el id.
+      const nombre = prev && prev.name && prev.name !== id ? prev.name : String((m && m.name) || id);
+      mapa.set(id, { ...(m || {}), ...(prev || {}), id, name: nombre, family: (prev && prev.family) || (m && m.family), contextLimit: (prev && prev.contextLimit) || (m && m.contextLimit), reasoning: (prev && prev.reasoning) || (m && m.reasoning), recommended: (prev && prev.recommended) || (m && m.recommended) } as ModeloCat);
+    }
+    const fijo = FIXED_MODELS[pid];
+    return [...mapa.values()]
+      .filter((m) => !fijo || String(m.id) === fijo)
+      .sort((a, b) => Number(!!b.recommended) - Number(!!a.recommended) || String(a.id).localeCompare(String(b.id)));
+  }
+
+  function itemsModelo(pid: string): ComboItem[] {
+    const actual = pid === proveedorActivo() ? modeloActivo() : '';
+    const global = effortGlobal || 'off';
+    const memo = effortMemo || {};
+    return modelosDe(pid).map((m) => {
+      const id = String(m.id);
+      const ef = effortActualDe(id, global, memo);
+      const conEsfuerzo = effortOptions.length > 0 && (!!m.reasoning || id === modeloActual);
+      return {
+        value: id,
+        label: String(m.name || id),
+        meta: metaModelo(pid, m),
+        tag: m.recommended ? 'recomendado' : '',
+        current: !!actual && id === actual,
+        keywords: String(m.family || ''),
+        aux: conEsfuerzo ? { label: effortLabel(ef), bars: EFFORT_BARS[ef] || 1, title: 'Esfuerzo de ' + String(m.name || id) + ' (tecla →)' } : undefined,
+      } as ComboItem;
+    });
+  }
+
+  /** El proveedor activo primero: es donde se elige casi siempre. El resto, agrupado por proveedor. */
+  function seccionesModelo(): ComboSection[] {
+    const act = proveedorActivo();
+    const out: ComboSection[] = [];
+    const nombre = (pid: string) => String((provDeCatalogo(pid) || {}).providerName || pid);
+    if (act) {
+      const items = itemsModelo(act);
+      if (items.length) out.push({ label: nombre(act), hint: 'actual', items });
+    }
+    for (const p of proveedoresListos()) {
+      const pid = String(p.providerId || '');
+      if (!pid || pid === act) continue;
+      const items = itemsModelo(pid);
+      if (!items.length) continue;
+      out.push({ label: String(p.providerName || pid), hint: 'cambia de proveedor', items });
+    }
+    return out;
+  }
+
+  function seccionesProveedor(): ComboSection[] {
+    const act = proveedorActivo();
+    const vistos = new Map<string, ComboItem>();
+    for (const o of opcionesDe('provider')) {
+      const pid = String(o.value || '');
+      if (!pid) continue;
+      vistos.set(pid, { value: pid, label: String(o.name || etiquetaOpcion(o) || pid), current: pid === act } as ComboItem);
+    }
+    // Sin sesion (o antes de la primera respuesta) el catalogo es lo unico que dice que hay.
+    for (const p of proveedoresListos()) {
+      const pid = String(p.providerId || '');
+      if (!pid || vistos.has(pid)) continue;
+      vistos.set(pid, { value: pid, label: String(p.providerName || pid), current: pid === act } as ComboItem);
+    }
+    for (const it of vistos.values()) {
+      const cat = provDeCatalogo(it.value);
+      const nM = cat && Array.isArray(cat.models) ? cat.models.length : 0;
+      const partes: string[] = [];
+      if (nM) partes.push(nM + ' modelos');
+      if (cat && cat.defaultModel) partes.push('por defecto ' + String(cat.defaultModel));
+      it.meta = partes.join(' · ');
+      it.tag = FIXED_MODELS[it.value] ? 'modelo fijo' : '';
+      // La descripcion del proveedor va de tooltip, no de busqueda: con "codex" traia
+      // cualquier proveedor que la tuviera en su descripcion (Cursor Agent, oMLX, xAI).
+      it.keywords = '';
+      it.title = cat && cat.description ? String(cat.description) : '';
+    }
+    return [{ label: 'Proveedor', hint: 'define que modelos hay', items: [...vistos.values()] }];
+  }
+
+  /** Modos del motor: session/new y session/load traen id, nombre y descripcion. */
+  function modos(): { id: string; name: string; description: string }[] {
+    const m = (state.current && state.current.modes) || {};
+    const av = m.availableModes || m.available_modes || [];
+    if (Array.isArray(av) && av.length) {
+      return av.map((x) => ({ id: String((x && (x.id || x.modeId)) || ''), name: String((x && (x.name || x.id)) || ''), description: String((x && x.description) || '') }));
+    }
+    return opcionesDe('mode').map((o) => ({ id: String(o.value || ''), name: etiquetaOpcion(o), description: String((o && o.description) || '') }));
+  }
+  function modoActivo(): string {
+    const m = state.current && state.current.modes;
+    const cur = m && (m.currentModeId || m.current_mode_id);
+    if (cur) return String(cur);
+    const o = opcionDe('mode');
+    return o ? String(o.currentValue || '') : '';
+  }
+  function seccionesModo(): ComboSection[] {
+    const act = modoActivo();
+    return [{
+      label: 'Modo',
+      hint: 'que puede tocar el bot',
+      items: modos().filter((m) => m.id).map((m) => ({ value: m.id, label: m.name || m.id, meta: m.description, current: m.id === act } as ComboItem)),
+    }];
+  }
+
+  function seccionesEsfuerzo(modelId: string): ComboSection[] {
+    const ef = effortActualDe(modelId, effortGlobal || 'off', effortMemo || {});
+    const m = modelosDe(proveedorActivo()).find((x) => String(x.id) === modelId);
+    return [{
+      label: 'Razonamiento · ' + String((m && m.name) || modelId),
+      items: effortOptions.map((o) => ({
+        value: String(o.value),
+        label: effortLabel(String(o.value)) || etiquetaOpcion(o),
+        meta: String(o.value),
+        current: String(o.value) === ef,
+      } as ComboItem)),
+    }];
+  }
+
+  // ---- elegir: un solo gesto por chip ------------------------------------------------
+  /** Modelo + esfuerzo juntos; el proveedor va primero porque el modelo solo existe con el suyo. */
+  async function aplicarModelo(pid: string, modelId: string, effort?: string) {
+    if (pid && pid !== proveedorActivo()) await aplicarConfig('provider', pid);
+    if (modelId && modelId !== modeloActivo()) await aplicarConfig('model', modelId);
+    if (effort && effort !== (effortGlobal || 'off')) await aplicarConfig('thinking_effort', effort);
+    if (modelId && effort) rememberEffort(modelId, effort);
     renderChips();
+    enfocarChip('chip-model');
+  }
+  async function elegirProveedor(pid: string) {
+    if (pid !== proveedorActivo()) await aplicarConfig('provider', pid);
+    renderChips();
+    enfocarChip('chip-prov');
+  }
+  // El modo se cambia con session/set_mode (es lo que habla el motor y lo que usa el debate). La
+  // opcion `mode` de configOptions se refleja a mano para que el chip diga la verdad sin volver a
+  // pedir la sesion entera; sin chat todavia, queda pendiente para cuando se cree.
+  async function elegirModo(modeId: string) {
+    if (modeId === modoActivo()) { renderChips(); return; }
+    if (!state.current) {
+      state.pendingConfig = state.pendingConfig || {};
+      state.pendingConfig.mode = modeId;
+      guardarPendientes();
+      const cache = leerCacheChips();
+      const opt = cache.find((o) => o && o.id === 'mode');
+      if (opt) { opt.currentValue = modeId; guardarCacheChips(cache); }
+      renderChips();
+      enfocarChip('chip-mode');
+      return;
+    }
+    try {
+      await rpc.request('session/set_mode', { sessionId: state.current.id, modeId: modeId });
+    } catch (e) {
+      systemNote('No se pudo cambiar el modo a ' + modeId + ': ' + (e && e.message ? e.message : e));
+      renderChips();
+      return;
+    }
+    if (!state.current.modes) state.current.modes = {};
+    state.current.modes.currentModeId = modeId;
+    for (const o of state.current.configOptions || []) if (o && o.id === 'mode') o.currentValue = modeId;
+    const cache = leerCacheChips();
+    const opt = cache.find((o) => o && o.id === 'mode');
+    if (opt) { opt.currentValue = modeId; guardarCacheChips(cache); }
+    renderChips();
+    enfocarChip('chip-mode');
+  }
+
+  // El panel abierto se guarda para poder refrescar sus secciones cuando llega el catalogo: un
+  // renderChips() a mitad de camino cerraria el panel que el usuario acaba de abrir.
+  const comboVivo: { actual: ComboHandle | null } = { actual: null };
+  function reabrirSiLlegaCatalogo(armar: () => ComboSection[], excluir?: ComboSection[]) {
+    if (catalogo) return;
+    cargarCatalogo(() => {
+      if (!comboVivo.actual) return;
+      const secciones = armar();
+      if (excluir) secciones.push(...excluir);
+      comboVivo.actual.setSections(secciones);
+    });
+  }
+  function abrirModelo(anchor: HTMLElement) {
+    comboVivo.actual = abrirCombo({
+      anchor,
+      title: 'Modelo',
+      placeholder: 'Buscar por nombre, familia o proveedor…',
+      sections: seccionesModelo(),
+      empty: 'Ningun modelo coincide. Probá con "flash", "sonnet" o el nombre del proveedor.',
+      footer: 'Enter elige · → esfuerzo · Esc cierra',
+      onPick: (v) => { void aplicarModelo(proveedorDeModelo(v) || proveedorActivo(), v); },
+      onAux: (v) => abrirEsfuerzo(anchor, v),
+      onClose: () => { comboVivo.actual = null; },
+    });
+    // Primera vez: el catalogo trae los otros proveedores con su contexto. Al llegar, se repinta
+    // el mismo panel sin cerrarlo (si el usuario esta escribiendo, el filtro se respeta).
+    reabrirSiLlegaCatalogo(() => seccionesModelo());
+  }
+  function abrirProveedor(anchor: HTMLElement) {
+    comboVivo.actual = abrirCombo({
+      anchor,
+      title: 'Proveedor',
+      placeholder: 'Buscar proveedor…',
+      sections: seccionesProveedor(),
+      empty: 'Ningun proveedor coincide.',
+      onPick: (v) => { void elegirProveedor(v); },
+      onClose: () => { comboVivo.actual = null; },
+    });
+    reabrirSiLlegaCatalogo(() => seccionesProveedor());
+  }
+  function abrirModo(anchor: HTMLElement) {
+    abrirCombo({
+      anchor,
+      title: 'Modo',
+      placeholder: 'Buscar modo…',
+      sections: seccionesModo(),
+      empty: 'El motor no informo modos para esta sesion.',
+      onPick: (v) => { void elegirModo(v); },
+    });
+  }
+  function abrirEsfuerzo(anchor: HTMLElement, modelId: string) {
+    const pid = proveedorDeModelo(modelId) || proveedorActivo();
+    abrirCombo({
+      anchor,
+      title: 'Esfuerzo de razonamiento',
+      placeholder: 'Buscar nivel…',
+      sections: seccionesEsfuerzo(modelId),
+      empty: 'Ese modelo no tiene niveles de razonamiento.',
+      onPick: (v) => { void aplicarModelo(pid, modelId, v); },
+    });
+  }
+  /** Proveedor al que pertenece un modelo del panel (la busqueda cruza proveedores). */
+  function proveedorDeModelo(modelId: string): string {
+    const act = proveedorActivo();
+    if (modelosDe(act).some((m) => String(m.id) === modelId)) return act;
+    for (const p of proveedoresListos()) {
+      const pid = String(p.providerId || '');
+      if (modelosDe(pid).some((m) => String(m.id) === modelId)) return pid;
+    }
+    return act;
+  }
+  /** Devuelve el foco al chip recien reconstruido (el pick reemplaza el nodo que abrio el panel). */
+  function enfocarChip(cls: string) {
+    const b = document.querySelector<HTMLElement>('#chips .' + cls);
+    if (b && inputByKeyboard) b.focus({ preventScroll: true });
+  }
+
+  function chipCombo(cls: string, label: string, valor: string, abrir: () => void, primario?: boolean, esfuerzo?: string): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'chip-wrap';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chip ' + cls + (primario ? ' chip-lead' : '');
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.title = label + ': ' + valor + ' (click o Enter para cambiar)';
+    btn.innerHTML = '<span class="chip-t">' + esc(valor) + '</span>'
+      + (esfuerzo ? '<span class="chip-eff">' + esc(effortLabel(esfuerzo)) + '</span>' : '');
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      abrir();
+    });
+    item.appendChild(btn);
+    return item;
   }
 
   function renderChips() {
     const wrap = $('#chips');
     wrap.innerHTML = '';
-    document.querySelectorAll('body > .menu').forEach((m) => m.remove()); // limpia menús "portal" previos
+    document.querySelectorAll('body > .menu').forEach((m) => m.remove()); // limpia menus "portal" previos
     const deLaSesion = state.current && Array.isArray(state.current.configOptions) && state.current.configOptions.length ? state.current.configOptions : null;
     if (deLaSesion) guardarCacheChips(deLaSesion);
     // Sin chat abierto, los chips salen de la cache: asi se puede elegir modelo antes del primer mensaje.
@@ -5072,89 +5349,41 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     if (!deLaSesion && providerOpt && !providerOpt.options.some((o) => o.value === 'opencode_go')) {
       providerOpt.options.push({ value: 'opencode_go', name: 'OpenCode Go' });
     }
-    // Esfuerzos disponibles: salen del configOption del server, pero se consumen desde la fila
-    // del modelo (flyout al costado) en vez de un chip propio en la barra.
+    // Esfuerzos disponibles: salen del configOption del server y se eligen desde la fila del
+    // modelo (boton al costado o tecla →), no como chip suelto en la barra.
     const effortOpt = opts.find((o) => o && o.id === 'thinking_effort' && o.type === 'select' && Array.isArray(o.options) && o.options.length > 1);
     effortOptions = (effortOpt && effortOpt.options) || [];
-    const effortNow = String((effortOpt && effortOpt.currentValue) || '');
-    const memorizado = effortByModel();
-    effortOptions = (effortOpt && effortOpt.options) || [];
-    effortGlobal = effortNow;
-    effortMemo = memorizado;
+    effortGlobal = String((effortOpt && effortOpt.currentValue) || '');
+    effortMemo = effortByModel();
     modeloActual = String(((opts.find((o) => o && o.id === 'model') || {} as any).currentValue) || '');
-    for (const opt of opts) {
-      if (opt.type !== 'select' || !Array.isArray(opt.options) || opt.options.length <= 1) continue;
-      if (opt.id === 'thinking_effort' && effortOpt) continue; // se elige desde el modelo
-      const esModelo = opt.id === 'model' && !!effortOpt;
-      const item = document.createElement('div');
-      item.className = 'chip-wrap';
-      item.dataset.opt = opt.id;
-      const btn = document.createElement('button');
-      btn.className = 'chip' + (esModelo ? ' chip-model' : '');
-      btn.type = 'button';
-      btn.setAttribute('aria-haspopup', 'menu');
-      btn.setAttribute('aria-expanded', 'false');
-      const cur = opt.options.find((o) => o.value === opt.currentValue) || opt.options[0];
-      const etiqueta = (cur && (cur.name || cur.value)) || opt.name || opt.id;
-      const effChip = esModelo ? effortActualDe(String(opt.currentValue), effortNow, memorizado) : '';
-      btn.innerHTML = '<span class="chip-t">' + esc(etiqueta) + '</span>'
-        + (esModelo && effChip ? '<span class="chip-eff">' + esc(effortLabel(effChip)) + '</span>' : '');
-      btn.title = (opt.name || opt.id) + (esModelo ? ' · el esfuerzo se elige al costado de cada modelo' : '');
-      const menu = document.createElement('div');
-      menu.className = 'menu' + (esModelo ? ' menu-model' : '');
-      menu.hidden = true;
-      menu.innerHTML = `<div class="menu-label">${esc(opt.name || opt.id)}</div>`
-        + (esModelo ? '<div class="menu-hint">Pasá por un modelo y elegí el esfuerzo al costado</div>' : '');
-      for (const o of opt.options) {
-        const row = document.createElement('button');
-        row.className = 'menu-row' + (o.value === opt.currentValue ? ' sel' : '');
-        row.type = 'button';
-        row.setAttribute('role', 'menuitem');
-        row.dataset.rowKey = String(o.value);
-        if (esModelo && effortOptions.length) {
-          const efRow = effortActualDe(String(o.value), effortNow, memorizado);
-          row.innerHTML = '<span class="mr-main"><span class="mr-name">' + esc(etiquetaOpcion(o)) + '</span>'
-            + '<span class="mr-eff">' + effortBars(efRow) + '<span class="mr-eff-t">' + esc(effortLabel(efRow)) + '</span></span></span>'
-            + '<span class="mr-fly-chev" aria-hidden="true">' + uiIcon('chevron', { size: 11 }) + '</span>';
-          row.setAttribute('aria-haspopup', 'menu');
-          row.setAttribute('aria-expanded', 'false');
-          row.addEventListener('pointerenter', () => { clearTimeout(flyTimer); flyTimer = setTimeout(() => abrirFly(row, String(o.value)), 90); });
-          // Al salir de la fila no se cierra de golpe: si el mouse entra al flyout (que esta al
-          // costado, con 6px de aire) la ventana de 260 ms evita el parpadeo.
-          row.addEventListener('pointerleave', () => {
-            clearTimeout(flyTimer);
-            flyTimer = setTimeout(() => { if (!flyHover) closeFlys(); }, 260);
-          });
-          row.addEventListener('focusin', () => { if (Date.now() > flySuppressUntil) abrirFly(row, String(o.value)); });
-          row.addEventListener('click', (e) => {
-            e.stopPropagation();
-            clearTimeout(flyTimer);
-            abrirFly(row, String(o.value));
-          });
-          const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); abrirFly(row, String(o.value), true); }
-          };
-          row.addEventListener('keydown', onKey);
-        } else {
-          row.innerHTML = `<span>${esc(etiquetaOpcion(o))}</span>`;
-          row.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            menu.hidden = true;
-            await setConfig(opt.id, o.value);
-          });
-        }
-        menu.appendChild(row);
-      }
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const wasHidden = menu.hidden;
-        closeFlys();
-        closeMenus();
-        if (wasHidden) openMenu(btn, menu);
-      });
-      item.append(btn, menu);
-      wrap.appendChild(item);
+
+    const provId = proveedorActivo();
+    const provOpts = (providerOpt && providerOpt.options) || [];
+    const provSel = provOpts.find((o) => o && o.value === provId);
+    const provNombre = String((provSel && (provSel.name || etiquetaOpcion(provSel))) || (provDeCatalogo(provId) || {}).providerName || provId || 'Proveedor');
+
+    const modosDisponibles = modos().filter((m) => m.id);
+    const modoId = modoActivo();
+    const modoSel = modosDisponibles.find((m) => m.id === modoId);
+    const modoNombre = String((modoSel && (modoSel.name || modoSel.id)) || etiquetaOpcion({ value: modoId, name: modoId }) || modoId || 'Modo');
+
+    const modelId = modeloActivo();
+    const modelCat = modelosDe(provId).find((m) => String(m.id) === modelId);
+    const modelNombre = String((modelCat && modelCat.name) || modelId || 'Modelo');
+    const effChip = modelId ? effortActualDe(modelId, effortGlobal || 'off', effortMemo || {}) : '';
+
+    // Orden: proveedor (de donde salen los modelos), modo (que puede tocar) y modelo al final,
+    // que es el mas largo y el que lleva el esfuerzo pegado.
+    if (provOpts.length > 1 || proveedoresListos().length > 1) {
+      wrap.appendChild(chipCombo('chip-prov', 'Proveedor', provNombre, () => abrirProveedor($('#chips .chip-prov'))));
     }
+    if (modosDisponibles.length > 1) {
+      wrap.appendChild(chipCombo('chip-mode', 'Modo', modoNombre, () => abrirModo($('#chips .chip-mode'))));
+    }
+    if (modelId || opcionesDe('model').length || modelosDe(provId).length) {
+      wrap.appendChild(chipCombo('chip-model', 'Modelo', modelNombre, () => abrirModelo($('#chips .chip-model')), true, effortOptions.length ? effChip : ''));
+    }
+
     // Chip de modo debate: vive con los chips de modelo/modo y no gasta lugar en el composer.
     const dwrap = document.createElement('div');
     dwrap.className = 'chip-wrap';
@@ -5166,6 +5395,12 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     dwrap.appendChild(dbtn);
     wrap.appendChild(dwrap);
     debateSyncBtn();
+
+    // El catalogo de proveedores ya trae contexto, familia y el nombre humano de cada modelo:
+    // se pide apenas se dibujan los chips (una vez por pestana) para que el panel abra completo.
+    // Al llegar no se reconstruyen los chips si hay un panel abierto: ese panel se refresca solo.
+    if (!catalogo) cargarCatalogo(() => { if (!comboVivo.actual && !comboAbierto()) renderChips(); });
+
     // v52: normaliza sesiones que todavia tienen el esfuerzo dentro del id del modelo.
     migrarModeloViejo();
   }
@@ -5194,30 +5429,10 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       else if (e.key === 'ArrowUp') move(-1);
       else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
       else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
-      else if (e.key === 'ArrowLeft' && menu.classList.contains('menu-fly')) {
-        // Volver del flyout de esfuerzo a la fila del modelo que lo abrio.
-        e.preventDefault();
-        e.stopPropagation();
-        if (!cerrarFlyYVolver()) closeFlys();
-      }
-      else if (e.key === 'ArrowRight' && menu.classList.contains('menu-model')) {
-        const fila = document.activeElement as HTMLElement | null;
-        if (fila && fila.classList.contains('menu-row')) {
-          e.preventDefault();
-          e.stopPropagation();
-          fila.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        }
-      }
       else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        // La fila abre un menu efimero (se recrea en cada apertura): se descarta. El flyout
-        // devuelve el foco a la fila que lo abrio (y no se reabre: ver flySuppressUntil).
-        if (menu.classList.contains('menu-fly')) {
-          if (cerrarFlyYVolver()) return;
-          closeFlys();
-          return;
-        }
+        // La fila abre un menu efimero (se recrea en cada apertura): se descarta.
         if (menu.classList.contains('row-menu')) menu.remove();
         else menu.hidden = true;
         if (menuTrigger && menuTrigger.isConnected) menuTrigger.focus();
@@ -5258,8 +5473,6 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
   }
   let menuOpenedAt = 0;
   const closeMenus = () => {
-    closeFlys();
-    clearTimeout(flyTimer);
     document.querySelectorAll<HTMLElement>('.menu').forEach((m) => { m.hidden = true; });
     document.querySelectorAll<HTMLElement>('[aria-expanded="true"][aria-haspopup="menu"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
     menuTrigger = null;
@@ -5283,8 +5496,8 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     true
   );
 
-  // Atajo de prueba para los gates del chip: un probe puede reemplazar esto y ver el orden
-  // exacto de las llamadas (modelo -> esfuerzo) sin tocar el server.
+  // Aplicador unico de config: los gates lo reemplazan para ver el orden exacto de las
+  // llamadas (proveedor -> modelo -> esfuerzo) sin tocar el server.
   let aplicarConfig: (id: string, value: string) => any = (id, value) => setConfig(id, value);
 
   async function setConfig(configId, value) {
@@ -6775,6 +6988,13 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
     acts: { boton: botonAcciones, abrir: abrirAcciones, cerrar: cerrarAcciones },
     // Chips: render para un gate que inyecta configOptions, y el estado vivo del esfuerzo.
     chips: { render: renderChips, effortNow: () => effortGlobal, options: () => effortOptions.map((o) => o.value), memo: effortByModel,
+      // Combobox: abrir cada panel y leer lo que va a mostrar, sin pasar por el DOM a ciegas.
+      abrirModelo: () => abrirModelo($('#chips .chip-model')), abrirProveedor: () => abrirProveedor($('#chips .chip-prov')),
+      abrirModo: () => abrirModo($('#chips .chip-mode')), abierto: () => comboAbierto(),
+      secciones: () => ({ modelo: seccionesModelo(), proveedor: seccionesProveedor(), modo: seccionesModo() }),
+      catalogo: () => catalogo, cargarCatalogo, modoActivo, proveedorActivo, modeloActivo,
+      // Abrir una sesion existente por id: lo usan los gates para probar el chip con motor real.
+      abrirSesion: (entry) => openSession(entry),
       // Un probe reemplaza el aplicador para medir el orden de las llamadas sin red.
       setAplicar: (fn) => { aplicarConfig = typeof fn === 'function' ? fn : ((id, v) => setConfig(id, v)); } },
     bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
