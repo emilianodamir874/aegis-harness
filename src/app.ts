@@ -5779,7 +5779,11 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       if (menu.hidden) return;
       menu.hidden = true;
       trigger.setAttribute('aria-expanded', 'false');
-      if (returnFocus) trigger.focus({ preventScroll: true });
+      if (returnFocus) {
+        const focusTarget = trigger.closest('#topbar-secondary') && window.matchMedia('(max-width: 560px)').matches && $('#topbar-secondary')?.dataset.open !== 'true'
+          ? $('#btn-topbar-more') : trigger;
+        focusTarget?.focus({ preventScroll: true });
+      }
     };
     const place = () => {
       const triggerBox = trigger.getBoundingClientRect();
@@ -5873,7 +5877,13 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
       }
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !pop.hidden) { pop.hidden = true; button.setAttribute('aria-expanded', 'false'); button.focus(); }
+      if (e.key === 'Escape' && !pop.hidden) {
+        e.preventDefault();
+        pop.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+        const target = button.getClientRects().length === 0 ? $('#btn-topbar-more') : button;
+        target?.focus({ preventScroll: true });
+      }
     });
   }
 

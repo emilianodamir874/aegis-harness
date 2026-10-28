@@ -78,9 +78,10 @@ try {
       return { jump: after - before, scrollTop: log.scrollTop, atBottom: log.scrollHeight - log.scrollTop - log.clientHeight < 60, measure: parseFloat(getComputedStyle(document.querySelector('#msg-inner')).maxWidth) };
     });
     check(`${width}: mantiene ancla visual`, Math.abs(scroll.jump) < 3 && scroll.scrollTop > 0 && !scroll.atBottom && (width < 500 || scroll.measure === 900), JSON.stringify(scroll));
+    if (width <= 560 && await page.locator('#topbar-secondary').getAttribute('data-open') !== 'true') await page.locator('#btn-topbar-more').click();
     await button.click();
     await page.keyboard.press('Escape');
-    check(`${width}: Escape restaura foco`, await page.evaluate(() => document.querySelector('#density-pop').hidden && document.activeElement?.id === 'btn-density'));
+    check(`${width}: Escape restaura foco`, await page.evaluate(() => document.querySelector('#density-pop').hidden && document.activeElement?.id === 'btn-density' && (innerWidth > 560 || document.querySelector('#topbar-secondary').dataset.open === 'true')));
     check(`${width}: sin excepciones`, errors.length === 0, errors.join(' | '));
     await context.close();
   }

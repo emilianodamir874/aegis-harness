@@ -62,6 +62,20 @@ try {
     check(`${width}: Home navega a letra`, await page.evaluate(() => document.activeElement?.id === 'btn-chat-font'));
     await page.locator('#btn-topbar-more').click();
     check(`${width}: opciones cierran por botón`, await page.evaluate(() => document.querySelector('#topbar-secondary').dataset.open !== 'true' && document.querySelector('#btn-topbar-more').getAttribute('aria-expanded') === 'false'));
+    await page.locator('#btn-topbar-more').click();
+    await page.locator('#btn-chat-font').click();
+    await page.keyboard.press('Escape');
+    check(`${width}: letra devuelve foco visible`, await page.evaluate(() => document.querySelector('#chat-font-pop').hidden && document.activeElement?.id === 'btn-topbar-more'));
+    await page.locator('#btn-topbar-more').click();
+    await page.locator('#btn-density').click();
+    await page.keyboard.press('Escape');
+    check(`${width}: densidad devuelve foco visible`, await page.evaluate(() => {
+      const trigger = document.querySelector('#btn-density');
+      return document.querySelector('#density-pop').hidden && document.activeElement === trigger
+        && document.querySelector('#topbar-secondary').dataset.open === 'true' && trigger.getClientRects().length > 0;
+    }));
+    await page.keyboard.press('Escape');
+    check(`${width}: Esc cierra menú padre`, await page.evaluate(() => document.querySelector('#topbar-secondary').dataset.open !== 'true' && document.activeElement?.id === 'btn-topbar-more'));
     // Fixture efímero que mide el hitbox real sin alterar una sesión persistida.
     const targets = await page.evaluate(() => {
       const host = document.createElement('div');
