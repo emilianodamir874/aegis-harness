@@ -1509,18 +1509,46 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     return 0;
   }
 
+  // Reconciliacion de un chunk contra lo que ya hay acumulado. Es LA MISMA regla para los tres
+  // caminos del texto (hub replay, refresco suave y pintado directo): tenerla solo en uno dejaba
+  // el razonamiento partido justo durante el turno, que es cuando se mira.
+  //   {add}     -> agregar al final
+  //   {replace} -> reemplazar el acumulado entero
+  //   null      -> descartar el chunk (duplicado, retroceso o vacio)
+  type Conciliacion = { add: string } | { replace: string } | null;
+  function conciliar(prev: string, inc: string): Conciliacion {
+    if (!inc) return null;
+    if (prev === inc) return null;
+    if (inc.startsWith(prev)) return { add: inc.slice(prev.length) };
+    if (prev.startsWith(inc) || prev.endsWith(inc)) return null;
+    const solape = solapeFinal(prev, inc);
+    if (solape >= 8) return { add: inc.slice(solape) };
+    // El provider reemite el acumulado de otro tramo: mismo arranque y mas largo.
+    if (prev.length >= 40 && inc.length > prev.length
+      && prev.startsWith(inc.slice(0, Math.min(24, inc.length)))) return { replace: inc };
+    // Arranca con puntuacion de continuacion sin que lo pintado la pida: le falta el principio.
+    if (!/[\s\-;,:([{]$/.test(prev) && /^[\-;,:)\]}·]/.test(inc)) return { add: '\n\n' + inc };
+    return { add: inc };
+  }
+
   function streamAppend(key, text, thought, hidden?) {
     // (v6.4) Replay del hub: el mismo mensaje parcial puede haberlo traído ya el
     // session/load, así que el texto del replay se acumula aparte y se reconcilia por
     // prefijo común (hubApplyReplayText) en vez de pegarse dos veces.
     if (state.hubReplay) {
-      HUB.text.set(key, (HUB.text.get(key) || '') + text);
+      const prevH = HUB.text.get(key) || '';
+      const ch = conciliar(prevH, text);
+      if (ch) HUB.text.set(key, 'replace' in ch ? ch.replace : prevH + ch.add);
       HUB.kind.set(key, !!thought);
       return;
     }
     // Refresco suave: acumular sin tocar el DOM (se aplica al final, sólo lo nuevo).
     if (SOFT.on) {
-      SOFT.text.set(key, (SOFT.text.get(key) || '') + text);
+      // Este es el camino del turno en vivo: concatenar crudo aca dejaba el razonamiento partido
+      // aunque el pintado directo estuviera bien.
+      const prevS = SOFT.text.get(key) || '';
+      const ch = conciliar(prevS, text);
+      if (ch) SOFT.text.set(key, 'replace' in ch ? ch.replace : prevS + ch.add);
       SOFT.kind.set(key, !!thought);
       softPush('text', key);
       return;
@@ -1538,38 +1566,16 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     // legitimo que por casualidad sea prefijo de lo ya pintado.
     if (rec && rec.text) {
       const prev = String(rec.text);
-      const inc = String(text == null ? '' : text);
-      if (!inc) return;
-      if (prev === inc) return;
-      if (inc.startsWith(prev)) { text = inc.slice(prev.length); if (!text) return; }
-      else if (prev.startsWith(inc) || prev.endsWith(inc)) return;
-      else {
-        // SIN SOLAPE. Dos casos bien distintos que antes se trataban igual (append ciego):
-        //   a) el chunk CONTINUA la frase -> delta normal, se pega sin separador. Es el caso
-        //      frecuente: un delta cualquiera nunca "solapa" con lo anterior, asi que separar por
-        //      las dudas metia un parrafo en medio de cada oracion.
-        //   b) el provider reemite el texto ACUMULADO de otro tramo (mismo arranque y mas largo):
-        //      se reemplaza, no se suma. Esto es lo que duplicaba el razonamiento.
-        const solape = solapeFinal(prev, inc);
-        const cierra = /[\s\-;,:([{]$/.test(prev);
-        if (solape >= 8) {
-          text = inc.slice(solape);
-          if (!text) return;
-        } else if (prev.length >= 40 && inc.length > prev.length
-          && prev.startsWith(inc.slice(0, Math.min(24, inc.length)))) {
-          rec.text = inc;
-          rec.lastAppend = performance.now();
-          rec.live = !state.replaying;
-          queueRender(rec);
-          return;
-        } else if (!cierra && /^[\-;,:)\]}·]/.test(inc)) {
-          // Arranca con puntuacion de continuacion sin que lo pintado la pida: le falta el
-          // principio (hub reordenado). Soldado se lee como un error de la app; aparte se lee
-          // como lo que es, un tramo que llego tarde.
-          text = '\n\n' + inc;
-        }
-        // (si no, es un delta normal: se pega tal cual)
+      const ch = conciliar(prev, String(text == null ? '' : text));
+      if (!ch) return;
+      if ('replace' in ch) {
+        rec.text = ch.replace;
+        rec.lastAppend = performance.now();
+        rec.live = !state.replaying;
+        queueRender(rec);
+        return;
       }
+      text = ch.add;
     }
     if (rec && rec.closed) {
       // (v6.6) Un cierre a mitad de turno (closeAllRecs) partia el razonamiento en dos
@@ -2205,7 +2211,12 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     const sec = (t, extra?) => '<div class="cc-sec"><span>' + esc(t) + '</span>' + (extra ? '<em>' + esc(extra) + '</em>' : '') + '</div>';
     const tok = (n) => (n == null ? 'sin datos' : niceTok(n) + ' tok');
 
-    const cuerpo =
+    const tokSesion = (u.inTok != null || u.outTok != null) ? (u.inTok || 0) + (u.outTok || 0) : null;
+    const llamadas = Array.isArray(u.modelUsage) && u.modelUsage.length
+      ? u.modelUsage.reduce((n, m) => n + (m.calls || 0), 0) + (u.compactionCalls || 0) : null;
+    const porPaso = llamadas && tokSesion != null && llamadas > 0 ? Math.round(tokSesion / llamadas) : null;
+
+    let cuerpo =
       '<div class="cc-hero"><b style="color:' + col + '">' + (pct == null ? '--' : Math.round(pct) + '%') + '</b>'
       + '<span class="cc-hero-k">del contexto</span>'
       + '<em>' + (pct == null ? 'sin medir' : pct >= trigPct ? 'va a compactar' : pct >= 50 ? 'más de la mitad' : 'holgado') + '</em></div>'
@@ -2215,23 +2226,29 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
             + (trig ? ' · compacta a ' + niceTok(trig) + ' (' + Math.round(trigPct) + '%)' + (ct.estimated ? ' estimado' : '') : '')) + '</div>'
 
       + sec('Gasto')
-      + '<div class="cc-money"><b' + (u.cost == null ? ' class="dim"' : '') + '>'
-      + (u.cost == null ? 'sin datos' : fmtCost(u.cost)) + '</b>'
-      + '<span>' + ((u.inTok != null || u.outTok != null) ? niceTok((u.inTok || 0) + (u.outTok || 0)) + ' tokens en el chat' : 'sin tokens medidos')
+      + '<div class="cc-money"><b>' + (u.cost == null ? '--' : fmtCost(u.cost)) + '</b>'
+      + '<span>' + (u.inTok != null || u.outTok != null ? niceTok((u.inTok || 0) + (u.outTok || 0)) + ' tokens en el chat' : 'sin tokens medidos')
       + (mu.cost != null ? '<br>último paso ' + fmtCost(mu.cost) : '') + '</span></div>'
-
-      + sec('Último paso')
-      + fila('entrada', tok(mu.inputTokens))
-      + fila('salida', tok(mu.outputTokens))
-      + fila('cache', mu.cacheReadTokens != null && ((mu.inputTokens || 0) + mu.cacheReadTokens) > 0
-          ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--')
-      + fila('tiempo', mu.elapsedMs != null ? (mu.elapsedMs / 1000).toFixed(1) + ' s · ' + (rate ? fmtTps(rate.value) : '--') : '--')
-      + fila('1er token', mu.timeToFirstTokenMs != null ? (mu.timeToFirstTokenMs / 1000).toFixed(1) + ' s' : '--')
 
       + sec('Sesión')
       + fila('entrada', tok(u.inTok))
       + fila('salida', tok(u.outTok))
+      + (porPaso != null ? fila('por paso', niceTok(porPaso) + ' tok · ' + llamadas + ' llamadas') : '')
       + fila('margen', u.limit && u.used != null && trig ? tok(Math.max(0, trig - u.used)) + ' antes de compactar' : '--');
+
+    // ULTIMO PASO: solo si hay medicion. Una seccion con cinco guiones se lee como un panel roto.
+    const sinPaso = mu.inputTokens == null && mu.outputTokens == null && mu.elapsedMs == null;
+    if (sinPaso) {
+      cuerpo += sec('Último paso') + '<div class="cc-nota">Se llena con el próximo turno.</div>';
+    } else {
+      cuerpo += sec('Último paso')
+        + fila('entrada', tok(mu.inputTokens))
+        + fila('salida', tok(mu.outputTokens))
+        + fila('cache', mu.cacheReadTokens != null && ((mu.inputTokens || 0) + mu.cacheReadTokens) > 0
+            ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--')
+        + fila('tiempo', mu.elapsedMs != null ? (mu.elapsedMs / 1000).toFixed(1) + ' s · ' + (rate ? fmtTps(rate.value) : '--') : '--')
+        + fila('1er token', mu.timeToFirstTokenMs != null ? (mu.timeToFirstTokenMs / 1000).toFixed(1) + ' s' : '--');
+    }
 
     let extra = '';
     // BITÁCORA DE COMPACTACIONES: cuándo compactó, con cuánto contexto y quién lo pidió.
@@ -2241,9 +2258,12 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
       extra += sec('Compactaciones', String(clog.length));
       extra += clog.slice(-6).reverse().map((e) => {
         const hora = typeof e.at === 'string' ? e.at.slice(11, 16) : '--:--';
+        const libre = (e.beforeTokens || 0) - (e.afterTokens || 0);
+        // La nota va en UNA linea con el texto completo en el title: antes desbordaba el panel.
         return '<div class="cc-r"><span>' + esc(quien(e.trigger) + ' ' + hora) + '</span><b class="dim">'
           + niceTok(e.beforeTokens || 0) + ' → ' + niceTok(e.afterTokens || 0) + '</b></div>'
-          + (e.note ? '<div class="cc-nota">' + esc(String(e.note).slice(0, 96)) + '</div>' : '');
+          + (e.note ? '<div class="cc-nota cc-una" title="' + esc(String(e.note)) + '">' + esc(String(e.note)) + '</div>' : '')
+          + (libre > 0 ? '<div class="cc-nota">liberó ' + niceTok(libre) + ' tok</div>' : '');
       }).join('');
     }
     // Gasto por modelo: una sesión puede cambiar de modelo a mitad de camino.
@@ -7130,7 +7150,7 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert,
+  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
     // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
     view: {
       density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),

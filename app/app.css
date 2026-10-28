@@ -4227,6 +4227,9 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .cc-money > b { font-size: 24px; font-weight: 550; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text); }
 .cc-money > span { font-size: 11px; color: var(--text-4); text-align: right; }
 
+/* nota de una sola linea: el texto completo queda en el title */
+.cc-una { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; }
+
 /* pie de seccion con la nota corta */
 .cc-nota { margin-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--text-4); }
 

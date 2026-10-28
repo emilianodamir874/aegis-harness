@@ -123,6 +123,40 @@ const botones = await page.evaluate(async () => {
 });
 check('la tarjeta no acumula botones "Ver todo" al actualizarse', botones.botones === 1 && botones.estado === 'ok', JSON.stringify(botones));
 
+// ---------- 10. refresco suave: el camino del turno en vivo ----------
+// Este era el agujero: durante el turno el texto se acumula en SOFT.text, no en rec.text, asi que
+// la reconciliacion del pintado directo no se aplicaba y el razonamiento salia partido.
+const suave = await page.evaluate(() => {
+  const W = window.__aegisWeb;
+  const inner = document.querySelector('#msg-inner');
+  if (inner) inner.innerHTML = '';
+  W.setSoft(true);
+  try {
+    W.feed('s1', 'Reviso el archivo del panel y veo que el control todavia', true);
+    W.feed('s1', ' es el nativo del navegador, con dos numeros sueltos.', true);
+    W.feed('s1', 'Reviso el archivo del panel y veo que el control todavia es el nativo del navegador, con dos numeros sueltos. Lo cambio.', true);
+    return { texto: W.softText('s1') };
+  } finally { W.setSoft(false); }
+});
+check('refresco suave: aplica la misma reconciliacion (no duplica ni parte)',
+  suave.texto === 'Reviso el archivo del panel y veo que el control todavia es el nativo del navegador, con dos numeros sueltos. Lo cambio.',
+  suave.texto.slice(0, 90));
+
+// ---------- 11. hub replay: lo que llega al reconectar ----------
+const hub = await page.evaluate(() => {
+  const W = window.__aegisWeb;
+  W.setHub(true);
+  try {
+    W.feed('h1', 'El plan era arreglar el transcript y despues', true);
+    W.feed('h1', ' los paneles, con sus pruebas.', true);
+    W.feed('h1', 'El plan era arreglar el transcript y despues los paneles, con sus pruebas. Y despues medir.', true);
+    return { texto: W.hubText('h1') };
+  } finally { W.setHub(false); }
+});
+check('hub replay: aplica la misma reconciliacion',
+  hub.texto === 'El plan era arreglar el transcript y despues los paneles, con sus pruebas. Y despues medir.',
+  hub.texto.slice(0, 90));
+
 await browser.close();
 const ok = res.filter((r) => r.ok).length;
 for (const r of res) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.n}${r.d ? '  [' + r.d + ']' : ''}`);
