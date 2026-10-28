@@ -3,6 +3,7 @@ import { useAppState, useConfig, useStore } from './state/context';
 import type { AppState, SessionState } from './domain/types';
 import type { SessionId } from './domain/ids';
 import { currentGoal } from './domain/goal';
+import { nextMode } from './domain/sessionMode';
 import { Sidebar } from './ui/Sidebar';
 import { Topbar } from './ui/Topbar';
 import { Transcript } from './ui/Transcript';
@@ -11,6 +12,7 @@ import { PermissionCard } from './ui/PermissionCard';
 import { Palette, panelCommand, type Command } from './ui/Palette';
 import { Dialog } from './ui/Dialog';
 import { WorkspacePanel, type PanelId } from './ui/panels';
+import { HandoffDialog } from './ui/HandoffDialog';
 
 function ToastStack({ state, onDismiss }: { state: AppState; onDismiss: (id: string) => void }) {
   return (
@@ -163,6 +165,8 @@ export function App() {
   const [panel, setPanel] = useState<PanelId | null>(null);
   const [palette, setPalette] = useState(false);
   const [chatInfo, setChatInfo] = useState(false);
+  const [handoff, setHandoff] = useState(false);
+  const [prefill, setPrefill] = useState<string | null>(null);
   const [rename, setRename] = useState<{ id: SessionId; title: string } | null>(null);
   const [deleting, setDeleting] = useState<{ id: SessionId; title: string } | null>(null);
 
@@ -196,6 +200,9 @@ export function App() {
       } else if (event.shiftKey && event.key.toLowerCase() === 'p') {
         event.preventDefault();
         setPalette(true);
+      } else if (event.altKey && event.key.toLowerCase() === 'h') {
+        event.preventDefault();
+        setHandoff(true);
       }
     };
     document.addEventListener('keydown', onKey);
@@ -209,6 +216,10 @@ export function App() {
       { id: 'retry', title: 'Regenerar la última respuesta', run: () => void store.retry() },
       { id: 'cancel', title: 'Detener el turno en curso', run: () => void store.cancel() },
       { id: 'info', title: 'Información del chat', run: () => setChatInfo(true) },
+      { id: 'handoff', title: 'Pasar contexto de otra sesión', hint: 'Ctrl+Alt+H', run: () => setHandoff(true) },
+      { id: 'mode-plan', title: 'Modo plan: no escribe, las tools de escritura no se le mandan', hint: 'modo', run: () => void store.setPermissionMode('plan') },
+      { id: 'mode-revisar', title: 'Modo revisar: cada escritura pide permiso y muestra el diff', hint: 'modo', run: () => void store.setPermissionMode('revisar') },
+      { id: 'mode-ejecutar', title: 'Modo ejecutar: manda permission.yaml', hint: 'modo', run: () => void store.setPermissionMode('ejecutar') },
       panelCommand('actividad', 'Actividad de sesiones', setPanel),
       panelCommand('cambios', 'Cambios Git', setPanel),
       panelCommand('archivos', 'Archivos del outbox', setPanel),
@@ -319,6 +330,10 @@ export function App() {
           <Composer
             store={store}
             session={session}
+            prefill={prefill}
+            onPrefillApplied={() => setPrefill(null)}
+            mode={state.permissionMode}
+            onCycleMode={() => void store.setPermissionMode(nextMode(state.permissionMode))}
             onNotice={(level, text) => store.dispatch({ type: 'notice/push', level, text })}
           />
         ) : null}
@@ -328,6 +343,16 @@ export function App() {
       <Palette open={palette} onClose={() => setPalette(false)} commands={commands} />
       <WorkspacePanel panel={panel} onClose={() => setPanel(null)} state={state} session={session} store={store} />
       <ChatInfoDialog open={chatInfo} onClose={() => setChatInfo(false)} session={session} store={store} />
+      <HandoffDialog
+        open={handoff}
+        onClose={() => setHandoff(false)}
+        state={state}
+        store={store}
+        onInsert={(block) => {
+          setPrefill(block);
+          setHandoff(false);
+        }}
+      />
 
       <Dialog open={rename !== null} title="Renombrar chat" onClose={() => setRename(null)}>
         {rename ? (

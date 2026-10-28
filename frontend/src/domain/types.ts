@@ -277,6 +277,8 @@ export interface AppState {
   readonly lastError: string | null;
   /** Avisos accionables de la conexión: "turno interrumpido", "replay incompleto", etc. */
   readonly notices: readonly Notice[];
+  /** Modo de permisos elegido por el operador (plan / revisar / ejecutar). */
+  readonly permissionMode: 'plan' | 'revisar' | 'ejecutar';
   readonly seq: Seq;
 }
 
@@ -296,6 +298,7 @@ export type AppEvent =
   | { type: 'connection/server'; server: ServerInfo }
   | { type: 'notice/push'; level: Notice['level']; text: string; id?: string }
   | { type: 'notice/dismiss'; id: string }
+  | { type: 'permission/mode'; mode: 'plan' | 'revisar' | 'ejecutar' }
   | { type: 'sessions/replaced'; sessions: readonly SessionSummary[]; archived: readonly SessionSummary[] }
   | { type: 'sessions/upsert'; session: SessionSummary }
   | { type: 'sessions/removed'; sessionId: SessionId; archived: boolean }

@@ -1038,3 +1038,50 @@
     transition: none !important;
   }
 }
+
+/* Handoff entre sesiones */
+.ho-area {
+  min-height: 230px;
+  width: 100%;
+  padding: 10px;
+  resize: vertical;
+  font: 12.5px/1.5 ui-monospace, Consolas, monospace;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+}
+.row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+/* Modo de permisos en el composer (plan / ejecutar / revisar) */
+.mode-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: 11.5px/1.7 system-ui, Segoe UI, sans-serif;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+}
+.mode-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.mode-chip.mode-plan {
+  border-color: rgba(147, 162, 184, 0.5);
+  color: #c8d3e2;
+}
+.mode-chip.mode-revisar {
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fbbf24;
+}
+.mode-chip.mode-ejecutar {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #4ade80;
+}

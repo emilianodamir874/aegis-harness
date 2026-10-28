@@ -15,6 +15,7 @@ import {
 import { permissionId, sessionId as sid, type SessionId } from './ids';
 import { emptyState, reduce, summaryOf } from './reducer';
 import { isRunning } from './selectors';
+import { PERMISSION_MODE_HINT, entriesForMode, readStoredMode, writeStoredMode, type PermissionMode } from './sessionMode';
 import {
   isTransientError,
   newPromptId,
@@ -42,6 +43,8 @@ interface StoreOptions {
   readonly now?: () => number;
   /** Cómo se agrupan las notificaciones a React (por defecto rAF en navegador, microtarea en tests). */
   readonly schedule?: (fn: () => void) => void;
+  /** Dónde vive el modo de permisos elegido (localStorage en la app, memoria en tests). */
+  readonly modeStorage?: Pick<Storage, 'getItem' | 'setItem'> | null;
 }
 
 interface PendingPermission {
@@ -77,6 +80,7 @@ export class AegisStore {
    * refresco de cada 4 s borraría el nombre recién puesto.
    */
   private readonly renamed = new Map<string, string>();
+  private readonly modeStorage: Pick<Storage, 'getItem' | 'setItem'> | null;
   private flushing = false;
   private emitScheduled = false;
   private readonly schedule: (fn: () => void) => void;
@@ -87,6 +91,8 @@ export class AegisStore {
     this.defaultCwd = options.defaultCwd ?? '.';
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.now = options.now ?? (() => Date.now());
+    this.modeStorage = options.modeStorage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+    this.state = reduce(this.state, { type: 'permission/mode', mode: readStoredMode(this.modeStorage) });
     this.schedule =
       options.schedule ??
       ((fn) => {
@@ -844,11 +850,7 @@ export class AegisStore {
   /** Exporta el chat a un archivo. El motor devuelve el texto ya formateado en `data`. */
   async exportSession(id: SessionId, format: 'markdown' | 'json'): Promise<void> {
     try {
-      const response = await this.client.request<{ readonly data?: string }>('_aegis/unstable/session/export', {
-        sessionId: id,
-        format,
-      });
-      const text = typeof response?.data === 'string' ? response.data : '';
+      const text = await this.exportText(id, format);
       if (!text) {
         this.dispatch({ type: 'notice/push', level: 'error', text: 'El motor devolvió una exportación vacía' });
         return;
@@ -867,6 +869,32 @@ export class AegisStore {
     } catch (error) {
       this.dispatch({ type: 'notice/push', level: 'error', text: `No se pudo exportar: ${messageOf(error)}` });
     }
+  }
+
+  /** Fija el modo de permisos para la sesión activa y lo deja elegido para esta pestaña. */
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
+    writeStoredMode(mode, this.modeStorage);
+    this.dispatch({ type: 'permission/mode', mode });
+    const id = this.state.activeSessionId;
+    if (!id) return;
+    try {
+      await this.client.request('_aegis/unstable/tools/permissions/set', {
+        sessionId: id,
+        toolPermissions: entriesForMode(mode),
+      });
+      this.dispatch({ type: 'notice/push', level: 'info', text: `Modo ${mode}: ${PERMISSION_MODE_HINT[mode]}` });
+    } catch (error) {
+      this.dispatch({ type: 'notice/push', level: 'error', text: `No pude aplicar el modo ${mode}: ${messageOf(error)}` });
+    }
+  }
+
+  /** Texto de la exportación, sin efecto de descarga: lo usa también el handoff. */
+  async exportText(id: SessionId, format: 'markdown' | 'json'): Promise<string> {
+    const response = await this.client.request<{ readonly data?: string; readonly markdown?: string; readonly text?: string }>(
+      '_aegis/unstable/session/export',
+      { sessionId: id, format },
+    );
+    return String(response?.data ?? response?.markdown ?? response?.text ?? '');
   }
 
   /** Pedidos de permiso vivos de una sesión, en orden de llegada. */

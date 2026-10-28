@@ -29,6 +29,7 @@ export const emptyState = (): AppState => ({
   archived: [],
   pendingBySession: {},
   permissionIndex: {},
+  permissionMode: 'ejecutar',
   queue: [],
   steers: [],
   lastError: null,
@@ -367,6 +368,9 @@ export function reduce(state: AppState, event: AppEvent): AppState {
 
     case 'connection/server':
       return { ...state, server: event.server };
+
+    case 'permission/mode':
+      return { ...state, permissionMode: event.mode };
 
     case 'notice/push':
       return pushNotice(state, {

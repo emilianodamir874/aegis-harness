@@ -4,6 +4,7 @@ import type { Attachment, SessionState } from '../domain/types';
 import { isRunning } from '../domain/selectors';
 import { attachmentId } from '../domain/ids';
 import { blobToWavBase64, createSpeechPlayer, startDictation, type SpeechPlayer } from '../media/audio';
+import { PERMISSION_MODE_HINT, type PermissionMode } from '../domain/sessionMode';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const MAX_TEXT_BYTES = 256 * 1024;
@@ -31,13 +32,26 @@ async function readAttachment(file: File): Promise<Attachment> {
 export function Composer({
   store,
   session,
+  prefill,
+  onPrefillApplied,
+  mode,
+  onCycleMode,
   onNotice,
 }: {
   store: AegisStore;
   session: SessionState;
+  prefill?: string | null;
+  onPrefillApplied?: () => void;
+  mode?: PermissionMode;
+  onCycleMode?: () => void;
   onNotice: (level: 'info' | 'warn' | 'error', text: string) => void;
 }) {
   const [text, setText] = useState('');
+  useEffect(() => {
+    if (!prefill) return;
+    setText((current) => (current.trim() ? `${current.trim()}\n\n${prefill}` : prefill));
+    onPrefillApplied?.();
+  }, [prefill, onPrefillApplied]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [sending, setSending] = useState(false);
   const [dictating, setDictating] = useState(false);
@@ -180,6 +194,18 @@ export function Composer({
           spellCheck
         />
         <div className="composer-tools">
+          {mode && onCycleMode ? (
+            <button
+              type="button"
+              className={`mode-chip mode-${mode}`}
+              data-mode={mode}
+              title={`${PERMISSION_MODE_HINT[mode]} Click para cambiar (plan → ejecutar → revisar).`}
+              aria-label={`Modo ${mode}: ${PERMISSION_MODE_HINT[mode]}`}
+              onClick={onCycleMode}
+            >
+              {mode}
+            </button>
+          ) : null}
           <button type="button" className="icon-btn" title="Adjuntar archivo" aria-label="Adjuntar archivo" onClick={() => fileInput.current?.click()}>
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M12.5 7.5 8 12a2.5 2.5 0 0 0 3.5 3.5l4.5-4.5a4.5 4.5 0 0 0-6.4-6.4L5 9.1a6 6 0 0 0 8.5 8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
