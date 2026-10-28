@@ -87,7 +87,7 @@ await conPagina(PERFILES.escritorio, async (page) => {
   const p1 = await panel(page);
   check('paso 1 se titula Proveedor', p1.titulo === 'Proveedor', p1.titulo);
   check('paso 1 no muestra el boton atras', !p1.atras);
-  check('paso 1 lista los proveedores arriba y los modelos abajo', p1.filas.length >= 3 && p1.filas.some((f) => /Codex|Design|Antigravity/i.test(f)) && p1.secciones.includes('Proveedor') && p1.secciones.includes('Modelos'), `${p1.filas.length} filas, secciones: ${p1.secciones.join(' / ')}`);
+  check('paso 1 lista solo proveedores, sin modelos', p1.filas.length === 5 && p1.secciones.join('/') === 'Proveedor' && p1.filas.some((f) => /Codex|Design|Antigravity/i.test(f)), `${p1.filas.length} filas, secciones: ${p1.secciones.join(' / ')}`);
   check('el buscador arranca con el foco', p1.foco);
   // La lista de proveedores ofrecida es exactamente la que el operador dejo a la vista.
   const ofrecidos = await page.evaluate(() => {
@@ -106,7 +106,7 @@ await conPagina(PERFILES.escritorio, async (page) => {
   // Paso 2: filtra proveedor y entra a sus modelos
   await page.keyboard.type('codex', { delay: 30 });
   const filtrado = await page.evaluate(() => [...document.querySelectorAll('.combo-opt .co-name')].map((n) => n.textContent.trim()));
-  check('tipear un proveedor lo deja primero y suma sus modelos', /^ChatGPT Codex$/i.test(filtrado[0] || '') && filtrado.length > 1, `${filtrado.length} filas, primera: ${filtrado[0]}`);
+  check('el buscador del paso 1 filtra proveedores', filtrado.length === 1 && /^ChatGPT Codex$/i.test(filtrado[0] || ''), `${filtrado.length} filas: ${filtrado[0]}`);
   await page.screenshot({ path: 'tools/shots/pasos-2-proveedor-filtrado.png' });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(300);
@@ -162,16 +162,17 @@ await conPagina(PERFILES.escritorio, async (page) => {
   check('el esfuerzo elegido es el del motor', m1.effort === 'off' && /sin razonamiento/i.test(cerrado.eff), `${cerrado.eff} / ${m1.effort}`);
   await page.screenshot({ path: 'tools/shots/pasos-chip-final.png' });
 
-  // Atajo: tipear un modelo en el paso 1 lo encuentra cruzando proveedores
+  // El paso 1 no ofrece modelos aunque se escriba el nombre de uno.
   await page.click('#chips .chip-model');
   await page.waitForSelector('.combo-panel');
   await page.keyboard.type('flash', { delay: 25 });
   await page.waitForTimeout(300);
-  const atajo = await page.evaluate(() => ({
+  const sinModelos = await page.evaluate(() => ({
     secciones: [...document.querySelectorAll('.combo-sec span')].map((s) => s.textContent.trim()),
-    n: document.querySelectorAll('.combo-opt').length,
+    filas: document.querySelectorAll('.combo-opt').length,
+    vacio: document.querySelector('.combo-empty')?.textContent || '',
   }));
-  check('tipear un modelo en el paso 1 lo busca en todos los proveedores', atajo.secciones.includes('Modelos') && atajo.n > 3, `${atajo.n} filas`);
+  check('escribir un modelo no inventa modelos en el paso 1', !sinModelos.secciones.includes('Modelos') && sinModelos.filas === 0, `${sinModelos.filas} filas · ${sinModelos.vacio.slice(0, 40)}`);
   await page.keyboard.press('Escape');
 
   // Modo: sigue siendo su propio panel

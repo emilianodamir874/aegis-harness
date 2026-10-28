@@ -9,7 +9,7 @@ import { remoteResultsHtml, emptyRemote } from './app/search';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
-import { abrirCombo, comboAbierto, norm, puntajeDeBusqueda, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
+import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -5284,25 +5284,10 @@ import { abrirCombo, comboAbierto, norm, puntajeDeBusqueda, type ComboHandle, ty
 
     const secciones = (): ComboSection[] => {
       if (paso === 'prov') {
+        // Solo proveedores: los modelos aparecen cuando hay uno elegido. Sin atajos ni listas
+        // cruzadas en este paso (a pedido del operador: primero se elige con quien se habla).
         const items = itemsProveedor().map((it) => ({ ...it, value: it.value.slice(5) }));
-        const out: ComboSection[] = [{ label: 'Proveedor', hint: 'despues elegis el modelo', items }];
-        // Los modelos de todos los proveedores, al final: el arbol esta arriba para recorrerlo,
-        // pero el que ya sabe el nombre lo busca y entra directo al esfuerzo de ese modelo.
-        const cruzados: ComboItem[] = [];
-        for (const pid of [proveedorActivo(), ...proveedoresListos().map((x) => String(x.providerId || ''))]) {
-          if (!pid) continue;
-          const nomProv = String((provDeCatalogo(pid) || {}).providerName || pid);
-          for (const it of itemsModelo(pid)) {
-            cruzados.push({
-              ...it,
-              meta: (it.meta ? it.meta + ' " + MID + " ' : '') + nomProv,
-              keywords: (it.keywords ? it.keywords + ' ' : '') + pid,
-              value: pid + String.fromCharCode(0) + it.value.slice(6),
-            });
-          }
-        }
-        if (cruzados.length) out.push({ label: 'Modelos', hint: 'de cualquier proveedor', items: cruzados });
-        return out;
+        return [{ label: 'Proveedor', hint: 'despues elegis el modelo', items }];
       }
       if (paso === 'modelo') {
         const items = itemsModelo(provSel).map((it) => ({ ...it, value: it.value.slice(6) }));
@@ -5336,14 +5321,6 @@ import { abrirCombo, comboAbierto, norm, puntajeDeBusqueda, type ComboHandle, ty
       // Devolver true deja el panel abierto: el paso siguiente se pinta en el mismo panel.
       onPick: (v) => {
         if (paso === 'prov') {
-          const atajo = v.indexOf(String.fromCharCode(0));
-          if (atajo > 0) {
-            provSel = v.slice(0, atajo);
-            modelSel = v.slice(atajo + 1);
-            if (effortOptions.length > 1) { paso = 'esfuerzo'; mostrar(); return true; }
-            void aplicarModelo(provSel, modelSel);
-            return false;
-          }
           provSel = v;
           paso = 'modelo';
           mostrar();
