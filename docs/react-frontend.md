@@ -297,3 +297,13 @@ Estado de la verificación contra el motor real, por método:
 | `sources/list|create|update|delete` | CRUD completo verificado con skills desechables (create → `{source}`, update → `{source}` con descripción y contenido nuevos, delete → ok); `target.scope:'global'` escribe en `C:\Users\Emiliano\.agents\skills` y los paths vuelven con prefijo `\\?\` |
 | `tools/permissions/set` | los tres payloads responden ok; no hay getter, el efecto no es legible por ACP |
 | `tools/list` | **no existe** (`-32601`) |
+
+## 12. Intento de publicación del 2026-10-28 18:02: falló, y por qué
+
+El swap detached abortó solo y sin daño: `ABORTADO: el puerto sigue tomado; no toqué nada más` (`logs/publish-react-lanzado.log`). La web siguió sirviendo el cliente actual durante todo el intento (18 572 B de HTML, sin `/app-react/assets`).
+
+Causa medida: el 3788 lo sirve un `node server.mjs` lanzado **fuera del launcher** (proceso huérfano, `CommandLine: node.exe server.mjs`, cwd `web/`), y el watchdog lo relanzó en el hueco entre el `Stop-Process` y el chequeo de puerto libre del script. Como ese arranque no pasa por `start-aegis-web.ps1`, el marcador `state/use-react-client` y `AEGIS_WEB_ROOT` no se aplican: el launcher sólo pone la variable cuando él mismo arranca el server (`if (-not $env:AEGIS_WEB_ROOT)`), y `restart-node.ps1` sí lo respeta, pero el proceso actual no vino de ahí.
+
+Detalle adicional: `start-aegis-web.ps1` no acepta `AEGIS_WEB_PORT` (usa `config.json`), así que no se puede ensayar la publicación por el launcher en otro puerto.
+
+Camino que sí está verificado (probado en 3791 y 3792): arrancar `dist-ts/server.mjs` con `AEGIS_WEB_ROOT=react` y el puerto libre, comprobando `/healthz`, `/` → `/app-react/assets/…` y el asset en 200. Para publicar de verdad hace falta que ese sea **el** proceso del 3788: parar el huérfano y arrancarlo por el launcher con la variable en el entorno (o corregir el launcher para que mate y relance en un solo paso, que es lo que queda pendiente).
