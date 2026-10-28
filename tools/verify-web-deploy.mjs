@@ -109,10 +109,10 @@ try {
         if (res.status !== 200 || !/\bgzip\b/i.test(res.headers.get('content-encoding') || '')) {
           bad.push(`${name}: HTTP ${res.status} o sin gzip`); continue;
         }
-        const disk = await readFile(join(root, 'app', name));
+        const [disk, built] = await Promise.all([readFile(join(root, 'app', name)), readFile(join(root, 'dist-ts', 'app', name))]);
         const hash = sha(disk);
-        if (sha(bytes) !== hash || target.searchParams.get('v') !== hash || [...target.searchParams].length !== 1) {
-          bad.push(`${name}: SHA256 servido/disco/?v distinto`); continue;
+        if (sha(bytes) !== hash || sha(built) !== hash || target.searchParams.get('v') !== hash || [...target.searchParams].length !== 1) {
+          bad.push(`${name}: SHA256 servido/disco/dist-ts/?v distinto`); continue;
         }
         passed++;
       } catch { bad.push('asset: no disponible o error de decodificación'); }
