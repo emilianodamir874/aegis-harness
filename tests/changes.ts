@@ -80,7 +80,7 @@ try {
   const client = await build({ entryPoints: [resolve('src/changes.ts')], bundle: true,
     write: false, platform: 'browser', format: 'esm', target: 'es2022' });
   const code = new TextDecoder().decode(client.outputFiles[0].contents);
-  assert(code.includes('/changes.json?cwd='), 'cliente necesita endpoint explícito');
+  assert(code.includes('/changes.json?sessionId='), 'cliente necesita endpoint de sesión explícito');
   assert(code.includes('textContent'), 'panel construye texto sin HTML crudo');
   assert(!code.includes('innerHTML'), 'no inyectar diff como HTML');
   const browser = await chromium.launch({ headless: true });
@@ -95,7 +95,7 @@ try {
       if (url.pathname === '/changes.js') return route.fulfill({ contentType: 'text/javascript', body: code });
       if (url.pathname === '/changes.json') {
         assert.equal(route.request().method(), 'GET');
-        requests.push(url.searchParams.get('cwd') || '');
+        requests.push(url.searchParams.get('sessionId') || '');
         if (offline) return route.fulfill({ status: 404, body: 'Sin endpoint' });
         return route.fulfill({ json: { kind: 'git', root: fixture, entries: [
           { path: '<img src=x onerror=alert(1)>', staged: 'M', worktree: ' ', diff: '+<script>alert(2)</script>', truncated: false },
@@ -103,12 +103,13 @@ try {
       }
       throw new Error('Ruta inesperada: ' + url.pathname);
     });
+    await page.addInitScript((cwd: string) => { (window as any).__aegisWeb = { state: { current: { id: 'fixture-session', cwd } } }; }, fixture);
     await page.goto('http://changes.invalid/');
     await page.evaluate((cwd: string) => (window as any).__aegisChanges.open(cwd), fixture);
     assert.equal(await page.locator('.aegis-changes details').count(), 1);
     assert.equal(await page.locator('.aegis-changes img, .aegis-changes script').count(), 0, 'sin ejecución HTML de diff/ruta');
     assert((await page.locator('.aegis-changes').innerText()).includes('autor desconocido'));
-    assert.deepEqual(requests, [fixture]);
+    assert.deepEqual(requests, ['fixture-session']);
     offline = true;
     await page.locator('.aegis-changes header button').first().click();
     await page.waitForFunction(() => document.querySelector('.aegis-changes .note')?.textContent?.includes('Sin backend validado'));

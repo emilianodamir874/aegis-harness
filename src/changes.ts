@@ -55,12 +55,13 @@ async function refresh(): Promise<void> {
   view.replaceChildren(el('p', 'Consultando Git…'));
   footer.textContent = 'Estado actual de Git; autor desconocido. ' + testStatus();
   try {
-    if (!selectedCwd) {
+    const current = (window as Window & { __aegisWeb?: { state?: { current?: { id?: string; cwd?: string } } } }).__aegisWeb?.state?.current;
+    if (!selectedCwd || !current?.id || current.cwd !== selectedCwd) {
       view.replaceChildren(el('p', 'Abrí una conversación para consultar los cambios de su directorio.'));
       footer.textContent = 'Sin sesión activa · no se consultó Git.';
       return;
     }
-    const response = await fetch('/changes.json?cwd=' + encodeURIComponent(selectedCwd), { cache: 'no-store' });
+    const response = await fetch('/changes.json?sessionId=' + encodeURIComponent(current.id), { cache: 'no-store' });
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const payload: unknown = await response.json();
     if (!valid(payload)) throw new Error('Respuesta inválida');

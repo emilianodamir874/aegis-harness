@@ -1142,6 +1142,9 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       return;
     }
 
+    // El directorio autorizado sale exclusivamente del registro de la sesion, nunca del navegador.
+    // SQLiteSync corre en un proceso hijo: lectura read-only, sin crear DB ni bloquear el event loop.
+    // El path replica Paths::data_dir()/sessions/sessions.db y SessionStorage::new() del motor.
     // Snapshot Git de un workspace validado; el CLI NO acepta cwd de HTTP sin estos controles.
     if (url.pathname === '/changes.json') {
       const headers = { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC };
@@ -1158,9 +1161,44 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         reply(403, { error: 'forbidden' });
         return;
       }
-      const raw = url.searchParams.get('cwd');
-      if (!raw || !isAbsolute(raw) || raw.includes('\0') || /[\x00-\x1f\x7f]/.test(raw)) {
-        reply(400, { error: 'cwd absoluto requerido' });
+      const sessionId = url.searchParams.get('sessionId');
+      if (!sessionId || !/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId) || url.searchParams.getAll('sessionId').length !== 1) {
+        reply(400, { error: 'sessionId requerido' });
+        return;
+      }
+      const suppliedCwd = url.searchParams.get('cwd');
+      if (url.searchParams.getAll('cwd').length > 1 || (suppliedCwd !== null &&
+        (!isAbsolute(suppliedCwd) || /[\x00-\x1f\x7f]/.test(suppliedCwd)))) {
+        reply(400, { error: 'cwd invalido' });
+        return;
+      }
+      let raw: string;
+      try {
+        const dbPath = join(process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state', 'data', 'sessions', 'sessions.db');
+        // No usar URI SQLite: readOnly:true prohibe crear una DB ausente, y prepare().get()
+        // liga sessionId como parametro, no como SQL. stdout solo contiene el working_dir.
+        const worker = `const { DatabaseSync } = require('node:sqlite');
+          const db = new DatabaseSync(process.argv[1], { readOnly: true });
+          try { const row = db.prepare('SELECT working_dir FROM sessions WHERE id = ?').get(process.argv[2]);
+            process.stdout.write(JSON.stringify(row ? row.working_dir : null)); }
+          finally { db.close(); }`;
+        const output = await new Promise<string>((ok, fail) => {
+          execFile(process.execPath, ['--disable-warning=ExperimentalWarning', '--experimental-sqlite', '-e', worker, dbPath, sessionId],
+            { encoding: 'utf8', timeout: 10_000, maxBuffer: 8192, windowsHide: true },
+            (error, stdout) => error ? fail(error) : ok(stdout));
+        });
+        const stored: unknown = JSON.parse(output);
+        if (stored === null) { reply(404, { error: 'sesion no encontrada' }); return; }
+        if (typeof stored !== 'string' || !isAbsolute(stored) || /[\x00-\x1f\x7f]/.test(stored)) {
+          reply(403, { error: 'cwd no permitido' }); return;
+        }
+        raw = stored;
+      } catch {
+        reply(503, { error: 'sesiones no disponibles' });
+        return;
+      }
+      if (suppliedCwd !== null && resolve(suppliedCwd).toLowerCase() !== resolve(raw).toLowerCase()) {
+        reply(403, { error: 'cwd no coincide con sesion' });
         return;
       }
       // Comprobar ambas representaciones: una junction en la raiz es valida, pero
