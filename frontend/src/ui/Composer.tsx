@@ -54,6 +54,7 @@ export function Composer({
   }, [prefill, onPrefillApplied]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [sending, setSending] = useState(false);
+  const [arrastrando, setArrastrando] = useState(false);
   const [dictating, setDictating] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const area = useRef<HTMLTextAreaElement | null>(null);
@@ -81,8 +82,7 @@ export function Composer({
     }
   };
 
-  const send = async (): Promise<void> => {
-    if (sending) return;
+  const send = async (): Promise<void> => {    if (sending) return;
     const payload = text;
     if (!payload.trim() && attachments.length === 0) return;
     setSending(true);
@@ -156,7 +156,24 @@ export function Composer({
   };
 
   return (
-    <div className="composer-wrap">
+    <div
+      className={`composer-wrap${arrastrando ? ' dragging' : ''}`}
+      onDragOver={(event) => {
+        if (!Array.from(event.dataTransfer.types).includes('Files')) return;
+        event.preventDefault();
+        setArrastrando(true);
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setArrastrando(false);
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.files || event.dataTransfer.files.length === 0) return;
+        event.preventDefault();
+        setArrastrando(false);
+        void addFiles(event.dataTransfer.files);
+      }}
+    >
       {session.permissions.length > 0 ? (
         <p className="composer-hint warn">Hay {session.permissions.length} confirmación(es) pendiente(s) arriba.</p>
       ) : null}
