@@ -1,4 +1,4 @@
-/* ============================================================================
+﻿/* ============================================================================
    AEGIS WEB — sistema visual v5
    ----------------------------------------------------------------------------
    Una sola capa. Los valores de este archivo son la verdad: no hay overrides
@@ -2670,7 +2670,16 @@ html[data-motion="reducido"] .density-pop { animation: none; }
     scroll-snap-type: x proximity;
   }
   .chip { max-width: min(62vw, 230px); scroll-snap-align: start; }
-  .chat-title { font-size: 13px; }
+  .chat-title { font-size: 13px; max-width: 100%; }
+  /* El título largo empujaba los chips a una segunda fila: con flex-basis 0 deja de pedir su
+     ancho intrínseco y el topbar se queda en una sola linea aunque el nombre sea kilometrico. */
+  .title-wrap { flex: 1 1 0; min-width: 0; max-width: 100%; }
+  .topbar > * { min-width: 0; }
+  .topbar-actions { flex: 0 0 auto; }
+  /* La fila de chips reservaba alto aunque no hubiera ninguno (o mientras cargaban), y eso se veia
+     como un hueco entre el titulo y el transcript. Si esta vacia, no ocupa lugar. */
+  .chips:empty { display: none; }
+  .topbar { row-gap: 2px; }
 
   .messages { padding: var(--s4) var(--s3) var(--s1); }
   .messages > #msg-inner,
