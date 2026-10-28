@@ -118,13 +118,13 @@ el camino principal pero falta una parte del contrato; `pendiente` = no implemen
 | 21 | Historial completo | `session/load full` | reemplazo sin duplicar | `openSession({full})` | `store.test` | hecho |
 | 22 | Búsqueda de sesiones | `/search.json` + filtro local | título/id; contenido | filtro local + `ui/SearchResults.tsx` (FTS del store, debounce 250 ms, guarda de secuencia, descarta las ya visibles) | `tsc` + 62 tests + build; endpoint real 3790: 3 sesiones y 54 coincidencias con claves `sessionId,title,cwd,updatedAt,archived,titleMatch,matches[{role,ts,snippet}]` | hecho |
 | 23 | Actividad | `activity.ts` | sesiones y estado | panel Actividad (desde estado) | UI abre | parcial (sin export/confirmaciones) |
-| 24 | Cambios Git | `/changes.json` | archivos del cwd | panel Cambios (tabla) | no probado con repo real | parcial |
-| 25 | Memoria | `/memory.json` | hechos | panel Memoria (JSON) | no probado | parcial |
-| 26 | Skills | `sources/*` | listar/crear/editar | panel Skills (list RPC) | no probado | parcial (CRUD pendiente) |
-| 27 | Archivos | `/outbox.json` | listar/descargar | panel Archivos | no probado | parcial |
-| 28 | Estadísticas | `/stats.json` | tabla por día | panel Stats | no probado | parcial |
+| 24 | Cambios Git | `/changes.json` | archivos del cwd | panel Cambios (tabla `entries`, `?cwd=` de la sesión) | 401 anónimo; forma `{kind,cwd,entries,truncated}` leída en `src/server.ts`; `panels.test` del error 401 | parcial (falta repo real logueado) |
+| 25 | Memoria | `/memory.json` | hechos | panel Memoria (tabla `facts`) | real 3790: 200, 186 hechos `{id,text,kind,tags,confidence,pinned,status,…}`; `panels.test` | hecho |
+| 26 | Skills | `sources/*` | listar/crear/editar | panel Skills (list RPC) | `panels.test` con `sources/list`; RPC real sin ejercitar | parcial (CRUD pendiente) |
+| 27 | Archivos | `/outbox.json` | listar/descargar | panel Archivos | real 3790: 200, 161 items `{name,bytes,mtime,ext,url}`; `panels.test` | hecho (descarga `/dl/` sin probar) |
+| 28 | Estadísticas | `/stats.json` | tabla por día | panel Stats (tabla `daily` primero) | real 3790: 200 en 1,97 s, 19 días/14 modelos; `panels.test` | hecho |
 | 29 | Contexto | `usage_update` | usado/límite/costo | panel Contexto + barra | `translate.test`; motor real mostró string→number | hecho |
-| 30 | Doctor | `/doctor.json` | chequeos | panel Doctor | no probado | parcial |
+| 30 | Doctor | `/doctor.json` | chequeos | panel Doctor (ruta `gate.chequeos`) | 401 anónimo (requiere login); forma leída en `src/server.ts` + `panels.test` | parcial (falta verlo logueado) |
 | 31 | Paleta | `palette.ts` | comandos filtrables | `Palette` | UI test Ctrl+Shift+P | hecho |
 | 32 | Split-view | `split-view.ts` | dos chats lado a lado | — | — | pendiente |
 | 33 | Ajustes | local | voz, lectura | panel Ajustes | UI (render) | parcial |

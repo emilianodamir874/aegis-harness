@@ -13,12 +13,12 @@ interface PanelSpec {
 }
 
 const SPECS: Record<Exclude<PanelId, 'actividad' | 'contexto' | 'ajustes'>, PanelSpec> = {
-  cambios: { title: 'Cambios Git', endpoint: '/changes.json', arrayKeys: ['files', 'entries', 'changes'] },
-  archivos: { title: 'Archivos del outbox', endpoint: '/outbox.json', arrayKeys: ['files', 'items'] },
+  cambios: { title: 'Cambios Git', endpoint: '/changes.json', arrayKeys: ['entries', 'files', 'changes'] },
+  archivos: { title: 'Archivos del outbox', endpoint: '/outbox.json', arrayKeys: ['items', 'files'] },
   memoria: { title: 'Memoria del operador', endpoint: '/memory.json', arrayKeys: ['facts', 'items'] },
   skills: { title: 'Skills', rpc: { method: '_aegis/unstable/sources/list', params: {} }, arrayKeys: ['sources', 'items', 'skills'] },
-  doctor: { title: 'Doctor', endpoint: '/doctor.json', arrayKeys: ['checks', 'items'] },
-  stats: { title: 'Estadísticas', endpoint: '/stats.json', arrayKeys: ['days', 'rows', 'items'] },
+  doctor: { title: 'Doctor', endpoint: '/doctor.json', arrayKeys: ['gate.chequeos', 'checks', 'items'] },
+  stats: { title: 'Estadísticas', endpoint: '/stats.json', arrayKeys: ['daily', 'models', 'sessions', 'byProvider', 'items'] },
   goals: { title: 'Objetivos', endpoint: '/goals.json', arrayKeys: ['items', 'goals'] },
 };
 
@@ -26,6 +26,24 @@ type Json = unknown;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const at = (data: Json, path: string): unknown => {
+  let node: unknown = data;
+  for (const part of path.split('.')) {
+    if (!isRecord(node)) return undefined;
+    node = node[part];
+  }
+  return node;
+};
+
+/** Primera ruta de `arrayKeys` que apunta a un array de objetos con contenido. */
+const firstRows = (data: Json, keys: readonly string[]): { key: string; rows: readonly Record<string, Json>[] } | null => {
+  for (const key of keys) {
+    const value = at(data, key);
+    if (Array.isArray(value) && value.length > 0 && value.every(isRecord)) return { key, rows: value };
+  }
+  return null;
+};
 
 const scalar = (value: unknown): string => {
   if (value === null || value === undefined) return '—';
@@ -62,7 +80,53 @@ function Table({ rows }: { rows: readonly Record<string, Json>[] }) {
   );
 }
 
-function JsonPanel({ data }: { data: Json }) {
+function RestPanel({ data, skip }: { data: Record<string, Json>; skip: string }) {
+  const rows = Object.entries(data).filter(([key]) => key !== skip);
+  if (rows.length === 0) return null;
+  return (
+    <>
+      {rows.map(([key, value]) =>
+        Array.isArray(value) && value.length > 0 && value.every(isRecord) ? (
+          <section key={key}>
+            <h3>{key}</h3>
+            <Table rows={value} />
+          </section>
+        ) : isRecord(value) ? (
+          <section key={key}>
+            <h3>{key}</h3>
+            <div className="kv">
+              {Object.entries(value).map(([k, v]) => (
+                <div className="kv-row" key={k}>
+                  <span>{k}</span>
+                  <span>{scalar(v)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : (
+          <div className="kv-row" key={key}>
+            <span>{key}</span>
+            <span>{scalar(value)}</span>
+          </div>
+        ),
+      )}
+    </>
+  );
+}
+
+function JsonPanel({ data, keys }: { data: Json; keys?: readonly string[] }) {
+  const primary = keys && keys.length > 0 ? firstRows(data, keys) : null;
+  if (primary) {
+    return (
+      <div className="kv">
+        <section>
+          <h3>{primary.key}</h3>
+          <Table rows={primary.rows} />
+        </section>
+        {isRecord(data) ? <RestPanel data={data} skip={primary.key.split('.')[0] ?? ''} /> : null}
+      </div>
+    );
+  }
   if (Array.isArray(data)) {
     const records = data.filter(isRecord);
     if (records.length === data.length && records.length > 0) return <Table rows={records} />;
@@ -264,7 +328,7 @@ export function WorkspacePanel({
         ) : data === null ? (
           <p className="muted">Sin datos.</p>
         ) : (
-          <JsonPanel data={data} />
+          <JsonPanel data={data} keys={spec.arrayKeys} />
         )
       ) : null}
     </Dialog>
