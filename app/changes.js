@@ -34,19 +34,22 @@ function valid(value) {
 async function refresh() {
   if (!main || !note) return;
   const version = ++serial, view = main, footer = note;
+  const initialSessionId = window.__aegisWeb?.state?.current?.id;
   view.replaceChildren(el("p", "Consultando Git…"));
   footer.textContent = "Estado actual de Git; autor desconocido. " + testStatus();
   try {
-    if (!selectedCwd) {
+    const current = window.__aegisWeb?.state?.current;
+    if (!selectedCwd || !current?.id || current.cwd !== selectedCwd) {
       view.replaceChildren(el("p", "Abrí una conversación para consultar los cambios de su directorio."));
       footer.textContent = "Sin sesión activa · no se consultó Git.";
       return;
     }
-    const response = await fetch("/changes.json?cwd=" + encodeURIComponent(selectedCwd), { cache: "no-store" });
+    const response = await fetch("/changes.json?sessionId=" + encodeURIComponent(current.id), { cache: "no-store" });
     if (!response.ok) throw new Error("HTTP " + response.status);
     const payload = await response.json();
     if (!valid(payload)) throw new Error("Respuesta inválida");
-    if (serial !== version || main !== view) return;
+    const active = window.__aegisWeb?.state?.current;
+    if (serial !== version || main !== view || active?.id !== current.id) return;
     view.replaceChildren();
     if (payload.kind === "error") throw new Error(payload.error || "Consulta no disponible");
     if (payload.kind === "not-git") {
@@ -71,7 +74,8 @@ async function refresh() {
     }
     footer.textContent = `${payload.entries.length} entradas${payload.truncated ? " · resultado recortado" : ""} · cambios locales, autor desconocido`;
   } catch (error) {
-    if (serial !== version || main !== view) return;
+    const active = window.__aegisWeb?.state?.current;
+    if (serial !== version || main !== view || (active?.id || "") !== (initialSessionId || "")) return;
     view.replaceChildren(el("p", "Panel no disponible: " + (error instanceof Error ? error.message : String(error))));
     footer.textContent = "Sin backend validado no hay datos de Git. Nunca inferir ausencia de cambios.";
   }

@@ -1025,9 +1025,48 @@ ${Buffer.concat(chunks).toString("utf8")}
         reply(403, { error: "forbidden" });
         return;
       }
-      const raw = url.searchParams.get("cwd");
-      if (!raw || !isAbsolute(raw) || raw.includes("\0") || /[\x00-\x1f\x7f]/.test(raw)) {
-        reply(400, { error: "cwd absoluto requerido" });
+      const sessionId = url.searchParams.get("sessionId");
+      if (!sessionId || !/^[a-zA-Z0-9_-]{1,128}$/.test(sessionId) || url.searchParams.getAll("sessionId").length !== 1) {
+        reply(400, { error: "sessionId requerido" });
+        return;
+      }
+      const suppliedCwd = url.searchParams.get("cwd");
+      if (url.searchParams.getAll("cwd").length > 1 || suppliedCwd !== null && (!isAbsolute(suppliedCwd) || /[\x00-\x1f\x7f]/.test(suppliedCwd))) {
+        reply(400, { error: "cwd invalido" });
+        return;
+      }
+      let raw;
+      try {
+        const dbPath = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "data", "sessions", "sessions.db");
+        const worker = `const { DatabaseSync } = require('node:sqlite');
+          const db = new DatabaseSync(process.argv[1], { readOnly: true });
+          try { const row = db.prepare('SELECT working_dir FROM sessions WHERE id = ?').get(process.argv[2]);
+            process.stdout.write(JSON.stringify(row ? row.working_dir : null)); }
+          finally { db.close(); }`;
+        const output = await new Promise((ok, fail) => {
+          execFile(
+            process.execPath,
+            ["--disable-warning=ExperimentalWarning", "--experimental-sqlite", "-e", worker, dbPath, sessionId],
+            { encoding: "utf8", timeout: 1e4, maxBuffer: 8192, windowsHide: true },
+            (error, stdout) => error ? fail(error) : ok(stdout)
+          );
+        });
+        const stored = JSON.parse(output);
+        if (stored === null) {
+          reply(404, { error: "sesion no encontrada" });
+          return;
+        }
+        if (typeof stored !== "string" || !isAbsolute(stored) || /[\x00-\x1f\x7f]/.test(stored)) {
+          reply(403, { error: "cwd no permitido" });
+          return;
+        }
+        raw = stored;
+      } catch {
+        reply(503, { error: "sesiones no disponibles" });
+        return;
+      }
+      if (suppliedCwd !== null && resolve(suppliedCwd).toLowerCase() !== resolve(raw).toLowerCase()) {
+        reply(403, { error: "cwd no coincide con sesion" });
         return;
       }
       const denied = (path) => /(?:^|[\\/])(?:state|config|\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.(?:json|ya?ml)|secrets?\.ya?ml|permission\.ya?ml|tokens\.json|credentials?(?:\.[^\\/]*)?|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
