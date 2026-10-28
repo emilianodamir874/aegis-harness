@@ -985,6 +985,7 @@ pub(super) fn build_usage_updates(
             conversation
                 .messages()
                 .iter()
+                .filter(|message| message.is_agent_visible())
                 .map(estimate_message_tokens)
                 .sum::<u64>()
         })
