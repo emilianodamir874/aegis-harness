@@ -121,7 +121,7 @@ impl ConnectionCard {
     }
 
     /// Build a dialable [`EndpointAddr`] from the card (id + relay URLs).
-    pub(crate) fn dial_addr(&self) -> Result<EndpointAddr, RoamingError> {
+    pub(crate) fn to_endpoint_addr(&self) -> Result<EndpointAddr, RoamingError> {
         let mut addr = EndpointAddr::new(self.endpoint_id);
         for url in &self.relay_urls {
             // Relay URLs come from an untrusted card. Constrain the scheme to
@@ -220,11 +220,11 @@ mod tests {
     }
 
     #[test]
-    fn dial_addr_rejects_non_http_relay() {
+    fn to_endpoint_addr_rejects_non_http_relay() {
         let id = SecretKey::generate().public();
         let bad = ConnectionCard::new(id, vec!["file:///etc/passwd".to_string()]);
-        assert!(bad.dial_addr().is_err());
+        assert!(bad.to_endpoint_addr().is_err());
         let ok = ConnectionCard::new(id, vec!["https://relay.example./".to_string()]);
-        assert!(ok.dial_addr().is_ok());
+        assert!(ok.to_endpoint_addr().is_ok());
     }
 }
