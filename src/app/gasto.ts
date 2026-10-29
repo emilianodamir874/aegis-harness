@@ -45,6 +45,7 @@ export type Stats = {
 export type CtxUso = {
   used?: number | null; limit?: number | null; cost?: number | null;
   inTok?: number | null; outTok?: number | null;
+  autoCompactAt?: number | null; autoCompactPct?: number | null;
   last?: any; compactionLog?: any[]; modelUsage?: any[]; compactionCalls?: number | null;
 };
 
@@ -54,8 +55,9 @@ export function tok(n: number | null | undefined): string {
   if (n == null) return '—';
   if (n < 1000) return String(n);
   if (n < 1e6) return (n / 1e3).toFixed(n < 1e4 ? 1 : 0).replace('.', ',') + ' k';
-  if (n < 1e9) return (n / 1e6).toFixed(2).replace('.', ',') + ' M';
-  return (n / 1e9).toFixed(2).replace('.', ',') + ' B';
+  // "1,00 M" se lee como precision falsa: si son millones redondos, se muestra "1 M".
+  if (n < 1e9) return (n / 1e6).toFixed(2).replace('.', ',').replace(',00', '') + ' M';
+  return (n / 1e9).toFixed(2).replace('.', ',').replace(',00', '') + ' B';
 }
 
 export function usd(n: number | null | undefined): string {
@@ -107,6 +109,36 @@ function sec(t: string, glosa?: string): string {
 
 function fila(k: string, v: string, clase?: string): string {
   return '<div class="gs-r"><span>' + esc(k) + '</span><b' + (clase ? ' class="' + clase + '"' : '') + '>' + v + '</b></div>';
+}
+
+/**
+ * Ventana del modelo: lo que la IA tiene cargado AHORA en este turno y cuánto le queda.
+ * Es distinto del total de la sesión: `used` (usage_update) es el historial entero que el motor
+ * reenvía, mientras que la última llamada (last.inputTokens + outputTokens) es lo que realmente
+ * entró en la ventana. `limit` en cambio es el UMBRAL de compactación, no el techo del modelo: el
+ * techo se deriva del porcentaje que manda el server.
+ */
+function ventanaModelo(ctx: CtxUso): string {
+  const mu: any = ctx.last || {};
+  const usado = mu.inputTokens != null ? (mu.inputTokens || 0) + (mu.outputTokens || 0) : null;
+  const umbral = ctx.autoCompactAt || null;
+  const pctAuto = ctx.autoCompactPct || null;
+  const techo = umbral && pctAuto ? Math.round(umbral / (pctAuto > 1 ? pctAuto / 100 : pctAuto)) : (ctx.limit || null);
+  const p = techo && usado != null ? Math.min(100, (usado / techo) * 100) : null;
+  const libre = techo && usado != null ? Math.max(0, techo - usado) : null;
+  const col = p == null ? 'var(--text-4)' : p >= 85 ? 'var(--danger)' : p >= 60 ? 'var(--warn)' : 'var(--ok)';
+  if (usado == null) {
+    return sec('Ventana del modelo')
+      + '<div class="gs-nota">Se mide en el próximo turno: cuánto contexto recibe el modelo y cuánto le queda.</div>';
+  }
+  return sec('Ventana del modelo', 'este turno')
+    + '<div class="gs-duo">'
+    +   '<div class="gs-big"><b style="color:' + col + '">' + tok(usado) + '</b>'
+    +     '<span>de ' + tok(techo) + ' · quedan ' + tok(libre) + '</span></div>'
+    +   '<div class="gs-kpi"><b>' + Math.round(p || 0) + '%</b>'
+    +     '<span>' + (umbral ? 'compacta en ' + tok(umbral) : 'sin umbral informado') + '</span></div>'
+    + '</div>'
+    + '<i class="gs-gauge-bar"><em style="width:' + (p || 0) + '%;background:' + col + '"></em></i>';
 }
 
 /** Bloque de esta sesión: es lo único que no viene de /stats.json. */
@@ -253,6 +285,7 @@ export function cuerpoGasto(o: { dias: number; stats: Stats | null; cargando: bo
     out += procedencia(o.stats);
   }
   // Este chat va al final: es el dato mas chico y el que cambia solo mientras hay un turno.
+  out += ventanaModelo(o.ctx);
   out += sesionActual(o.ctx);
   return out;
 }

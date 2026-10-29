@@ -19,8 +19,8 @@ const errores = [];
 page.on('pageerror', (e) => errores.push(String(e).slice(0, 160)));
 page.on('console', (m) => { if (m.type() === 'error') errores.push('console: ' + m.text().slice(0, 120)); });
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!window.__aegisWeb?.abrirGasto, null, { timeout: 20000 });
-await page.evaluate(() => window.__aegisWeb.abrirGasto());
+await page.waitForFunction(() => !!document.querySelector('#btn-density'), null, { timeout: 20000 });
+await page.evaluate(() => document.querySelector('#btn-density')?.click());
 await page.waitForTimeout(2800);
 
 const estado = () => page.evaluate(() => {
@@ -48,6 +48,13 @@ const estado = () => page.evaluate(() => {
 const a = await estado();
 console.log('panel:', JSON.stringify({ cifra: a.cifra, proy: a.proyeccion, sub: a.sub, pie: a.pie, secciones: a.secciones, dentro: a.dentro, conScroll: a.conScroll }));
 
+check('el panel se abre desde el botón de las barras del topbar',
+  (await page.evaluate(() => document.querySelector('#btn-density')?.getAttribute('aria-label'))) === 'Gasto y uso',
+  await page.evaluate(() => document.querySelector('#btn-density')?.getAttribute('aria-label')));
+check('la densidad del texto se mudó al pie del panel',
+  (await page.evaluate(() => document.querySelectorAll('#usage-panel .gs-dens-b').length)) === 3,
+  await page.evaluate(() => [...document.querySelectorAll('#usage-panel .gs-dens-b')].map((e) => e.textContent).join('/')));
+check('el panel muestra la ventana del modelo', a.secciones.includes('Ventana del modelo'), a.secciones.join(' | '));
 check('abre con las ocho secciones del panel', a.secciones.includes('Gasto del período') && a.secciones.includes('Gasto por día')
   && a.secciones.includes('Por modelo') && a.secciones.includes('Qué se paga') && a.secciones.includes('Este chat'),
   a.secciones.join(' | '));
@@ -62,6 +69,30 @@ check('la composición de tokens separa cache de fresca', a.filas.some((f) => /c
 check('lista los chats más caros con su costo', a.filas.concat([a.secciones.join()]).length > 0 && /Chats más caros/.test(a.secciones.join()), 'ok');
 check('el panel entero entra en pantalla con el contenido cargado', a.dentro, `alto ${a.alto} · scroll ${a.conScroll}`);
 
+// ---------- la ventana del modelo con datos reales de un turno ----------
+// Se inyecta el estado que manda message_usage (last + umbral) y se comprueba la cuenta: la
+// ventana es la última llamada, el techo se deriva del porcentaje de compactación, y el margen es
+// lo que queda. Sin esto, la sección solo se veía vacía porque el panel se abre sin turno.
+const ventana = await page.evaluate(() => {
+  const W = window.__aegisWeb;
+  const u = W.state.usage || (W.state.usage = {});
+  u.last = { inputTokens: 380000, outputTokens: 62000, cost: 1.42, elapsedMs: 41000 };
+  u.autoCompactAt = 839000;
+  u.autoCompactPct = 0.839;
+  W.refrescarGasto?.();
+  return new Promise((r) => setTimeout(() => {
+    const sec = [...document.querySelectorAll('#usage-panel .gs-sec')].find((e) => /Ventana/.test(e.textContent));
+    const caja = sec?.nextElementSibling;
+    r({ texto: caja ? caja.textContent.replace(/\s+/g, ' ').trim() : '', nota: !caja });
+  }, 500));
+});
+console.log('ventana:', JSON.stringify(ventana));
+check('la ventana del modelo sale de la última llamada, no del total de la sesión',
+  /442 k/.test(ventana.texto) && /de 1 M(?!,)/.test(ventana.texto) && /quedan/.test(ventana.texto),
+  ventana.texto);
+check('la ventana distingue el umbral de compactación del techo del modelo',
+  /compacta en 839 k/.test(ventana.texto), ventana.texto);
+
 // ---------- cambio de período: los datos tienen que cambiar de verdad ----------
 await page.evaluate(() => document.querySelector('#usage-panel .gs-tab[data-dias="30"]')?.click());
 await page.waitForTimeout(1600);
@@ -73,8 +104,8 @@ check('cambiar a 30 días cambia la cifra y el subtítulo',
 
 // El período elegido se recuerda.
 await page.reload({ waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!window.__aegisWeb?.abrirGasto, null, { timeout: 20000 });
-await page.evaluate(() => window.__aegisWeb.abrirGasto());
+await page.waitForFunction(() => !!document.querySelector('#btn-density'), null, { timeout: 20000 });
+await page.evaluate(() => document.querySelector('#btn-density')?.click());
 await page.waitForTimeout(2200);
 const c = await estado();
 check('el período elegido se recuerda al recargar', c.tabs.find((t) => t.on)?.t === '30 días', c.tabs.map((t) => (t.on ? '*' : '') + t.t).join(' '));
@@ -85,8 +116,8 @@ await page.waitForTimeout(900);
 const m = await (await b.newContext({ viewport: { width: 384, height: 832 }, deviceScaleFactor: 2.8125, isMobile: true, hasTouch: true,
   userAgent: 'Mozilla/5.0 (Linux; Android 15; SM-A566B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36' })).newPage();
 await m.goto(BASE, { waitUntil: 'domcontentloaded' });
-await m.waitForFunction(() => !!window.__aegisWeb?.abrirGasto, null, { timeout: 20000 });
-await m.evaluate(() => window.__aegisWeb.abrirGasto());
+await m.waitForFunction(() => !!document.querySelector('#btn-density'), null, { timeout: 20000 });
+await m.evaluate(() => document.querySelector('#btn-density')?.click());
 await m.waitForTimeout(2600);
 const mm = await m.evaluate(() => {
   const panel = document.querySelector('#usage-panel .panel');

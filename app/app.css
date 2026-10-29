@@ -4373,6 +4373,10 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .gs-r > b { flex: none; font-weight: 500; color: var(--text); }
 .gs-r > b.ok { color: var(--ok); }
 
+/* barra sola de la ventana del modelo */
+.gs-gauge-bar { display: block; height: 4px; margin: 0 0 4px; border-radius: 2px; background: rgba(245, 244, 239, 0.09); overflow: hidden; }
+.gs-gauge-bar em { display: block; height: 100%; border-radius: 2px; }
+
 /* ---------- barras por día ---------- */
 .gs-bars { display: grid; gap: 4px; }
 .gs-bar {
@@ -4429,3 +4433,10 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   .gs-r > span { font-size: 12px; }
   .gs-bar { font-size: 11.5px; }
 }
+
+/* densidad del texto en el pie del panel de gasto (se movio del topbar) */
+.gs-dens { display: flex; gap: 4px; }
+.gs-dens-b { min-height: 24px; padding: 0 8px; font-size: 11px; background: transparent; border: 1px solid transparent; }
+.gs-dens-b:hover { background: rgba(245, 244, 239, 0.07); }
+.gs-dens-b.is-on { background: rgba(245, 244, 239, 0.1); color: var(--text); border-color: var(--border-soft); }
+@media (max-width: 560px) { .gs-dens-b { min-height: 38px; font-size: 12px; padding: 0 10px; } }

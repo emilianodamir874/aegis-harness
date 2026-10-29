@@ -2309,10 +2309,20 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       sub: (gastoDias === 0 ? 'todo el historial' : gastoDias === 1 ? 'hoy' : 'últimos ' + gastoDias + ' días')
         + (mp.model ? ' · ' + mp.model : ''),
       body: cuerpoUso(),
-      footer: '<span class="panel-hint gs-foot-note"></span>',
+      footer: '<span class="gs-dens" role="group" aria-label="Densidad del texto">'
+        + (['comoda', 'compacta', 'lectura'] as const).map((d) =>
+            '<button type="button" class="panel-btn gs-dens-b' + (density === d ? ' is-on' : '') + '" data-dens="' + d + '">'
+            + DENS_LABEL[d] + '</button>').join('')
+        + '</span><span class="panel-hint gs-foot-note"></span>',
       onClose: () => { usagePanel = null; },
     });
     // Cambio de periodo: delegado en el cuerpo, que se repinta entero en cada refresco.
+    usagePanel.foot.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement | null)?.closest('.gs-dens-b') as HTMLElement | null;
+      if (!b || !b.dataset.dens) return;
+      setDensity(b.dataset.dens as any);
+      usagePanel.foot.querySelectorAll('.gs-dens-b').forEach((x) => x.classList.toggle('is-on', (x as HTMLElement).dataset.dens === b.dataset.dens));
+    });
     usagePanel.body.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement | null)?.closest('.gs-tab') as HTMLElement | null;
       if (!b) return;
@@ -6223,10 +6233,27 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     return setDensity(DENSITIES[(i + 1) % DENSITIES.length], true);
   }
 
+  // El boton de las barras del topbar pasa a abrir Gasto y uso. La densidad del texto se movio al
+  // pie de ese panel (tres botones), asi que este cableado ya no engancha el menu flotante.
+  function wireGastoEnBarras() {
+    const btn = $('#btn-density') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.setAttribute('aria-label', 'Gasto y uso');
+    btn.title = 'Gasto y uso: gasto del periodo, por modelo y ventana del modelo';
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-controls', 'usage-panel');
+    btn.removeAttribute('aria-expanded');
+    btn.addEventListener('click', () => {
+      if (panelAbierto()) { cerrarPanel(); return; }
+      openUsagePop();
+    });
+  }
+
   function wireDensityMenu() {
     const trigger = $('#btn-density') as HTMLButtonElement | null;
     const menu = $('#density-pop') as HTMLElement | null;
     if (!trigger || !menu) return;
+    return; // el menu flotante quedo sin disparador: la densidad vive en el pie del panel de gasto
     const choices = [...menu.querySelectorAll<HTMLButtonElement>('[data-density]')];
     const close = (returnFocus = false) => {
       if (menu.hidden) return;
@@ -6465,7 +6492,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const cb = $('#btn-contrast');
     if (cb) cb.addEventListener('click', () => cycleContrast());
     setDensity(density);
-    wireDensityMenu();
+    wireGastoEnBarras();
     wireMobileTopbar();
     const pb = $('#btn-present');
     if (pb) pb.addEventListener('click', () => setPresentation(!presentationOn()));
@@ -7224,7 +7251,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, abrirGasto: () => openUsagePop(), olvidarTurno: () => resetTransient(), thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
+  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, abrirGasto: () => openUsagePop(), refrescarGasto: () => pedirRefrescoUso(), olvidarTurno: () => resetTransient(), thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
     // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
     view: {
       density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),
