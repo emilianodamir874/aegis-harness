@@ -6198,4 +6198,51 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn canonical_working_dir_resolves_segments_of_an_already_prefixed_path() {
+        // Orden de las dos operaciones: canonicalizar y despues pelar el prefijo. La entrada
+        // viene en la forma que devuelve `canonicalize` (verbatim en Windows) y ademas lleva
+        // `..`, asi que si el prefijo se pelara primero quedaria un `..` sin resolver.
+        let temp_dir = TempDir::new().unwrap();
+        let project = temp_dir.path().join("project");
+        fs::create_dir_all(&project).unwrap();
+
+        let prefixed = project.canonicalize().unwrap();
+        let expected = canonical_working_dir(project);
+
+        assert_eq!(
+            canonical_working_dir(prefixed.join("..").join("project")),
+            expected,
+            "los `..` se resuelven aunque la entrada ya venga prefijada"
+        );
+        assert!(
+            !expected.to_string_lossy().starts_with(r"\\?\"),
+            "sin prefijo verbatim: {}",
+            expected.display()
+        );
+    }
+
+    #[test]
+    fn canonical_working_dir_keeps_a_verbatim_marker_that_is_not_at_the_start() {
+        // `strip_prefix` solo mira el comienzo: una ruta comun que contiene `??\` en el medio no se
+        // toca, asi que el marcador no se puede confundir con un prefijo verbatim.
+        let path = PathBuf::from(r"C:\aegis-canonical-test-does-not-exist\??\proj");
+        assert_eq!(
+            canonical_working_dir(path.clone()),
+            path,
+            "el marcador verbatim fuera del comienzo no se pela"
+        );
+    }
+
+    #[test]
+    fn canonical_working_dir_strips_the_prefix_of_a_drive_root() {
+        // `\\?\C:\` tiene resto `C:\`: tres bytes, letra y `:`, asi que el prefijo se pela igual que
+        // en una ruta con subdirectorios. Ruta inexistente a proposito para que canonicalize falle.
+        assert_eq!(
+            canonical_working_dir(PathBuf::from(r"\\?\C:\")),
+            PathBuf::from(r"C:\"),
+            "la raiz de una unidad tambien pierde el prefijo verbatim"
+        );
+    }
 }
