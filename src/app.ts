@@ -2196,7 +2196,7 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
   // Panel de contexto y gasto. Gramatica de Claude Code (/cost, /status): una cifra grande por
   // bloque, filas etiqueta/valor en monoespaciada alineadas a la derecha, secciones con regla
   // fina y sin cajas anidadas.
-  function openUsagePop() {
+  function cuerpoUso() {
     const u = state.usage || {};
     const mp: any = modelParts() || {};
     const pct = u.limit && u.used != null ? Math.min(100, (u.used / u.limit) * 100) : null;
@@ -2279,13 +2279,33 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
         + fila('salida', tok(u.compactionOutputTokens));
     }
 
+    return { cuerpo: cuerpo + (extra ? '<div class="cc-cols">' + extra + '</div>' : ''), pct: pct as number | null, mp };
+  }
+
+  // Un solo repintado por frame aunque lleguen diez usage_update seguidos: rearmar el HTML en
+  // cada evento es lo que hacia que el panel se sintiera pesado durante un turno.
+  let refrescoUso = 0;
+  function pintarUso() {
+    if (!usagePanel) return;
+    const d = cuerpoUso();
+    usagePanel.body.innerHTML = d.cuerpo;
+    const bar = usagePanel.body.querySelector('.cc-bar i') as HTMLElement | null;
+    if (bar) bar.style.width = (d.pct == null ? 0 : d.pct) + '%';
+  }
+  function pedirRefrescoUso() {
+    if (!usagePanel || refrescoUso) return;
+    refrescoUso = requestAnimationFrame(() => { refrescoUso = 0; pintarUso(); });
+  }
+
+  function openUsagePop() {
+    const d = cuerpoUso();
     usagePanel = abrirPanel({
       id: 'usage-panel',
       anchor: ($('#meta-right') as HTMLElement) || document.body,
       anchorSel: '#meta-right',
       title: 'Contexto y gasto',
-      sub: (mp.model || 'modelo ?') + (mp.effort ? ' · ' + mp.effort : ''),
-      body: cuerpo + (extra ? '<div class="cc-cols">' + extra + '</div>' : ''),
+      sub: (d.mp.model || 'modelo ?') + (d.mp.effort ? ' · ' + d.mp.effort : ''),
+      body: d.cuerpo,
       footer: '<button type="button" class="panel-btn" id="up-desglose">Ver qué ocupa el contexto</button>'
         + '<span class="panel-hint">Esc cierra</span>',
       onClose: () => { usagePanel = null; },
@@ -2297,10 +2317,10 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
       const chip = document.getElementById('ctx-chip') || document.querySelector('.ctx-chip');
       if (chip instanceof HTMLElement) chip.click();
     });
-    requestAnimationFrame(() => {
-      const bar = usagePanel && (usagePanel.body.querySelector('.cc-bar i') as HTMLElement);
-      if (bar) bar.style.width = (pct == null ? 0 : pct) + '%';
-    });
+    // La barra se pinta con su valor ya puesto (sin animar desde 0: eso se leia como que el
+    // panel tardaba en cargar).
+    const bar = usagePanel.body.querySelector('.cc-bar i') as HTMLElement | null;
+    if (bar) bar.style.width = (d.pct == null ? 0 : d.pct) + '%';
   }
 
   function renderUsage() {
@@ -2353,6 +2373,7 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     // estado de la sesion). Se guarda tal cual: el popover la muestra cuando se abre.
     if (Array.isArray(u.compactionLog)) s.compactionLog = u.compactionLog;
     renderUsage();
+    pedirRefrescoUso();
   }
   // message_usage (aegis-sdk-types): uso POR PASO, con cache y tiempos. El cliente lo ignoraba.
   function setMsgUsage(update) {
@@ -2365,6 +2386,7 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
         (!state.busy && !state.speed.note || (update?.messageId && state.speed.messages.has(update.messageId)))) s.last = u;
     speedExact(update);
     renderUsage();
+    pedirRefrescoUso();
   }
 
   // ---------- velocimetro de tokens/segundo ----------

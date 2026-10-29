@@ -162,20 +162,25 @@ export function abrirPanel(opts: PanelOpts): PanelApi {
     if ((a && a.contains(t)) || (sel && sel.contains(t))) return;
     cerrar();
   };
-  // Cerrar por scroll solo si la pagina se movio de verdad: un reflow (el panel crece al cambiar
-  // el tamano de letra de la muestra) dispara scroll con delta 0 y cerraba el panel solo.
-  const scroll0 = window.scrollY;
+  // Cerrar por scroll SOLO si se movio el contenedor que hospeda al disparador.
+  // Antes se cerraba con cualquier scroll de la pagina: arrastrar el panel (que tiene scroll
+  // propio) o mover el sidebar lo cerraba a mitad de lectura, y se sentia como que el panel se
+  // cae solo. Tampoco se lee window.scrollY en cada evento: es layout sincronico.
+  const host = v.anchor.parentElement;
+  const enPanel = (t: EventTarget | null) => t instanceof Element && !!t.closest('.panel-root');
   v.onScroll = (e: Event) => {
     if (hoja) return;
     const t = e.target;
-    if (t instanceof Element && (t.closest('.panel') || t === document.documentElement || t === document.body)) {
-      if (Math.abs(window.scrollY - scroll0) < 24) return;
-    }
-    if (Math.abs(window.scrollY - scroll0) < 24 && t === document) return;
-    cerrar();
+    if (enPanel(t)) return;                       // scroll interno del panel: nunca cierra
+    if (t instanceof Element && t !== document.documentElement && t !== document.body) return;
+    cerrar();                                     // se movio la pagina de fondo
   };
   v.onResize = () => cerrar();
 
+  // El popover se ancla al disparador por coordenadas: si la pagina scrollea, se va con ella.
+  // Con el host capturado se puede seguir; si no se puede, se cierra (que era el comportamiento
+  // sano) pero solo por scroll REAL de la pagina, no por un reflow.
+  void host;
   document.addEventListener('pointerdown', v.onDoc, true);
   window.addEventListener('scroll', v.onScroll, true);
   window.addEventListener('resize', v.onResize);
