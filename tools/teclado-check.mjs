@@ -44,6 +44,18 @@ await page.waitForTimeout(500);
 const antes = await fondo();
 check('el transcript arranca pegado al fondo', antes.px <= 8, JSON.stringify(antes));
 
+// El campo tiene que medir 16 px o mas en TODAS las densidades: por debajo, Chrome Android hace
+// zoom al enfocar y con eso la pagina se agranda y la UI deja de acomodarse.
+for (const dens of ['comoda', 'compacta', 'lectura']) {
+  const m = await page.evaluate((d) => {
+    document.documentElement.dataset.density = d;
+    const i = document.getElementById('input');
+    return { fs: parseFloat(getComputedStyle(i).fontSize), d };
+  }, dens);
+  check(`el campo mide 16 px o mas con densidad ${dens} (sin zoom automático)`, m.fs >= 16, `${m.fs} px`);
+}
+await page.evaluate(() => { document.documentElement.dataset.density = 'comoda'; });
+
 // teclado abierto
 await page.setViewportSize({ width: 384, height: 470 });
 await page.waitForTimeout(900);

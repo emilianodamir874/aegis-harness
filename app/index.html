@@ -2,7 +2,10 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- interactive-widget=resizes-content: con el teclado abierto, Chrome achica el viewport de
+     LAYOUT. Sin esto el teclado se dibuja ENCIMA de la pagina y el composer queda tapado: la UI no
+     se reacomoda al espacio que queda arriba. Es lo que hace que "no se desplace". -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#1e1d1b">
   <meta name="color-scheme" content="dark">
   <meta name="mobile-web-app-capable" content="yes">
