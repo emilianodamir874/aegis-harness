@@ -54,11 +54,14 @@ fn main() {
     };
 
     report("build_system_prompt", iterations, || {
-        let prompt = PromptManager::new().build_system_prompt(&session, Vec::new(), AegisMode::Auto);
+        let prompt =
+            PromptManager::new().build_system_prompt(&session, Vec::new(), AegisMode::Auto);
         prompt.len()
     });
 
-    report("build_gitignore", iterations, || build_gitignore(&root).num_whitelists() as usize);
+    report("build_gitignore", iterations, || {
+        build_gitignore(&root).num_whitelists() as usize
+    });
 
     report("load_hint_files", iterations, || {
         load_hint_files(&root, &hints_filenames, &gitignore).len()
@@ -87,27 +90,33 @@ fn main() {
 
     let long_args: Vec<Option<serde_json::Map<String, serde_json::Value>>> = (0..200)
         .map(|index| {
-            let path = format!("{}/src/crates/aegis/src/module_{index}/file.rs", nested.display());
+            let path = format!(
+                "{}/src/crates/aegis/src/module_{index}/file.rs",
+                nested.display()
+            );
             let mut map = serde_json::Map::new();
             map.insert("path".to_string(), serde_json::Value::String(path));
             Some(map)
         })
         .collect();
 
-    report("subdir_hint_tracker(200 calls)", iterations.max(10) / 5, || {
-        let mut tracker = SubdirectoryHintTracker::new();
-        for arguments in &long_args {
-            tracker.record_tool_arguments(arguments, &root);
-        }
-        tracker.load_new_hints(&root).len()
-    });
+    report(
+        "subdir_hint_tracker(200 calls)",
+        iterations.max(10) / 5,
+        || {
+            let mut tracker = SubdirectoryHintTracker::new();
+            for arguments in &long_args {
+                tracker.record_tool_arguments(arguments, &root);
+            }
+            tracker.load_new_hints(&root).len()
+        },
+    );
 
     let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
     let conversation = synthetic_conversation(200);
 
     report("count_context_tokens(cold)", iterations.max(10) / 2, || {
-        runtime
-            .block_on(async { count_context_tokens(&conversation).await.unwrap_or(0) as usize })
+        runtime.block_on(async { count_context_tokens(&conversation).await.unwrap_or(0) as usize })
     });
 
     // Segunda pasada sobre el mismo historial: el cache del contador compartido ya tiene los
@@ -115,8 +124,7 @@ fn main() {
     let warmed = runtime.block_on(async { count_context_tokens(&conversation).await.unwrap_or(0) });
     let _ = warmed;
     report("count_context_tokens(warm)", iterations, || {
-        runtime
-            .block_on(async { count_context_tokens(&conversation).await.unwrap_or(0) as usize })
+        runtime.block_on(async { count_context_tokens(&conversation).await.unwrap_or(0) as usize })
     });
 
     let skill_iterations = iterations.max(10) / 5;

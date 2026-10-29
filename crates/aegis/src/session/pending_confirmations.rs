@@ -94,11 +94,9 @@ mod tests {
 
     fn mensaje(data: ActionRequiredData) -> Message {
         let mut message = Message::assistant();
-        message
-            .content
-            .push(MessageContent::ActionRequired(
-                crate::conversation::message::ActionRequired { data },
-            ));
+        message.content.push(MessageContent::ActionRequired(
+            crate::conversation::message::ActionRequired { data },
+        ));
         message
     }
 

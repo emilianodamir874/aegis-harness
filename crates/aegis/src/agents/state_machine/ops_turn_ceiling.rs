@@ -131,7 +131,10 @@ impl Operation<Session, AegisEffect> for TurnCeilingOperation {
 
         if self.tool_call_limit > 0 && used >= self.tool_call_limit {
             let message = ceiling_message(
-                &format!("tool-call ceiling ({used} calls, limit {})", self.tool_call_limit),
+                &format!(
+                    "tool-call ceiling ({used} calls, limit {})",
+                    self.tool_call_limit
+                ),
                 "",
             );
             let message = emit.message(message);
@@ -176,9 +179,15 @@ mod tests {
         Conversation::new_unvalidated(messages)
     }
 
-    fn emitter() -> (Emitter, tokio::sync::mpsc::UnboundedReceiver<crate::agents::AgentEvent>) {
+    fn emitter() -> (
+        Emitter,
+        tokio::sync::mpsc::UnboundedReceiver<crate::agents::AgentEvent>,
+    ) {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        (Emitter::new(tx, tokio_util::sync::CancellationToken::new()), rx)
+        (
+            Emitter::new(tx, tokio_util::sync::CancellationToken::new()),
+            rx,
+        )
     }
 
     fn set_kickoff_age(conversation: &mut Conversation, seconds: i64) {
@@ -198,9 +207,9 @@ mod tests {
                 .effects
                 .into_iter()
                 .filter_map(|effect| match effect {
-                    AegisEffect::Conversation(crate::agents::state_machine::ConversationEffect::AppendMessage(message)) => {
-                        Some(message.as_concat_text())
-                    }
+                    AegisEffect::Conversation(
+                        crate::agents::state_machine::ConversationEffect::AppendMessage(message),
+                    ) => Some(message.as_concat_text()),
                     _ => None,
                 })
                 .collect(),
@@ -212,9 +221,7 @@ mod tests {
     async fn a_turn_below_the_ceiling_is_left_alone() -> Result<()> {
         let operation = TurnCeilingOperation::new(3, 0);
         let (emit, _rx) = emitter();
-        let result = operation
-            .run(&Session::default(), &turn(2), &emit)
-            .await?;
+        let result = operation.run(&Session::default(), &turn(2), &emit).await?;
         assert!(!yielded(&result), "two calls against a ceiling of three");
         Ok(())
     }
@@ -223,12 +230,13 @@ mod tests {
     async fn the_ceiling_closes_the_turn_and_says_what_was_reached() -> Result<()> {
         let operation = TurnCeilingOperation::new(3, 0);
         let (emit, _rx) = emitter();
-        let result = operation
-            .run(&Session::default(), &turn(3), &emit)
-            .await?;
+        let result = operation.run(&Session::default(), &turn(3), &emit).await?;
         assert!(yielded(&result));
         let text = text_of(result);
-        assert!(text.contains("tool-call ceiling (3 calls, limit 3)"), "{text}");
+        assert!(
+            text.contains("tool-call ceiling (3 calls, limit 3)"),
+            "{text}"
+        );
         Ok(())
     }
 
@@ -238,7 +246,10 @@ mod tests {
         let session = Session::default();
         assert!(operation.moim_parts(&session, &turn(1)).await?.is_empty());
         let warning = operation.moim_parts(&session, &turn(2)).await?;
-        assert_eq!(warning, vec!["<turn-ceiling>2/4 tool calls used</turn-ceiling>"]);
+        assert_eq!(
+            warning,
+            vec!["<turn-ceiling>2/4 tool calls used</turn-ceiling>"]
+        );
         Ok(())
     }
 
@@ -249,7 +260,9 @@ mod tests {
         let mut conversation = turn(2);
         set_kickoff_age(&mut conversation, 120);
 
-        let result = operation.run(&Session::default(), &conversation, &emit).await?;
+        let result = operation
+            .run(&Session::default(), &conversation, &emit)
+            .await?;
         assert!(yielded(&result));
         let text = text_of(result);
         assert!(text.contains("time budget"), "{text}");
@@ -262,9 +275,14 @@ mod tests {
         let (emit, _rx) = emitter();
         let mut conversation = turn(500);
         set_kickoff_age(&mut conversation, 86_400);
-        let result = operation.run(&Session::default(), &conversation, &emit).await?;
+        let result = operation
+            .run(&Session::default(), &conversation, &emit)
+            .await?;
         assert!(!yielded(&result));
-        assert!(operation.moim_parts(&Session::default(), &conversation).await?.is_empty());
+        assert!(operation
+            .moim_parts(&Session::default(), &conversation)
+            .await?
+            .is_empty());
         Ok(())
     }
 }

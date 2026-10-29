@@ -110,7 +110,10 @@ fn store_discovery(key: DiscoveryKey, stamps: Vec<PathStamp>, sources: Vec<Sourc
     // `SKILL.md` y el padre, que es lo que cambia cuando una skill aparece o desaparece.
     let mut stamps = stamps;
     let mut sellados: HashSet<PathBuf> = stamps.iter().map(|sello| sello.path.clone()).collect();
-    for entry in sources.iter().filter(|entry| matches!(entry.source_type, SourceType::Skill)) {
+    for entry in sources
+        .iter()
+        .filter(|entry| matches!(entry.source_type, SourceType::Skill))
+    {
         let path = Path::new(&entry.path);
         for candidato in [path.to_path_buf(), path.join("SKILL.md")] {
             if sellados.insert(candidato.clone()) {

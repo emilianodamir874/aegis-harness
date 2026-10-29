@@ -228,10 +228,8 @@ pub async fn run_turn(
     // La extraccion corre fuera del turno, con otro provider y otro modelo, asi que no pasa por
     // el camino que anota el ledger: sin esto el trabajo barato no aparece en el costo. Se anota
     // con el proveedor que realmente respondio, no con el de la sesion.
-    let (cost, cost_source) = crate::providers::canonical_cost::resolve_usage_cost(
-        Some(provider.get_name()),
-        &usage,
-    );
+    let (cost, cost_source) =
+        crate::providers::canonical_cost::resolve_usage_cost(Some(provider.get_name()), &usage);
     let mut billed = usage.clone();
     billed.cost = cost;
     billed.cost_source = cost_source;
@@ -314,16 +312,15 @@ async fn pick_extractor(
         }
     }
     let model_config = match model_override() {
-        Some(model) => match crate::model_config::model_config_from_user_config(
-            provider.get_name(),
-            &model,
-        ) {
-            Ok(config) => config,
-            Err(error) => {
-                tracing::debug!("memoria: modelo de extraccion '{model}' invalido: {error}");
-                model_config
+        Some(model) => {
+            match crate::model_config::model_config_from_user_config(provider.get_name(), &model) {
+                Ok(config) => config,
+                Err(error) => {
+                    tracing::debug!("memoria: modelo de extraccion '{model}' invalido: {error}");
+                    model_config
+                }
             }
-        },
+        }
         None => model_config,
     };
     (provider, model_config)
@@ -378,7 +375,8 @@ mod tests {
             .get_param::<String>("AEGIS_MEMORY_EXTRACT_PROVIDER")
             .ok();
         let model = model_override();
-        let Some((name, model)) = extractor_choice(provider_name.as_deref(), model.as_deref()) else {
+        let Some((name, model)) = extractor_choice(provider_name.as_deref(), model.as_deref())
+        else {
             eprintln!("VERIFICA: sin knobs configurados, no hay extractor propio");
             return;
         };
@@ -401,7 +399,8 @@ mod tests {
             .get_param::<String>("AEGIS_MEMORY_EXTRACT_PROVIDER")
             .ok();
         let model = model_override();
-        let Some((name, model)) = extractor_choice(provider_name.as_deref(), model.as_deref()) else {
+        let Some((name, model)) = extractor_choice(provider_name.as_deref(), model.as_deref())
+        else {
             eprintln!("VERIFICA: sin knobs configurados");
             return;
         };
@@ -431,8 +430,17 @@ mod tests {
                  El proveedor de la sesion sigue en open_design, asi que el turno no cambia de modelo.",
             ),
         );
-        match run_turn(provider.as_ref(), &model_config, "probe-extractor", &conversation).await {
-            Ok(tocados) => eprintln!("VERIFICA: run_turn ok con '{name}/{model}', hechos tocados={tocados}"),
+        match run_turn(
+            provider.as_ref(),
+            &model_config,
+            "probe-extractor",
+            &conversation,
+        )
+        .await
+        {
+            Ok(tocados) => {
+                eprintln!("VERIFICA: run_turn ok con '{name}/{model}', hechos tocados={tocados}")
+            }
             Err(error) => eprintln!("VERIFICA: run_turn FALLO con '{name}/{model}': {error}"),
         }
     }

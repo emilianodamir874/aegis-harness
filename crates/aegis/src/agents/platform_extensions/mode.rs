@@ -139,8 +139,9 @@ impl ModeClient {
     }
 
     fn apply(session_id: &str, mode: SessionMode) -> Result<(), String> {
-        let manager = Self::manager()
-            .ok_or_else(|| "el manager de permisos no esta disponible en esta sesion".to_string())?;
+        let manager = Self::manager().ok_or_else(|| {
+            "el manager de permisos no esta disponible en esta sesion".to_string()
+        })?;
         Self::apply_with(&manager, session_id, mode)
     }
 
@@ -191,7 +192,10 @@ impl ModeClient {
 
     fn resolve(&self, session_id: &str, params: RequestModeParams) -> String {
         let Some(pedido) = SessionMode::parse(&params.mode) else {
-            return format!("Modo desconocido: {}. Usá plan, revisar o ejecutar.", params.mode);
+            return format!(
+                "Modo desconocido: {}. Usá plan, revisar o ejecutar.",
+                params.mode
+            );
         };
         let actual = Self::current(session_id);
         if pedido == actual {
@@ -295,7 +299,10 @@ mod tests {
             manager.session_permission_for_tool("s", "developer__write"),
             None
         );
-        assert_eq!(ModeClient::current_with(&manager, "s"), SessionMode::Ejecutar);
+        assert_eq!(
+            ModeClient::current_with(&manager, "s"),
+            SessionMode::Ejecutar
+        );
     }
 
     #[test]

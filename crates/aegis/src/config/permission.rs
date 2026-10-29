@@ -1,4 +1,4 @@
-﻿use crate::config::paths::Paths;
+use crate::config::paths::Paths;
 use fs2::FileExt;
 use rmcp::model::Tool;
 use serde::{Deserialize, Serialize};
@@ -218,8 +218,7 @@ impl PermissionManager {
         });
     }
 
-
-/// Permiso explicito para una sesion puntual. Gana sobre el mapa persistido y sobre el modo:
+    /// Permiso explicito para una sesion puntual. Gana sobre el mapa persistido y sobre el modo:
     /// es lo que permite que debatir bloquee shell/edit/write sin tocar permission.yaml ni
     /// afectar a las demas sesiones, al CLI ni a los jobs programados.
     pub fn session_permission(&self, session_id: &str, tool_name: &str) -> Option<PermissionLevel> {
