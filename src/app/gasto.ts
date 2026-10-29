@@ -46,6 +46,8 @@ export type CtxUso = {
   used?: number | null; limit?: number | null; cost?: number | null;
   inTok?: number | null; outTok?: number | null;
   autoCompactAt?: number | null; autoCompactPct?: number | null;
+  /** Desglose de que compone el contexto, del server (`contextBreakdown`). */
+  contextBreakdown?: Array<{ label?: string; kind?: string; tokens?: number; count?: number }>;
   last?: any; compactionLog?: any[]; modelUsage?: any[]; compactionCalls?: number | null;
 };
 
@@ -139,6 +141,30 @@ function ventanaModelo(ctx: CtxUso): string {
     +     '<span>' + (umbral ? 'compacta en ' + tok(umbral) : 'sin umbral informado') + '</span></div>'
     + '</div>'
     + '<i class="gs-gauge-bar"><em style="width:' + (p || 0) + '%;background:' + col + '"></em></i>';
+}
+
+/**
+ * Qué ocupa el contexto. Viene del `contextBreakdown` del motor: resultados de herramientas,
+ * prompt de sistema, llamadas, pedidos del operador, turn context. Antes vivía en un panel
+ * flotante aparte (context-meter.ts) que se abría desde la barrita del composer; ahora es una
+ * sección de este panel, que es el único lugar donde se mira el contexto.
+ */
+function desglose(ctx: CtxUso): string {
+  const filas = (ctx.contextBreakdown || [])
+    .map((r) => ({ label: String(r.label || r.kind || '—'), tokens: Number(r.tokens || 0) }))
+    .filter((r) => r.tokens > 0);
+  if (!filas.length) return '';
+  // "oculto por compactación" ya no viaja al modelo: se muestra, pero aparte y después.
+  const aparte = (l: string) => /oculto/i.test(l);
+  filas.sort((a, b) => (Number(aparte(a.label)) - Number(aparte(b.label))) || (b.tokens - a.tokens));
+  const mayor = Math.max(...filas.filter((f) => !aparte(f.label)).map((f) => f.tokens), 1);
+  const total = filas.filter((f) => !aparte(f.label)).reduce((n, f) => n + f.tokens, 0);
+  return sec('Qué ocupa el contexto', tok(total))
+    + barras(filas.map((f) => ({
+      etiqueta: f.label,
+      valor: f.tokens,
+      texto: tok(f.tokens) + (aparte(f.label) ? ' · fuera del envío' : ''),
+    })), mayor, 'gs-bars-ctx');
 }
 
 /** Bloque de esta sesión: es lo único que no viene de /stats.json. */
@@ -286,6 +312,7 @@ export function cuerpoGasto(o: { dias: number; stats: Stats | null; cargando: bo
   }
   // Este chat va al final: es el dato mas chico y el que cambia solo mientras hay un turno.
   out += ventanaModelo(o.ctx);
+  out += desglose(o.ctx);
   out += sesionActual(o.ctx);
   return out;
 }

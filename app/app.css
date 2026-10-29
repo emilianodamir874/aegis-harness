@@ -4373,6 +4373,12 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .gs-r > b { flex: none; font-weight: 500; color: var(--text); }
 .gs-r > b.ok { color: var(--ok); }
 
+/* desglose de que compone el contexto: las etiquetas son frases, no fechas */
+.gs-bars-ctx .gs-bar { grid-template-columns: 108px 1fr auto; row-gap: 3px; }
+.gs-bars-ctx .gs-bar-k { font-size: 10px; line-height: 1.25; white-space: normal; }
+.gs-bars-ctx .gs-bar-n { grid-column: 1 / span 3; }
+@media (max-width: 560px) { .gs-bars-ctx .gs-bar { grid-template-columns: 116px 1fr auto; } }
+
 /* barra sola de la ventana del modelo */
 .gs-gauge-bar { display: block; height: 4px; margin: 0 0 4px; border-radius: 2px; background: rgba(245, 244, 239, 0.09); overflow: hidden; }
 .gs-gauge-bar em { display: block; height: 100%; border-radius: 2px; }

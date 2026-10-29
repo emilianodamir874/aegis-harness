@@ -209,7 +209,9 @@ function buildMeter(): Meter {
   cost.className = 'ctx-cost';
 
   root.append(track, label, cost);
-  root.addEventListener('click', () => toggleMap(root));
+  // El medidor es un INDICADOR: ya no abre un mapa flotante propio. El desglose de que compone el
+  // contexto vive en el panel de Gasto y uso, que es el unico panel de contexto y costo.
+  root.setAttribute('role', 'presentation');
   return { root, fill, label, cost, mark };
 }
 
@@ -282,6 +284,7 @@ function closeMap(): void {
   }
 }
 
+// @ts-expect-error sin llamadas desde que el medidor no abre mapa; se conserva por el palette
 function toggleMap(anchor: HTMLElement): void {
   if (map) {
     closeMap();

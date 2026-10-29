@@ -129,6 +129,36 @@ check('la ventana del modelo sale de la última llamada, no del total de la sesi
 check('la ventana distingue el umbral de compactación del techo del modelo',
   /compacta en 839 k/.test(ventana.texto), ventana.texto);
 
+// ---------- el desglose de que compone el contexto, dentro de este panel ----------
+// Antes vivía en un mapa flotante aparte que se abría desde la barrita del composer
+// (context-meter). Ese mapa ya no existe: el desglose es una sección de acá.
+const desglose = await page.evaluate(() => {
+  const W = window.__aegisWeb;
+  const u = W.state.usage || (W.state.usage = {});
+  u.contextBreakdown = [
+    { label: 'resultados de herramientas', tokens: 249000 },
+    { label: 'sistema + herramientas', tokens: 188000 },
+    { label: 'tus pedidos', tokens: 149000 },
+    { label: 'oculto por compactacion', tokens: 3200000 },
+  ];
+  W.refrescarGasto?.();
+  return new Promise((r) => setTimeout(() => {
+    const sec = [...document.querySelectorAll('#usage-panel .gs-sec')].find((e) => /ocupa el contexto/i.test(e.textContent));
+    r({
+      hay: !!sec,
+      globo: sec ? sec.textContent.replace(/\s+/g, ' ').trim() : '',
+      filas: sec && sec.nextElementSibling ? [...sec.nextElementSibling.querySelectorAll('.gs-bar')].map((e) => e.textContent.replace(/\s+/g, ' ').trim()) : [],
+      mapasViejos: document.querySelectorAll('.ctx-map').length,
+    });
+  }, 500));
+});
+console.log('desglose:', JSON.stringify(desglose));
+check('el desglose de qué compone el contexto vive en este panel',
+  desglose.hay && desglose.filas.length === 4 && /resultados de herramientas/.test(desglose.filas[0]), desglose.filas.join(' | '));
+check('"oculto por compactación" se muestra aparte, fuera del envío',
+  desglose.filas.some((f) => /fuera del envío/.test(f)), desglose.filas.filter((f) => /fuera/.test(f)).join(' | '));
+check('el mapa flotante viejo ya no existe', desglose.mapasViejos === 0, `ctx-map en el DOM: ${desglose.mapasViejos}`);
+
 // ---------- cambio de período: los datos tienen que cambiar de verdad ----------
 await page.evaluate(() => document.querySelector('#usage-panel .gs-tab[data-dias="30"]')?.click());
 await page.waitForTimeout(1600);
