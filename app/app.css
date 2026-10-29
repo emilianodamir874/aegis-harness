@@ -4479,3 +4479,39 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .tool-diff-live { flex: none; color: var(--warn, #d29922); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
 .tool-diff[data-vivo="1"] { border-color: var(--warn, #d29922); }
 .tool-diff[data-vivo="1"] .tool-diff-count { color: var(--text-2); }
+/* ---------- lectura del transcript: acciones, buscar, ir al final, variantes ---------- */
+.msg-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; opacity: 0; transition: opacity .12s; }
+.msg-a:hover .msg-acts, .msg-user:hover .msg-acts, .msg-acts:focus-within { opacity: 1; }
+@media (hover: none) { .msg-acts { opacity: 1; } }
+.msg-act { border: 1px solid var(--border-soft); background: none; color: var(--text-3); font: inherit; font-size: 11px; padding: 2px 7px; min-height: 26px; border-radius: var(--r-sm); cursor: pointer; }
+.msg-act:hover { color: var(--text-1); border-color: var(--border); }
+.msg-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (max-width: 560px) { .msg-act { min-height: 32px; padding: 4px 10px; } }
+
+/* Prompt largo: se recorta y "ver todo" lo abre. */
+.msg-largo:not(.msg-abierto) > :not(.msg-acts) { max-height: 9.5em; overflow: hidden; position: relative; }
+.msg-largo:not(.msg-abierto) > :not(.msg-acts)::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3.2em; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }
+
+/* Buscar en la conversación. */
+.buscar-barra { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--bg-raise); border-bottom: 1px solid var(--border); }
+.buscar-barra[hidden] { display: none; }
+.buscar-input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 5px 8px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text-1); }
+.buscar-input[aria-invalid="true"] { border-color: var(--danger); }
+.buscar-cuenta { font-family: var(--mono); font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.buscar-nav, .buscar-cerrar { border: 1px solid var(--border-soft); background: none; color: var(--text-2); font: inherit; min-width: 28px; min-height: 28px; border-radius: var(--r-sm); cursor: pointer; }
+.buscar-nav:hover, .buscar-cerrar:hover { color: var(--text-1); border-color: var(--border); }
+mark.buscar-hit { background: rgba(210, 170, 70, .28); color: inherit; border-radius: 2px; }
+mark.buscar-hit.buscar-actual { background: rgba(210, 170, 70, .62); outline: 1px solid rgba(210, 170, 70, .9); }
+
+/* Ir al final. */
+.ir-final { position: absolute; right: 12px; bottom: 12px; z-index: 5; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; min-height: 34px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-raise); color: var(--text-2); font: inherit; font-size: 11.5px; box-shadow: 0 2px 10px rgba(0,0,0,.35); cursor: pointer; }
+.ir-final[hidden] { display: none; }
+.ir-final:hover { color: var(--text-1); }
+.ir-final-txt { letter-spacing: .02em; }
+
+/* Conmutador de variantes (solo tras regenerar). */
+.variantes-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+.var-nav { border: 1px solid var(--border-soft); background: none; color: var(--text-2); font: inherit; min-width: 24px; min-height: 24px; border-radius: var(--r-sm); cursor: pointer; }
+.var-nav:hover { color: var(--text-1); border-color: var(--border); }
+.var-pos { font-variant-numeric: tabular-nums; }
+.var-nota { color: var(--text-4); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }

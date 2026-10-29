@@ -3,6 +3,9 @@
 import { esc, fmtTok, fmtCost, fmtSize, fmtTps, s0, stepRate, COMPACT_RATIO, compactTrig, sameDay, dayLabel, fmtTime } from './app/format';
 import { toolIconSvg, toolKindOf, uiIcon, TOOL_ICON } from './app/icons';
 import { renderInlineToolDiff } from './app/tool-diff';
+import * as historial from './app/historial';
+import * as variantes from './app/variantes';
+import * as transcriptUi from './app/transcript-ui';
 import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
 import { remoteResultsHtml, emptyRemote } from './app/search';
@@ -936,6 +939,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
         for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) marcar(n);
       }).observe(caja, { childList: true, subtree: true });
     };
+    transcriptUi.instalar();
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar, { once: true });
     else arrancar();
   })();
@@ -1307,6 +1311,9 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       const res = await rpc.request('_aegis/unstable/session/rewind', { sessionId: cur.id, back: 1 });
       if (!res || !res.text) { toast('No hay un turno para regenerar.', 'err'); return; }
       const inner = $('#msg-inner') as HTMLElement | null;
+    // Antes de ocultar, guardar la respuesta que se reemplaza: volver a la anterior tiene que ser posible.
+    const previa = [...inner.querySelectorAll<HTMLElement>(':scope > .msg-a')].pop();
+    if (previa) { variantes.archivar(previa.innerHTML); previa.remove(); }
       const users = inner ? [...inner.querySelectorAll<HTMLElement>(':scope > .msg-user')] : [];
       const lastUser = users[users.length - 1];
       if (lastUser && lastUser.dataset.mid) setHiddenFrom(cur.id, lastUser.dataset.mid);
@@ -2902,6 +2909,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   }
 
   async function openSession(entry) {
+    if (entry && entry.id) { historial.cambiarSesion(entry.id); variantes.cambiarSesion(entry.id); }
     const targetId = entry.sessionId || entry.id;
     clearTimeout(draftTimer);
     saveDraft();
@@ -4174,6 +4182,8 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     if (!rpc.ready) { systemNote('Sin conexión con el backend - reintentando.'); return; }
     if (!state.current) await newSession();
     if (!state.current) return;
+    // Antes de vaciar el campo: queda en el historial de flechas de esta sesion.
+    if (state.current) historial.guardar(state.current.id, text);
     input.value = ''; autosize(); refreshSlashMenu(); saveDraft();
     state.attachments = [];
     renderAttachments();
@@ -4191,6 +4201,8 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       return;
     }
     const input = $('#input');
+    // Antes de vaciar el campo: queda en el historial de flechas de esta sesion.
+    if (state.current) historial.guardar(state.current.id, text);
     input.value = ''; autosize(); refreshSlashMenu(); saveDraft();
     state.attachments = [];
     renderAttachments();
@@ -6665,7 +6677,16 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     input.addEventListener('keydown', (e) => {
       lastTypedAt = performance.now(); // actividad de tecleo: posterga el refresco del DOM
       if (slashKey(e)) return; // el menú de comandos consume flechas/Enter/Tab/Esc
-      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !composing && e.keyCode !== 229) { e.preventDefault(); send(); }
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !composing && e.keyCode !== 229) { e.preventDefault(); send(); return; }
+      // Historial de prompts: la flecha navega solo en el borde del texto, como un shell.
+      if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.altKey) {
+        const desde = input.selectionStart ?? 0, hasta = input.selectionEnd ?? 0;
+        if (desde === hasta) {
+          const enBorde = e.key === 'ArrowUp' ? desde === 0 : desde >= input.value.length;
+          const nuevo = enBorde ? (e.key === 'ArrowUp' ? historial.atras(input.value) : historial.adelante()) : null;
+          if (nuevo !== null) { e.preventDefault(); input.value = nuevo; autosize(); input.setSelectionRange(nuevo.length, nuevo.length); }
+        }
+      }
     });
     input.addEventListener('paste', (e) => {
       const items = (e.clipboardData && e.clipboardData.items) || [];

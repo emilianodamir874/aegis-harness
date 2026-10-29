@@ -22,3 +22,10 @@ import './handoff';
 import './split-view';
 import './stats';
 import './doctor';
+
+// Las piezas de lectura del transcript se exponen para el gate y para diagnosticar en el teléfono
+// desde la consola: son estado del navegador, no del proceso, y no tocan el backend.
+import * as historial from './app/historial';
+import * as variantes from './app/variantes';
+import { estadoBusqueda, buscarTexto } from './app/transcript-ui';
+(globalThis as { __aegisLectura?: unknown }).__aegisLectura = { historial, variantes, estadoBusqueda, buscarTexto };
