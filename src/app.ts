@@ -3425,6 +3425,8 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       if (was) {
         runBarDone(note || 'Respuesta completa', ms);
         turnEndNote(ms);
+        // Los cambios Git que dejó el turno se leen al final del transcript, no en un panel aparte.
+        void window.__aegisChanges?.refresh();
         state.adopted = false;
         stopRunWatch();
         settleSteers(); // lo que el server descarto, se reenvia

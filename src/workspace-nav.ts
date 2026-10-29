@@ -1,4 +1,4 @@
-/* Navegación: el chat conserva su DOM y scroll; Actividad y Archivos son los diálogos reales. */
+﻿/* Navegación: el chat conserva su DOM y scroll; Actividad y Archivos son los diálogos reales. */
 import { medirAreaUtil, type AreaUtil } from './app/viewport';
 declare global {
   interface Window {
@@ -71,11 +71,6 @@ function wire(): void {
   document.getElementById('btn-activity')?.addEventListener('click', () => {
     if (mobile()) show('activity'); else void window.__aegisActivity?.open();
     closeMobileDrawer();
-  });
-  document.getElementById('btn-changes')?.addEventListener('click', () => {
-    const runtime = (window as Window & { __aegisWeb?: { state?: { current?: { cwd?: string } } } }).__aegisWeb;
-    closeMobileDrawer();
-    void window.__aegisChanges?.open(runtime?.state?.current?.cwd || '');
   });
   // Los diálogos se pueden cerrar con Escape, con su botón o tocando el fondo.
   // Observar solo hijos directos y el atributo display del backdrop reutilizado.

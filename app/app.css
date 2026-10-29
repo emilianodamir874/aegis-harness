@@ -4464,3 +4464,33 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   /* PISO de 16 px en los campos del telefono */
   .composer textarea, #search, .xpanel-search, #input { font-size: max(16px, 1em); }
 }
+/* ---------- cambios git dentro del chat ----------
+   Es un bloque del transcript, no un diálogo: reemplaza al panel que se abría desde el sidebar.
+   Vive al final de #msg-inner, se refresca al cerrar cada turno y no entra al store. */
+.git-changes { margin: var(--s4) auto var(--s2); max-width: var(--measure); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-card); overflow: hidden; }
+.git-changes header { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
+.git-changes .gc-ic { color: var(--text-3); font-size: 13px; line-height: 1; }
+.git-changes header b { font-size: 12.5px; font-weight: 600; }
+.git-changes .gc-sub { color: var(--text-4); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.git-changes .gc-btn { margin-left: auto; width: 26px; height: 26px; border-radius: var(--r-sm); color: var(--text-3); font-size: 14px; line-height: 1; flex: none; }
+.git-changes .gc-btn + .gc-btn { margin-left: 0; }
+.git-changes .gc-btn:hover { background: var(--bg-raise); color: var(--text); }
+.git-changes .gc-body { padding: 2px 10px 6px; max-height: min(46vh, 420px); overflow: auto; }
+.git-changes .gc-body > p { color: var(--text-3); font-size: 12px; padding: 6px 0; }
+.git-changes .gc-file { border-top: 1px solid var(--border-soft); }
+.git-changes .gc-file:first-child { border-top: 0; }
+.git-changes summary { display: flex; align-items: center; gap: 7px; padding: 6px 0; min-height: 34px; cursor: pointer; font-size: 12px; list-style: none; }
+.git-changes summary::-webkit-details-marker { display: none; }
+.git-changes .gc-mark { color: var(--warn); font: 11px/1 ui-monospace, Consolas, monospace; min-width: 14px; flex: none; }
+.git-changes .gc-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 11.5px; }
+.git-changes .gc-counts { color: var(--text-4); font-size: 11px; font-variant-numeric: tabular-nums; flex: none; }
+.git-changes pre { margin: 2px 0 8px; padding: 8px; max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11.5px/1.5 ui-monospace, Consolas, monospace; background: var(--bg); border-radius: var(--r-sm); }
+.git-changes .gc-note { color: var(--warn); font-size: 11px; }
+.git-changes .gc-foot { margin: 0; padding: 6px 10px; border-top: 1px solid var(--border-soft); color: var(--text-4); font-size: 10.5px; }
+.git-changes[data-estado="cargando"] .gc-foot { display: none; }
+@media (max-width: 560px) {
+  .git-changes { margin: var(--s3) 0; }
+  .git-changes .gc-body { max-height: 40vh; }
+  .git-changes summary { min-height: 44px; }
+  .git-changes .gc-btn { width: 34px; height: 34px; }
+}

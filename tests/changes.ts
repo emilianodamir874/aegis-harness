@@ -81,17 +81,25 @@ try {
     write: false, platform: 'browser', format: 'esm', target: 'es2022' });
   const code = new TextDecoder().decode(client.outputFiles[0].contents);
   assert(code.includes('/changes.json?sessionId='), 'cliente necesita endpoint de sesión explícito');
-  assert(code.includes('textContent'), 'panel construye texto sin HTML crudo');
+  assert(code.includes('textContent'), 'bloque construye texto sin HTML crudo');
   assert(!code.includes('innerHTML'), 'no inyectar diff como HTML');
+  assert(code.includes('#messages'), 'el bloque vive en el transcript, no en un diálogo');
+
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ viewport: { width: 411, height: 777 } });
     const requests: string[] = [];
     let offline = false;
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
       assert.equal(url.host, 'changes.invalid', 'sin conexiones al backend real');
-      if (url.pathname === '/') return route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body><script type="module" src="/changes.js"></script></body></html>' });
+      if (url.pathname === '/') {
+        return route.fulfill({
+          contentType: 'text/html',
+          body: '<!doctype html><html><body><div id="messages"><div id="msg-inner"></div></div>'
+            + '<script type="module" src="/changes.js"></script></body></html>',
+        });
+      }
       if (url.pathname === '/changes.js') return route.fulfill({ contentType: 'text/javascript', body: code });
       if (url.pathname === '/changes.json') {
         assert.equal(route.request().method(), 'GET');
@@ -99,26 +107,62 @@ try {
         if (offline) return route.fulfill({ status: 404, body: 'Sin endpoint' });
         return route.fulfill({ json: { kind: 'git', root: fixture, entries: [
           { path: '<img src=x onerror=alert(1)>', staged: 'M', worktree: ' ', diff: '+<script>alert(2)</script>', truncated: false },
+          { path: 'src/app.ts', staged: ' ', worktree: 'M', diff: '+una linea', worktreeAdded: 3, worktreeRemoved: 1, truncated: false },
         ], truncated: false } });
       }
       throw new Error('Ruta inesperada: ' + url.pathname);
     });
-    await page.addInitScript((cwd: string) => { (window as any).__aegisWeb = { state: { current: { id: 'fixture-session', cwd } } }; }, fixture);
+    await page.addInitScript((cwd: string) => {
+      (window as any).__aegisWeb = { state: { current: { id: 'fixture-session', cwd } } };
+    }, fixture);
     await page.goto('http://changes.invalid/');
-    await page.evaluate((cwd: string) => (window as any).__aegisChanges.open(cwd), fixture);
-    assert.equal(await page.locator('.aegis-changes details').count(), 1);
-    assert.equal(await page.locator('.aegis-changes img, .aegis-changes script').count(), 0, 'sin ejecución HTML de diff/ruta');
-    assert((await page.locator('.aegis-changes').innerText()).includes('autor desconocido'));
+    await page.evaluate(() => (window as any).__aegisChanges.refresh());
+
+    // Dentro del chat: el bloque es hijo de #messages (el scroll del transcript) y queda último.
+    assert.equal(await page.locator('#messages > .git-changes').count(), 1, 'el bloque va en el transcript');
+    assert.equal(await page.locator('#messages > *:last-child').getAttribute('class'), 'git-changes');
+    assert.equal(await page.locator('.git-changes .gc-file').count(), 2);
+    assert.equal(await page.locator('.git-changes img, .git-changes script').count(), 0, 'sin ejecución HTML de diff/ruta');
+    const texto = await page.locator('.git-changes').innerText();
+    assert(texto.includes('autor desconocido'));
+    assert(texto.includes('+3 / −1'), 'muestra el conteo real por archivo');
     assert.deepEqual(requests, ['fixture-session']);
+    assert.equal(await page.locator('.git-changes').getAttribute('data-sesion'), 'fixture-session');
+
+    // Cambiar de sesión vuelve a consultar con el id nuevo y no mezcla el bloque anterior.
+    await page.evaluate(() => {
+      (window as any).__aegisWeb.state.current = { id: 'otra-sesion', cwd: '/otro' };
+      return (window as any).__aegisChanges.refresh();
+    });
+    assert.deepEqual(requests, ['fixture-session', 'otra-sesion']);
+    assert.equal(await page.locator('.git-changes').getAttribute('data-sesion'), 'otra-sesion');
+
+    // Sin sesión no se consulta nada y el bloque no queda colgado.
+    await page.evaluate(() => {
+      (window as any).__aegisWeb.state.current = null;
+      return (window as any).__aegisChanges.refresh();
+    });
+    assert.deepEqual(requests, ['fixture-session', 'otra-sesion']);
+    assert.equal(await page.locator('.git-changes').count(), 0);
+
+    // Error del backend: se dice que no hay datos, nunca se insinúa que no hay cambios.
     offline = true;
-    await page.locator('.aegis-changes header button').first().click();
-    await page.waitForFunction(() => document.querySelector('.aegis-changes .note')?.textContent?.includes('Sin backend validado'));
-    assert((await page.locator('.aegis-changes').innerText()).includes('Panel no disponible'));
-    assert(!(await page.locator('.aegis-changes').innerText()).includes('Git no informa cambios'));
-    await page.locator('.aegis-changes header button').last().click();
-    assert.equal(await page.locator('.aegis-changes').count(), 0);
+    await page.evaluate((cwd: string) => {
+      (window as any).__aegisWeb.state.current = { id: 'fixture-session', cwd };
+      return (window as any).__aegisChanges.refresh();
+    }, fixture);
+    await page.waitForFunction(() => document.querySelector('.git-changes')?.getAttribute('data-estado') === 'error');
+    const conError = await page.locator('.git-changes').innerText();
+    assert(conError.includes('No se pudo leer Git'));
+    assert(conError.includes('Nunca inferir ausencia de cambios'));
+    assert(!conError.includes('Git no informa cambios'));
+
+    // La × lo saca del transcript sin consultar Git.
+    await page.locator('.git-changes .gc-btn').last().click();
+    assert.equal(await page.locator('.git-changes').count(), 0);
+    assert.equal(await page.evaluate(() => (window as any).__aegisChanges.isOpen()), false);
   } finally { await browser.close(); }
-  console.log('PASS changes: fixture Git -z, staged, untracked, secretos, no Git y panel aislado (XSS/error)');
+  console.log('PASS changes: fixture Git -z, staged, untracked, secretos, no Git, bloque en transcript (XSS/error/sesión)');
 } finally {
   await rm(temp, { recursive: true, force: true });
 }
