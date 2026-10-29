@@ -135,7 +135,7 @@ try {
     const failureId = 'diff-failed-1';
     app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call', toolCallId: failureId, rawInput: { path: 'fallo.ts', before: 'a', after: 'b' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } } });
     app.testUi.update({ sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: failureId, status: 'failed' } });
-    return { ...initial, visible, isolated, requested: !!preview && /fragmento sustituido|edición completada/i.test(preview.textContent || ''), failed: !app.state.tools.get(failureId).querySelector('.tool-diff'), stillOne: card.querySelectorAll('.tool-diff').length === 1 };
+    return { ...initial, visible, isolated, requested: !!preview && /archivo nuevo|contenido enviado/i.test(preview.textContent || ''), failed: !app.state.tools.get(failureId).querySelector('.tool-diff'), stillOne: card.querySelectorAll('.tool-diff').length === 1 };
   }, A);
   if (diffCheck.count !== 1 || !diffCheck.title?.includes('+1 −1') || !diffCheck.escaped || !diffCheck.hasPreBefore
     || !diffCheck.textBefore.includes('-uno') || !diffCheck.textBefore.includes('+dos') || !diffCheck.output?.includes('Edited src/code.ts')
@@ -323,12 +323,11 @@ try {
       ui.busy(true, 'Turno en curso (lo arrancó otra conexión)');
       ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: 'mobile-live-' + innerWidth, content: { type: 'text', text: 'prueba' } } });
       const speed = app.state.speed;
-      app.speedStart(); // restablece estado; fijamos ticks de mock después
-      speed.ticks = [{ at: performance.now() - 900, chars: 0 }, { at: performance.now(), chars: 80 }];
+      app.speedStart(); // restablece estado: sin usage no hay tasa
       // La función de pintado se ejecuta con el tick periódico; esperar afuera.
       return { text: text.textContent, title: text.title, initialQueue: !!queued && !queued.hidden };
     }, A);
-    await page.waitForFunction(() => /^~[\d.]+ tok\/s$/.test(document.querySelector('#runbar-tps')?.textContent || ''), null, { timeout: 2000 });
+    await page.waitForFunction(() => (document.querySelector('#runbar-tps')?.textContent || '') === '— tok/s', null, { timeout: 2000 });
     const live = await page.evaluate((sid) => {
       const app = (window as any).__aegisWeb, ui = app.testUi;
       const bar = document.querySelector<HTMLElement>('#runbar')!, badge = document.querySelector<HTMLElement>('#runbar-tps')!;
@@ -347,7 +346,7 @@ try {
       return { rate: badge.textContent, title: badge.title, bounds: rect(badge), bar: rect(bar), meta: rect(meta), composer: rect(composer), input: rect(input), stop: rect(stop), statusRect: rect(text), statusClipped: text.scrollWidth > text.clientWidth + 1, statusVisible: getComputedStyle(text).display !== 'none', elapsed: rect(elapsed), avgDisplay: getComputedStyle(document.querySelector('#runbar-avg')!).display, queue: withQueue, afterDelivery: pending.hidden, status: text.textContent, siblings: bar.parentElement === meta && meta.children.length === 3, hintsHidden: getComputedStyle(document.querySelector('#meta-left')!).display === 'none' && getComputedStyle(document.querySelector('#meta-right')!).display === 'none' };
     }, A);
     if (snapshot.text !== 'Trabaja' || !snapshot.title.includes('otra conexión') || snapshot.initialQueue) throw new Error('estado móvil inicial falso: ' + JSON.stringify(snapshot));
-    if (!live.rate?.startsWith('~') || !live.rate.endsWith(' tok/s') || !live.title.includes('estimado') || !live.queue.visible || live.queue.text !== 'pendiente' || !live.queue.title.includes('indicación') || !live.afterDelivery) throw new Error('badge estimado o cola incorrecta: ' + JSON.stringify(live));
+    if (live.rate !== '— tok/s' || !live.title.includes('Sin usage') || !live.queue.visible || live.queue.text !== 'pendiente' || !live.queue.title.includes('indicación') || !live.afterDelivery) throw new Error('badge estimado o cola incorrecta: ' + JSON.stringify(live));
     if (live.avgDisplay !== 'none') throw new Error('promedio debe quedar sólo en nota de conversación en móvil');
     const fits = (x: DOMRect) => x.left >= live.bar.left - 1 && x.right <= live.bar.right + 1 && x.top >= live.bar.top - 1 && x.bottom <= live.bar.bottom + 1;
     if (![live.bounds, live.queue.bounds, live.statusRect, live.elapsed].every(fits) || live.bar.height > 28 || live.meta.height > 36 || live.statusRect.width < 24 || live.statusClipped || !live.statusVisible || !live.siblings || !live.hintsHidden || live.composer.bottom > live.meta.top || live.input.width < 90 || live.stop.width < 40 || live.stop.height < 40 || live.stop.right > width || live.stop.left < 0) throw new Error('runbar con overflow/segunda línea a ' + width + 'px: ' + JSON.stringify(live));

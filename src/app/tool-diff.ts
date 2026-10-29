@@ -148,12 +148,19 @@ export function renderInlineToolDiff(card: ToolCard, update: ToolEvent, status: 
     return;
   }
   // 2) developer__edit / developer__write: el par before/after del rawInput identifica la
-  // sustitución pedida. Se muestra YA (aunque la herramienta siga corriendo) y se vuelve a pintar
-  // al terminar, para que el archivo se vea en vivo y no recién al final del turno.
+  // sustitución pedida. Se muestra YA (mientras la herramienta corre) y se repinta al terminar.
+  // Si la herramienta falla, el par se retira: mostrar "antes/después" de un cambio que no se
+  // aplicó es una mentira visual.
   const toolName = name || card.dataset.toolName || '';
   if (!/(?:^|__)(?:edit|write)$/.test(toolName)) return;
   const args = update.rawInput || card.__toolInput;
   if (!args || typeof args.path !== 'string') return;
+  if (status === 'failed') {
+    for (const fila of [...(list?.querySelectorAll<Detalle>('.tool-diff') || [])]) {
+      if (fila.dataset.fuente === 'input') fila.remove();
+    }
+    return;
+  }
   const before = text(args.before), after = text(args.after) ?? text(args.content);
   if (after === undefined || (before === undefined && !/(?:^|__)write$/.test(toolName))) return;
   const fila = filaPara(asegurarLista(), args.path);

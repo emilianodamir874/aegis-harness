@@ -159,7 +159,8 @@ const cwd = index >= 0 && index + 1 < args.length ? args[index + 1] : "";
 const scan = args.includes("--scan");
 try {
   if (!cwd || !isAbsolute(cwd)) throw new Error("Se requiere --cwd absoluto y autorizado");
-  process.stdout.write(JSON.stringify(scan ? escanearRepos(resolve(cwd)) : snapshot(resolve(cwd))));
+  const primero = snapshot(resolve(cwd));
+  process.stdout.write(JSON.stringify(scan && primero.kind === "not-git" ? escanearRepos(resolve(cwd)) : primero));
 } catch (error) {
   process.stdout.write(JSON.stringify({
     kind: "error",

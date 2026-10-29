@@ -2456,7 +2456,9 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   }
 
   // ---------- velocimetro de tokens/segundo ----------
-  // Stream: sólo texto visible estimado; usage: generación medida o throughput de solicitud.
+  // Solo usage del backend: la tasa sale de outputTokens y de los milisegundos que reporta el
+  // provider (generationMs), o del total de la solicitud cuando no hay generationMs.
+  // El texto visible NO se usa para estimar tokens/segundo.
   // latest incluye el messageId para no llamar "actual" a un ritmo de otro paso.
   state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, stepText: false, currentRate: false, runId: null, finished: false, note: null };
   // El estilo vive en app.css (.runbar-tps / .runbar-avg), no inline: asi el numero se ve
@@ -2488,18 +2490,9 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   }
   function speedLabel() {
     const s = state.speed;
+    // Solo mediciones del backend (usage): nada de caracteres visibles ni relojes propios.
+    // Un paso sin usage todavia no tiene numero, y la ultima medicion se rotula "ultima".
     if (s.currentRate && s.latest?.mid === s.stepId) return speedRateLabel(s.latest);
-    const now = performance.now();
-    const recent = s.ticks.filter((t) => now - t.at <= 4000);
-    if (recent.length >= 2) {
-      const first = recent[0];
-      const last = recent[recent.length - 1];
-      const seconds = Math.max(0.4, (last.at - first.at) / 1000);
-      const chars = last.chars - first.chars;
-      if (chars > 0) return '~' + fmtTps(chars / 4 / seconds);
-    }
-    // Sin muestra del paso actual, conservar la última MEDICIÓN, identificada como anterior.
-    // No confundir pensamiento/herramientas sin usage con velocidad de generación actual.
     return s.latest ? speedRateLabel(s.latest, true) : '— tok/s';
   }
   const compactRunBar = () => window.matchMedia('(max-width: 560px)').matches;
@@ -2509,11 +2502,11 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     el.textContent = compactRunBar()
       ? label.replace(/^última generación /, 'últ. ').replace(/^última solicitud /, 'últ. sol. ').replace(/^generación /, '').replace(/^solicitud /, 'sol. ')
       : label;
-    el.title = label.startsWith('~') ? 'Ritmo estimado de generación: ' + label
-      : label.startsWith('última ') ? 'Última medición disponible (paso anterior): ' + label
+    el.title = label === '— tok/s' ? 'Sin usage del backend en este paso: el ritmo no se estima por caracteres'
+      : label.startsWith('última ') ? 'Última medición del backend (paso anterior): ' + label
       : label.startsWith('solicitud ') ? 'Throughput de solicitud completa (no generación): ' + label
-      : label.startsWith('generación ') ? 'Ritmo medido de ' + label
-      : 'Esperando tokens medidos o texto visible para estimar el ritmo';
+      : label.startsWith('generación ') ? 'Ritmo medido por el backend: ' + label
+      : label;
     el.hidden = !label;
   }
   function speedPaint() {
@@ -2570,12 +2563,10 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     if (!text) return;
     const s = state.speed;
     if (!state.busy || state.replaying || state.hubReplay || s.finished) return;
-    // Sin id no se puede distinguir un paso nuevo del anterior ni atribuir sus muestras.
-    if (!messageId) { s.ticks = []; s.currentRate = false; s.stepId = null; speedPaint(); return; }
+    // El texto visible no mide tokens: solo sirve para saber en que paso estamos.
+    if (!messageId) { s.currentRate = false; s.stepId = null; speedPaint(); return; }
     speedStep(messageId);
-    const prev = s.ticks.length ? s.ticks[s.ticks.length - 1].chars : 0;
-    s.ticks.push({ at: performance.now(), chars: prev + text.length });
-    if (s.ticks.length > 240) s.ticks.splice(0, s.ticks.length - 240);
+    speedPaint();
   }
   function speedExact(update) {
     const s = state.speed;
