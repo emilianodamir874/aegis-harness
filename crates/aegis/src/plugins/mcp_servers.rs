@@ -233,29 +233,15 @@ mod tests {
         };
 
         assert_eq!(name, "test-plugin:database");
-        assert_eq!(
-            cmd,
-            plugin
-                .path()
-                .join("servers/db-server")
-                .to_string_lossy()
-                .as_ref()
-        );
+        // Expansion keeps the separators written in .mcp.json, so on Windows
+        // `${PLUGIN_ROOT}/servers/db-server` becomes `<root>/servers/db-server`.
+        let root = plugin.path().to_string_lossy().to_string();
+        assert_eq!(cmd, &format!("{root}/servers/db-server"));
         assert_eq!(
             args,
-            &vec![
-                "--config".to_string(),
-                plugin
-                    .path()
-                    .join("config.json")
-                    .to_string_lossy()
-                    .to_string()
-            ]
+            &vec!["--config".to_string(), format!("{root}/config.json")]
         );
-        assert_eq!(
-            envs.get_env().get("DB_PATH"),
-            Some(&plugin.path().join("data").to_string_lossy().to_string())
-        );
+        assert_eq!(envs.get_env().get("DB_PATH"), Some(&format!("{root}/data")));
         assert_eq!(
             cwd.as_deref(),
             Some(plugin.path().to_string_lossy().as_ref())

@@ -313,7 +313,7 @@ mod tests {
     fn disabled_in_project_settings_drops_plugin() {
         let tmp = tempfile::tempdir().unwrap();
         let project = tmp.path();
-        let plugin_root = project.join(".agents/plugins/demo");
+        let plugin_root = project.join(".agents").join("plugins").join("demo");
         write_plugin_dir(&project.join(".agents").join("plugins"), "demo");
 
         write_settings(
@@ -408,11 +408,11 @@ mod tests {
     #[test]
     fn disabled_project_plugin_falls_back_to_enabled_user_plugin_with_same_name() {
         let project = tempfile::tempdir().unwrap();
-        let project_plugins = project.path().join(".agents/plugins");
+        let project_plugins = project.path().join(".agents").join("plugins");
         write_plugin_dir(&project_plugins, "demo");
 
         let path_root = tempfile::tempdir().unwrap();
-        let user_plugins = path_root.path().join(".agents/plugins");
+        let user_plugins = path_root.path().join(".agents").join("plugins");
         write_plugin_dir(&user_plugins, "demo");
         let config_dir = tempfile::tempdir().unwrap();
         let config = test_config(config_dir.path());

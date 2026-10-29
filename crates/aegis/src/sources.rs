@@ -2011,7 +2011,12 @@ mod tests {
             .iter()
             .find(|source| source.name == "test-skill" && !source.global)
             .unwrap();
-        assert!(skill.path.contains(".agents/skills"));
+        assert!(
+            Path::new(&skill.path)
+                .ends_with(Path::new(".agents").join("skills").join("test-skill")),
+            "unexpected skill path: {}",
+            skill.path
+        );
         assert_eq!(skill.description, "from agents");
     }
 
@@ -2052,7 +2057,12 @@ mod tests {
             .filter(|source| source.name == "shared-skill" && !source.global)
             .collect();
         assert_eq!(matching.len(), 1);
-        assert!(matching[0].path.contains(".agents/skills"));
+        assert!(
+            Path::new(&matching[0].path)
+                .ends_with(Path::new(".agents").join("skills").join("shared-skill")),
+            "unexpected skill path: {}",
+            matching[0].path
+        );
         assert_eq!(matching[0].description, "preferred");
 
         let exported = export_source(SourceType::Skill, matching[0].path.as_str()).unwrap();

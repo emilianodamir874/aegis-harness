@@ -312,7 +312,7 @@ mod tests {
         let config = Box::leak(Box::new(
             Config::new(project.join("test-config.yaml"), "aegis-skills-test").unwrap(),
         ));
-        let plugin_root = project.join(".agents/plugins").join(plugin_name);
+        let plugin_root = project.join(".agents").join("plugins").join(plugin_name);
         config
             .set_param(
                 "plugins",

@@ -470,7 +470,7 @@ mod tests {
         assert_eq!(updated.version, "2.0.0");
         assert_eq!(updated.directory, install_root.path().join("test-plugin"));
         assert_eq!(
-            fs::read_to_string(updated.directory.join("skills/audit/SKILL.md")).unwrap(),
+            read_plugin_file(&updated.directory.join("skills/audit/SKILL.md")),
             "---\nname: audit\ndescription: Audit updated code\n---\nDo an audit."
         );
     }
@@ -501,7 +501,7 @@ mod tests {
         assert_eq!(updates.len(), 1);
         assert!(updates[0].result.is_ok());
         assert_eq!(
-            fs::read_to_string(installed.directory.join("skills/audit/SKILL.md")).unwrap(),
+            read_plugin_file(&installed.directory.join("skills/audit/SKILL.md")),
             "---\nname: audit\ndescription: Audit updated code\n---\nDo an audit."
         );
         let metadata = read_install_metadata(&installed.directory).unwrap();
@@ -535,7 +535,7 @@ mod tests {
 
         assert!(updates.is_empty());
         assert_eq!(
-            fs::read_to_string(installed.directory.join("skills/audit/SKILL.md")).unwrap(),
+            read_plugin_file(&installed.directory.join("skills/audit/SKILL.md")),
             "---\nname: audit\ndescription: Audit code\n---\nDo an audit."
         );
     }
@@ -557,6 +557,17 @@ mod tests {
         assert!(err
             .to_string()
             .contains("cannot be updated with this command"));
+    }
+
+    /// Reads a file installed from a git checkout with line endings normalized.
+    ///
+    /// The installed copy is whatever git checked out, so its line endings
+    /// follow the host's `core.autocrlf`: LF on Linux/macOS, CRLF on a Windows
+    /// checkout with autocrlf enabled. The assertions below are about the
+    /// *content* that reached the install dir (the updated description), not
+    /// about which line ending the local git configuration produced.
+    fn read_plugin_file(path: &Path) -> String {
+        fs::read_to_string(path).unwrap().replace("\r\n", "\n")
     }
 
     fn write_gemini_plugin(repo: &Path, version: &str, description: &str) {
