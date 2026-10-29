@@ -67,6 +67,7 @@ try {
         // El combobox pide el catalogo al dibujar los chips: sin esto el fixture lo trata como inesperado.
         case '_aegis/unstable/providers/list': reply({ entries: [] }); break;
         case 'tools/list': reply({ tools: [] }); break;
+        case '_aegis/unstable/tools/list': reply({ tools: [] }); break;
         case 'session/list': reply({ sessions, _meta: { runningSessionIds: running }, nextCursor: null }); break;
         case 'session/load': reply({ configOptions: [], modes: {} }); break;
         case '_aegis/unstable/session/info': reply({ activeRunId: 'mock-mobile-run' }); break; // watchdog mock, sin red real

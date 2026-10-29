@@ -291,7 +291,7 @@ try {
   });
   check(info.expanded === 'true', 'el titulo anuncia el panel abierto');
   check(info.role === 'dialog' && info.labelled === 'ci-title', 'panel con rol de dialogo etiquetado');
-  check(info.rows.includes('id') && info.rows.includes('carpeta') && info.rows.includes('mensajes'), 'muestra id, carpeta y mensajes (' + info.rows.join(',') + ')');
+  check(info.rows.includes('id') && info.rows.includes('carpeta') && !info.rows.includes('mensajes'), 'no duplica el contador de mensajes del sidebar (' + info.rows.join(',') + ')');
   check(info.actions.includes('Copiar ID') && info.actions.includes('Exportar Markdown'), 'acciones de lectura presentes');
   check(!info.destructive, 'sin borrar en el header (vive en la fila, con confirmación)');
   check(info.insideViewport, 'el panel queda dentro del viewport');

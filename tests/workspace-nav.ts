@@ -55,6 +55,8 @@ try {
             case 'initialize': reply({ protocolVersion: 1 }); break;
             case 'session/list': reply({ sessions: [], nextCursor: null, _meta: { runningSessionIds: [] } }); break;
             case 'tools/list': reply({ tools: [] }); break;
+            case '_aegis/unstable/tools/list': reply({ tools: [] }); break;
+            case '_aegis/unstable/providers/list': reply({ entries: [] }); break;
             case '_aegis/unstable/sources/list': reply({ sources: [] }); break;
             default: errors.push('ACP inesperado: ' + m.method); ws.send(JSON.stringify({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'fixture: método prohibido' } }));
           }
