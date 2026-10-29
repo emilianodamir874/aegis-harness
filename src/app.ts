@@ -6471,6 +6471,56 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     window.visualViewport?.addEventListener('scroll', update);
   }
 
+  // El teclado del telefono no dispara 'resize' en el layout: recorta el visualViewport y el
+  // transcript se queda con el scroll viejo, asi que uno escribe a ciegas. Con el aviso de
+  // workspace-nav se re-ancía al fondo solo si uno ya estaba abajo (no le rompe la lectura al que
+  // esta mirando algo mas arriba).
+  function wireTeclado() {
+    const messages = $('#messages');
+    const input = $('#input');
+    let anterior = window.visualViewport?.height ?? window.innerHeight;
+    // Al abrir el teclado el alto baja y el transcript queda con el scroll viejo: 360 px por
+    // encima del fondo, o sea escribiendo a ciegas. Se re-ancla SIEMPRE que el alto baje (abrir el
+    // teclado es intencion de escribir, y ahi lo que importa es ver el final), y al cerrarlo solo
+    // si uno ya estaba abajo, para no moverlo de donde estaba leyendo.
+    const alFondo = () => !!messages && messages.scrollHeight - messages.scrollTop - messages.clientHeight < 120;
+    const reanclar = (forzar?: boolean) => {
+      const alto = window.visualViewport?.height ?? window.innerHeight;
+      const delta = alto - anterior;
+      anterior = alto;
+      if (!forzar && Math.abs(delta) < 40) return;
+      // Alto mas chico = teclado abierto o sugerencias: siempre al fondo.
+      // Alto mas grande = se cerro: solo si estaba mirando el final.
+      if (!forzar && delta > 0 && !alFondo()) return;
+      // Dos frames: el primero aplica el alto nuevo, el segundo ya tiene el layout final.
+      // scrollBottom() es condicional (solo baja si ya estabas a menos de 140 px del fondo) y al
+      // abrir el teclado la distancia salta a ~360: hay que forzarlo.
+      requestAnimationFrame(() => requestAnimationFrame(() => scrollBottom(true)));
+    };
+    window.addEventListener('aegis:viewporth', () => reanclar());
+    window.addEventListener('resize', () => reanclar());
+    window.visualViewport?.addEventListener('resize', () => reanclar());
+    input?.addEventListener('focus', () => setTimeout(() => reanclar(true), 260));
+    // La via que SI funciona en el telefono: observar el alto del propio transcript. Android no
+    // garantiza que llegue 'resize' ni que visualViewport cambie de tamano, pero el contenedor
+    // siempre se achica cuando el teclado se abre. Se guarda si estaba al fondo ANTES del cambio
+    // (el observer corre despues del reflow, cuando ya no se puede saber).
+    if (messages && 'ResizeObserver' in window) {
+      let alFondoAntes = true;
+      const marcar = () => { alFondoAntes = alFondo(); };
+      messages.addEventListener('scroll', marcar, { passive: true });
+      let ultimo = messages.clientHeight;
+      const ro = new ResizeObserver(() => {
+        const alto = messages.clientHeight;
+        const bajo = alto < ultimo - 8;
+        ultimo = alto;
+        // Si el alto bajo (teclado abierto) o ya estaba abajo, se va al final.
+        if (bajo || alFondoAntes) requestAnimationFrame(() => scrollBottom(true));
+      });
+      ro.observe(messages);
+    }
+  }
+
   function wireView() {
     // Orden: lo guardado manda; si no hay nada guardado y el sistema pide mas contraste, se usa.
     let guardado = '';
@@ -6500,6 +6550,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
 
   function wire() {
     wireChatFont();
+    wireTeclado();
     wireView();
     wireAccionesGlobales();
     // Info de la conversacion: abre con click/teclado, cierra con Esc o click afuera y

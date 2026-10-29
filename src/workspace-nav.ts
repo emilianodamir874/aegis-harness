@@ -95,7 +95,15 @@ function wire(): void {
     app?.style.setProperty('--mobile-visible-height', `${height}px`);
     app?.style.setProperty('--mobile-visible-top', `${top}px`);
     document.documentElement.style.setProperty('--mobile-visual-bottom', `${Math.max(0, window.innerHeight - height - top)}px`);
+    // El alto util cambio: puede ser el teclado abriendose o cerrándose. Se avisa para que el
+    // transcript se re-ancle al fondo. Sin esto, al abrir el teclado en Android el .app se acorta
+    // pero el scroll queda donde estaba y lo que uno escribe queda fuera de vista.
+    if (height !== ultimoAlto) {
+      ultimoAlto = height;
+      window.dispatchEvent(new CustomEvent('aegis:viewporth', { detail: { height, top } }));
+    }
   };
+  let ultimoAlto = -1;
   syncViewport();
   window.addEventListener('resize', syncViewport);
   window.visualViewport?.addEventListener('resize', syncViewport);
