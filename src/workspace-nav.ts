@@ -151,6 +151,7 @@ function wire(): void {
   };
   let enfoqueEn = 0;
   let estimado = 0;
+  let estimadoAplicadoEn = 0;
   // Alto SIN teclado: se toma mientras el campo NO tiene foco, y es la referencia contra la que
   // se decide si el navegador ya recortó. Antes usaba el alto del momento del foco, y como el
   // resize del navegador puede llegar ANTES que el foco, se estimaba teclado sobre una pantalla
@@ -164,35 +165,55 @@ function wire(): void {
     document.querySelector<HTMLElement>('.app')?.style.setProperty('--mobile-teclado', `${estimado}px`);
   };
   const ajustarTeclado = (enfocado: boolean, area: AreaUtil): void => {
+    // Traza automática (máximo una línea cada 8 s): sin esto, cada iteración del teclado en el
+    // teléfono es a ciegas. Queda en logs/client.log con kind "kb".
+    if (Date.now() - ultimoAviso > 8000) {
+      ultimoAviso = Date.now();
+      reportar('kb', `alto=${area.alto} base=${altoBase} layout=${document.documentElement.clientHeight} inner=${window.innerHeight} vv=${window.visualViewport?.height ?? -1} teclado=${area.teclado} fuente=${area.fuente} enfocado=${enfocado} estimado=${estimado}`);
+    }
     if (!enfocado) { altoBase = Math.max(altoBase, area.alto); ponerTeclado(0); return; }
     if (!altoBase) altoBase = area.alto;
     const recortado = !!(area.teclado > 120) || area.alto < altoBase - 40;
     if (recortado) { modoReal = true; guardarKb(altoBase - area.alto); ponerTeclado(0); return; }
     if (Date.now() - enfoqueEn < 320) return; // el teclado todavía está abriendo
-    // Teclado estimado: la mitad del área sin teclado. Con 0.42 (lo que daba el primer cálculo) el
-    // composer podía quedar medio tapado por la fila de sugerencias en un teclado alto; de más solo
-    // esconde transcript, que no molesta.
-    ponerTeclado(leerKb() || Math.round(Math.max(180, altoBase * 0.5)));
+    // Cuánto medía el alto cuando se aplicó la estimación: sirve para deshacerla cuando el teclado
+    // se cierra sin blur (botón atrás de Android) y el alto vuelve al de antes.
+    estimadoAplicadoEn = area.alto;
+    // Teclado estimado: 38 % del área sin teclado. Medido en el A56 (411x777): el teclado con su
+    // barra de sugerencias ocupa ~287-300 px, o sea 0.37-0.39. Con 0.5 quedaba un hueco de ~90 px
+    // entre el composer y el teclado (visto en el teléfono real); con 0.42, ~30 px.
+    ponerTeclado(leerKb() || Math.round(Math.max(180, Math.min(altoBase * 0.38, altoBase - 200))));
   };
   let altoUtil = 0;
   let ultimoAviso = 0;
   const input = document.getElementById('input');
-  const soltar = (): void => { if (estimado) ponerTeclado(0); };
+  // Verificación, no limpieza: una estimación de teclado NO se borra porque el alto se haya
+  // quedado quieto (el teclado abierto no cambia nada, que es justo por lo que se estimó), pero
+  // SÍ se borra si el alto volvió al de antes de estimar: eso es el teclado cerrándose sin blur.
+  // La primera versión soltaba en cualquier toque fuera del composer y en cada resize, y con
+  // resize-visual-only el navegador manda resize mientras uno escribe: la estimación duraba dos
+  // frames y quedaba un hueco entre el composer y el teclado (visto en el teléfono).
+  const verificar = (): void => {
+    if (!estimado) return;
+    if (!input?.matches(':focus')) { ponerTeclado(0); return; }
+    if (medirAreaUtil(altoUtil).alto + 40 < estimadoAplicadoEn) ponerTeclado(0);
+  };
   // Si toca el transcript dejó de escribir: se libera la estimación sin esperar al blur, porque
   // en Android el botón atrás esconde el teclado SIN sacar el foco. Tampoco se escucha 'scroll'
   // del transcript: el re-anclaje automático al fondo lo dispara y borraría la estimación en el
   // mismo frame en que se pone.
-  document.getElementById('messages')?.addEventListener('pointerdown', soltar, { passive: true });
+  document.getElementById('messages')?.addEventListener('pointerdown', () => { if (estimado) ponerTeclado(0); }, { passive: true });
   window.addEventListener('touchstart', (ev: Event) => {
     if (!estimado) return;
     const t = ev.target as Node | null;
     if (t && document.querySelector('.composer-wrap')?.contains(t)) return;
-    soltar();
+    verificar();
   }, { passive: true });
   const medirYAjustar = (): void => {
     syncViewport();
     const area = medirAreaUtil(altoUtil);
     ajustarTeclado(!!document.getElementById('input')?.matches(':focus'), area);
+    verificar();
   };
   if (input) {
     input.addEventListener('focus', () => {
@@ -210,6 +231,11 @@ function wire(): void {
   window.addEventListener('orientationchange', () => { altoBase = 0; syncViewport(); });
   window.visualViewport?.addEventListener('resize', syncViewport);
   window.visualViewport?.addEventListener('scroll', syncViewport);
+  // Corrección inmediata: si el navegador avisa del alto DESPUÉS de que se estimó el teclado
+  // (Chrome a veces lo hace tarde), la estimación sobra en el mismo frame. Se registra después
+  // de syncViewport para que el alto ya esté actualizado cuando verificar() mida.
+  window.addEventListener('resize', verificar);
+  window.visualViewport?.addEventListener('resize', verificar);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire, { once: true });

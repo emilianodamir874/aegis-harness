@@ -134,6 +134,23 @@ check('modo 3: el área útil se recorta igual', g.app <= ALTO - 180, JSON.strin
 check('modo 3: el composer queda arriba del borde inferior', g.compBottom <= g.app + 1, `${g.compBottom} <= ${g.app}`);
 check('modo 3: el ancho del composer no se rompe', g.dentroDelAncho, JSON.stringify(g));
 
+// Escribir dispara resizes sin cambio de alto (resize-visual-only lo hace en cada tecla). La
+// estimación NO se puede borrar ahí: es el bug que dejaba el hueco entre el composer y el teclado.
+for (let i = 0; i < 5; i++) {
+  await page.evaluate(() => window.visualViewport.dispatchEvent(new Event('resize')));
+  await page.waitForTimeout(60);
+}
+g = await geo();
+check('modo 3: escribir no borra la estimación (resizes sin cambio)', g.teclado >= 180, `--mobile-teclado=${g.teclado}`);
+
+// Tocar el transcript sí la libera: el dedo está en otro lado, no escribiendo.
+await page.evaluate(() => {
+  document.querySelector('#messages').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+});
+await page.waitForTimeout(200);
+g = await geo();
+check('modo 3: tocar el transcript libera la estimación', g.teclado === 0, JSON.stringify(g));
+
 await page.evaluate(() => document.getElementById('input').blur());
 await page.waitForTimeout(300);
 g = await geo();
