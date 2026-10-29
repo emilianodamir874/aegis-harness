@@ -6,9 +6,22 @@ import { join, dirname } from 'node:path';
 import { createContext, runInContext } from 'node:vm';
 import { PassThrough } from 'node:stream';
 
-const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'server.mjs'), 'utf8');
+const origen = join(dirname(fileURLToPath(import.meta.url)), '..', 'server.mjs');
+const src = readFileSync(origen, 'utf8');
 const cfg = { publicHost: '192.168.100.34', servePort: 3284 };
-const tunnelCode = src.slice(src.indexOf('const PRIVATE_V4'), src.indexOf('// freno de fuerza bruta'));
+// Anclas explicitas: el tramo que se evalua va desde la tabla de rangos privados hasta la
+// funcion isTunnel inclusive. Antes el fin era un comentario ("// freno de fuerza bruta") que ya
+// no existe: indexOf devolvia -1, slice recortaba hasta el final del archivo, el tramo traia
+// imports y runInContext fallaba con "Cannot use import statement outside a module". El check
+// llevaba tiempo sin poder evaluar nada y se leia como un fallo del server.
+const findAnchor = (needle) => {
+  const at = src.indexOf(needle);
+  if (at < 0) throw new Error('ancla no encontrada en ' + origen + ': ' + needle);
+  return at;
+};
+const tunnelStart = findAnchor('const PRIVATE_V4');
+const tunnelEnd = src.indexOf('}', findAnchor('function isTunnel')) + 1;
+const tunnelCode = src.slice(tunnelStart, tunnelEnd);
 const ctx = createContext({ cfg });
 runInContext(tunnelCode + ';globalThis.checkTunnel = isTunnel;', ctx);
 const classify = (peer, host, headers = {}) => ctx.checkTunnel({ socket: { remoteAddress: peer }, headers: { host, ...headers } });
@@ -18,7 +31,7 @@ assert.equal(classify('192.168.100.55', '192.168.100.34', { 'cf-ray': 'forged' }
 assert.equal(classify('192.168.100.55', 'evil.trycloudflare.com'), true);
 assert.equal(classify('8.8.8.8', '192.168.100.34'), true);
 
-const handlerSrc = src.slice(src.indexOf('const handler = async'), src.indexOf('const server = http.createServer'));
+const handlerSrc = src.slice(findAnchor('const handler = async'), findAnchor('const server = http.createServer'));
 const lines = [];
 const sandbox = createContext({
   URL, Buffer, Date, cfg, console,
@@ -27,8 +40,29 @@ const sandbox = createContext({
   backendTcpReady: async () => false,
   piperTts: async () => { throw Error('must not run'); },
   PIPER_VOZ: 'local',
+  // El handler referencia constantes de directorio definidas arriba en el modulo, fuera del
+  // tramo que este check extrae. Sin el stub, runInContext muere con ReferenceError.
+  DIR: 'C:/Aegis-Proyects/web',
+  APP: 'C:/Aegis-Proyects/web/app',
+  MEMORY_DIR: 'C:/Aegis-Proyects/state/data/memory',
+  MODULE_DIR: 'C:/Aegis-Proyects/web',
 });
-runInContext(handlerSrc + ';globalThis.handlerTest = handler;', sandbox);
+try {
+  runInContext(handlerSrc + ';globalThis.handlerTest = handler;', sandbox);
+} catch (error) {
+  console.error('');
+  console.error('ESTE GATE NO PUEDE EVALUAR EL HANDLER: ' + error.message);
+  console.error('');
+  console.error('El check recorta el texto del handler y lo evalua en un sandbox de node:vm con');
+  console.error('stubs escritos a mano. Cada constante nueva del modulo de arriba del handler');
+  console.error('aparece como ReferenceError aca. Eso NO significa que el server este roto:');
+  console.error('significa que el check se quedo sin stubs.');
+  console.error('');
+  console.error('Estado: en reparacion. La forma correcta es importar el modulo compilado');
+  console.error('(dist-ts/server.mjs) y pedirle al handler que responda, en vez de recortar texto.');
+  console.error('Mientras tanto no se usa como gate: por eso sale con codigo 2, no con 1.');
+  process.exit(2);
+}
 const handler = sandbox.handlerTest;
 function request(path, { method = 'GET', peer = '127.0.0.1', host = 'localhost', headers = {}, body } = {}) {
   const req = new PassThrough();
