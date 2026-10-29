@@ -15,6 +15,7 @@ import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, typ
 import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
 import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/panel';
 import { cuerpoGasto, type Stats } from './app/gasto';
+import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdate, type Modo } from './app/modos';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -568,7 +569,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const entry = findSession(cur.id);
     const meta = (entry && entry._meta) || {};
     const arch = state.archived.find((s) => s.sessionId === cur.id);
-    const n = meta.messageCount;
     const fila = (k, v, title?) =>
       `<div class="ci-row"><span class="ci-k">${esc(k)}</span><span class="ci-v"${title ? ` title="${esc(title)}"` : ''}>${esc(v)}</span></div>`;
     // Fecha y hora en una sola expresion (antes se mostraba "22/10 · 2026-10-22").
@@ -582,7 +582,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const partes = [];
     partes.push(fila('id', cur.id));
     if (cur.cwd) partes.push(fila('carpeta', cur.cwd, cur.cwd));
-    if (n != null) partes.push(fila('mensajes', String(n)));
     if (meta.createdAt) partes.push(fila('creada', fechaHora(meta.createdAt)));
     if (entry && entry.updatedAt) partes.push(fila('actualizada', fechaHora(entry.updatedAt)));
     if (arch) partes.push(fila('estado', 'archivada'));
@@ -977,22 +976,14 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     else arrancar();
   })();
 
-  // Contexto del chat vacio: donde va a trabajar y con que modelo. Evita el
-  // primer mensaje de prueba "¿en qué carpeta estás?".
+  // Contexto del chat vacio: donde va a trabajar. El modelo ya vive en el chip de la cabecera
+  // y el onboarding lo explica con tarifa y contexto, asi que no se repite en esta linea.
   function renderWelcomeMeta() {
     const el = $('#welcome-meta');
     if (!el) return;
     const cwd = (state.current && state.current.cwd) || CFG.cwd || '';
-    const chips = document.querySelectorAll('#chips .chip-wrap');
-    let modelo = CFG.defaultModel || '';
-    for (const w of chips) {
-      if (w.getAttribute('data-opt') === 'model') { const c = w.querySelector('.chip'); if (c && c.textContent) modelo = c.textContent.trim(); }
-    }
-    const dflt = document.getElementById('default-model-chip');
-    if (!modelo && dflt && dflt.textContent) modelo = dflt.textContent.trim();
     const parts = [];
     if (cwd) parts.push('<span class="wm" title="' + esc(cwd) + '"><span class="wm-k">carpeta</span>' + esc(baseName(cwd)) + '</span>');
-    if (modelo) parts.push('<span class="wm"><span class="wm-k">modelo</span>' + esc(modelo) + '</span>');
     el.innerHTML = parts.join('');
     el.hidden = !parts.length;
   }
@@ -1123,6 +1114,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const el = document.createElement('div');
     el.className = 'msg-user' + (opts && opts.queued ? ' queued' : '') + (opts && opts.hidden ? ' hidden-from-agent' : '');
     if (!replay) el.classList.add('in');
+    el.dataset.modo = modoActual;
     if (opts && opts.mid) el.dataset.mid = opts.mid;
     let html = text ? md(text) : '';
     for (const a of atts || []) {
@@ -1298,7 +1290,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
         const input = document.getElementById('input') as HTMLTextAreaElement | null;
         if (input) { input.value = res.text; autosize(); refreshSlashMenu(); input.focus(); }
       }
-      systemNote('Rebobinado: se ocultaron ' + ((res && res.hidden) || 0) + ' mensaje(s) desde aca (el modelo no los ve). El texto quedo en el composer para editarlo.');
+      systemNote('Texto recuperado en el composer para editarlo.');
     } catch (err) {
       toast('No se pudo rebobinar: ' + ((err && err.message) || err), 'err');
     }
@@ -1332,7 +1324,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       markHiddenTail();
       state.hideTail = false;
       await sendText(res.text);
-      systemNote('Regenerando: la respuesta anterior quedo oculta para el modelo (sigue guardada en la sesion).');
+      systemNote('Regenerando la última respuesta.');
     } catch (err) {
       toast('No se pudo regenerar: ' + ((err && err.message) || err), 'err');
     }
@@ -1462,6 +1454,76 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     if (!rafId) rafId = requestAnimationFrame(flushRender);
   };
 
+
+  // ---------- modo de la sesiÃ³n (plan / revisar / ejecutar) ----------
+  // El motor ya no manda el modo Aegis (quedÃ³ en autonomÃ­a permanente), asÃ­ que la UI lo deriva
+  // del permiso que la extensiÃ³n `mode` escribe sobre shell/edit/write en esta sesiÃ³n y lo refresca
+  // al abrir el chat y al cerrar cada turno. Cada mensaje se sella con el modo que tenÃ­a al nacer:
+  // el historial no se re-pinta cuando el modo cambia a mitad de sesiÃ³n.
+  let modoActual: Modo = 'ejecutar';
+  let modoPidiendo = 0;
+  let modoSid = '';
+  let cintaModo: HTMLElement | null = null;
+  let modoConsultaPendiente = false;
+  function cajaDeModo(): HTMLElement | null {
+    return document.getElementById('messages') as HTMLElement | null;
+  }
+  function pintarCinta() {
+    const caja = cajaDeModo();
+    if (!caja) return;
+    caja.dataset.modo = modoActual;
+    if (!cintaModo || !cintaModo.isConnected) {
+      cintaModo = document.createElement('div');
+      cintaModo.id = 'modo-cinta';
+      cintaModo.className = 'modo-cinta';
+      cintaModo.setAttribute('role', 'status');
+    }
+    if (cintaModo.parentElement !== caja) caja.appendChild(cintaModo);
+    const meta = CINTAS[modoActual];
+    cintaModo.textContent = meta.texto;
+    cintaModo.dataset.modo = modoActual;
+    cintaModo.title = 'Modo de la sesión: ' + meta.promesa + '.';
+  }
+  function aplicarModo(m: Modo) {
+    if (esModo(m)) modoActual = m;
+    pintarCinta();
+  }
+  let modoPedidoEn = 0;
+  async function refrescarModo(forzar?: boolean) {
+    const sid = state.current && state.current.id;
+    if (!sid || !rpc.ready) {
+      modoPidiendo++;
+      modoSid = sid || '';
+      modoPedidoEn = 0;
+      modoConsultaPendiente = false;
+      aplicarModo('ejecutar');
+      return;
+    }
+    if (modoSid !== sid) {
+      modoSid = sid;
+      modoPedidoEn = 0;
+      modoPidiendo++;
+      modoConsultaPendiente = false;
+      aplicarModo('ejecutar');
+    }
+    if (modoConsultaPendiente) return;
+    const ahora = performance.now();
+    if (!forzar && ahora - modoPedidoEn < 400) return;
+    modoPedidoEn = ahora;
+    modoConsultaPendiente = true;
+    const mio = ++modoPidiendo;
+    try {
+      const r = await rpc.request('_aegis/unstable/tools/list', { sessionId: sid });
+      if (mio !== modoPidiendo || state.current?.id !== sid) return;
+      modoPedidoEn = performance.now();
+      const modo = modoDesdeHerramientas(r?.tools);
+      if (modo) aplicarModo(modo);
+    } catch (e) {
+      // La lista no está disponible; se conserva el último modo conocido de esta sesión.
+    } finally {
+      if (mio === modoPidiendo) modoConsultaPendiente = false;
+    }
+  }
   let curStream = null;
   function clearStreaming() {
     if (curStream) {
@@ -1476,6 +1538,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   function finishStream() {
     clearStreaming();
     setPill(null);
+    void refrescarModo();
   }
 
   // (v6.5) Un solo contenedor de razonamiento mientras no se intercale nada mas: el
@@ -1669,6 +1732,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       if (!thought) clearStreaming();
       const el = document.createElement('div');
       el.className = 'msg-a' + (hidden ? ' hidden-from-agent' : '');
+      el.dataset.modo = modoActual;
       const body = document.createElement('div');
       body.className = thought ? 'thought' : 'content';
       el.appendChild(body);
@@ -1723,6 +1787,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     if (!el) {
       el = document.createElement('div');
       el.className = state.replaying ? 'tool' : 'tool in';
+      el.dataset.modo = modoActual;
       el.innerHTML = '<span class="tool-ic"></span><div class="tool-body"><div class="tool-title"></div></div>';
       msgWrap().appendChild(el);
       state.tools.set(id, el);
@@ -1740,6 +1805,10 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     // payload y solo se cae al kind cuando no hay nada mejor.
     const title = u.title || shortInput || el.dataset.title || u.kind || 'Herramienta';
     el.dataset.title = title;
+    const nombreTool = nombreToolDeUpdate(u);
+    el.dataset.toolName = nombreTool;
+    el.classList.remove('cita');
+    el.classList.toggle('espera', cortaElStream(modoActual, nombreTool, status));
     const t = el.querySelector('.tool-title');
     t.innerHTML = `${esc(title)}${u.kind && u.kind !== title ? ` <span class="tname">${esc(u.kind)}</span>` : ''}`;
     el.classList.toggle('ok', status === 'completed');
@@ -2397,48 +2466,13 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, render: 0, lastSet: null, lastMsg: null });
     dbg.render++;
     const s = state.usage || {};
-    // Con una sesion nueva no hay uso medido y antes se salia sin asignar el handler: el medidor
-    // quedaba muerto justo cuando uno quiere ver el gasto del periodo. Ahora el panel se abre
-    // siempre; la cifra en el pie aparece cuando hay algo que mostrar.
-    if (s.used == null && s.cost == null) {
-      el.textContent = 'gasto';
-      el.title = 'Gasto y uso: historial de llamadas y ventana del modelo';
-      el.dataset.level = 'na';
-      el.style.cursor = 'pointer';
-      el.onclick = () => {
-        try { openUsagePop(); } catch (err) { report('error', 'panel de gasto: ' + (err && err.message ? err.message : err)); console.error(err); }
-      };
-      return;
-    }
-    // `s.limit` NO es la ventana del modelo: es el UMBRAL de compactacion (1M x 0.839 en
-    // deepseek-v4.1-flash). Pasarse del umbral no es un error, es el disparador haciendo su
-    // trabajo: el motor compacta despues del turno. Antes eso se pintaba rojo con "0 libres", que
-    // se lee como que la app se rompio cuando en realidad esta todo bien.
-    const techo = s.limit;
-    const pct = techo && s.used != null ? Math.round((s.used / techo) * 100) : null;
-    const paso = pct != null && pct >= 100;
-    const flag = pct == null ? '' : paso ? '· ' : pct >= COMPACT_RATIO * 100 ? '~ ' : '';
-    const parts = [];
-    if (pct != null) parts.push(pct + '%');
-    if (s.used != null) {
-      // Pasado el umbral se dice cuanto sobra, no "0 libres".
-      parts.push(paso
-        ? fmtTok(s.used) + ' tok · ' + fmtTok(s.used - techo) + ' sobre el umbral, compacta solo'
-        : fmtTok(s.used) + (techo ? '/' + fmtTok(techo) : '') + ' tok');
-    }
-    if (s.cost != null) parts.push(fmtCost(s.cost));
-    el.textContent = flag + parts.filter(Boolean).join('  ·  ');
-    // El pie es un INDICADOR: no tiene panel propio. Al tocarlo abre el panel de las barras, que es
-    // el unico. Antes habia dos paneles con los mismos datos en lugares distintos.
-    el.title = usageLines().join(String.fromCharCode(10)) + String.fromCharCode(10) + String.fromCharCode(10) + 'Toque para abrir Gasto y uso.';
-    // Rojo solo si NO hay compactacion pendiente y aun asi no entra. Con el umbral pasado el
-    // color es ambar: hay algo que el motor va a resolver solo.
-    el.dataset.level = pct == null ? 'na' : paso ? 'warm' : pct >= COMPACT_RATIO * 100 ? 'hot' : pct >= 50 ? 'warm' : 'ok';
-    el.style.color = pct == null ? '' : paso ? 'var(--warn, #d29922)' : pct >= COMPACT_RATIO * 100 ? 'var(--danger, #e5484d)' : pct >= 50 ? 'var(--warn, #d29922)' : '';
-    el.style.cursor = 'pointer';
-    el.onclick = () => {
-      try { openUsagePop(); } catch (err) { report('error', 'popover de contexto: ' + (err && err.message ? err.message : err)); console.error(err); }
-    };
+    // El pie no duplica el medidor del composer. El botón del topbar abre el detalle único.
+    el.textContent = '';
+    el.title = 'Abrir Gasto y uso desde el botón de la cabecera.';
+    el.dataset.level = 'na';
+    el.style.color = '';
+    el.style.cursor = '';
+    el.onclick = null;
   }
   // Precios por modelo (C:/aegis-web/prices.json, servido por el server web).
   let pricesCache = null;
@@ -3130,6 +3164,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       if (res && Array.isArray(res.configOptions)) state.current.configOptions = res.configOptions;
       if (res && res.modes) state.current.modes = res.modes;
       renderChips();
+      void refrescarModo(true);
     } catch (e) {
       loadFailed = true;
       if (gen === renderGen && state.current?.id === id) systemNote('No se pudo cargar la sesión: ' + e.message);
@@ -3737,10 +3772,10 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   }
 
   // --- Modo debate: conversar antes de trabajar --------------------------------------------
-  // Encendido: la sesión pasa a `chat` (el server rechaza TODA herramienta) y cada mensaje
-  // lleva una instruccion corta para discutir el plan. Cuando decis "dale" (o una de las
-  // frases de VOICE_SETTLE) vuelve a `auto` y ese mensaje ya se ejecuta.
-  var DEBATE: any = DEBATE || { on: false, prev: 'auto', turns: 0, prevEffort: '' };
+  // Encendido: la sesion recibe un perfil de permisos temporal que niega shell/edit/write y cada
+  // mensaje lleva una instruccion corta para discutir el plan. Cuando decis "dale" (o una de las
+  // frases de VOICE_SETTLE) se restauran los permisos y ese mensaje ya se ejecuta.
+  var DEBATE: any = DEBATE || { on: false, turns: 0, prevEffort: '' };
   // Manos libres: se prende con Debate y sigue activo despues de decir "dale" (para escuchar
   // el trabajo y poder seguir hablando). Se apaga apagando Debate.
   var HF: any = { on: false };
@@ -3776,7 +3811,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
 
   function debateKeyFor(id) { return 'aegis.debate.' + (id || 'nuevo'); }
   function debateLoad() {
-    if (!DEBATE) DEBATE = { on: false, prev: 'auto' };
+    if (!DEBATE) DEBATE = { on: false };
     try { DEBATE.on = localStorage.getItem(debateKeyFor(state.current && state.current.id)) === '1'; } catch (e) { DEBATE.on = false; }
     if (HF) HF.on = false;   // el microfono se abre con un gesto (toggle), no al cargar el chat
     DEBATE.turns = 0;
@@ -3799,10 +3834,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       ? 'Modo debate ENCENDIDO: el bot conversa y NO puede usar herramientas. Decí "dale" para pasar a trabajar.'
       : 'Modo debate: discutir el plan antes de que el bot toque nada (sin herramientas).';
   }
-  function debateCurrentMode() {
-    const m = state.current && state.current.modes;
-    return (m && (m.currentModeId || m.current_mode_id)) || 'auto';
-  }
   function debateEffortNow() {
     const opts = (state.current && state.current.configOptions) || [];
     const opt = opts.find((o) => o && o.id === 'thinking_effort');
@@ -3823,7 +3854,9 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   }
   // Perfil de solo lectura del debate: reads permitidos, escritura y shell negados por el server.
   var READ_ONLY_TOOLS = ['read_file', 'grep', 'tree', 'read_image', 'websearch__web_fetch', 'websearch__web_search', 'load_skill', 'load', 'chatrecall__chatrecall', 'extensionmanager__search_available_extensions'];
-  var DEBATE_BLOCKED_TOOLS = ['shell', 'edit', 'write', 'delegate', 'scheduler__manage_schedule', 'extensionmanager__manage_extensions'];
+  // request_mode incluido: el perfil de debate vive en los mismos overrides de sesion, asi que el
+  // agente podria pedir 'ejecutar' y borrarlos. Negarlo mantiene el debate sin salida propia.
+  var DEBATE_BLOCKED_TOOLS = ['shell', 'edit', 'write', 'delegate', 'scheduler__manage_schedule', 'extensionmanager__manage_extensions', 'mode__request_mode'];
   async function debateSetPerms(entries) {
     const sid = state.current && state.current.id;
     if (!sid) return false;
@@ -3850,28 +3883,11 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     if (ok) { try { localStorage.removeItem('aegis.debateProfile'); } catch (e) {} }
     return ok;
   }
-  async function debateSetMode(modeId) {
-    const sid = state.current && state.current.id;
-    if (!sid) return false;
-    try {
-      await rpc.request('session/set_mode', { sessionId: sid, modeId: modeId });
-      if (state.current) {
-        if (!state.current.modes) state.current.modes = {};
-        state.current.modes.currentModeId = modeId;
-      }
-      return true;
-    } catch (e) {
-      systemNote('No pude cambiar el modo a ' + modeId + ': ' + String((e && e.message) || e).slice(0, 120));
-      return false;
-    }
-  }
   async function debateToggle() {
     const next = !(DEBATE && DEBATE.on);
-    if (next) {
-      DEBATE.prev = debateCurrentMode();
-      if (!(await debateSetMode('auto'))) return;   // tools habilitadas + perfil de solo lectura
-      await debateApplyToolProfile();
-    } else if (!(await debateSetMode(DEBATE.prev || 'auto'))) return;
+    // El modo Aegis es autonomo permanente: debatir ya no cambia el modo del motor, solo aplica
+    // el perfil de permisos temporal de la sesion (lectura si, escritura y shell no).
+    if (next && !(await debateApplyToolProfile())) return;
     DEBATE.on = next;
     try { localStorage.setItem(debateKeyFor(state.current && state.current.id), next ? '1' : '0'); } catch (e) {}
     debateSyncBtn();
@@ -3914,7 +3930,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     if (!cur) return;
     const extra = String(userText || '').replace(VOICE_SETTLE, '').replace(/^[\s,.:;-]+/, '').trim();
     const turns = Math.max(1, DEBATE.turns || 1);
-    // 1) el bot escribe el plan final (sigue en modo chat: no puede tocar nada)
+    // 1) el bot escribe el plan final (sigue con el perfil de solo lectura: no puede tocar nada)
     const instr = 'Cerrá el debate. Escribí UN solo mensaje con el plan final acordado: concreto, en imperativo, con el orden de los pasos y lo que NO hay que tocar. No menciones la discusión ni lo que descartamos, no uses herramientas y no incluyas el bloque "Para escuchar" ni encabezados de lectura (este mensaje se manda tal cual como pedido).'
       + (extra ? ' El usuario agrega: ' + extra : '')
       + ' Si en la conversación NO hay trabajo concreto para hacer (fue solo charla), respondé exactamente SIN-PLAN y nada más.';
@@ -3927,7 +3943,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     if (sinPlan) {
       // Solo charla: se oculta el turno artificial de cierre y la conversacion queda.
       await debateHide(1);
-      await debateSetMode('auto');
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
       await debateRestoreToolProfile();
       DEBATE.on = false; DEBATE.turns = 0; HF.on = false;
@@ -3939,7 +3954,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     // 2) el debate entero (incluido el cierre) sale del contexto del agente
     const ocultos = await debateHide(turns + 1);
     // 3) modo trabajo + esfuerzo y modelo originales, y el plan va como mensaje nuevo
-    await debateSetMode('auto');
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
     await debateRestoreToolProfile();
     DEBATE.turns = 0;
@@ -3958,7 +3972,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   async function debateAutoClose() {
     DEBATE.on = false;
     DEBATE.turns = 0;
-    await debateSetMode('auto');
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
     await debateRestoreToolProfile();
     try { localStorage.setItem(debateKeyFor(state.current && state.current.id), '0'); } catch (e) {}
@@ -3974,7 +3987,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const turns = Math.max(1, DEBATE.turns || 1);
     DEBATE.on = false;
     const ocultos = await debateHide(turns);
-    await debateSetMode('auto');
     if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
     await debateRestoreToolProfile();
     DEBATE.turns = 0;
@@ -4943,7 +4955,10 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     try {
       const per = cwd ? localStorage.getItem(pendientesKey(cwd)) : null;
       const j = JSON.parse(per || localStorage.getItem(pendientesKey()) || '{}');
-      return j && typeof j === 'object' ? j : {};
+      if (!j || typeof j !== 'object') return {};
+      // El modo Aegis es autonomo permanente: una eleccion vieja de modo no se aplica.
+      delete j.mode;
+      return j;
     } catch (e) { return {}; }
   }
   function guardarPendientes() {
@@ -5342,31 +5357,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     return [...vistos.values()];
   }
 
-  /** Modos del motor: session/new y session/load traen id, nombre y descripcion. */
-  function modos(): { id: string; name: string; description: string }[] {
-    const m = (state.current && state.current.modes) || {};
-    const av = m.availableModes || m.available_modes || [];
-    if (Array.isArray(av) && av.length) {
-      return av.map((x) => ({ id: String((x && (x.id || x.modeId)) || ''), name: String((x && (x.name || x.id)) || ''), description: String((x && x.description) || '') }));
-    }
-    return opcionesDe('mode').map((o) => ({ id: String(o.value || ''), name: etiquetaOpcion(o), description: String((o && o.description) || '') }));
-  }
-  function modoActivo(): string {
-    const m = state.current && state.current.modes;
-    const cur = m && (m.currentModeId || m.current_mode_id);
-    if (cur) return String(cur);
-    const o = opcionDe('mode');
-    return o ? String(o.currentValue || '') : '';
-  }
-  function seccionesModo(): ComboSection[] {
-    const act = modoActivo();
-    return [{
-      label: 'Modo',
-      hint: 'que puede tocar el bot',
-      items: modos().filter((m) => m.id).map((m) => ({ value: m.id, label: m.name || m.id, meta: m.description, current: m.id === act } as ComboItem)),
-    }];
-  }
-
   /** Niveles del modelo elegido, no los del proveedor: cada modelo tiene su subconjunto. */
   function seccionesEsfuerzo(modelId: string, pid?: string): ComboSection[] {
     const prov = pid || proveedorActivo();
@@ -5411,39 +5401,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     renderChips();
     enfocarChip('chip-model');
   }
-  // El modo se cambia con session/set_mode (es lo que habla el motor y lo que usa el debate). La
-  // opcion `mode` de configOptions se refleja a mano para que el chip diga la verdad sin volver a
-  // pedir la sesion entera; sin chat todavia, queda pendiente para cuando se cree.
-  async function elegirModo(modeId: string) {
-    if (modeId === modoActivo()) { renderChips(); return; }
-    if (!state.current) {
-      state.pendingConfig = state.pendingConfig || {};
-      state.pendingConfig.mode = modeId;
-      guardarPendientes();
-      const cache = leerCacheChips();
-      const opt = cache.find((o) => o && o.id === 'mode');
-      if (opt) { opt.currentValue = modeId; guardarCacheChips(cache); }
-      renderChips();
-      enfocarChip('chip-mode');
-      return;
-    }
-    try {
-      await rpc.request('session/set_mode', { sessionId: state.current.id, modeId: modeId });
-    } catch (e) {
-      systemNote('No se pudo cambiar el modo a ' + modeId + ': ' + (e && e.message ? e.message : e));
-      renderChips();
-      return;
-    }
-    if (!state.current.modes) state.current.modes = {};
-    state.current.modes.currentModeId = modeId;
-    for (const o of state.current.configOptions || []) if (o && o.id === 'mode') o.currentValue = modeId;
-    const cache = leerCacheChips();
-    const opt = cache.find((o) => o && o.id === 'mode');
-    if (opt) { opt.currentValue = modeId; guardarCacheChips(cache); }
-    renderChips();
-    enfocarChip('chip-mode');
-  }
-
   // El panel abierto se guarda para poder refrescar sus secciones cuando llega el catalogo: un
   // renderChips() a mitad de camino cerraria el panel que el usuario acaba de abrir.
   const comboVivo: { actual: ComboHandle | null } = { actual: null };
@@ -5543,18 +5500,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     // la sesion. Al llegar se repinta el mismo paso sin cerrar ni borrar lo tipeado.
     reabrirSiLlegaCatalogo(() => secciones());
   }
-  function abrirModo(anchor: HTMLElement) {
-    abrirCombo({
-      anchor,
-      anchorSel: '#chips .chip-mode',
-      title: 'Modo',
-      placeholder: 'Buscar modo…',
-      sections: seccionesModo(),
-      empty: 'El motor no informo modos para esta sesion.',
-      onPick: (v) => { void elegirModo(v); },
-    });
-  }
-
   /** Proveedor al que pertenece un modelo del panel (la busqueda cruza proveedores). */
   function proveedorDeModelo(modelId: string): string {
     const act = proveedorActivo();
@@ -5617,11 +5562,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const provSel = provOpts.find((o) => o && o.value === provId);
     const provNombre = String((provSel && (provSel.name || etiquetaOpcion(provSel))) || (provDeCatalogo(provId) || {}).providerName || provId || 'Proveedor');
 
-    const modosDisponibles = modos().filter((m) => m.id);
-    const modoId = modoActivo();
-    const modoSel = modosDisponibles.find((m) => m.id === modoId);
-    const modoNombre = String((modoSel && (modoSel.name || modoSel.id)) || etiquetaOpcion({ value: modoId, name: modoId }) || modoId || 'Modo');
-
     const modelId = modeloActivo();
     const modelCat = modelosDe(provId).find((m) => String(m.id) === modelId);
     const modelNombre = String((modelCat && modelCat.name) || modelId || 'Modelo');
@@ -5631,9 +5571,6 @@ import { cuerpoGasto, type Stats } from './app/gasto';
 
     // Un solo chip para "con que hablamos": proveedor delante (contexto), modelo, esfuerzo. El
     // panel de ese chip elige modelo de cualquier proveedor o cambia de proveedor.
-    if (modosDisponibles.length > 1) {
-      wrap.appendChild(chipCombo('chip-mode', 'Modo', modoNombre, () => abrirModo($('#chips .chip-mode'))));
-    }
     if (modelId || opcionesDe('model').length || modelosDe(provId).length) {
       wrap.appendChild(chipCombo('chip-model', 'Modelo y proveedor', modelNombre, () => abrirModelo($('#chips .chip-model')), true,
         effortOptions.length ? effChip : '', provNombre));
@@ -7373,8 +7310,8 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     chips: { render: renderChips, effortNow: () => effortGlobal, options: () => effortOptions.map((o) => o.value), memo: effortByModel,
       // Combobox: abrir cada panel y leer lo que va a mostrar, sin pasar por el DOM a ciegas.
       abrirModelo: () => abrirModelo($('#chips .chip-model')),
-      abrirModo: () => abrirModo($('#chips .chip-mode')), abierto: () => comboAbierto(),
-      secciones: () => ({ modelo: seccionesModelo(), modo: seccionesModo() }),
+      abierto: () => comboAbierto(),
+      secciones: () => ({ modelo: seccionesModelo() }),
       // Mapeo de esfuerzos: lo que la UI ofrece para un modelo y lo que aprendio del motor.
       efforts: {
         aplicar: (pid: string, m: string, ef?: string) => aplicarModelo(pid, m, ef),
@@ -7384,7 +7321,10 @@ import { cuerpoGasto, type Stats } from './app/gasto';
         efectivo: (pid: string, m: string, q?: string) => effortEfectivo(pid, m, q),
         conocidos: () => Object.keys(effortsConocidos).map((k) => ({ key: k, values: effortsConocidos[k].values })),
       },
-      catalogo: () => catalogo, cargarCatalogo, modoActivo, proveedorActivo, modeloActivo,
+      catalogo: () => catalogo, cargarCatalogo, proveedorActivo, modeloActivo,
+      modo: () => modoActual,
+      cintaModo: () => { const c = document.getElementById('modo-cinta'); return c ? c.textContent : ''; },
+      setModo: (m) => aplicarModo(m), refrescarModo,
       // Abrir una sesion existente por id: lo usan los gates para probar el chip con motor real.
       abrirSesion: (entry) => openSession(entry),
       // Un probe reemplaza el aplicador para medir el orden de las llamadas sin red.
