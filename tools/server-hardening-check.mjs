@@ -43,7 +43,8 @@ function request(path, { method = 'GET', peer = '127.0.0.1', host = 'localhost',
   return handler(req, res).then(() => res);
 }
 assert.equal((await request('/tts?text=private', { host: 'demo.trycloudflare.com', headers: { 'cf-ray': 'yes' } })).statusCode, 401);
-assert.equal((await request('/tts', { host: cfg.publicHost, peer: '192.168.100.55' })).statusCode, 400);
+// /tts ya no se sirve sin sesion web: en LAN tampoco se llega a validar el texto.
+assert.equal((await request('/tts', { host: cfg.publicHost, peer: '192.168.100.55' })).statusCode, 401);
 assert.equal((await request('/healthz')).statusCode, 200);
 const health = await request('/healthz?backend=1');
 assert.equal(health.statusCode, 503);

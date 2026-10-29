@@ -40,6 +40,26 @@ function wsInside(path: string): boolean {
 // del harness.
 const WS_DEFAULTS_FILE = join(process.env.AEGIS_PATH_ROOT || 'C:/Aegis-Proyects/state', 'config', 'workspaces.defaults.json');
 
+// ------------------------------------------------------- rutas que no se exponen nunca
+// Lista UNICA para /changes.json y /file.json. Antes cada ruta tenia su propio regex y el de
+// /file.json era mas laxo: dejaba leer state/, credentials*/ y .config/, que el de /changes.json
+// ya bloqueaba. Se compara case-insensitive contra cada SEGMENTO de la ruta, no solo contra el
+// nombre final: un directorio .git, state o config en cualquier nivel queda fuera, y sus hijos
+// tambien (una ruta absoluta o relativa se evalua igual).
+// Bloqueado:
+//   segmentos:  state  config  credentials  .git  .ssh  .aws  .config  AppData
+//   archivos:   .env y .env.*  auth.json  config.json  config.yaml|yml  permission.yaml|yml
+//               secrets.yaml|yml|json  credentials.json|yaml  tokens.json  id_rsa  id_ed25519
+//               *.pfx  *.db  *.sqlite  *.sqlite3  *.sqliteN
+// No se bloquea Configuration/ ni CredentialsX/ (coinciden solo por prefijo), ni archivos sin
+// extension como Dockerfile o Makefile.
+const SENSITIVE_SEGMENT = /^(?:state|config|credentials|\.git|\.ssh|\.aws|\.config|appdata)$/i;
+const SENSITIVE_FILE = /^(?:\.env(?:\..*)?|auth\.json|config\.(?:json|ya?ml)|permission\.ya?ml|secrets?\.ya?ml|secrets?\.json|credentials?(?:\..*)?|tokens\.json|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))$/i;
+function esRutaSensible(path: string): boolean {
+  const partes = String(path || '').split(/[\\/]+/).filter(Boolean);
+  return partes.some((parte) => SENSITIVE_SEGMENT.test(parte) || SENSITIVE_FILE.test(parte));
+}
+
 // Cola por archivo dentro de este proceso: protege el ciclo leer/modificar/renombrar completo.
 // Una operacion fallida no impide que avance la siguiente ni oculta el error al solicitante.
 const fileQueues = new Map<string, Promise<void>>();
@@ -919,8 +939,13 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
 
     // Voces neuronales de Microsoft (edge-tts). El cliente pide una frase y recibe mp3.
     if (url.pathname === '/tts' && req.method === 'GET') {
-      // Esta ruta precede la puerta general del tunel: protegerla explicitamente.
-      if (tunneled && !authed(req)) {
+      // Esta ruta precede la puerta general del tunel. Antes solo se pedia cookie en el tunel:
+      // cualquier peer de la LAN podia hacer sintetizar a Piper (DoS trivial). Ahora exige la
+      // misma credencial que el resto de las rutas privadas, tambien en LAN.
+      // Se acepta cookie O token en query porque el acceso por LAN usa ?token= y no cookie: con
+      // solo cookie, la lectura en voz alta dejaba de sonar fuera de localhost.
+      const ttsToken = url.searchParams.get('token');
+      if (!authed(req) && !verifyToken(ttsToken)) {
         res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         res.end(JSON.stringify({ error: 'unauthorized', login: '/login' }));
         return;
@@ -1248,7 +1273,8 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       // Comprobar ambas representaciones: una junction en la raiz es valida, pero
       // una junction/symlink desde un workspace hacia fuera de su raiz real no lo es.
-      const denied = (path: string) => /(?:^|[\\/])(?:state|config|\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.(?:json|ya?ml)|secrets?\.ya?ml|permission\.ya?ml|tokens\.json|credentials?(?:\.[^\\/]*)?|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      // Validacion compartida con /file.json (esRutaSensible): una sola lista de rutas prohibidas.
+      const denied = esRutaSensible;
       const inside = (path: string, root: string) => {
         const p = resolve(path).toLowerCase();
         const r = resolve(root).toLowerCase();
@@ -1361,9 +1387,10 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const raw = url.searchParams.get('path') || '';
       const resolvedPath = resolve(raw);
-      // No ofrecer credenciales ni binarios en la vista de diff. Las rutas sin extension
-      // siguen habilitadas para proyectos que editan Dockerfile, Makefile, etc.
-      const deny = (path: string) => /(?:^|[\\/])(?:\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.json|config\.ya?ml|permission\.ya?ml|secrets\.ya?ml|tokens\.json|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      // Misma lista que /changes.json (esRutaSensible): state, config, credentials*/, .git, .ssh,
+      // .aws, .config, AppData y los archivos de credenciales no se leen para el diff.
+      // Las rutas sin extension siguen habilitadas para proyectos que editan Dockerfile, Makefile, etc.
+      const deny = esRutaSensible;
       const allowed = (path: string) => wsInside(path) && !deny(path);
       if (!raw || !allowed(resolvedPath)) {
         res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store', ...SEC });
@@ -1762,7 +1789,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       const html = String(data);
       const assets = ['app.css', 'bundle.js', 'doctor.js', 'app.js', 'skills.js', 'memory.js', 'artifacts.js', 'workspace-nav.js',
         'context-meter.js', 'session-mode.js', 'palette.js', 'onboarding.js',
-        'handoff.js', 'split-view.js', 'stats.js', 'activity.js', 'changes.js'];
+        'handoff.js', 'split-view.js', 'stats.js', 'activity.js'];
       const versions = await Promise.all(assets.map(async (asset) => {
         try {
           return [asset, crypto.createHash('sha256').update(await readFile(join(APP, asset))).digest('hex')] as const;

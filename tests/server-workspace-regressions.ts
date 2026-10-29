@@ -64,6 +64,12 @@ try {
   await writeFile(siblingPath, secretText);
   const hiddenPath = join(workspace, 'SECRETS.YAML');
   await writeFile(hiddenPath, secretText);
+  // Antes /file.json no bloqueaba estos dos: state/ y credentials.json se podian leer enteros.
+  await mkdir(join(workspace, 'state'));
+  const statePath = join(workspace, 'state', 'pendientes.txt');
+  await writeFile(statePath, secretText);
+  const credentialsPath = join(workspace, 'credentials.json');
+  await writeFile(credentialsPath, secretText);
   await writeFile(join(workspace, 'config.json'), secretText);
   await mkdir(join(workspace, '.git'));
   await writeFile(join(workspace, '.git', 'visible.txt'), secretText);
@@ -92,16 +98,16 @@ try {
     await delay(50);
   }
   assert.ok(ready, 'server de fixture no arranco: ' + output);
-  // No se sintetiza audio: los dos rechazos deben ocurrir antes de invocar Piper/Edge.
+  // /tts exige la sesion web como /doctor.json, /changes.json y /file.json: sin cookie no se
+  // sintetiza nada, ni desde la LAN ni por el tunel, y no se invoca Piper en ningun rechazo.
   const tooLong = 'x'.repeat(1201);
   const ttsPath = '/tts?' + new URLSearchParams({ text: tooLong, engine: 'piper' });
-  const oversized = await fetch(base + ttsPath);
-  assert.equal(oversized.status, 413);
-  assert.match(await oversized.text(), /1200/);
-  const tunnelTts = await fetch(base + ttsPath, { headers: { 'cf-connecting-ip': '203.0.113.9' } });
-  assert.equal(tunnelTts.status, 401, 'autenticacion del tunel precede validacion de longitud');
-  assert.equal((await tunnelTts.json() as { error: string }).error, 'unauthorized');
-  console.log('PASS /tts: texto >1200 rechazado 413; tunel sin cookie 401 (sin sintetizar)');
+  for (const headers of [{}, { 'cf-connecting-ip': '203.0.113.9' }]) {
+    const unauth = await fetch(base + ttsPath, { headers });
+    assert.equal(unauth.status, 401, 'tts sin cookie (LAN o tunel) no sintetiza');
+    assert.equal((await unauth.json() as { error: string }).error, 'unauthorized');
+  }
+  console.log('PASS /tts: LAN y tunel sin cookie -> 401');
   let swept = false;
   for (let n = 0; n < 60; n++) {
     try { swept = (await readFile(marker, 'utf8')) === 'fixture-only'; if (swept) break; }
@@ -119,6 +125,11 @@ try {
   assert.equal(passwordLogin.status, 302);
   const cookie = passwordLogin.headers.get('set-cookie')?.split(';', 1)[0];
   assert.match(cookie || '', /^gw_auth=/);
+  // Con sesion valida, /tts sigue validando la longitud antes de sintetizar.
+  const oversized = await fetch(base + ttsPath, { headers: { Cookie: cookie! } });
+  assert.equal(oversized.status, 413);
+  assert.match(await oversized.text(), /1200/);
+  console.log('PASS /tts: sesion valida y texto >1200 -> 413 (sin sintetizar)');
   const read = (path: string, headers: Record<string, string> = {}, method = 'GET') =>
     fetch(base + '/file.json?' + new URLSearchParams({ path }), { method, headers: { Cookie: cookie!, ...headers }, signal: AbortSignal.timeout(3000) });
   // /outbox.json usa DIR/outbox (no el workspace ni el store): solo fixtures efimeros.
@@ -191,7 +202,8 @@ try {
   console.log('PASS /file.json: LAN sin cookie 401; sesion valida lee archivo inocuo, hash y archivo nuevo');
 
   for (const path of [hiddenPath, join(workspace, 'config.json'), join(workspace, '.git', 'visible.txt'),
-    join(workspace, '.env.local'), outsidePath, siblingPath, join(workspace, '..', 'outside', 'public.txt')]) {
+    join(workspace, '.env.local'), statePath, credentialsPath, outsidePath, siblingPath,
+    join(workspace, '..', 'outside', 'public.txt')]) {
     const response = await read(path);
     assert.equal(response.status, 403, `ruta denegada: ${path}`);
     assert.equal(response.headers.get('cache-control'), 'no-store');
@@ -199,7 +211,7 @@ try {
   }
   const emptyPath = await fetch(base + '/file.json', { headers: { Cookie: cookie! } });
   assert.equal(emptyPath.status, 403, 'path vacio');
-  console.log('PASS /file.json: secretos, .git, traversal, fuera de workspace y path vacio -> 403');
+  console.log('PASS /file.json: secretos, .git, state/, credentials.json, traversal, fuera de workspace y path vacio -> 403');
 
   // Symlink/junction solo si el SO permite crearlo sin privilegios. Ambos casos verifican realpath.
   try {
