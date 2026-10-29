@@ -189,12 +189,9 @@ await conPagina(PERFILES.escritorio, async (page) => {
   check('escribir un modelo no inventa modelos en el paso 1', !sinModelos.secciones.includes('Modelos') && sinModelos.filas === 0, `${sinModelos.filas} filas · ${sinModelos.vacio.slice(0, 40)}`);
   await page.keyboard.press('Escape');
 
-  // Modo: sigue siendo su propio panel
-  await page.click('#chips .chip-mode');
-  await page.waitForSelector('.combo-panel');
-  const pm = await panel(page);
-  check('el chip de modo abre su panel con los modos del motor', pm.titulo === 'Modo' && pm.filas.length >= 3, pm.filas.join(', '));
-  await page.keyboard.press('Escape');
+  // Modo: la autonomia es permanente, el chip de modo ya no existe
+  const chipModo = await page.evaluate(() => !!document.querySelector('#chips .chip-mode'));
+  check('sin chip de modo: la autonomia no se elige', !chipModo);
 });
 
 // ---------- A56: hoja inferior con los mismos pasos ----------
