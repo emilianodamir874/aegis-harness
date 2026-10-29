@@ -83,41 +83,20 @@ await page.waitForTimeout(200);
 await page.keyboard.press('Escape');
 
 // ---------- 2. uso y gasto ----------
-await page.evaluate(() => { document.querySelector('#meta-right')?.click(); });
-await page.waitForTimeout(600);
-const uso = await medir('#usage-panel .panel', {
-  rotulo: '.cc-hero-k', pct: '.cc-hero b', gasto: '.cc-money b',
-  filaK: '.cc-r span', filaV: '.cc-r b',
+// El panel de gasto se reescribio y ahora tiene su propio gate (tools/gasto-check.mjs): aca solo
+// se comprueba que abra y que use el chasis comun, sin duplicar los quince casos de alla.
+await page.evaluate(() => { if (!document.querySelector('#usage-panel')) document.querySelector('#meta-right')?.click(); });
+await page.waitForTimeout(900);
+const usoBasico = await page.evaluate(() => {
+  const p = document.querySelector('#usage-panel .panel');
+  if (!p) return null;
+  const r = p.getBoundingClientRect();
+  return { chasis: !!p.querySelector('.panel-head .panel-title') && !!p.querySelector('.panel-body'),
+    dentro: r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 1, secciones: p.querySelectorAll('.gs-sec').length };
 });
-console.log('uso:', JSON.stringify(uso));
-check('el panel de uso muestra la cifra de gasto', !!(uso && uso.roles.gasto), JSON.stringify(uso && uso.roles));
-check('la cifra de gasto es la mas grande del panel', uso && uso.roles.gasto > uso.roles.filaV && uso.roles.gasto > uso.roles.rotulo, `${uso && uso.roles.gasto} px`);
-check('los rotulos son mas chicos que los valores', uso && uso.roles.filaK < uso.roles.filaV && uso.roles.rotulo < uso.roles.pct, `${uso && uso.roles.filaK} < ${uso && uso.roles.filaV}`);
-const secciones = await page.evaluate(() => [...document.querySelectorAll('#usage-panel .cc-sec span')].map((c) => c.textContent.trim()));
-check('el panel tiene las secciones de Claude Code', ['Gasto', 'Último paso', 'Sesión'].every((x) => secciones.includes(x)), secciones.join(' | '));
-const filasPares = await page.evaluate(() => {
-  const f = [...document.querySelectorAll('#usage-panel .cc-r')];
-  const desalineadas = f.filter((r) => {
-    const v = r.querySelector('b');
-    const rr = r.getBoundingClientRect(), rv = v.getBoundingClientRect();
-    return Math.abs(rv.right - rr.right) > 2;
-  }).length;
-  return { n: f.length, desalineadas };
-});
-check('las filas etiqueta/valor quedan alineadas a la derecha', filasPares.n > 4 && filasPares.desalineadas === 0, `${filasPares.n} filas, ${filasPares.desalineadas} desalineadas`);
-check('el panel de uso entra entero en pantalla', uso && uso.dentro && !uso.desborde, `${uso && uso.ancho}x${uso && uso.alto}`);
-const dinero = await page.evaluate(() => ({
-  v: document.querySelector('#usage-panel .cc-money b').textContent.trim(),
-  s: document.querySelector('#usage-panel .cc-money span').textContent.trim(),
-}));
-console.log('gasto:', JSON.stringify(dinero));
-await page.screenshot({ path: 'tools/shots/panel-uso-real.png', clip: await page.evaluate(() => {
-  const r = document.querySelector('#usage-panel .panel').getBoundingClientRect();
-  return { x: Math.max(0, r.x - 8), y: Math.max(0, r.y - 8), width: r.width + 16, height: r.height + 16 };
-}) });
-await page.keyboard.press('Escape');
-await page.evaluate(() => { document.querySelector('#meta-right')?.click(); });
-await page.waitForTimeout(200);
+check('el panel de gasto abre con el chasis comun', !!usoBasico && usoBasico.chasis && usoBasico.secciones >= 4, JSON.stringify(usoBasico));
+check('el panel de gasto entra entero en pantalla', !!usoBasico && usoBasico.dentro, JSON.stringify(usoBasico));
+await page.evaluate(() => document.querySelector('#usage-panel .panel-x')?.click());
 
 // ---------- 3. objetivos ----------
 await page.evaluate(() => document.querySelector('#btn-goals')?.click());

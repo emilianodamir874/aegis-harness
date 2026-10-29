@@ -11,6 +11,7 @@ import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
 import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
 import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/panel';
+import { cuerpoGasto, type Stats } from './app/gasto';
 (() => {
   'use strict';
   // Legacy dynamic boundaries: DOM nodes and server payloads remain loosely typed.
@@ -2212,131 +2213,107 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
   // Panel de contexto y gasto. Gramatica de Claude Code (/cost, /status): una cifra grande por
   // bloque, filas etiqueta/valor en monoespaciada alineadas a la derecha, secciones con regla
   // fina y sin cajas anidadas.
-  function cuerpoUso() {
-    const u = state.usage || {};
-    const mp: any = modelParts() || {};
-    const pct = u.limit && u.used != null ? Math.min(100, (u.used / u.limit) * 100) : null;
-    const ct = compactTrig(u);
-    const trig = ct.at;
-    const trigPct = ct.pct != null ? ct.pct : COMPACT_RATIO * 100;
-    const col = pct == null ? 'var(--text-4)' : pct >= trigPct ? 'var(--danger)' : pct >= 50 ? 'var(--warn)' : 'var(--ok)';
-    const mu = u.last || {};
-    const rate = stepRate(mu);
+  // ---------- datos del panel de gasto ----------
+  // /stats.json agrega usage_ledger (44.500 llamadas) en un proceso aparte, con cache de 60 s en
+  // el server. Aca se cachea por periodo en memoria para no pedirlo dos veces al abrir y cerrar.
+  const GASTO_DIAS_KEY = 'aegis.gastoDias';
+  let gastoDias = 7;
+  try {
+    const raw = localStorage.getItem(GASTO_DIAS_KEY);
+    if (raw != null && /^(0|1|7|30)$/.test(raw)) gastoDias = Number(raw);
+  } catch {}
+  let gastoStats: Stats | null = null;
+  let gastoCargando = false;
+  let gastoError = '';
+  const gastoCache = new Map<number, Stats>();
+  let gastoPedido = 0;
 
-    const fila = (k, v, cls?) => '<div class="cc-r"><span>' + esc(k) + '</span><b' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</b></div>';
-    const sec = (t, extra?) => '<div class="cc-sec"><span>' + esc(t) + '</span>' + (extra ? '<em>' + esc(extra) + '</em>' : '') + '</div>';
-    const tok = (n) => (n == null ? 'sin datos' : niceTok(n) + ' tok');
-
-    const tokSesion = (u.inTok != null || u.outTok != null) ? (u.inTok || 0) + (u.outTok || 0) : null;
-    const llamadas = Array.isArray(u.modelUsage) && u.modelUsage.length
-      ? u.modelUsage.reduce((n, m) => n + (m.calls || 0), 0) + (u.compactionCalls || 0) : null;
-    const porPaso = llamadas && tokSesion != null && llamadas > 0 ? Math.round(tokSesion / llamadas) : null;
-
-    let cuerpo =
-      '<div class="cc-hero"><b style="color:' + col + '">' + (pct == null ? '--' : Math.round(pct) + '%') + '</b>'
-      + '<span class="cc-hero-k">del contexto</span>'
-      + '<em>' + (pct == null ? 'sin medir' : pct >= trigPct ? 'va a compactar' : pct >= 50 ? 'más de la mitad' : 'holgado') + '</em></div>'
-      + '<div class="cc-bar"><i style="background:' + col + '"></i><em style="left:' + Math.round(trigPct) + '%"></em></div>'
-      + '<div class="cc-nota">' + (u.used == null ? 'todavía sin datos de uso'
-          : '<b>' + niceTok(u.used) + '</b> de ' + niceTok(u.limit) + ' tok'
-            + (trig ? ' · compacta a ' + niceTok(trig) + ' (' + Math.round(trigPct) + '%)' + (ct.estimated ? ' estimado' : '') : '')) + '</div>'
-
-      + sec('Gasto')
-      + '<div class="cc-money"><b>' + (u.cost == null ? '--' : fmtCost(u.cost)) + '</b>'
-      + '<span>' + (u.inTok != null || u.outTok != null ? niceTok((u.inTok || 0) + (u.outTok || 0)) + ' tokens en el chat' : 'sin tokens medidos')
-      + (mu.cost != null ? '<br>último paso ' + fmtCost(mu.cost) : '') + '</span></div>'
-
-      + sec('Sesión')
-      + fila('entrada', tok(u.inTok))
-      + fila('salida', tok(u.outTok))
-      + (porPaso != null ? fila('por paso', niceTok(porPaso) + ' tok · ' + llamadas + ' llamadas') : '')
-      + fila('margen', u.limit && u.used != null && trig ? tok(Math.max(0, trig - u.used)) + ' antes de compactar' : '--');
-
-    // ULTIMO PASO: solo si hay medicion. Una seccion con cinco guiones se lee como un panel roto.
-    const sinPaso = mu.inputTokens == null && mu.outputTokens == null && mu.elapsedMs == null;
-    if (sinPaso) {
-      cuerpo += sec('Último paso') + '<div class="cc-nota">Se llena con el próximo turno.</div>';
-    } else {
-      cuerpo += sec('Último paso')
-        + fila('entrada', tok(mu.inputTokens))
-        + fila('salida', tok(mu.outputTokens))
-        + fila('cache', mu.cacheReadTokens != null && ((mu.inputTokens || 0) + mu.cacheReadTokens) > 0
-            ? Math.round((mu.cacheReadTokens / Math.max(1, mu.inputTokens || 0)) * 100) + '%' : '--')
-        + fila('tiempo', mu.elapsedMs != null ? (mu.elapsedMs / 1000).toFixed(1) + ' s · ' + (rate ? fmtTps(rate.value) : '--') : '--')
-        + fila('1er token', mu.timeToFirstTokenMs != null ? (mu.timeToFirstTokenMs / 1000).toFixed(1) + ' s' : '--');
+  async function cargarGasto(dias: number): Promise<void> {
+    const cache = gastoCache.get(dias);
+    gastoStats = cache || null;
+    gastoError = '';
+    gastoCargando = true;
+    const token = ++gastoPedido;
+    pintarUso();
+    try {
+      const r = await fetch('./stats.json?days=' + dias, { headers: { accept: 'application/json' } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = (await r.json()) as Stats;
+      if (d && d._error) throw new Error(d._error);
+      gastoCache.set(dias, d);
+      if (token !== gastoPedido) return;      // llego tarde: ya hay otro periodo pedido
+      gastoStats = d;
+      gastoError = '';
+    } catch (e) {
+      if (token !== gastoPedido) return;
+      gastoError = (e && (e as Error).message) ? String((e as Error).message).slice(0, 120) : 'error de red';
+    } finally {
+      if (token === gastoPedido) { gastoCargando = false; pintarUso(); }
     }
+  }
 
-    let extra = '';
-    // BITÁCORA DE COMPACTACIONES: cuándo compactó, con cuánto contexto y quién lo pidió.
-    const clog = Array.isArray(u.compactionLog) ? u.compactionLog : null;
-    if (clog && clog.length) {
-      const quien = (t) => t === 'tool' ? 'modelo' : t === 'manual' ? 'usuario' : 'umbral';
-      extra += sec('Compactaciones', String(clog.length));
-      extra += clog.slice(-6).reverse().map((e) => {
-        const hora = typeof e.at === 'string' ? e.at.slice(11, 16) : '--:--';
-        const libre = (e.beforeTokens || 0) - (e.afterTokens || 0);
-        // La nota va en UNA linea con el texto completo en el title: antes desbordaba el panel.
-        return '<div class="cc-r"><span>' + esc(quien(e.trigger) + ' ' + hora) + '</span><b class="dim">'
-          + niceTok(e.beforeTokens || 0) + ' → ' + niceTok(e.afterTokens || 0) + '</b></div>'
-          + (e.note ? '<div class="cc-nota cc-una" title="' + esc(String(e.note)) + '">' + esc(String(e.note)) + '</div>' : '')
-          + (libre > 0 ? '<div class="cc-nota">liberó ' + niceTok(libre) + ' tok</div>' : '');
-      }).join('');
-    }
-    // Gasto por modelo: una sesión puede cambiar de modelo a mitad de camino.
-    if (Array.isArray(u.modelUsage) && u.modelUsage.length) {
-      extra += sec('Por modelo');
-      extra += u.modelUsage.map((m) => '<div class="cc-r"><span>' + esc(String(m.model)) + '</span><b class="dim">'
-        + m.calls + ' llam · ' + niceTok(m.inputTokens) + ' in · ' + niceTok(m.outputTokens) + ' out</b></div>').join('');
-    }
-    if (u.compactionCalls) {
-      extra += sec('Compactación interna');
-      extra += fila('llamadas', String(u.compactionCalls))
-        + fila('entrada', tok(u.compactionInputTokens))
-        + fila('salida', tok(u.compactionOutputTokens));
-    }
-
-    return { cuerpo: cuerpo + (extra ? '<div class="cc-cols">' + extra + '</div>' : ''), pct: pct as number | null, mp };
+  function cuerpoUso(): string {
+    return cuerpoGasto({
+      dias: gastoDias,
+      stats: gastoStats,
+      cargando: gastoCargando,
+      error: gastoError,
+      ctx: (state.usage || {}) as any,
+    });
   }
 
   // Un solo repintado por frame aunque lleguen diez usage_update seguidos: rearmar el HTML en
   // cada evento es lo que hacia que el panel se sintiera pesado durante un turno.
   let refrescoUso = 0;
-  function pintarUso() {
+  function pintarUso(): void {
     if (!usagePanel) return;
-    const d = cuerpoUso();
-    usagePanel.body.innerHTML = d.cuerpo;
-    const bar = usagePanel.body.querySelector('.cc-bar i') as HTMLElement | null;
-    if (bar) bar.style.width = (d.pct == null ? 0 : d.pct) + '%';
+    usagePanel.body.innerHTML = cuerpoUso();
+    const nota = usagePanel.foot.querySelector('.gs-foot-note');
+    if (nota) nota.textContent = notaPieUso();
+    // El historial llega despues de abrir: sin re-ubicar, el panel quedaba clavado donde estaba
+    // con la mitad del contenido fuera de la pantalla.
+    usagePanel.reubicar();
   }
-  function pedirRefrescoUso() {
+  function pedirRefrescoUso(): void {
     if (!usagePanel || refrescoUso) return;
     refrescoUso = requestAnimationFrame(() => { refrescoUso = 0; pintarUso(); });
   }
 
-  function openUsagePop() {
-    const d = cuerpoUso();
+  function openUsagePop(): void {
+    const mp: any = modelParts() || {};
     usagePanel = abrirPanel({
       id: 'usage-panel',
       anchor: ($('#meta-right') as HTMLElement) || document.body,
       anchorSel: '#meta-right',
-      title: 'Contexto y gasto',
-      sub: (d.mp.model || 'modelo ?') + (d.mp.effort ? ' · ' + d.mp.effort : ''),
-      body: d.cuerpo,
-      footer: '<button type="button" class="panel-btn" id="up-desglose">Ver qué ocupa el contexto</button>'
-        + '<span class="panel-hint">Esc cierra</span>',
+      title: 'Gasto y uso',
+      sub: (gastoDias === 0 ? 'todo el historial' : gastoDias === 1 ? 'hoy' : 'últimos ' + gastoDias + ' días')
+        + (mp.model ? ' · ' + mp.model : ''),
+      body: cuerpoUso(),
+      footer: '<span class="panel-hint gs-foot-note"></span>',
       onClose: () => { usagePanel = null; },
     });
-    const link = usagePanel.foot.querySelector('#up-desglose') as HTMLElement | null;
-    if (link) link.addEventListener('click', () => {
-      closeUsagePop();
-      closeMenus();
-      const chip = document.getElementById('ctx-chip') || document.querySelector('.ctx-chip');
-      if (chip instanceof HTMLElement) chip.click();
+    // Cambio de periodo: delegado en el cuerpo, que se repinta entero en cada refresco.
+    usagePanel.body.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement | null)?.closest('.gs-tab') as HTMLElement | null;
+      if (!b) return;
+      const d = Number(b.dataset.dias);
+      if (!Number.isFinite(d) || d === gastoDias) return;
+      gastoDias = d;
+      try { localStorage.setItem(GASTO_DIAS_KEY, String(d)); } catch {}
+      usagePanel?.setTitle('Gasto y uso', d === 0 ? 'todo el historial' : d === 1 ? 'hoy' : 'últimos ' + d + ' días');
+      void cargarGasto(d);
     });
-    // La barra se pinta con su valor ya puesto (sin animar desde 0: eso se leia como que el
-    // panel tardaba en cargar).
-    const bar = usagePanel.body.querySelector('.cc-bar i') as HTMLElement | null;
-    if (bar) bar.style.width = (d.pct == null ? 0 : d.pct) + '%';
+    void cargarGasto(gastoDias);
+  }
+
+  // La nota del pie dice con que se esta midiendo: sin eso, los numeros del periodo parecen
+  // facturacion y son una estimacion derivada del store.
+  function notaPieUso(): string {
+    const s2 = gastoStats;
+    if (!s2 || !s2.totals) return '';
+    const f = (s2.costSources || []).find((x) => x.source === 'estimated');
+    const pct = f && s2.totals.calls ? Math.round((f.calls / s2.totals.calls) * 100) : null;
+    return pct == null ? 'estimado sobre el historial local' : pct + '% de las llamadas con costo estimado';
   }
 
   function renderUsage() {
@@ -2345,7 +2322,19 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     const dbg = state.usageDbg || (state.usageDbg = { setUsage: 0, setMsgUsage: 0, render: 0, lastSet: null, lastMsg: null });
     dbg.render++;
     const s = state.usage || {};
-    if (s.used == null && s.cost == null) { el.textContent = ''; el.removeAttribute('title'); el.removeAttribute('data-level'); return; }
+    // Con una sesion nueva no hay uso medido y antes se salia sin asignar el handler: el medidor
+    // quedaba muerto justo cuando uno quiere ver el gasto del periodo. Ahora el panel se abre
+    // siempre; la cifra en el pie aparece cuando hay algo que mostrar.
+    if (s.used == null && s.cost == null) {
+      el.textContent = 'gasto';
+      el.title = 'Gasto y uso: historial de llamadas y contexto de este chat';
+      el.dataset.level = 'na';
+      el.style.cursor = 'pointer';
+      el.onclick = () => {
+        try { openUsagePop(); } catch (err) { report('error', 'panel de gasto: ' + (err && err.message ? err.message : err)); console.error(err); }
+      };
+      return;
+    }
     const pct = s.limit && s.used != null ? Math.round((s.used / s.limit) * 100) : null;
     const flag = pct == null ? '' : pct >= COMPACT_RATIO * 100 ? '! ' : pct >= 50 ? '~ ' : '';
     const parts = [];
@@ -7188,7 +7177,7 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
+  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, abrirGasto: () => openUsagePop(), thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
     // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
     view: {
       density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),

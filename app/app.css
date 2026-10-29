@@ -3894,10 +3894,10 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
    ============================================================================ */
 .panel-root.is-pop { position: fixed; inset: 0; z-index: 920; pointer-events: none; }
 .panel-root.is-pop .panel-back { display: none; }
-/* contain: el panel se pinta aparte; sin esto cada animacion de la barra re-pinta el fondo
-   entero del popover (sombra grande) y en el telefono se nota. */
+/* contain: layout (NO paint). Con `paint` el navegador recorta el contenido al box del panel y
+   el cuerpo con scroll se veia cortado a media seccion con el resto en negro. */
 .panel-root.is-pop .panel {
-  contain: layout paint;
+  contain: layout;
   position: absolute;
   pointer-events: auto;
   display: flex;
@@ -4277,4 +4277,154 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   .cc-hero > b { font-size: 28px; }
   .cc-money > b { font-size: 26px; }
   .lp-controls button { min-width: 42px; min-height: 42px; font-size: 16px; }
+}
+
+/* ============================================================================
+   Panel de gasto y uso (gasto.ts)
+   ----------------------------------------------------------------------------
+   Lo que un harness serio muestra y este panel antes no: el gasto del PERÍODO con su
+   proyección mensual, el reparto por día y por modelo, qué parte del gasto es cache, los chats
+   y las llamadas más caras, y de dónde sale cada número (estimado vs informado por el provider).
+   Todo sale de /stats.json, que agrega la tabla usage_ledger del store.
+   ============================================================================ */
+
+/* ---------- tabs de período ---------- */
+.gs-tabs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 0 13px;
+  padding: 3px;
+  border-radius: var(--r-sm);
+  background: rgba(245, 244, 239, 0.05);
+}
+.gs-tab {
+  flex: 1 1 0;
+  min-height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-4);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.gs-tab:hover { color: var(--text-2); background: rgba(245, 244, 239, 0.05); }
+.gs-tab.is-on { background: rgba(245, 244, 239, 0.1); color: var(--text); }
+.gs-loading { flex: none; padding: 0 6px; font-size: 12px; color: var(--text-4); }
+
+/* ---------- secciones ---------- */
+.gs-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 14px 0 7px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-4);
+}
+.gs-sec::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border-soft); transform: translateY(-2px); }
+.gs-sec em { font-style: normal; font-size: 10px; letter-spacing: 0.02em; text-transform: none; color: var(--text-3); }
+
+/* ---------- dos cifras lado a lado ---------- */
+.gs-duo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 9px;
+}
+.gs-big { display: grid; gap: 1px; min-width: 0; }
+.gs-big b {
+  font-size: 25px;
+  font-weight: 550;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.gs-big span, .gs-kpi span { font-size: 10.5px; line-height: 1.35; color: var(--text-4); }
+.gs-kpi { display: grid; gap: 1px; justify-items: end; text-align: right; min-width: 0; }
+.gs-kpi b { font-size: 13px; font-weight: 550; font-variant-numeric: tabular-nums; color: var(--text-2); }
+
+/* gauge del contexto dentro de "este chat" */
+.gs-gauge { display: grid; gap: 3px; justify-items: end; }
+.gs-gauge b { font-size: 19px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.gs-gauge i { display: block; width: 100%; height: 4px; border-radius: 2px; background: rgba(245, 244, 239, 0.09); overflow: hidden; }
+.gs-gauge i em { display: block; height: 100%; border-radius: 2px; }
+.gs-gauge span { font-size: 10px; color: var(--text-4); }
+
+/* ---------- filas etiqueta / valor ---------- */
+.gs-r {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 19px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.gs-r > span { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--text-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-r > b { flex: none; font-weight: 500; color: var(--text); }
+.gs-r > b.ok { color: var(--ok); }
+
+/* ---------- barras por día ---------- */
+.gs-bars { display: grid; gap: 4px; }
+.gs-bar {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  column-gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.gs-bar-k { color: var(--text-4); }
+.gs-bar-t { height: 5px; border-radius: 2px; background: rgba(245, 244, 239, 0.07); overflow: hidden; }
+.gs-bar-t i { display: block; height: 100%; border-radius: 2px; background: var(--accent); opacity: 0.85; }
+.gs-bar-v { color: var(--text-2); }
+.gs-bar-n { grid-column: 2 / span 2; font-size: 9.5px; color: var(--text-4); }
+
+/* ---------- por modelo ---------- */
+.gs-m {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.gs-m:last-child { border-bottom: 0; }
+.gs-m-k { font-family: var(--mono); font-size: 11.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-m-c { font-family: var(--mono); font-size: 12px; font-weight: 550; font-variant-numeric: tabular-nums; color: var(--text); }
+.gs-m-b { grid-column: 1 / span 2; height: 3px; border-radius: 2px; background: rgba(245, 244, 239, 0.07); overflow: hidden; }
+.gs-m-b em { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.gs-m-n { grid-column: 1 / span 2; font-size: 9.5px; color: var(--text-4); }
+
+/* ---------- chats y llamadas caras ---------- */
+.gs-s {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 20px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.gs-s-k { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-s b { font-weight: 550; color: var(--text); font-variant-numeric: tabular-nums; }
+.gs-s-n { grid-column: 2; font-size: 9.5px; color: var(--text-4); text-align: right; }
+
+.gs-nota { font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--text-4); }
+
+/* ---------- móvil ---------- */
+@media (max-width: 560px) {
+  .gs-tab { min-height: 38px; font-size: 12.5px; }
+  .gs-big b { font-size: 27px; }
+  .gs-r { font-size: 12.5px; min-height: 22px; }
+  .gs-r > span { font-size: 12px; }
+  .gs-bar { font-size: 11.5px; }
 }

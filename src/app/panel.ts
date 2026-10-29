@@ -32,6 +32,9 @@ export type PanelApi = {
   foot: HTMLElement;
   setBody: (html: string) => void;
   setTitle: (title: string, sub?: string) => void;
+  /** Recalcula la posicion. Necesario cuando el contenido crece DESPUES de abrir (una carga
+   *  asincrona): ubicar() mide el alto al abrir y el panel se salia de la pantalla. */
+  reubicar: () => void;
   close: () => void;
 };
 
@@ -55,7 +58,9 @@ function ubicar(v: Vivo): void {
   const m = 10;
   const ancho = Math.min(340, window.innerWidth - 2 * m);
   v.panel.style.width = ancho + 'px';
-  v.panel.style.maxHeight = Math.max(200, Math.min(560, window.innerHeight - 2 * m)) + 'px';
+  // Techo generoso: el panel de gasto tiene ocho secciones y con 560 px quedaba casi todo detras
+  // de un scroll. En escritorio entra completo; en el telefono lo limita el propio viewport.
+  v.panel.style.maxHeight = Math.max(220, Math.min(720, window.innerHeight - 2 * m)) + 'px';
   const alto = v.panel.offsetHeight;
   // El disparador puede haber sido reemplazado por un repintado del cromo.
   const ancla = v.anchor.isConnected ? v.anchor
@@ -200,6 +205,7 @@ export function abrirPanel(opts: PanelOpts): PanelApi {
     setBody(html: string) {
       const b = root.querySelector('.panel-body') as HTMLElement;
       if (b) b.innerHTML = html;
+      if (vivo === v) ubicar(v);
     },
     setTitle(title: string, sub?: string) {
       const t = root.querySelector('.panel-title');
@@ -207,6 +213,7 @@ export function abrirPanel(opts: PanelOpts): PanelApi {
       if (t) t.textContent = title;
       if (s) s.textContent = sub || '';
     },
+    reubicar: () => { if (vivo === v) ubicar(v); },
     close: () => { if (vivo === v) cerrar(); },
   };
 
