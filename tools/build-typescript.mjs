@@ -68,7 +68,7 @@ for (const item of entries) {
   // seguía bajando el bundle viejo de app/. Eso costó una sesión entera de diagnóstico: el
   // bundle montado no era el compilado. Ahora el build publica los assets del cliente, y
   // `AEGIS_NO_PUBLISH=1` lo deja en staging para probar sin tocar lo servido.
-  if (process.env.AEGIS_NO_PUBLISH !== '1' && item.output.startsWith('app/')) {
+  if (process.env.AEGIS_NO_PUBLISH !== '1' && (item.output.startsWith('app/') || item.output.startsWith('tools/'))) {
     const live = join(root, item.output);
     await mkdir(resolve(live, '..'), { recursive: true });
     await copyFile(staged, live);

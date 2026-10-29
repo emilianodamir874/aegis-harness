@@ -1202,6 +1202,15 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         reply(400, { error: 'sessionId requerido' });
         return;
       }
+      // Repo concreto a consultar. La sesion puede trabajar en una carpeta que NO es un repo
+      // (C:/Aegis-Proyects) y tener repos adentro (web, src, core): el cliente manda cual quiere
+      // ver y se valida contra las raices permitidas igual que el cwd.
+      const suppliedRepo = url.searchParams.get('repo');
+      if (url.searchParams.getAll('repo').length > 1 || (suppliedRepo !== null &&
+        (!isAbsolute(suppliedRepo) || /[\x00-\x1f\x7f]/.test(suppliedRepo)))) {
+        reply(400, { error: 'repo invalido' });
+        return;
+      }
       const suppliedCwd = url.searchParams.get('cwd');
       if (url.searchParams.getAll('cwd').length > 1 || (suppliedCwd !== null &&
         (!isAbsolute(suppliedCwd) || /[\x00-\x1f\x7f]/.test(suppliedCwd)))) {
@@ -1265,8 +1274,17 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
           reply(403, { error: 'cwd no permitido' });
           return;
         }
+        let repoTarget = actual;
+        if (suppliedRepo !== null) {
+          const pedido = resolve(suppliedRepo);
+          const realPedido = await realpath(pedido).catch(() => '');
+          const okRepo = !!realPedido && !denied(pedido) && !denied(realPedido) && wsInside(pedido)
+            && roots.some(({ root, actual: rootReal }) => rootReal && inside(pedido, root) && inside(realPedido, rootReal));
+          if (!okRepo) { reply(403, { error: 'repo no permitido' }); return; }
+          repoTarget = realPedido;
+        }
         const output = await new Promise<string>((ok, fail) => {
-          execFile(process.execPath, [join(DIR, 'tools', 'changes-index.mjs'), '--cwd', actual],
+          execFile(process.execPath, [join(DIR, 'tools', 'changes-index.mjs'), '--cwd', repoTarget],
             { encoding: 'utf8', timeout: 35_000, maxBuffer: 1024 * 1024, windowsHide: true },
             (error, stdout) => error ? fail(error) : ok(stdout));
         });
@@ -1274,6 +1292,27 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         if (!data || typeof data !== 'object' || !('kind' in data)) throw new Error('invalid result');
         const result = data as { kind: unknown; cwd?: unknown; root?: unknown; entries?: unknown; truncated?: unknown };
         if (result.kind === 'not-git') {
+          // El cwd no es repo, pero puede tener repos adentro (C:/Aegis-Proyects: web, src, core).
+          if (suppliedRepo === null) {
+            try {
+              const scanOut = await new Promise<string>((ok, fail) => {
+                execFile(process.execPath, [join(DIR, 'tools', 'changes-index.mjs'), '--cwd', actual, '--scan'],
+                  { encoding: 'utf8', timeout: 25_000, maxBuffer: 512 * 1024, windowsHide: true },
+                  (error, stdout) => error ? fail(error) : ok(stdout));
+              });
+              const scan = JSON.parse(scanOut) as { kind?: unknown; repos?: unknown };
+              if (scan.kind === 'repos' && Array.isArray(scan.repos)) {
+                const repos = scan.repos.slice(0, 40).flatMap((item) => {
+                  const r = item as { root?: unknown; rel?: unknown; files?: unknown };
+                  if (typeof r.root !== 'string' || typeof r.rel !== 'string' || !isAbsolute(r.root)) return [];
+                  if (!wsInside(r.root) || denied(r.root) || !inside(r.root, actual)) return [];
+                  const files = typeof r.files === 'number' && Number.isSafeInteger(r.files) && r.files >= 0 ? r.files : 0;
+                  return [{ root: resolve(r.root), rel: String(r.rel).slice(0, 80), files }];
+                });
+                if (repos.length) { reply(200, { kind: 'repos', cwd: actual, repos, entries: [], truncated: false }); return; }
+              }
+            } catch { /* si el escaneo falla, not-git sigue siendo la verdad */ }
+          }
           reply(200, { kind: 'not-git', cwd: actual, entries: [], truncated: false });
           return;
         }

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { lstatSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 const MAX_FILES = 60;
 const MAX_DIFF = 8192;
@@ -120,12 +120,46 @@ function snapshot(cwd2) {
   }
   return { kind: "git", cwd: cwd2, root, entries, truncated };
 }
+const IGNORAR = /^(?:\.|state$|node_modules$|dist-ts$|dist$|build$|target$|vendor$|\.git$)/i;
+function contarCambios(repo) {
+  try {
+    const status = git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--no-renames"], 512 * 1024);
+    return status.toString("utf8").split("\0").filter((r) => r.length >= 4 && r[2] === " ").length;
+  } catch {
+    return 0;
+  }
+}
+function escanearRepos(cwd2) {
+  let nombres;
+  try {
+    nombres = readdirSync(cwd2, { withFileTypes: true }).filter((d) => d.isDirectory() && !IGNORAR.test(d.name)).map((d) => d.name).sort();
+  } catch {
+    return { kind: "not-git", cwd: cwd2, repos: [], entries: [], truncated: false };
+  }
+  const repos = [];
+  for (const nombre of nombres.slice(0, 40)) {
+    const hijo = join(cwd2, nombre);
+    let tope;
+    try {
+      tope = git(hijo, ["rev-parse", "--show-toplevel"]).toString("utf8").trim();
+    } catch {
+      continue;
+    }
+    if (!tope || resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase()) continue;
+    const files = contarCambios(hijo);
+    repos.push({ root: hijo, rel: nombre, files, truncated: false });
+  }
+  repos.sort((a, b) => b.files - a.files || a.rel.localeCompare(b.rel, "es"));
+  if (!repos.length) return { kind: "not-git", cwd: cwd2, repos: [], entries: [], truncated: false };
+  return { kind: "repos", cwd: cwd2, repos, entries: [], truncated: false };
+}
 const args = process.argv.slice(2);
 const index = args.indexOf("--cwd");
 const cwd = index >= 0 && index + 1 < args.length ? args[index + 1] : "";
+const scan = args.includes("--scan");
 try {
   if (!cwd || !isAbsolute(cwd)) throw new Error("Se requiere --cwd absoluto y autorizado");
-  process.stdout.write(JSON.stringify(snapshot(resolve(cwd))));
+  process.stdout.write(JSON.stringify(scan ? escanearRepos(resolve(cwd)) : snapshot(resolve(cwd))));
 } catch (error) {
   process.stdout.write(JSON.stringify({
     kind: "error",

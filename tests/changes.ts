@@ -89,7 +89,9 @@ try {
   try {
     const page = await browser.newPage({ viewport: { width: 411, height: 777 } });
     const requests: string[] = [];
+    const querys: string[] = [];
     let offline = false;
+    let listarRepos = false;
     await page.route('**/*', async route => {
       const url = new URL(route.request().url());
       assert.equal(url.host, 'changes.invalid', 'sin conexiones al backend real');
@@ -104,7 +106,15 @@ try {
       if (url.pathname === '/changes.json') {
         assert.equal(route.request().method(), 'GET');
         requests.push(url.searchParams.get('sessionId') || '');
+        querys.push(url.search.slice(1));
         if (offline) return route.fulfill({ status: 404, body: 'Sin endpoint' });
+        if (listarRepos && !url.searchParams.get('repo')) {
+          return route.fulfill({ json: { kind: 'repos', cwd: 'C:/Aegis-Proyects', entries: [], truncated: false, repos: [
+            { root: 'C:/Aegis-Proyects/web', rel: 'web', files: 6 },
+            { root: 'C:/Aegis-Proyects/src', rel: 'src', files: 52 },
+            { root: 'C:/Aegis-Proyects/core', rel: 'core', files: 0 },
+          ] } });
+        }
         return route.fulfill({ json: { kind: 'git', root: fixture, entries: [
           { path: '<img src=x onerror=alert(1)>', staged: 'M', worktree: ' ', diff: '+<script>alert(2)</script>', truncated: false },
           { path: 'src/app.ts', staged: ' ', worktree: 'M', diff: '+una linea', worktreeAdded: 3, worktreeRemoved: 1, truncated: false },
@@ -161,6 +171,24 @@ try {
     await page.locator('.git-changes .gc-btn').last().click();
     assert.equal(await page.locator('.git-changes').count(), 0);
     assert.equal(await page.evaluate(() => (window as any).__aegisChanges.isOpen()), false);
+    // El cwd no es repo (C:/Aegis-Proyects): se listan los repos y se entra a uno.
+    offline = false;
+    listarRepos = true;
+    await page.evaluate((cwd: string) => {
+      (window as any).__aegisWeb.state.current = { id: 'fixture-session', cwd };
+      return (window as any).__aegisChanges.refresh();
+    }, 'C:/Aegis-Proyects');
+    assert.equal(await page.locator('.git-changes').getAttribute('data-estado'), 'repos');
+    assert.equal(await page.locator('.git-changes .gc-repo').count(), 3);
+    const filas = await page.locator('.git-changes .gc-repo').allInnerTexts();
+    assert(filas.some((f) => f.includes('src') && f.includes('52')), 'cada repo con su conteo de archivos: ' + JSON.stringify(filas));
+    assert(filas[2].includes('sin cambios'), 'un repo limpio se dice limpio: ' + filas[2]);
+    await page.locator('.git-changes .gc-repo', { hasText: 'src' }).click();
+    await page.waitForFunction(() => document.querySelector('.git-changes')?.getAttribute('data-estado') === 'con-cambios');
+    assert(querys.some((q) => q.includes('repo=') && q.includes('src')), 'al entrar a un repo se pide con repo=: ' + JSON.stringify(querys));
+    assert.equal(await page.locator('.git-changes .gc-btn.gc-back').count(), 1, 'hay vuelta a la lista de repos');
+    await page.locator('.git-changes .gc-btn.gc-back').click();
+    await page.waitForFunction(() => document.querySelector('.git-changes')?.getAttribute('data-estado') === 'repos');
   } finally { await browser.close(); }
   console.log('PASS changes: fixture Git -z, staged, untracked, secretos, no Git, bloque en transcript (XSS/error/sesión)');
 } finally {

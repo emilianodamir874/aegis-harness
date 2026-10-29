@@ -4499,3 +4499,12 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
    sigue recibiendo su texto porque el medidor de contexto lo usa como pista del modelo, pero no se
    pinta ni es clickeable. */
 #meta-right[hidden] { display: none !important; }
+/* Lista de repos cuando el directorio de la sesión no es uno solo (C:/Aegis-Proyects → web, src…). */
+.git-changes .gc-intro { color: var(--text-3); font-size: 11.5px; padding: 6px 0 4px; }
+.git-changes .gc-repo { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 6px; min-height: 40px; border-top: 1px solid var(--border-soft); background: none; text-align: left; color: inherit; border-radius: var(--r-sm); }
+.git-changes .gc-repo:first-of-type { border-top: 0; }
+.git-changes .gc-repo:hover { background: var(--bg-raise); }
+.git-changes .gc-repo[data-limpio] .gc-counts { color: var(--text-4); }
+.git-changes .gc-repo .gc-path::after { content: " ›"; color: var(--text-4); }
+.git-changes .gc-btn.gc-back { margin-left: 0; margin-right: 2px; }
+@media (max-width: 560px) { .git-changes .gc-repo { min-height: 46px; } }

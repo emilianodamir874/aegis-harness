@@ -5,17 +5,25 @@
  * para ver el estado nuevo. Ahora es un bloque del propio transcript, al final, que se refresca
  * al terminar cada turno y cuando cambia la sesión.
  *
- * El cliente NUNCA manda la ruta: /changes.json valida el cwd permitido de la sesión antes de
- * consultar Git. El bloque no es un mensaje, así que no entra al store ni al rewind.
+ * El directorio de una sesión NO siempre es un repo: las sesiones de C:/Aegis-Proyects trabajan en
+ * la carpeta padre, y los repos son web/, src/, core/… Cuando el server informa `repos`, el bloque
+ * los lista con cuántos archivos cambiados tiene cada uno y se entra tocando uno; el diff se pide
+ * recién entonces, para ese repo solo.
+ *
+ * El cliente NUNCA manda la ruta de la sesión: /changes.json la resuelve desde la DB. La ruta del
+ * repo sí viaja, y el server la valida contra las raíces permitidas antes de correr Git ahí. El
+ * bloque no es un mensaje, así que no entra al store ni al rewind.
  */
 interface ChangeEntry {
   path: string; staged: string; worktree: string; diff: string; truncated?: boolean;
   stagedAdded?: number | null; stagedRemoved?: number | null;
   worktreeAdded?: number | null; worktreeRemoved?: number | null;
 }
+interface RepoResumen { root: string; rel: string; files: number }
 interface ChangeResponse {
-  kind: 'git' | 'not-git' | 'error';
-  cwd?: string; root?: string; entries: ChangeEntry[]; truncated: boolean; error?: string;
+  kind: 'git' | 'repos' | 'not-git' | 'error';
+  cwd?: string; root?: string; entries: ChangeEntry[]; repos?: RepoResumen[];
+  truncated: boolean; error?: string;
 }
 declare global {
   interface Window {
@@ -33,7 +41,7 @@ declare global {
 const ESTADO = 'git-changes';
 let bloque: HTMLElement | null = null;
 let serial = 0;
-let sesionVista = '';
+let repoElegido = '';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, texto?: string): HTMLElementTagNameMap[K] {
   const nodo = document.createElement(tag);
@@ -58,8 +66,7 @@ const HONESTIDAD = 'Estado actual de Git · autor desconocido · Git no registra
 
 function montar(): HTMLElement | null {
   // #messages es el contenedor de scroll y existe desde el HTML; #msg-inner lo crea app.ts recién
-  // al primer mensaje o al saludo, así que no sirve como ancla (un turno que no dejó mensajes
-  // visibles se quedaba sin bloque).
+  // al primer mensaje o al saludo, así que no sirve como ancla.
   const inner = document.querySelector<HTMLElement>('#messages');
   if (!inner) return null;
   if (!bloque || !bloque.isConnected) {
@@ -67,14 +74,19 @@ function montar(): HTMLElement | null {
     bloque.className = ESTADO;
     bloque.setAttribute('aria-label', 'Cambios Git del directorio de la sesión');
     inner.append(bloque);
-  }
-  // Siempre al final: es el estado del árbol ahora, no un mensaje del medio de la charla.
-  else if (inner.lastElementChild !== bloque) inner.append(bloque);
+  } else if (inner.lastElementChild !== bloque) inner.append(bloque);
   return bloque;
 }
 
-function cabecera(nodo: HTMLElement, titulo: string, sub: string): void {
+function cabecera(nodo: HTMLElement, titulo: string, sub: string, volver: boolean): void {
   const head = el('header');
+  if (volver) {
+    const atras = el('button', '←');
+    atras.type = 'button'; atras.className = 'gc-btn gc-back'; atras.title = 'Volver a la lista de repos';
+    atras.setAttribute('aria-label', 'Volver a la lista de repos');
+    atras.addEventListener('click', () => { repoElegido = ''; void refresh(); });
+    head.append(atras);
+  }
   const icono = el('span', '⎇'); icono.className = 'gc-ic'; icono.setAttribute('aria-hidden', 'true');
   const nombre = el('b', titulo);
   const detalle = el('span', sub); detalle.className = 'gc-sub';
@@ -90,19 +102,42 @@ function cabecera(nodo: HTMLElement, titulo: string, sub: string): void {
   nodo.replaceChildren(head);
 }
 
+function listaRepos(nodo: HTMLElement, repos: RepoResumen[], cwd: string): void {
+  nodo.dataset.estado = 'repos';
+  cabecera(nodo, 'Cambios Git', `${repos.length} ${repos.length === 1 ? 'repo' : 'repos'} en ${cwd}`, false);
+  const cuerpo = el('div'); cuerpo.className = 'gc-body';
+  const intro = el('p', 'Esta carpeta no es un repo: elegí cuál mirar.');
+  intro.className = 'gc-intro';
+  cuerpo.append(intro);
+  for (const repo of repos) {
+    const fila = el('button');
+    fila.type = 'button';
+    fila.className = 'gc-repo';
+    const nombre = el('code', repo.rel); nombre.className = 'gc-path';
+    const cuenta = el('span', repo.files === 0 ? 'sin cambios' : `${repo.files} ${repo.files === 1 ? 'archivo' : 'archivos'}`);
+    cuenta.className = 'gc-counts';
+    fila.append(nombre, cuenta);
+    if (!repo.files) fila.dataset.limpio = '1';
+    fila.addEventListener('click', () => { repoElegido = repo.root; void refresh(); });
+    cuerpo.append(fila);
+  }
+  nodo.append(cuerpo);
+}
+
 function pintar(carga: ChangeResponse, sesion: string): void {
   const nodo = montar();
   if (!nodo) return;
-  nodo.dataset.estado = carga.kind === 'git' ? (carga.entries.length ? 'con-cambios' : 'sin-cambios') : carga.kind;
   nodo.dataset.sesion = sesion;
+  if (carga.kind === 'repos') { listaRepos(nodo, carga.repos || [], carga.cwd || ''); return; }
+  nodo.dataset.estado = carga.kind === 'git' ? (carga.entries.length ? 'con-cambios' : 'sin-cambios') : carga.kind;
   const raiz = carga.root || carga.cwd || '';
   const n = carga.entries.length;
   cabecera(nodo, 'Cambios Git',
-    carga.kind === 'git' ? `${n} ${n === 1 ? 'archivo' : 'archivos'}${raiz ? ' · ' + raiz : ''}` : '');
+    carga.kind === 'git' ? `${n} ${n === 1 ? 'archivo' : 'archivos'}${raiz ? ' · ' + raiz : ''}` : '', !!repoElegido);
 
   const cuerpo = el('div'); cuerpo.className = 'gc-body';
   if (carga.kind === 'not-git') {
-    cuerpo.append(el('p', 'El directorio de esta sesión no es un repositorio Git.'));
+    cuerpo.append(el('p', 'El directorio de esta sesión no es un repositorio Git y no tiene repos adentro.'));
   } else if (!n) {
     cuerpo.append(el('p', 'Git no informa cambios locales.'));
   }
@@ -136,7 +171,7 @@ function fallo(mensaje: string): void {
   const nodo = montar();
   if (!nodo) return;
   nodo.dataset.estado = 'error';
-  cabecera(nodo, 'Cambios Git', '');
+  cabecera(nodo, 'Cambios Git', '', !!repoElegido);
   const cuerpo = el('div'); cuerpo.className = 'gc-body';
   cuerpo.append(el('p', 'No se pudo leer Git: ' + mensaje));
   const pie = el('p', 'Sin backend validado no hay datos de Git. Nunca inferir ausencia de cambios.');
@@ -145,7 +180,7 @@ function fallo(mensaje: string): void {
 }
 
 function valido(valor: unknown): valor is ChangeResponse {
-  return !!valor && typeof valor === 'object' && ['git', 'not-git', 'error'].includes((valor as ChangeResponse).kind)
+  return !!valor && typeof valor === 'object' && ['git', 'repos', 'not-git', 'error'].includes((valor as ChangeResponse).kind)
     && Array.isArray((valor as ChangeResponse).entries) && typeof (valor as ChangeResponse).truncated === 'boolean';
 }
 
@@ -156,19 +191,23 @@ async function refresh(): Promise<void> {
   const nodo = montar();
   if (!nodo) return;
   nodo.dataset.estado = 'cargando';
-  sesionVista = actual.id;
-  cabecera(nodo, 'Cambios Git', 'consultando…');
+  cabecera(nodo, 'Cambios Git', 'consultando…', !!repoElegido);
   const cuerpo = el('div'); cuerpo.className = 'gc-body';
   cuerpo.append(el('p', 'Consultando Git…'));
   nodo.append(cuerpo);
+  const consulta = '/changes.json?sessionId=' + encodeURIComponent(actual.id)
+    + (repoElegido ? '&repo=' + encodeURIComponent(repoElegido) : '');
   try {
-    const respuesta = await fetch('/changes.json?sessionId=' + encodeURIComponent(actual.id), { cache: 'no-store' });
+    const respuesta = await fetch(consulta, { cache: 'no-store' });
+    if (respuesta.status === 401) throw new Error('sesión web vencida: volvé a entrar por /login');
     if (!respuesta.ok) throw new Error('HTTP ' + respuesta.status);
     const datos: unknown = await respuesta.json();
     if (!valido(datos)) throw new Error('Respuesta inválida');
     const sigue = estado();
     if (mío !== serial || sigue?.id !== actual.id) return; // otra sesión o un refresh más nuevo
     if (datos.kind === 'error') throw new Error(datos.error || 'Consulta no disponible');
+    // El repo elegido ya no está (o no existe): volver a la lista en vez de mostrar un error seco.
+    if (repoElegido && datos.kind === 'not-git') { repoElegido = ''; void refresh(); return; }
     pintar(datos, actual.id);
   } catch (error) {
     if (mío !== serial) return;
@@ -180,7 +219,7 @@ function clear(): void {
   serial++;
   bloque?.remove();
   bloque = null;
-  sesionVista = '';
+  repoElegido = '';
 }
 
 window.__aegisChanges = { refresh, clear, isOpen: () => !!bloque?.isConnected };

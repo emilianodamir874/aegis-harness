@@ -6,7 +6,7 @@
  * node changes-index.mjs --cwd <authorized-directory> -> {kind, cwd, entries, truncated}
  */
 import { execFileSync } from 'node:child_process';
-import { lstatSync } from 'node:fs';
+import { lstatSync, readdirSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 
 interface Entry {
@@ -125,12 +125,54 @@ function snapshot(cwd: string): object {
   return { kind: 'git', cwd, root, entries, truncated };
 }
 
+// Un directorio de trabajo puede NO ser repo y tener repos adentro: C:/Aegis-Proyects no es un
+// repositorio, pero web/, src/ y core/ sí. Devolver "no-git" ahí es verdad y no sirve de nada; se
+// listan los hijos directos que son repos con cuántos archivos cambiados tiene cada uno. Sin
+// diffs: el diff se pide después, solo del repo que el operador abra.
+type RepoResumen = { root: string; rel: string; files: number; truncated: boolean };
+const IGNORAR = /^(?:\.|state$|node_modules$|dist-ts$|dist$|build$|target$|vendor$|\.git$)/i;
+
+function contarCambios(repo: string): number {
+  try {
+    const status = git(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--no-renames'], 512 * 1024);
+    return status.toString('utf8').split('\0').filter((r) => r.length >= 4 && r[2] === ' ').length;
+  } catch { return 0; }
+}
+
+function escanearRepos(cwd: string): object {
+  let nombres: string[];
+  try {
+    nombres = readdirSync(cwd, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && !IGNORAR.test(d.name))
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return { kind: 'not-git', cwd, repos: [], entries: [], truncated: false };
+  }
+  const repos: RepoResumen[] = [];
+  for (const nombre of nombres.slice(0, 40)) {
+    const hijo = join(cwd, nombre);
+    let tope: string;
+    try {
+      tope = git(hijo, ['rev-parse', '--show-toplevel']).toString('utf8').trim();
+    } catch { continue; } // no es repo
+    if (!tope || resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase()) continue; // repo de un padre
+    const files = contarCambios(hijo);
+    repos.push({ root: hijo, rel: nombre, files, truncated: false });
+  }
+  // Primero lo que tiene cambios: es lo que el operador quiere ver.
+  repos.sort((a, b) => b.files - a.files || a.rel.localeCompare(b.rel, 'es'));
+  if (!repos.length) return { kind: 'not-git', cwd, repos: [], entries: [], truncated: false };
+  return { kind: 'repos', cwd, repos, entries: [], truncated: false };
+}
+
 const args = process.argv.slice(2);
 const index = args.indexOf('--cwd');
 const cwd = index >= 0 && index + 1 < args.length ? args[index + 1] : '';
+const scan = args.includes('--scan');
 try {
   if (!cwd || !isAbsolute(cwd)) throw new Error('Se requiere --cwd absoluto y autorizado');
-  process.stdout.write(JSON.stringify(snapshot(resolve(cwd))));
+  process.stdout.write(JSON.stringify(scan ? escanearRepos(resolve(cwd)) : snapshot(resolve(cwd))));
 } catch (error) {
   process.stdout.write(JSON.stringify({ kind: 'error', entries: [], truncated: false,
     error: String(error instanceof Error ? error.message : error).slice(0, 180) }));
