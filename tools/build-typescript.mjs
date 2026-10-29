@@ -37,7 +37,7 @@ const entries = [
   { entry: 'tests/ui-mobile.ts', output: 'tests/ui-mobile.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/ui-shell.ts', output: 'tests/ui-shell.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },  { entry: 'tests/gasto.ts', output: 'tests/gasto.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/stats-plan.ts', output: 'tests/stats-plan.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
-  { entry: 'tests/diagrama.ts', output: 'tests/diagrama.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
+  { entry: 'tests/diagrama.ts', output: 'tests/diagrama.mjs', options: { format: 'esm', platform: 'node', packages: 'external', bundle: true } },
   { entry: 'tests/visibility.ts', output: 'tests/visibility.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/search-fixture.ts', output: 'tests/search-fixture.js', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/search-index.ts', output: 'tests/search-index.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },

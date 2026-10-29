@@ -945,7 +945,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
       // Se acepta cookie O token en query porque el acceso por LAN usa ?token= y no cookie: con
       // solo cookie, la lectura en voz alta dejaba de sonar fuera de localhost.
       const ttsToken = url.searchParams.get('token');
-      if (!authed(req) && !verifyToken(ttsToken)) {
+      if (!authed(req) && !verifyToken(ttsToken ?? undefined)) {
         res.writeHead(401, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         res.end(JSON.stringify({ error: 'unauthorized', login: '/login' }));
         return;

@@ -4740,32 +4740,83 @@ mark.buscar-hit.buscar-actual { background: rgba(210, 170, 70, .62); outline: 1p
   color: var(--text-2);
   tab-size: 2;
 }
+.grafo-lamina {
+  margin: 18px 0 22px;
+  padding: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  background: radial-gradient(ellipse at 50% -20%, var(--accent-soft), transparent 64%), var(--bg-code);
+  overflow: hidden;
+  max-width: 100%;
+}
+.grafo-canvas {
+  padding: 18px;
+  overflow-x: auto;
+  scrollbar-color: var(--border-strong) transparent;
+}
 svg.grafo {
   display: block;
-  margin: var(--s3) 0;
+  width: auto;
   max-width: 100%;
   height: auto;
+  margin: 0 auto;
   color: var(--text-3);
-  font-family: var(--font-ui, inherit);
-}
-svg.grafo .grafo-nodo {
-  fill: var(--bg-raised, rgba(127, 127, 127, 0.06));
-  stroke: var(--border-strong, #999);
-  stroke-width: 1.25;
+  font-family: inherit;
+  overflow: visible;
 }
 svg.grafo .grafo-arista {
   fill: none;
-  stroke: currentColor;
-  stroke-width: 1.25;
-  opacity: 0.75;
+  stroke: var(--text-3);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.84;
 }
-svg.grafo .grafo-txt {
-  fill: var(--text, currentColor);
-  font-size: 11.5px;
-  font-weight: 500;
+svg.grafo .grafo-arista.es-punteada { stroke-dasharray: 5 5; opacity: 0.65; }
+svg.grafo .grafo-arista.es-fuerte { stroke: var(--accent); stroke-width: 2.4; opacity: 1; }
+svg.grafo .grafo-forma {
+  fill: var(--bg-raise);
+  stroke: var(--border-strong);
+  stroke-width: 1.3;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.19));
 }
-svg.grafo .grafo-etq {
-  fill: var(--text-3, currentColor);
-  font-size: 10.5px;
-  font-style: italic;
+svg.grafo .grafo-nodo.es-decision .grafo-forma {
+  fill: var(--accent-soft);
+  stroke: var(--accent-strong);
+}
+svg.grafo .grafo-nodo.es-ovalo .grafo-forma {
+  fill: var(--ok-soft);
+  stroke: var(--ok-line);
+}
+svg.grafo .grafo-texto {
+  fill: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+svg.grafo .grafo-etiqueta rect {
+  fill: var(--bg-card);
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+svg.grafo .grafo-etiqueta text {
+  fill: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.grafo-pie {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-4);
+}
+.grafo-pie span:first-child { color: var(--text-2); font-weight: 600; }
+@media (max-width: 640px) {
+  .grafo-canvas { padding: 10px; }
+  svg.grafo { width: auto; min-width: 480px; max-width: none; }
+  .grafo-pie { padding: 9px 12px; }
 }
