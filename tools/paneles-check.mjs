@@ -85,7 +85,7 @@ await page.keyboard.press('Escape');
 // ---------- 2. uso y gasto ----------
 // El panel de gasto se reescribio y ahora tiene su propio gate (tools/gasto-check.mjs): aca solo
 // se comprueba que abra y que use el chasis comun, sin duplicar los quince casos de alla.
-await page.evaluate(() => { if (!document.querySelector('#usage-panel')) document.querySelector('#meta-right')?.click(); });
+await page.evaluate(() => { if (!document.querySelector('#usage-panel')) document.querySelector('#btn-gasto-top')?.click(); });
 await page.waitForTimeout(900);
 const usoBasico = await page.evaluate(() => {
   const p = document.querySelector('#usage-panel .panel');

@@ -80,7 +80,7 @@ await page.evaluate(() => document.querySelector('#usage-panel .panel-x')?.click
 await page.waitForTimeout(300);
 const unico = await page.evaluate(() => {
   const antes = document.querySelectorAll('#usage-panel').length;
-  document.querySelector('#meta-right')?.click();
+  document.querySelector('#btn-gasto-top')?.click();
   return antes;
 });
 await page.waitForTimeout(1800);

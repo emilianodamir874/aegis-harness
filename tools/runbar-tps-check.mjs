@@ -106,7 +106,7 @@ try {
         last: { inputTokens: 90000, outputTokens: 3000, cacheReadTokens: 45000, elapsedMs: 12300, timeToFirstTokenMs: 2100 }
       };
       w.renderUsagePublic();
-      document.querySelector('#meta-right').click();
+      document.querySelector('#btn-gasto-top').click();
       const popEl = document.querySelector('#usage-pop');
       return { hidden: popEl.hidden, rows: [...popEl.querySelectorAll('.up-row')].map((r) => r.textContent) };
     });

@@ -4494,3 +4494,8 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
   .git-changes summary { min-height: 44px; }
   .git-changes .gc-btn { width: 34px; height: 34px; }
 }
+/* El readout de uso del pie (#meta-right) queda fuera de la vista: el único acceso a "Gasto y uso"
+   es el botón de barras del topbar (#btn-gasto-top, lo crea stats.ts). El nodo sigue en el DOM y
+   sigue recibiendo su texto porque el medidor de contexto lo usa como pista del modelo, pero no se
+   pinta ni es clickeable. */
+#meta-right[hidden] { display: none !important; }

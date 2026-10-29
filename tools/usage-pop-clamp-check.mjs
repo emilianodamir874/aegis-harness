@@ -9,7 +9,7 @@
 // poca altura y un desglose mas alto que la pantalla.
 //
 // Es read-only sobre el serve: solo carga la pagina, inyecta `state.usage` y hace click en
-// #meta-right (no manda prompts ni toca sesiones).
+// #btn-gasto-top (no manda prompts ni toca sesiones).
 
 import { chromium } from 'playwright';
 
@@ -67,7 +67,7 @@ try {
     page.on('pageerror', (e) => consoleErrors.push(String(e)));
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     // `state`: el readout esta vacio hasta que llega el primer uso, asi que existe pero no es visible.
-    await page.waitForSelector('#meta-right', { state: 'attached', timeout: 20000 });
+    await page.waitForSelector('#btn-gasto-top', { state: 'attached', timeout: 20000 });
     await page.waitForFunction(() => !!(window.__aegisWeb && window.__aegisWeb.state), null, { timeout: 20000 });
 
     await page.evaluate((usage) => {
@@ -77,7 +77,7 @@ try {
     }, s.data);
 
     const opened = await page.evaluate(() => {
-      const el = document.querySelector('#meta-right');
+      const el = document.querySelector('#btn-gasto-top');
       el.click();
       const pop = document.querySelector('#usage-pop');
       return !!(pop && !pop.hidden);
@@ -119,7 +119,7 @@ try {
     // de alto). Documenta el bug, no solo la ausencia de bug.
     const legacy = await page.evaluate(() => {
       const pop = document.querySelector('#usage-pop');
-      const a = document.querySelector('#meta-right');
+      const a = document.querySelector('#btn-gasto-top');
       const r = a.getBoundingClientRect();
       const pw = pop.offsetWidth;
       const ph = pop.scrollHeight;

@@ -60,7 +60,7 @@ async function abrir(nombre, fn) {
 await abrir({ id: 'pop-letra', sel: '#font-panel .panel' }, async () => { await page.click('#btn-chat-font'); });
 await abrir({ id: 'pop-objetivos', sel: '#goals' }, async () => { await page.click('#btn-goals'); });
 await abrir({ id: 'pop-uso', sel: '#usage-panel .panel' }, async () => {
-  await page.evaluate(() => { const b = document.querySelector('#meta-right, .usage-mini, #ctx'); if (b) b.click(); });
+  await page.evaluate(() => { const b = document.querySelector('#btn-gasto-top, .usage-mini, #ctx'); if (b) b.click(); });
 });
 await abrir({ id: 'pop-chatinfo', sel: '#chat-info' }, async () => { await page.click('#btn-chat-info'); });
 
