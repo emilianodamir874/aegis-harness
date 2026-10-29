@@ -246,6 +246,34 @@ check('un messageId nuevo a mitad del pensamiento no abre otra caja ni parte la 
   cadena.misma && cadena.cajas === 1 && cadena.texto === 'llamar a `__aegisWeb.testUi.pop` sólo existe en host mock.',
   JSON.stringify(cadena));
 
+// ---------- 15. cambiar de chat no mezcla el razonamiento del turno anterior ----------
+// resetTransient() limpiaba state.msgs pero dejaba thoughtRec y los buffers del refresco suave:
+// el primer chunk del chat nuevo se conciliaba contra el texto del viejo y el razonamiento salia
+// partido justo en esa union.
+const cambio = await page.evaluate(() => {
+  const W = window.__aegisWeb;
+  const inner = document.querySelector('#msg-inner');
+  if (inner) inner.innerHTML = '';
+  W.state.msgs.clear();
+  W.state.thoughtRec = null;
+  const k1 = W.thinkKey({ messageId: 'a' });
+  W.feed(k1, 'Razonamiento del chat viejo que se estaba escribiendo cuando cambie de chat. ', true);
+  // cambio de chat: mismo camino que usa la UI
+  W.olvidarTurno();
+  if (inner) inner.innerHTML = '';
+  const k2 = W.thinkKey({ messageId: 'a' });
+  W.feed(k2, 'Razonamiento del chat nuevo, completo y sin restos.', true);
+  const rec = W.state.msgs.get(k2);
+  return {
+    mismaKey: k1 === k2,
+    texto: rec ? rec.text : '',
+    cajas: document.querySelectorAll('#msg-inner .msg-a').length,
+  };
+});
+check('cambiar de chat no mezcla el razonamiento del turno anterior',
+  cambio.texto === 'Razonamiento del chat nuevo, completo y sin restos.' && cambio.cajas === 1,
+  JSON.stringify(cambio));
+
 await browser.close();
 const ok = res.filter((r) => r.ok).length;
 for (const r of res) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.n}${r.d ? '  [' + r.d + ']' : ''}`);

@@ -2616,6 +2616,20 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   function resetTransient() {
     state.msgs.clear();
     state.tools.clear();
+    // El razonamiento en curso NO se limpiaba: state.thoughtRec seguia apuntando a la caja del chat
+    // anterior y los buffers del refresco suave (SOFT) conservaban SU texto por key. Al volver a un
+    // chat con un turno en streaming, el primer chunk del nuevo se conciliaba contra el texto del
+    // viejo y el razonamiento salia partido justo en esa union. Un turno no sobrevive a un cambio
+    // de chat: se tira entero.
+    state.thoughtRec = null;
+    state.thoughtKey = null;
+    curStream = null;
+    SOFT.text.clear();
+    SOFT.kind.clear();
+    SOFT.order.length = 0;
+    SOFT.tools.clear();
+    HUB.text.clear();
+    HUB.kind.clear();
     state.attachments = [];
     permCards.clear(); // las tarjetas de permiso viven en el DOM de la sesion anterior
     state.runId = null;
@@ -7197,7 +7211,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, abrirGasto: () => openUsagePop(), thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
+  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, abrirGasto: () => openUsagePop(), olvidarTurno: () => resetTransient(), thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
     // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
     view: {
       density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),
