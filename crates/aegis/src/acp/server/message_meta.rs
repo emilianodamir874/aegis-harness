@@ -15,12 +15,17 @@ struct AegisMessageMeta<'a> {
     steer: bool,
     /// Only present when the message is hidden from the model (a compaction or a
     /// rewind), so clients can mark the tail the agent no longer sees.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(skip_serializing_if = "is_true")]
     agent_visible: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     output_token_limit_reached: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     fallback_content: bool,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 fn aegis_message_meta(
