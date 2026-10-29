@@ -1123,15 +1123,125 @@ fn hook_command(command: &str, plugin_root: &Path, path: Option<&str>) -> Comman
         }
     }
 
-    let mut process = Command::new("sh");
+    let shell = hook_shell();
+    let mut process = Command::new(&shell.program);
+    for arg in &shell.args {
+        process.arg(arg);
+    }
     process
-        .arg("-c")
         .arg(command)
-        .env("PLUGIN_ROOT", plugin_root);
+        .env("PLUGIN_ROOT", plugin_root_for_shell(plugin_root));
     if let Some(path) = path {
         process.env("PATH", path);
     }
     process
+}
+
+/// `PLUGIN_ROOT` as the shell needs to see it.
+///
+/// Hook scripts interpolate it into shell commands (`sh $PLUGIN_ROOT/hook.sh`).
+/// A native Windows path keeps its backslashes, which a POSIX shell does not
+/// resolve. Forward slashes work for both shells, so the value is normalized.
+fn plugin_root_for_shell(plugin_root: &Path) -> String {
+    #[cfg(windows)]
+    {
+        plugin_root.to_string_lossy().replace('\\', "/")
+    }
+    #[cfg(not(windows))]
+    {
+        plugin_root.to_string_lossy().into_owned()
+    }
+}
+
+struct HookShell {
+    program: String,
+    args: Vec<String>,
+}
+
+/// Shell used to run `type: "command"` hooks.
+///
+/// The hooks spec declares commands in POSIX syntax, so Unix runs `sh -c`.
+/// Windows has no `sh` in PATH, which made every hook fail to spawn. This picks
+/// a POSIX shell when one is installed (Git Bash ships `sh.exe`), honours
+/// `AEGIS_HOOK_SHELL` as an override, and only then falls back to `cmd /C`.
+fn hook_shell() -> &'static HookShell {
+    static SHELL: OnceLock<HookShell> = OnceLock::new();
+    SHELL.get_or_init(|| {
+        if let Ok(custom) = std::env::var("AEGIS_HOOK_SHELL") {
+            if !custom.trim().is_empty() {
+                return HookShell {
+                    program: custom,
+                    args: vec!["-c".to_string()],
+                };
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            if let Some(sh) = find_posix_shell_on_windows() {
+                return HookShell {
+                    program: sh,
+                    args: vec!["-c".to_string()],
+                };
+            }
+            warn!(
+                "No POSIX shell found for hooks; falling back to cmd.exe, which does not \
+                 understand hooks written with sh syntax. Set AEGIS_HOOK_SHELL to a shell path."
+            );
+            return HookShell {
+                program: "cmd".to_string(),
+                args: vec!["/C".to_string()],
+            };
+        }
+
+        #[cfg(not(windows))]
+        {
+            HookShell {
+                program: "sh".to_string(),
+                args: vec!["-c".to_string()],
+            }
+        }
+    })
+}
+
+#[cfg(windows)]
+fn find_posix_shell_on_windows() -> Option<String> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(git) = std::env::var("ProgramFiles") {
+        candidates.push(Path::new(&git).join("Git").join("bin").join("sh.exe"));
+    }
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        candidates.push(
+            Path::new(&local)
+                .join("Programs")
+                .join("Git")
+                .join("bin")
+                .join("sh.exe"),
+        );
+    }
+    for base in ["C:\\Program Files\\Git", "C:\\Program Files (x86)\\Git"] {
+        candidates.push(Path::new(base).join("bin").join("sh.exe"));
+        candidates.push(Path::new(base).join("usr").join("bin").join("sh.exe"));
+    }
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .map(|candidate| candidate.to_string_lossy().into_owned())
+}
+
+/// Renders a path so it survives interpolation into a hook command.
+///
+/// Hook commands are POSIX shell. A Windows path pasted verbatim
+/// (`C:\Users\...`) loses its backslashes to the shell's escape processing, so
+/// the hook writes to a mangled filename instead. Forward slashes are accepted
+/// by both `sh` and `cmd.exe`. Paths containing spaces are quoted.
+pub fn shell_path(path: &Path) -> String {
+    let rendered = path.to_string_lossy().replace('\\', "/");
+    if rendered.contains(' ') && !rendered.starts_with('\'') {
+        format!("'{}'", rendered)
+    } else {
+        rendered
+    }
 }
 
 async fn hook_path() -> Option<String> {
@@ -1187,7 +1297,16 @@ fn merge_paths(first: &str, second: &str) -> String {
 }
 
 fn expand_plugin_root(command: &str, plugin_root: &Path) -> String {
-    command.replace("${PLUGIN_ROOT}", &plugin_root.to_string_lossy())
+    command.replace("${PLUGIN_ROOT}", &normalize_slashes(plugin_root))
+}
+
+/// Path rendered with forward slashes.
+///
+/// Hook commands are POSIX shell text even on Windows. A native path keeps
+/// backslashes there, which the shell does not resolve, so the substitution
+/// stays slash-separated. No quoting: the hook author owns the quoting.
+fn normalize_slashes(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 #[cfg(test)]
@@ -2095,7 +2214,7 @@ mod tests {
     async fn emit_runs_command_with_plugin_root_substitution() {
         let tmp = tempfile::tempdir().unwrap();
         let marker = tmp.path().join("ran.txt");
-        let marker_path = marker.to_string_lossy().into_owned();
+        let marker_path = shell_path(&marker);
         let hooks = format!(
             r#"{{"hooks":{{"SessionStart":[{{"hooks":[{{"type":"command","command":"sh -c 'echo $PLUGIN_ROOT > {marker}'"}}]}}]}}}}"#,
             marker = marker_path,
@@ -2114,7 +2233,7 @@ mod tests {
         .await;
 
         let written = std::fs::read_to_string(&marker).unwrap();
-        assert_eq!(written.trim(), root.to_string_lossy());
+        assert_eq!(written.trim(), normalize_slashes(&root));
     }
 
     #[tokio::test]
@@ -2218,7 +2337,7 @@ mod tests {
         let marker = tmp.path().join("ran.txt");
         let hooks = format!(
             r#"{{"hooks":{{"PreToolUse":[{{"matcher":"developer__shell","hooks":[{{"type":"command","command":"touch {}"}}]}}]}}}}"#,
-            marker.to_string_lossy(),
+            shell_path(&marker),
         );
         let root = write_plugin(tmp.path(), "p", &hooks);
         let mgr = make_manager(vec![DiscoveredPlugin {
