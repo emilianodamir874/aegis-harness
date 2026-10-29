@@ -94,6 +94,27 @@ await page.waitForTimeout(400);
 g = await geo();
 check('modo 1: al cerrar vuelve el alto completo', g.app >= ALTO - 6, JSON.stringify(g));
 
+// ---------- modo 1b: el navegador panea el viewport visual (offsetTop > 0) ----------
+// Es lo que hace Chrome al enfocar un campo con el teclado abierto: además de recortar, mueve
+// el área visible. Si el .app no se corre con ese paneo, el composer queda arriba o debajo de
+// la banda visible según el caso. Acá el layout sigue midiendo 777.
+await page.evaluate(() => {
+  const vv = window.visualViewport;
+  window.__vvFake = 470;
+  window.__topFake = 200;
+  Object.defineProperty(vv, 'offsetTop', { configurable: true, get: () => window.__topFake });
+  vv.dispatchEvent(new Event('resize'));
+});
+await page.waitForTimeout(400);
+g = await geo();
+check('modo 1b: el área útil se corre con el paneo del navegador', Math.abs(g.appTop - 200) <= 6, JSON.stringify(g));
+check('modo 1b: el composer queda justo arriba del teclado', Math.abs(g.compBottom - (470 + 200)) <= 8, `${g.compBottom} vs ${470 + 200}`);
+await page.evaluate(() => {
+  window.__vvFake = 777; window.__topFake = 0;
+  window.visualViewport.dispatchEvent(new Event('resize'));
+});
+await page.waitForTimeout(300);
+
 // ---------- modo 3: el navegador no reporta NADA ----------
 // Página nueva: el "modo real" se memoriza por página a propósito (si el navegador ya demostró
 // que reporta el teclado, no se estima nunca), así que acá hay que arrancar de cero.

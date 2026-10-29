@@ -169,7 +169,10 @@ function wire(): void {
     const recortado = !!(area.teclado > 120) || area.alto < altoBase - 40;
     if (recortado) { modoReal = true; guardarKb(altoBase - area.alto); ponerTeclado(0); return; }
     if (Date.now() - enfoqueEn < 320) return; // el teclado todavía está abriendo
-    ponerTeclado(leerKb() || Math.round(Math.max(180, altoBase * 0.42)));
+    // Teclado estimado: la mitad del área sin teclado. Con 0.42 (lo que daba el primer cálculo) el
+    // composer podía quedar medio tapado por la fila de sugerencias en un teclado alto; de más solo
+    // esconde transcript, que no molesta.
+    ponerTeclado(leerKb() || Math.round(Math.max(180, altoBase * 0.5)));
   };
   let altoUtil = 0;
   let ultimoAviso = 0;
