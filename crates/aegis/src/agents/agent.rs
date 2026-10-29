@@ -971,7 +971,14 @@ impl Agent {
 
                 let resume = turn_guard
                     .state()
-                    .wait_for_all_confirmation_answers(&cancel)
+                    .wait_for_all_confirmation_answers(
+                        &cancel,
+                        Some(std::time::Duration::from_secs(
+                            crate::agents::tool_confirmation_coordinator::confirmation_timeout_secs(
+                                None,
+                            ),
+                        )),
+                    )
                     .await;
                 if !resume {
                     turn_guard.state().clear_confirmations();

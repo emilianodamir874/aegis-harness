@@ -1,12 +1,37 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
 use anyhow::{anyhow, Result};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 use crate::agents::extension_manager::ExtensionLease;
 use crate::permission::Permission;
+
+/// Default wait for a tool confirmation before the turn is released.
+const DEFAULT_CONFIRMATION_TIMEOUT_SECS: u64 = 600;
+
+/// Resolves the confirmation timeout: `AEGIS_CONFIRMATION_TIMEOUT_SECS` when set to a
+/// positive integer, otherwise the default. `0` disables the timeout on purpose.
+pub(super) fn confirmation_timeout_secs(override_secs: Option<u64>) -> u64 {
+    if let Some(secs) = override_secs.filter(|secs| *secs > 0) {
+        return secs;
+    }
+    std::env::var("AEGIS_CONFIRMATION_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CONFIRMATION_TIMEOUT_SECS)
+}
+
+/// Sleeps for the configured timeout, or forever when the timeout is disabled.
+async fn wait_timeout(timeout: Option<Duration>) {
+    match timeout {
+        Some(duration) => tokio::time::sleep(duration).await,
+        None => std::future::pending::<()>().await,
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum ConfirmationAnswer {
@@ -87,9 +112,17 @@ impl SessionToolConfirmationState {
         Ok(())
     }
 
+    /// Waits until every pending request is answered.
+    ///
+    /// Returns `true` when a state-machine answer arrived (the turn resumes) and
+    /// `false` when there is nothing to resume. `timeout` bounds the wait: a
+    /// confirmation nobody answers used to park the session forever, because the
+    /// turn lock is held for the whole stream. On expiry every pending request is
+    /// answered with `Cancel` so the caller can finish the turn instead of hanging.
     pub(super) async fn wait_for_all_confirmation_answers(
         &self,
         cancel: &CancellationToken,
+        timeout: Option<Duration>,
     ) -> bool {
         loop {
             let answer_received = self.confirmation_answered.notified();
@@ -116,8 +149,38 @@ impl SessionToolConfirmationState {
             tokio::select! {
                 _ = answer_received => {}
                 _ = cancel.cancelled() => return true,
+                _ = wait_timeout(timeout) => {
+                    let pending = self.pending_request_ids();
+                    if self.expire_pending() {
+                        warn!(
+                            pending = pending.len(),
+                            "Tool confirmation expired without an answer; the pending tools were denied"
+                        );
+                    }
+                    return false;
+                }
             }
         }
+    }
+
+    /// Denies every unanswered request. Returns `true` when something was pending.
+    fn expire_pending(&self) -> bool {
+        let mut confirmations = self
+            .confirmations
+            .lock()
+            .expect("tool confirmation state unavailable");
+        let mut expired = false;
+        for slot in confirmations.values_mut() {
+            if slot.is_none() {
+                *slot = Some(ConfirmationAnswer::StateMachine(Permission::Cancel));
+                expired = true;
+            }
+        }
+        drop(confirmations);
+        if expired {
+            self.confirmation_answered.notify_waiters();
+        }
+        expired
     }
 
     pub(super) fn clear_confirmations(&self) {
@@ -125,6 +188,16 @@ impl SessionToolConfirmationState {
             .lock()
             .expect("tool confirmation state unavailable")
             .clear();
+    }
+
+    pub(super) fn pending_request_ids(&self) -> Vec<String> {
+        self.confirmations
+            .lock()
+            .expect("tool confirmation state unavailable")
+            .iter()
+            .filter(|(_, answer)| answer.is_none())
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     pub(super) fn extension_lease(&self) -> Arc<StdMutex<Option<Arc<ExtensionLease>>>> {
@@ -196,6 +269,50 @@ impl ToolConfirmationCoordinator {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn confirmation_timeout_releases_the_turn_and_denies_pending_tools() {
+        let session = SessionToolConfirmationState::new();
+        session.register_request("request-1".into());
+
+        let resumed = session
+            .wait_for_all_confirmation_answers(
+                &CancellationToken::new(),
+                Some(std::time::Duration::from_millis(20)),
+            )
+            .await;
+
+        assert!(
+            !resumed,
+            "sin respuesta del operador no hay nada que reanudar en el state machine"
+        );
+        assert_eq!(
+            session.answer("request-1"),
+            Some(ConfirmationAnswer::StateMachine(Permission::Cancel)),
+            "la tool pendiente queda denegada, no aprobada"
+        );
+        assert!(session.pending_request_ids().is_empty());
+    }
+
+    #[tokio::test]
+    async fn confirmation_without_timeout_still_resumes_on_answer() {
+        let session = SessionToolConfirmationState::new();
+        session.register_request("request-1".into());
+        let cancel = CancellationToken::new();
+        let (resumed, ()) = tokio::join!(
+            session.wait_for_all_confirmation_answers(&cancel, None),
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                session
+                    .record_answer(
+                        "request-1",
+                        ConfirmationAnswer::StateMachine(Permission::AllowOnce),
+                    )
+                    .unwrap();
+            }
+        );
+        assert!(resumed, "una respuesta del operador reanuda el turno");
+    }
+
     #[test]
     fn rejects_a_second_active_turn_and_releases_on_drop() {
         let coordinator = ToolConfirmationCoordinator::new();
@@ -226,7 +343,7 @@ mod tests {
             .unwrap();
 
         let has_state_machine_answer = session
-            .wait_for_all_confirmation_answers(&CancellationToken::new())
+            .wait_for_all_confirmation_answers(&CancellationToken::new(), None)
             .await;
 
         assert!(has_state_machine_answer);
