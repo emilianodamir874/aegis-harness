@@ -1,0 +1,88 @@
+name: CI
+
+# El fork no tuvo CI desde 2026-10-20 (43 workflows borrados en 1443e804d).
+# Este es el gate minimo: formatea, compila y testea lo que tiene tests.
+# El feature set sale del Justfile, no de este archivo: una sola fuente de verdad.
+
+on:
+  push:
+    branches: [main, 'feat/**', 'fix/**', 'chore/**', 'perf/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  AEGIS_DISABLE_KEYRING: "1"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  # Gate obligatorio. Si esto esta rojo, no se mergea.
+  gate:
+    name: fmt + check + test
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: gate-windows
+
+      - name: just
+        uses: taiki-e/install-action@just
+
+      - name: Formato
+        run: just check-fmt
+
+      - name: Compila la lib (set de CI)
+        run: just check-lib
+
+      - name: Compila el serve (set de produccion)
+        run: just check-serve
+
+      - name: Compila los targets de test
+        run: just check-tests
+
+      - name: Tests de la lib con el set de CI
+        run: just test-lib
+
+      - name: Tests de los crates chicos
+        run: just test-crates
+
+  # Clippy no bloquea todavia: el arbol nunca paso por el y arrancaria rojo.
+  # Cuando este job quede verde, se le saca continue-on-error y se suma a la
+  # branch protection. Mientras tanto queda visible y medido.
+  clippy:
+    name: clippy (informativo)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: clippy-windows
+
+      - name: just
+        uses: taiki-e/install-action@just
+
+      - name: Clippy
+        run: just clippy
