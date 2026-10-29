@@ -11,7 +11,11 @@ import { esc } from './format';
     s = s.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
     // Descargas de esta misma web: nunca convertir una ruta arbitraria en href.
     s = s.replace(/\[([^\]\n]+)\]\(\/dl\/([A-Za-z0-9._-]{1,120})\)/g,
-      (_match, label, name) => `<a class="dl-chip" href="/dl/${name}" download="${name}"><span class="dl-ico" aria-hidden="true">↓</span><span>${label}</span></a>`);
+      (_match, label, name) => {
+        const limpio = String(label).trim().replace(/^descargar\s+/i, '') || name;
+        return '<a class="dl-chip" href="/dl/' + name + '" download="' + name + '" aria-label="Descargar ' + name
+          + '" title="Descargar ' + name + '"><span class="dl-ico" aria-hidden="true">\u2193</span><span>' + limpio + '</span></a>';
+      });
     s = s.replace(/(https?:\/\/[^\s<)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
     return s;
   };
