@@ -12,10 +12,6 @@ impl AegisAcpAgent {
     ) -> Result<GetToolsResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id).await?;
-        let aegis_mode = agent
-            .aegis_mode(session_id)
-            .await
-            .internal_err_ctx("Failed to read aegis mode")?;
         let permission_manager = self.permission_manager();
 
         let mut tools: Vec<ToolListItem> = agent
@@ -25,17 +21,8 @@ impl AegisAcpAgent {
             .into_iter()
             .map(|tool| {
                 let permission = permission_manager
-                    .session_permission(session_id, &tool.name)
+                    .session_permission_for_tool(session_id, &tool.name)
                     .or_else(|| permission_manager.get_user_permission(&tool.name))
-                    .or_else(|| {
-                        if aegis_mode == AegisMode::SmartApprove {
-                            permission_manager.get_smart_approve_permission(&tool.name)
-                        } else if aegis_mode == AegisMode::Approve {
-                            Some(PermissionLevel::AskBefore)
-                        } else {
-                            None
-                        }
-                    })
                     .map(|p| match p {
                         PermissionLevel::AlwaysAllow => ToolPermissionLevel::AlwaysAllow,
                         PermissionLevel::AskBefore => ToolPermissionLevel::AskBefore,

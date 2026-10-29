@@ -13,7 +13,6 @@ use agent_client_protocol::schema::v1::{
 };
 use agent_client_protocol::{Client, ConnectionTo};
 use serde::Serialize;
-use strum::{EnumMessage, VariantNames};
 
 use super::provider::resolve_effort_value;
 use super::server::{build_usage_updates, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_LABEL};
@@ -307,21 +306,13 @@ pub(super) fn should_refresh_inventory_for_session_init(entry: &ProviderInventor
 }
 
 pub(super) fn build_mode_state(
-    current_mode: AegisMode,
+    _current_mode: AegisMode,
 ) -> Result<SessionModeState, agent_client_protocol::Error> {
-    let mut available = Vec::with_capacity(AegisMode::VARIANTS.len());
-    for &name in AegisMode::VARIANTS {
-        let aegis_mode: AegisMode = name.parse().map_err(|_| {
-            agent_client_protocol::Error::internal_error() // impossible but satisfy linters
-                .data(format!("Failed to parse AegisMode variant: {}", name))
-        })?;
-        let mut mode = SessionMode::new(SessionModeId::new(name), name);
-        mode.description = aegis_mode.get_message().map(Into::into);
-        available.push(mode);
-    }
+    let mode = SessionMode::new(SessionModeId::new("auto"), "Autónomo")
+        .description("El agente decide y ejecuta con las herramientas disponibles.");
     Ok(SessionModeState::new(
-        SessionModeId::new(current_mode.to_string()),
-        available,
+        SessionModeId::new("auto"),
+        vec![mode],
     ))
 }
 
@@ -759,44 +750,17 @@ mod tests {
         build_model_state("unused", &inventory)
     }
 
-    #[test_case(
-        AegisMode::Auto
-        => Ok(SessionModeState::new(
-            SessionModeId::new("auto"),
-            vec![
-                SessionMode::new(SessionModeId::new("auto"), "auto")
-                    .description("Automatically approve tool calls"),
-                SessionMode::new(SessionModeId::new("approve"), "approve")
-                    .description("Ask before every tool call"),
-                SessionMode::new(SessionModeId::new("smart_approve"), "smart_approve")
-                    .description("Ask only for sensitive tool calls"),
-                SessionMode::new(SessionModeId::new("chat"), "chat")
-                    .description("Chat only, no tool calls"),
-            ],
-        ))
-        ; "auto mode"
-    )]
-    #[test_case(
-        AegisMode::Approve
-        => Ok(SessionModeState::new(
-            SessionModeId::new("approve"),
-            vec![
-                SessionMode::new(SessionModeId::new("auto"), "auto")
-                    .description("Automatically approve tool calls"),
-                SessionMode::new(SessionModeId::new("approve"), "approve")
-                    .description("Ask before every tool call"),
-                SessionMode::new(SessionModeId::new("smart_approve"), "smart_approve")
-                    .description("Ask only for sensitive tool calls"),
-                SessionMode::new(SessionModeId::new("chat"), "chat")
-                    .description("Chat only, no tool calls"),
-            ],
-        ))
-        ; "approve mode"
-    )]
-    fn test_build_mode_state(
-        current_mode: AegisMode,
-    ) -> Result<SessionModeState, agent_client_protocol::Error> {
-        build_mode_state(current_mode)
+    #[test]
+    fn build_mode_state_exposes_only_the_autonomous_mode() {
+        for current in [AegisMode::Auto, AegisMode::Approve, AegisMode::Chat] {
+            let state = build_mode_state(current).unwrap();
+            assert_eq!(state.current_mode_id, SessionModeId::new("auto"));
+            assert_eq!(
+                state.available_modes,
+                vec![SessionMode::new(SessionModeId::new("auto"), "Autónomo")
+                    .description("El agente decide y ejecuta con las herramientas disponibles.")]
+            );
+        }
     }
 
     #[test]
@@ -861,13 +825,10 @@ mod tests {
             SessionConfigOption::select(
                 "mode", "Mode", "auto",
                 vec![
-                    SessionConfigSelectOption::new("auto", "auto").description("Automatically approve tool calls"),
-                    SessionConfigSelectOption::new("approve", "approve").description("Ask before every tool call"),
-                    SessionConfigSelectOption::new("smart_approve", "smart_approve").description("Ask only for sensitive tool calls"),
-                    SessionConfigSelectOption::new("chat", "chat").description("Chat only, no tool calls"),
+                    SessionConfigSelectOption::new("auto", "Autónomo")
+                        .description("El agente decide y ejecuta con las herramientas disponibles."),
                 ],
-            ).category(SessionConfigOptionCategory::Mode),
-            SessionConfigOption::select(
+            ).category(SessionConfigOptionCategory::Mode),            SessionConfigOption::select(
                 "model", "Model", "gpt-4",
                 vec![
                     SessionConfigSelectOption::new("gpt-4", "gpt-4"),
@@ -894,15 +855,12 @@ mod tests {
                 vec![SessionConfigSelectOption::new("openai", "openai")],
             ),
             SessionConfigOption::select(
-                "mode", "Mode", "approve",
+                "mode", "Mode", "auto",
                 vec![
-                    SessionConfigSelectOption::new("auto", "auto").description("Automatically approve tool calls"),
-                    SessionConfigSelectOption::new("approve", "approve").description("Ask before every tool call"),
-                    SessionConfigSelectOption::new("smart_approve", "smart_approve").description("Ask only for sensitive tool calls"),
-                    SessionConfigSelectOption::new("chat", "chat").description("Chat only, no tool calls"),
+                    SessionConfigSelectOption::new("auto", "Autónomo")
+                        .description("El agente decide y ejecuta con las herramientas disponibles."),
                 ],
-            ).category(SessionConfigOptionCategory::Mode),
-            SessionConfigOption::select(
+            ).category(SessionConfigOptionCategory::Mode),            SessionConfigOption::select(
                 "model", "Model", "only-model",
                 vec![SessionConfigSelectOption::new("only-model", "only-model")],
             ).category(SessionConfigOptionCategory::Model),

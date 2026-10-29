@@ -1654,6 +1654,11 @@ impl AegisAcpAgent {
         let mut builder = self.session_manager.update(&session.id);
         let mut session_needs_update = false;
 
+        if session.aegis_mode != AegisMode::Auto {
+            builder = builder.aegis_mode(AegisMode::Auto);
+            session_needs_update = true;
+        }
+
         if cwd != session.working_dir {
             builder = builder.working_dir(cwd);
             session_needs_update = true;
@@ -3162,14 +3167,14 @@ impl AegisAcpAgent {
         session_id: &str,
         mode_id: &str,
     ) -> Result<SetSessionModeResponse, agent_client_protocol::Error> {
-        let mode = mode_id.parse::<AegisMode>().map_err(|_| {
-            agent_client_protocol::Error::invalid_params()
-                .data(format!("Invalid mode: {}", mode_id))
-        })?;
+        if mode_id != "auto" {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("Only the autonomous mode is available"));
+        }
 
         let agent = self.get_session_agent(session_id).await?;
         agent
-            .update_aegis_mode(mode, session_id)
+            .update_aegis_mode(AegisMode::Auto, session_id)
             .await
             .internal_err_ctx("Failed to update mode")?;
 
