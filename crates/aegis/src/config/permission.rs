@@ -37,14 +37,22 @@ pub struct PermissionConfig {
 pub struct PermissionManager {
     config_path: PathBuf,
     permission_map: RwLock<HashMap<String, PermissionConfig>>,
-    /// Permisos explicitos por sesion (solo memoria). Es lo que usa el modo debate: gana sobre
-    /// permission.yaml y sobre el modo, y desaparece al cerrar el debate o al reiniciar el serve.
+    /// Permisos explicitos por sesion. Ganan sobre permission.yaml y sobre el modo; es lo que usa
+    /// el modo debate y lo que escribe la extension `mode`.
+    ///
+    /// Se persisten en `session-modes.json` al lado de permission.yaml: sin eso, un swap del
+    /// binario devolvia todas las sesiones a `ejecutar` en silencio, que es el peor modo para
+    /// fallar (el que menos protege).
     session_overrides: RwLock<HashMap<String, HashMap<String, PermissionLevel>>>,
+    modes_path: PathBuf,
 }
 
 // Constants representing specific permission categories
 const USER_PERMISSION: &str = "user";
 const SMART_APPROVE_PERMISSION: &str = "smart_approve";
+
+/// Overrides de permiso por sesion, al lado de permission.yaml. Sobreviven a un swap del binario.
+const SESSION_MODES_FILE: &str = "session-modes.json";
 
 /// Instancia unica del proceso. El chip de la web, el inspector de permisos y la extension `mode`
 /// tienen que ver los mismos overrides de sesion: si cada uno tuviera su propio `PermissionManager`,
@@ -77,10 +85,58 @@ impl PermissionManager {
             fs::create_dir_all(&config_dir).expect("Failed to create config directory");
             HashMap::new()
         };
+        let modes_path = config_dir.join(SESSION_MODES_FILE);
         PermissionManager {
             config_path: permission_path,
             permission_map: RwLock::new(permission_map),
-            session_overrides: RwLock::new(HashMap::new()),
+            session_overrides: RwLock::new(Self::load_session_overrides(&modes_path)),
+            modes_path,
+        }
+    }
+
+    /// Lee los overrides persistidos. Un archivo corrupto no rompe el arranque: se ignora y se
+    /// deja un warn, porque perder los modos es menos grave que no poder levantar el serve.
+    fn load_session_overrides(path: &Path) -> HashMap<String, HashMap<String, PermissionLevel>> {
+        let Ok(raw) = fs::read_to_string(path) else {
+            return HashMap::new();
+        };
+        match serde_json::from_str::<HashMap<String, HashMap<String, PermissionLevel>>>(&raw) {
+            Ok(overrides) => overrides,
+            Err(error) => {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %error,
+                    "session-modes.json ilegible; se arranca sin overrides de sesion"
+                );
+                HashMap::new()
+            }
+        }
+    }
+
+    /// Reescribe el archivo con el estado actual. Atomico: tmp + rename.
+    fn persist_session_overrides(&self) {
+        let overrides = self.session_overrides.read().unwrap();
+        let snapshot = overrides.clone();
+        drop(overrides);
+
+        let body = match serde_json::to_string_pretty(&snapshot) {
+            Ok(body) => body,
+            Err(error) => {
+                tracing::warn!(error = %error, "no se pudieron serializar los modos de sesion");
+                return;
+            }
+        };
+        let tmp = self.modes_path.with_extension("json.tmp");
+        if let Err(error) = fs::create_dir_all(self.modes_path.parent().unwrap_or(Path::new("."))) {
+            tracing::warn!(error = %error, "no se pudo crear el directorio de session-modes.json");
+            return;
+        }
+        if let Err(error) = fs::write(&tmp, body) {
+            tracing::warn!(error = %error, "no se pudo escribir session-modes.json");
+            return;
+        }
+        if let Err(error) = fs::rename(&tmp, &self.modes_path) {
+            tracing::warn!(error = %error, "no se pudo mover session-modes.json a su lugar");
         }
     }
 
@@ -260,11 +316,21 @@ impl PermissionManager {
         } else {
             overrides.insert(session_id.to_string(), tools);
         }
+        drop(overrides);
+        self.persist_session_overrides();
     }
 
     /// Borra los overrides de una sesion.
     pub fn clear_session_permissions(&self, session_id: &str) {
-        self.session_overrides.write().unwrap().remove(session_id);
+        let removed = self
+            .session_overrides
+            .write()
+            .unwrap()
+            .remove(session_id)
+            .is_some();
+        if removed {
+            self.persist_session_overrides();
+        }
     }
 
     /// Cuantos overrides por sesion hay ahora mismo (tests y diagnostico).
@@ -386,6 +452,52 @@ impl PermissionManager {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn session_modes_survive_a_new_manager() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let manager = PermissionManager::new(dir.path().to_path_buf());
+        manager.set_session_permissions(
+            "session-1",
+            [("write".to_string(), PermissionLevel::NeverAllow)],
+        );
+
+        let reopened = PermissionManager::new(dir.path().to_path_buf());
+        assert_eq!(
+            reopened.session_permission("session-1", "write"),
+            Some(PermissionLevel::NeverAllow),
+            "el modo de la sesion tiene que sobrevivir a un reinicio del proceso"
+        );
+    }
+
+    #[test]
+    fn clearing_a_session_mode_removes_the_persisted_entry() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let manager = PermissionManager::new(dir.path().to_path_buf());
+        manager.set_session_permissions(
+            "session-1",
+            [("write".to_string(), PermissionLevel::AskBefore)],
+        );
+        manager.clear_session_permissions("session-1");
+
+        let reopened = PermissionManager::new(dir.path().to_path_buf());
+        assert_eq!(reopened.session_permission("session-1", "write"), None);
+        assert_eq!(reopened.session_override_count(), 0);
+    }
+
+    #[test]
+    fn a_corrupt_modes_file_does_not_break_startup() {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("session-modes.json"), b"{not json").unwrap();
+
+        let manager = PermissionManager::new(dir.path().to_path_buf());
+        assert_eq!(
+            manager.session_override_count(),
+            0,
+            "un archivo corrupto se ignora: perder modos es mejor que no arrancar"
+        );
+    }
+
     use super::*;
     use rmcp::model::ToolAnnotations;
     use rmcp::object;
