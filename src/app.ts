@@ -1218,7 +1218,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     const ocultos = kids.slice(first, last + 1) as HTMLElement[];
     const open = rwOpen(sid);
     const band = document.createElement('div');
-    band.className = 'rw-band rw-marker';
+    band.className = 'rw-band';
     band.dataset.count = String(ocultos.length);
     band.classList.toggle('collapsed', !open);
     band.innerHTML =

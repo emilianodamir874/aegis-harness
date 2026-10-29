@@ -1432,7 +1432,6 @@ textarea:focus-visible { outline: none; }
   margin: var(--s3) 0 0;
   font-size: 11px;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text-4);
   text-align: center;
 }
@@ -3458,6 +3457,7 @@ html[data-motion="reducido"] .density-pop { animation: none; }
 .rw-band-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .rw-band-ico { color: var(--text-4); }
 .rw-band-t { flex: 0 0 auto; color: var(--text-2); font-weight: 500; }
+.rw-band-t { text-transform: uppercase; }
 .rw-band-hint {
   flex: 1 1 auto;
   min-width: 0;
