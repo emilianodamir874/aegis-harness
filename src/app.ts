@@ -2305,8 +2305,8 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       id: 'usage-panel',
       // Un unico panel, y siempre en el mismo lugar: el boton de las barras del topbar. Si se
       // abriera anclado al readout del pie, volveria a existir "el panel de abajo".
-      anchor: ($('#btn-density') as HTMLElement) || document.body,
-      anchorSel: '#btn-density',
+      anchor: ($('#btn-gasto-top') as HTMLElement) || ($('#btn-density') as HTMLElement) || document.body,
+      anchorSel: '#btn-gasto-top',
       title: 'Gasto y uso',
       sub: (gastoDias === 0 ? 'todo el historial' : gastoDias === 1 ? 'hoy' : 'últimos ' + gastoDias + ' días')
         + (mp.model ? ' · ' + mp.model : ''),
@@ -6237,27 +6237,14 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     return setDensity(DENSITIES[(i + 1) % DENSITIES.length], true);
   }
 
-  // El boton de las barras del topbar pasa a abrir Gasto y uso. La densidad del texto se movio al
-  // pie de ese panel (tres botones), asi que este cableado ya no engancha el menu flotante.
-  function wireGastoEnBarras() {
-    const btn = $('#btn-density') as HTMLButtonElement | null;
-    if (!btn) return;
-    btn.setAttribute('aria-label', 'Gasto y uso');
-    btn.title = 'Gasto y uso: gasto del periodo, por modelo y ventana del modelo';
-    btn.setAttribute('aria-haspopup', 'dialog');
-    btn.setAttribute('aria-controls', 'usage-panel');
-    btn.removeAttribute('aria-expanded');
-    btn.addEventListener('click', () => {
-      if (panelAbierto()) { cerrarPanel(); return; }
-      openUsagePop();
-    });
-  }
+  // El boton de gasto es UNO solo: el de barras VERTICALES (#btn-gasto-top, lo crea stats.ts). Hubo
+  // dos botones que abrian la misma cosa y un tercer panel viejo detras; ahora el de lineas
+  // horizontales (#btn-density) vuelve a ser Densidad, que es lo que dice su icono.
 
   function wireDensityMenu() {
     const trigger = $('#btn-density') as HTMLButtonElement | null;
     const menu = $('#density-pop') as HTMLElement | null;
     if (!trigger || !menu) return;
-    return; // el menu flotante quedo sin disparador: la densidad vive en el pie del panel de gasto
     const choices = [...menu.querySelectorAll<HTMLButtonElement>('[data-density]')];
     const close = (returnFocus = false) => {
       if (menu.hidden) return;
@@ -6496,7 +6483,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const cb = $('#btn-contrast');
     if (cb) cb.addEventListener('click', () => cycleContrast());
     setDensity(density);
-    wireGastoEnBarras();
+    wireDensityMenu();
     wireMobileTopbar();
     const pb = $('#btn-present');
     if (pb) pb.addEventListener('click', () => setPresentation(!presentationOn()));

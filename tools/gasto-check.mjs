@@ -19,8 +19,8 @@ const errores = [];
 page.on('pageerror', (e) => errores.push(String(e).slice(0, 160)));
 page.on('console', (m) => { if (m.type() === 'error') errores.push('console: ' + m.text().slice(0, 120)); });
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!document.querySelector('#btn-density'), null, { timeout: 20000 });
-await page.evaluate(() => document.querySelector('#btn-density')?.click());
+await page.waitForFunction(() => !!document.getElementById('btn-gasto-top'), null, { timeout: 20000 });
+await page.evaluate(() => document.getElementById('btn-gasto-top')?.click());
 await page.waitForTimeout(2800);
 
 const estado = () => page.evaluate(() => {
@@ -48,9 +48,12 @@ const estado = () => page.evaluate(() => {
 const a = await estado();
 console.log('panel:', JSON.stringify({ cifra: a.cifra, proy: a.proyeccion, sub: a.sub, pie: a.pie, secciones: a.secciones, dentro: a.dentro, conScroll: a.conScroll }));
 
-check('el panel se abre desde el botón de las barras del topbar',
-  (await page.evaluate(() => document.querySelector('#btn-density')?.getAttribute('aria-label'))) === 'Gasto y uso',
-  await page.evaluate(() => document.querySelector('#btn-density')?.getAttribute('aria-label')));
+check('el panel se abre desde el botón de gasto del topbar (#btn-gasto-top)',
+  (await page.evaluate(() => document.getElementById('btn-gasto-top')?.getAttribute('aria-label'))) === 'Gasto y uso',
+  await page.evaluate(() => document.getElementById('btn-gasto-top')?.getAttribute('aria-label')));
+check('el botón de densidad volvió a ser densidad (no hay dos botones de gasto)',
+  (await page.evaluate(() => document.getElementById('btn-density')?.getAttribute('aria-label') || '')) !== 'Gasto y uso',
+  await page.evaluate(() => document.getElementById('btn-density')?.getAttribute('aria-label') || 'sin label'));
 check('la densidad del texto se mudó al pie del panel',
   (await page.evaluate(() => document.querySelectorAll('#usage-panel .gs-dens-b').length)) === 3,
   await page.evaluate(() => [...document.querySelectorAll('#usage-panel .gs-dens-b')].map((e) => e.textContent).join('/')));
@@ -102,7 +105,7 @@ check('tocar el readout del pie abre el panel de las barras, no uno propio',
   desdeP.anclado && desdeP.secciones >= 6, JSON.stringify(desdeP));
 await page.evaluate(() => document.querySelector('#usage-panel .panel-x')?.click());
 await page.waitForTimeout(300);
-await page.evaluate(() => document.querySelector('#btn-density')?.click());
+await page.evaluate(() => document.getElementById('btn-gasto-top')?.click());
 await page.waitForTimeout(1600);
 
 // ---------- la ventana del modelo con datos reales de un turno ----------
@@ -170,8 +173,8 @@ check('cambiar a 30 días cambia la cifra y el subtítulo',
 
 // El período elegido se recuerda.
 await page.reload({ waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!document.querySelector('#btn-density'), null, { timeout: 20000 });
-await page.evaluate(() => document.querySelector('#btn-density')?.click());
+await page.waitForFunction(() => !!document.getElementById('btn-gasto-top'), null, { timeout: 20000 });
+await page.evaluate(() => document.getElementById('btn-gasto-top')?.click());
 await page.waitForTimeout(2200);
 const c = await estado();
 check('el período elegido se recuerda al recargar', c.tabs.find((t) => t.on)?.t === '30 días', c.tabs.map((t) => (t.on ? '*' : '') + t.t).join(' '));
@@ -182,8 +185,8 @@ await page.waitForTimeout(900);
 const m = await (await b.newContext({ viewport: { width: 384, height: 832 }, deviceScaleFactor: 2.8125, isMobile: true, hasTouch: true,
   userAgent: 'Mozilla/5.0 (Linux; Android 15; SM-A566B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36' })).newPage();
 await m.goto(BASE, { waitUntil: 'domcontentloaded' });
-await m.waitForFunction(() => !!document.querySelector('#btn-density'), null, { timeout: 20000 });
-await m.evaluate(() => document.querySelector('#btn-density')?.click());
+await m.waitForFunction(() => !!document.getElementById('btn-gasto-top'), null, { timeout: 20000 });
+await m.evaluate(() => document.getElementById('btn-gasto-top')?.click());
 await m.waitForTimeout(2600);
 const mm = await m.evaluate(() => {
   const panel = document.querySelector('#usage-panel .panel');
