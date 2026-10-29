@@ -1628,8 +1628,9 @@ textarea:focus-visible { outline: none; }
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .msg-a .thought:hover { color: var(--text-2); border-color: var(--border-strong); }
-.msg-a .thought.open,
-.msg-a .thought.short { display: block; -webkit-line-clamp: none; max-height: none; overflow: visible; }
+/* `open` es el estado que maneja el click. `short` quedo como alias historico y se retiro: era el
+   que dejaba razonamientos imposibles de colapsar. */
+.msg-a .thought.open { display: block; -webkit-line-clamp: none; max-height: none; overflow: visible; }
 .msg-a .thought::after { content: none; }
 .msg-a .thought p { margin: 0 0 0.5em; }
 .msg-a .thought p:last-child { margin-bottom: 0; }

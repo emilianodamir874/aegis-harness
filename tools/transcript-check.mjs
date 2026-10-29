@@ -190,6 +190,62 @@ check('un solo razonamiento = una sola caja, aunque se intercale cromo',
   unaCaja.cajas === 1 && unaCaja.mismaClave && /Segundo tramo/.test(unaCaja.texto || ''),
   JSON.stringify(unaCaja));
 
+// ---------- 13. el razonamiento se puede volver a colapsar ----------
+// El bug: flushRender medía el bloque TAL COMO ESTABA y, con el bloque abierto, clientHeight
+// igualaba scrollHeight, así que le ponía `short`, que en CSS también expande. El usuario
+// colapsaba (sacaba `open`) y seguía abierto: algunos razonamientos no cerraban nunca.
+const colapsa = await page.evaluate(async () => {
+  const W = window.__aegisWeb;
+  const inner = document.querySelector('#msg-inner');
+  if (inner) inner.innerHTML = '';
+  W.state.msgs.clear();
+  W.state.thoughtRec = null;
+  const k = W.thinkKey({ messageId: 'c1' });
+  for (let i = 0; i < 40; i++) W.feed(k, 'linea de razonamiento larga para que desborde el clamp. ', true);
+  await new Promise((r) => setTimeout(r, 500));
+  const rec = W.state.msgs.get(k);
+  const cuerpo = rec.body;
+  cuerpo.classList.add('open');
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // un render mas con el bloque abierto (es lo que le ponia short)
+  rec.dirty = true; W.state.msgs.get(k).dirty = true;
+  W.feed(k, ' y una linea mas.', true);
+  await new Promise((r) => setTimeout(r, 400));
+  const estados = { open: cuerpo.classList.contains('open'), short: cuerpo.classList.contains('short'), tall: cuerpo.classList.contains('tall') };
+  cuerpo.classList.remove('open');
+  const altoCerrado = cuerpo.getBoundingClientRect().height;
+  cuerpo.classList.add('open');
+  const altoAbierto = cuerpo.getBoundingClientRect().height;
+  return { ...estados, cierra: altoAbierto > altoCerrado + 10, altoCerrado: Math.round(altoCerrado), altoAbierto: Math.round(altoAbierto) };
+});
+// Lo que importaba era el estado, no la geometria del contenedor de prueba: con `short` puesto,
+// sacar `open` no colapsaba nada (las dos clases expanden). Sin `short`, el click manda.
+// El invariante es: el render NO deja `short` puesto. Con `short`, sacar `open` no colapsaba nada
+// (las dos clases expanden) y algunos razonamientos quedaban abiertos para siempre.
+check('el render no deja la clase short fantasma (el click puede colapsar)',
+  colapsa.short === false,
+  JSON.stringify(colapsa));
+
+// ---------- 14. dos cajas de razonamiento seguidas no parten una palabra ----------
+const cadena = await page.evaluate(() => {
+  const W = window.__aegisWeb;
+  const inner = document.querySelector('#msg-inner');
+  if (inner) inner.innerHTML = '';
+  W.state.msgs.clear();
+  W.state.thoughtRec = null;
+  const k1 = W.thinkKey({ messageId: 'x1' });
+  W.feed(k1, 'llamar a `__aeg', true);
+  // el servidor abre un messageId nuevo a mitad del mismo pensamiento: lo que llega es un chunk
+  // que sigue la frase. Debe ir a la MISMA caja.
+  const k2 = W.thinkKey({ messageId: 'x2' });
+  W.feed(k2, 'isWeb.testUi.pop` sólo existe en host mock.', true);
+  const rec = W.state.msgs.get(k1);
+  return { misma: k1 === k2, texto: rec ? rec.text : '', cajas: document.querySelectorAll('#msg-inner .msg-a').length };
+});
+check('un messageId nuevo a mitad del pensamiento no abre otra caja ni parte la palabra',
+  cadena.misma && cadena.cajas === 1 && cadena.texto === 'llamar a `__aegisWeb.testUi.pop` sólo existe en host mock.',
+  JSON.stringify(cadena));
+
 await browser.close();
 const ok = res.filter((r) => r.ok).length;
 for (const r of res) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.n}${r.d ? '  [' + r.d + ']' : ''}`);

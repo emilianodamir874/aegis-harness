@@ -1399,7 +1399,18 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       if (_dt > METRICS.maxRenderMs) METRICS.maxRenderMs = _dt;
       if (rec.body.classList.contains('thought')) measure.push(rec);
     }
-    for (const rec of measure) rec.body.classList.toggle('short', rec.body.scrollHeight <= rec.body.clientHeight + 2);
+    // `tall` = hay mas texto del que entra en el clamp. Se mide SIEMPRE con el clamp puesto: antes
+    // se medía el bloque tal como estaba y, si el usuario lo habia abierto (open), clientHeight
+    // igualaba scrollHeight y se le marcaba `short`, que en CSS tambien expande -> algunos
+    // razonamientos quedaban abiertos para siempre y no habia forma de colapsarlos.
+    for (const rec of measure) {
+      const abierto = rec.body.classList.contains('open');
+      if (abierto) rec.body.classList.remove('open');
+      const hay = rec.body.scrollHeight > rec.body.clientHeight + 2;
+      if (abierto) rec.body.classList.add('open');
+      rec.body.classList.toggle('tall', hay);
+      rec.body.classList.remove('short');
+    }
     scrollBottom();
     // Lo que quedó sin pintar sigue en `dirty`: va en el próximo frame (sin bloquear el teclado).
     if (dirty.size && !rafId && !renderTimer) {
@@ -1451,21 +1462,30 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const wrap = msgWrap();
     const prev = state.thoughtRec;
     if (prev && prev.el.parentElement === wrap) {
-      // Se reusa si despues de la caja no hay OTRA caja de mensaje. Lo que puede venir es el
-      // cursor, la barra del run o los botones, que no cortan el razonamiento. Antes se exigia
-      // "ultimo hijo del wrap" y cualquier nodo de cromo abria una caja nueva: un solo
-      // razonamiento se veia como seis bloques partidos, y al recargar se juntaba (el historial
-      // llega completo y no pasa por aca).
+      // Se reusa la caja si despues no hay otra caja de mensaje. El cromo (cursor, barra del run,
+      // botones) no corta el razonamiento; antes se exigia "ultimo hijo" y cada nodo de cromo
+      // abria una caja nueva.
       let n: Node | null = prev.el.nextSibling;
-      let limpio = true;
+      let caja: HTMLElement | null = null;
       while (n) {
         if (n.nodeType === 1) {
           const el = n as HTMLElement;
-          if (el.classList.contains('msg-a') || el.classList.contains('tool') || el.classList.contains('msg-user')) { limpio = false; break; }
+          if (el.classList.contains('msg-a') || el.classList.contains('tool') || el.classList.contains('msg-user')) { caja = el; break; }
         }
         n = n.nextSibling;
       }
-      if (limpio) return state.thoughtKey;
+      if (!caja) return state.thoughtKey;
+      // Lo que sigue es OTRA caja de razonamiento pegada a esta: el servidor abrio un messageId
+      // nuevo a mitad del mismo pensamiento. Se sigue escribiendo ahi en vez de abrir una tercera,
+      // que es lo que dejaba una palabra cortada entre dos bloques ("__aeg" | "isWeb.testUi.pop")
+      // y se veia como un razonamiento cortado. Nunca pasa al recargar porque el historial llega
+      // como un solo mensaje.
+      const otra = (caja as any).__rec;
+      if (caja.classList.contains('msg-a') && caja.querySelector('.thought') && otra && otra.key) {
+        state.thoughtKey = otra.key;
+        state.thoughtRec = otra;
+        return state.thoughtKey;
+      }
     }
     state.thoughtKey = 'think:' + (u.messageId || 'a') + ':' + Date.now().toString(36);
     state.thoughtRec = null;
@@ -1613,7 +1633,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       // regenerar viven adentro. Antes eran hasta tres botones flotando sobre el mensaje.
       el.appendChild(botonAcciones(thought ? 'razonamiento' : 'respuesta', () => accionesDeMensaje(el, rec, thought)));
       msgWrap().appendChild(el);
-      rec = { el, body, text: '', dirty: false, closed: false, live: false, lastAppend: 0, lastRender: 0 };
+      rec = { el, body, key, text: '', dirty: false, closed: false, live: false, lastAppend: 0, lastRender: 0 };
       (el as any).__rec = rec;
       state.msgs.set(key, rec);
       if (thought) state.thoughtRec = rec;
