@@ -1449,8 +1449,22 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
   function thoughtKeyFor(u) {
     const wrap = msgWrap();
     const prev = state.thoughtRec;
-    if (prev && prev.el.parentElement === wrap && prev.el === wrap.lastElementChild) {
-      return state.thoughtKey;
+    if (prev && prev.el.parentElement === wrap) {
+      // Se reusa si despues de la caja no hay OTRA caja de mensaje. Lo que puede venir es el
+      // cursor, la barra del run o los botones, que no cortan el razonamiento. Antes se exigia
+      // "ultimo hijo del wrap" y cualquier nodo de cromo abria una caja nueva: un solo
+      // razonamiento se veia como seis bloques partidos, y al recargar se juntaba (el historial
+      // llega completo y no pasa por aca).
+      let n: Node | null = prev.el.nextSibling;
+      let limpio = true;
+      while (n) {
+        if (n.nodeType === 1) {
+          const el = n as HTMLElement;
+          if (el.classList.contains('msg-a') || el.classList.contains('tool') || el.classList.contains('msg-user')) { limpio = false; break; }
+        }
+        n = n.nextSibling;
+      }
+      if (limpio) return state.thoughtKey;
     }
     state.thoughtKey = 'think:' + (u.messageId || 'a') + ':' + Date.now().toString(36);
     state.thoughtRec = null;
@@ -1526,8 +1540,10 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     // El provider reemite el acumulado de otro tramo: mismo arranque y mas largo.
     if (prev.length >= 40 && inc.length > prev.length
       && prev.startsWith(inc.slice(0, Math.min(24, inc.length)))) return { replace: inc };
-    // Arranca con puntuacion de continuacion sin que lo pintado la pida: le falta el principio.
-    if (!/[\s\-;,:([{]$/.test(prev) && /^[\-;,:)\]}·]/.test(inc)) return { add: '\n\n' + inc };
+    // NADA de separadores por cuenta propia: un fragmento que empieza con "-" es normal en texto
+    // tecnico (overflow-y, --vars, listas, backdrop-filter) y meterle un \n\n delante hace que el
+    // markdown lo lea como vineta y parta el identificador en dos lineas. Eso era lo que rompia el
+    // razonamiento EN VIVO y se veia bien al recargar (ahi el texto llega entero y no pasa por aca).
     return { add: inc };
   }
 
@@ -7172,7 +7188,7 @@ import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/pane
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
+  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
     // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
     view: {
       density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),

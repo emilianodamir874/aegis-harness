@@ -63,14 +63,20 @@ check('solape: recorta lo repetido y no parte la frase',
   solape && solape.texto === 'antes de seguir con el repaso de los paneles y el chasis comun de la interfaz: hay que revisar el borde del panel.',
   solape && JSON.stringify(solape.texto.slice(-70)));
 
-// ---------- 5. fragmento huerfano sin solape ----------
-const huerfano = await correr('t5', [
-  'justify-content: space-between; gap: 12px; con etiqueta y valor alineados.',
-  '-content-space-between; gap:12px; y el resto sigue acá.',
+// ---------- 5. identificadores partidos a mitad de palabra ----------
+// El motor corta donde quiere: "overflow" + "-y: auto" o "--" + "vars". Antes se metia un \n\n
+// delante de cualquier chunk que arrancara con guion y el markdown lo leia como vineta: el
+// razonamiento se veia partido EN VIVO y bien al recargar.
+const partido = await correr('t5', [
+  'El panel tiene overflow',
+  '-y: auto + backdrop',
+  '-filter: blur(2px); y adentro',
+  '-- sin tocar el resto.',
 ]);
-check('huerfano: abre parrafo aparte, no lo suelda al renglon anterior',
-  huerfano && /\n\n/.test(huerfano.texto) && huerfano.texto.startsWith('justify-content'),
-  huerfano && JSON.stringify(huerfano.texto.slice(0, 50)));
+check('identificadores partidos: se pegan sin separadores ni vinetas',
+  partido && partido.texto === 'El panel tiene overflow-y: auto + backdrop-filter: blur(2px); y adentro-- sin tocar el resto.'
+  && !/\n/.test(partido.texto),
+  partido && JSON.stringify(partido.texto));
 
 // ---------- 6. retroceso (llega menos texto que lo ya pintado) ----------
 const retro = await correr('t6', ['Texto completo del razonamiento que ya estaba pintado en pantalla.', 'Texto completo']);
@@ -156,6 +162,33 @@ const hub = await page.evaluate(() => {
 check('hub replay: aplica la misma reconciliacion',
   hub.texto === 'El plan era arreglar el transcript y despues los paneles, con sus pruebas. Y despues medir.',
   hub.texto.slice(0, 90));
+
+// ---------- 12. una sola caja de razonamiento aunque se intercale cromo ----------
+// thoughtKeyFor exigia "ultimo hijo del wrap": cualquier nodo de cromo entre chunks abria caja
+// nueva y un razonamiento se veia como seis bloques. Ahora solo corta si hay otra caja de mensaje.
+const unaCaja = await page.evaluate(async () => {
+  const W = window.__aegisWeb;
+  const inner = document.querySelector('#msg-inner');
+  if (inner) inner.innerHTML = '';
+  W.state.msgs.clear();
+  W.state.thoughtRec = null;
+  const wrap = document.querySelector('#msg-inner') || inner;
+  // Se usa el MISMO camino que el motor: thoughtKeyFor() decide la clave en cada chunk.
+  const k1 = W.thinkKey({ messageId: 'm1' });
+  W.feed(k1, 'Primer tramo del razonamiento.', true);
+  // cromo entre medio: un nodo suelto que no es caja de mensaje
+  const ruido = document.createElement('div');
+  ruido.className = 'runbar';
+  if (wrap) wrap.appendChild(ruido);
+  const k2 = W.thinkKey({ messageId: 'm1' });
+  W.feed(k2, ' Segundo tramo, misma caja.', true);
+  const cajas = document.querySelectorAll('#msg-inner .msg-a').length;
+  const rec = W.state.msgs.get(k1);
+  return { cajas, mismaClave: k1 === k2, texto: rec ? rec.text : '', claves: [...W.state.msgs.keys()] };
+});
+check('un solo razonamiento = una sola caja, aunque se intercale cromo',
+  unaCaja.cajas === 1 && unaCaja.mismaClave && /Segundo tramo/.test(unaCaja.texto || ''),
+  JSON.stringify(unaCaja));
 
 await browser.close();
 const ok = res.filter((r) => r.ok).length;
