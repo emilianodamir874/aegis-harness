@@ -344,6 +344,15 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     applyUpdate(params);
   }
 
+  // El serve omite `agentVisible` cuando vale true (`skip_serializing_if = is_true`), asi que la
+  // AUSENCIA del campo significa que el modelo SI ve el mensaje. Comparar contra `!== true` daba
+  // `undefined !== true === true` y metia todo el replay en la banda de "el modelo no ve esto" al
+  // recargar el chat (bug 2026-10-29). Solo `false` explicito oculta; sin el campo manda el
+  // fallback, que es el seguimiento local de rebobinado.
+  function ocultoAlAgente(aegis, fallback: boolean): boolean {
+    return aegis && aegis.agentVisible === false ? true : fallback;
+  }
+
   function applyUpdate(params) {
     const cur = state.current;
     if (!cur || params.sessionId !== cur.id) return;
@@ -373,7 +382,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
           else noteResume(cur.id, mid);
         }
         const ag = u._meta && u._meta.aegis;
-        const oculto = ag ? ag.agentVisible !== true : state.hideTail;
+        const oculto = ocultoAlAgente(ag, state.hideTail);
         if (u.content && u.content.type === 'text') addUser(u.content.text, true, null, { mid, hidden: oculto });
         else if (u.content && u.content.type === 'image') addUser('', true, [u.content], { mid, hidden: oculto });
         if (oculto) markHiddenTail();
@@ -383,14 +392,14 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
         if (u.content && u.content.type === 'text') {
           chunksTurn++;
           textoDelTurno += u.content.text;
-          streamAppend(u.messageId || 'a', u.content.text, false, (u._meta && u._meta.aegis) ? u._meta.aegis.agentVisible !== true : state.hideTail);
+          streamAppend(u.messageId || 'a', u.content.text, false, ocultoAlAgente(u._meta && u._meta.aegis, state.hideTail));
           speedChunk(u.content.text, u.messageId);
         }
         break;
       case 'agent_thought_chunk':
         if (u.content && u.content.type === 'text') {
           speedStep(u.messageId, true);
-          streamAppend(thoughtKeyFor(u), u.content.text, true, (u._meta && u._meta.aegis) ? u._meta.aegis.agentVisible !== true : state.hideTail);
+          streamAppend(thoughtKeyFor(u), u.content.text, true, ocultoAlAgente(u._meta && u._meta.aegis, state.hideTail));
         }
         break;
       case 'tool_call':
@@ -1144,6 +1153,8 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   // rebobinados volvian a aparecer y el segundo rebobinado no limpiaba nada. Guardamos el
   // messageId del turno rebobinado y, como el replay llega en orden, todo lo que venga de ahi
   // en adelante se oculta (asi tambien se cubren las respuestas, que no llevan dataset.mid).
+  // (2026-10-29) La ausencia de `agentVisible` significa VISIBLE: el serve omite el campo cuando
+  // vale true. Ver `ocultoAlAgente`.
   function hiddenFromKey(sid) { return 'aegis.hiddenFrom.' + sid; }
   function hiddenFromId(sid) {
     try { return localStorage.getItem(hiddenFromKey(sid)) || ''; } catch { return ''; }
