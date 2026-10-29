@@ -180,62 +180,6 @@ function instalarPildora(): void {
   new MutationObserver(medirPegado).observe(cont, { childList: true });
 }
 
-// ---------- acciones por mensaje ----------
-function barraDeAcciones(el: HTMLElement): HTMLElement {
-  const previa = el.querySelector<HTMLElement>(':scope > .msg-acts');
-  if (previa) return previa;
-  const fila = document.createElement('div');
-  fila.className = 'msg-acts';
-  const copiarBtn = document.createElement('button');
-  copiarBtn.type = 'button'; copiarBtn.className = 'msg-act'; copiarBtn.dataset.act = 'copiar';
-  copiarBtn.textContent = 'copiar'; copiarBtn.title = 'Copiar el texto de este mensaje';
-  fila.append(copiarBtn);
-  if (el.classList.contains('msg-user')) {
-    const editar = document.createElement('button');
-    editar.type = 'button'; editar.className = 'msg-act'; editar.dataset.act = 'editar';
-    editar.textContent = 'editar'; editar.title = 'Poner este texto en el composer';
-    fila.append(editar);
-  }
-  el.append(fila);
-  return fila;
-}
-
-function textoDe(el: HTMLElement): string {
-  const copia = el.cloneNode(true) as HTMLElement;
-  copia.querySelectorAll('.msg-acts, .rewind-btn, button').forEach((n) => n.remove());
-  return (copia.textContent || '').trim();
-}
-
-function prepararMensaje(n: Element): void {
-  const el = n as HTMLElement;
-  if (!(el.classList.contains('msg-a') || el.classList.contains('msg-user'))) return;
-  if (el.classList.contains('hidden-from-agent')) return;
-  const fila = barraDeAcciones(el);
-  // Un prompt enorme se pliega: el transcript se lee mejor y la acción queda a la vista.
-  if (el.classList.contains('msg-user') && (el.textContent || '').length > 900 && el.dataset.plegado !== '1') {
-    el.dataset.plegado = '1';
-    el.classList.add('msg-largo');
-    const ver = document.createElement('button');
-    ver.type = 'button'; ver.className = 'msg-act msg-ver'; ver.textContent = 'ver todo';
-    ver.setAttribute('aria-expanded', 'false');
-    ver.addEventListener('click', () => {
-      const abierto = el.classList.toggle('msg-abierto');
-      ver.textContent = abierto ? 'ver menos' : 'ver todo';
-      ver.setAttribute('aria-expanded', String(abierto));
-    });
-    fila.append(ver);
-  }
-}
-
-function instalarAcciones(): void {
-  const raiz = document.querySelector('#messages');
-  if (!raiz) return;
-  raiz.querySelectorAll('.msg-a, .msg-user').forEach(prepararMensaje);
-  new MutationObserver((cambios) => {
-    for (const c of cambios) for (const n of c.addedNodes) if (n.nodeType === 1) prepararMensaje(n as Element);
-  }).observe(raiz, { childList: true, subtree: true });
-}
-
 // ---------- conmutador de variantes ----------
 // Solo aparece si regeneraste: ‹ 1/2 › sobre el ultimo mensaje del agente. Es una vista local
 // (las variantes viejas quedaron fuera del contexto por el rewind y siguen en la sesion).
@@ -257,12 +201,13 @@ function pintarVariantes(): void {
       if (!boton) return;
       const movido = variantes.mover(Number(boton.dataset.dir) === -1 ? -1 : 1);
       const destino = [...document.querySelectorAll<HTMLElement>('.msg-a')].pop();
-      if (movido && destino) { destino.innerHTML = movido.html; prepararMensaje(destino); }
+      if (movido && destino) { destino.innerHTML = movido.html; }
       pintarVariantes();
     });
   }
-  const fila = ultimo.querySelector(':scope > .msg-acts');
-  if (fila) fila.append(chipEl); else ultimo.append(chipEl);
+  const acciones = ultimo.querySelector<HTMLElement>(':scope > .act-btn');
+  if (acciones?.parentElement) acciones.parentElement.append(chipEl);
+  else ultimo.append(chipEl);
   const posEl = chipEl.querySelector('.var-pos');
   if (posEl) posEl.textContent = (pos.idx + 1) + '/' + pos.total;
 }
@@ -271,31 +216,8 @@ export function refrescarVariantes(): void { pintarVariantes(); }
 
 export function instalar(): void {
   instalarPildora();
-  instalarAcciones();
   new MutationObserver(() => pintarVariantes()).observe(document.querySelector('#messages') || document.body, { childList: true, subtree: false });
   pintarVariantes();
-  document.addEventListener('click', (e) => {
-    const boton = (e.target as HTMLElement).closest?.('.msg-act') as HTMLElement | null;
-    if (!boton) return;
-    const el = boton.closest('.msg-a, .msg-user') as HTMLElement | null;
-    if (!el) return;
-    const act = boton.dataset.act;
-    if (act === 'copiar') {
-      e.preventDefault(); e.stopPropagation();
-      void copiar(textoDe(el)).then(() => {
-        boton.textContent = 'copiado';
-        setTimeout(() => { boton.textContent = 'copiar'; }, 1200);
-      });
-    } else if (act === 'editar') {
-      e.preventDefault(); e.stopPropagation();
-      const input = document.querySelector<HTMLTextAreaElement>('#input');
-      if (!input) return;
-      input.value = textoDe(el);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
-    }
-  });
   document.addEventListener('keydown', (e) => {
     const meta = e.ctrlKey || e.metaKey;
     if (meta && (e.key === 'f' || e.key === 'F')) {

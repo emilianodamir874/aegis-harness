@@ -87,7 +87,8 @@ function llenarFila(row: Detalle, path: string, oldText: string | undefined, new
   const summary = row.querySelector('summary') || row.appendChild(document.createElement('summary'));
   summary.replaceChildren();
   const label = document.createElement('span'); label.className = 'tool-diff-path'; label.textContent = path;
-  const count = document.createElement('span'); count.className = 'tool-diff-count'; count.textContent = contar(view, requested);
+  const count = document.createElement('span'); count.className = 'tool-diff-count';
+  count.textContent = fuente === 'input' ? (requested ? 'archivo nuevo' : 'contenido enviado') : contar(view, requested);
   summary.append(label, count);
   const previo = row.querySelector('pre.tool-diff-code');
   if (previo) previo.remove();
@@ -132,6 +133,17 @@ export function renderInlineToolDiff(card: ToolCard, update: ToolEvent, status: 
     return list;
   };
   const vivo = status !== 'completed' && status !== 'failed';
+  // Al cerrar, conservar una fila ACP pero actualizar su estado: no se debe reconstruir el
+  // contenido textual ni perder el diff al llegar un update de status sin content.
+  if (status === 'completed' && list) {
+    for (const fila of list.querySelectorAll<Detalle>('.tool-diff')) marcarEstado(fila, false);
+  }
+  if (status === 'failed' && list) {
+    for (const fila of [...list.querySelectorAll<Detalle>('.tool-diff')]) {
+      if (fila.dataset.fuente === 'input') fila.remove();
+    }
+    list = body.querySelector<HTMLElement>('.tool-diffs');
+  }
   // 1) Bloques ACP diff (el camino con el par exacto): valen en cualquier estado, también en curso.
   const blocks = Array.isArray(update.content) ? update.content.filter(b => b?.type === 'diff' && typeof b.newText === 'string') : [];
   if (blocks.length) {

@@ -1131,6 +1131,10 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     }
     el.innerHTML = html;
     if (opts && opts.mid && !opts.queued) addRewindBtn(el);
+    if (!opts?.queued && !opts?.hidden) {
+      el.appendChild(botonAcciones('prompt', () => accionesDeMensaje(el, null, false), 'msg-user-actions'));
+    }
+    if (text && text.length > 900) { el.classList.add('msg-largo'); el.dataset.plegado = '1'; }
     msgWrap().appendChild(el);
     scrollBottom(replay);
     return el;
@@ -1539,19 +1543,37 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const todas = [...document.querySelectorAll<HTMLElement>('#msg-inner > .msg-a')].filter((x) => !x.querySelector('.thought'));
     return todas[todas.length - 1] === el;
   }
+  function textoDeMensaje(el: HTMLElement): string {
+    const clone = el.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll('button, .variantes-chip').forEach((n) => n.remove());
+    return (clone.innerText || clone.textContent || '').trim();
+  }
+
+  function editarMensaje(el: HTMLElement) {
+    const input = document.querySelector<HTMLTextAreaElement>('#input');
+    if (!input) return;
+    input.value = textoDeMensaje(el);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
   function accionesDeMensaje(el: HTMLElement, rec: any, thought: boolean): ActItem[] {
-    const texto = String((rec && rec.text) || '');
+    const texto = String((rec && rec.text) || textoDeMensaje(el));
     const out: ActItem[] = [
       { label: 'Copiar', icon: uiIcon('copy', { size: 13 }), run: () => { void copiarMensaje(el); } },
     ];
     if (!thought) {
       const bloque = readBlock(texto);
       if (bloque) out.push({ label: 'Escuchar el bloque', icon: uiIcon('voice', { size: 13 }), hint: 'Para escuchar', run: () => escucharTexto(bloque) });
-      // Sin bloque, la prosa sin codigo se puede leer igual (es lo que hace el manos libres).
       if (!bloque && readClean(texto).length >= 120) out.push({ label: 'Escuchar', icon: uiIcon('voice', { size: 13 }), run: () => escucharTexto(texto) });
-      if (esRespuestaFinal(el)) {
-        out.push({ label: 'Regenerar', icon: uiIcon('refresh', { size: 13 }), hint: 'ultima respuesta', run: () => { void regenerateLast(); } });
+      if (el.classList.contains('msg-user')) {
+        out.push({ label: 'Editar', icon: uiIcon('edit', { size: 13 }), run: () => editarMensaje(el) });
+        if ((textoDeMensaje(el).length > 900 || el.classList.contains('msg-largo')) && !el.classList.contains('msg-abierto')) {
+          out.push({ label: 'Ver todo', icon: uiIcon('expand', { size: 13 }), run: () => { el.classList.remove('msg-largo'); el.classList.add('msg-abierto'); } });
+        }
       }
+      if (esRespuestaFinal(el)) out.push({ label: 'Regenerar', icon: uiIcon('refresh', { size: 13 }), hint: 'ultima respuesta', run: () => { void regenerateLast(); } });
     }
     return out;
   }

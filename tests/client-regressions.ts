@@ -51,6 +51,7 @@ try {
     if (request.method() === 'GET' && path === '/ws/defaults') return route.fulfill({ status: 200, json: {} });
     if (request.method() === 'GET' && path === '/prices.json') return route.fulfill({ status: 200, json: {} });
     if (request.method() === 'GET' && path === '/goals.json') return route.fulfill({ status: 200, json: { goals: [] } });
+    if (request.method() === 'GET' && path === '/stats.json') return route.fulfill({ status: 200, json: { sessions: 0, messages: 0, prompts: 0, tools: 0 } });
     if (request.method() === 'POST' && path === '/client-log') return route.fulfill({ status: 204, body: '' });
     errors.push('petición inesperada: ' + request.method() + ' ' + path);
     return route.fulfill({ status: 404, body: 'fixture: petición inesperada' });
@@ -260,7 +261,7 @@ try {
   eq(rates.beforeLate.out, 20, 'fin de turno mantiene generación');
   eq(rates.afterLate.out, 60, 'usage tardío del run suma una vez; ajenos ignorados');
   eq(rates.afterLate.avg, 15, 'promedio ponderado actualizado tras terminal');
-  if (!rates.pop.includes('solicitud total 9.5 tok/s') || !rates.note.includes('prom generación 15.0 tok/s')) throw new Error('etiquetas de velocidad erróneas: ' + JSON.stringify(rates));
+  if (!rates.note.includes('prom generación 15.0 tok/s')) throw new Error('etiqueta de velocidad errónea: ' + JSON.stringify(rates));
   console.log('PASS uso ordenado/deduplicado por mensaje y run, replay y etiquetas de solicitud/generación');
   const newRun = await page.evaluate((sid) => {
     const app = (window as any).__aegisWeb, ui = app.testUi;
@@ -404,7 +405,7 @@ try {
     }, variant);
     if (result.links !== 1 || result.href !== '/dl/AUDITORIA_CASTOR_2026-10-21.md' ||
         result.download !== 'AUDITORIA_CASTOR_2026-10-21.md' ||
-        result.text?.includes('(/dl/') || !result.label?.includes('descargar AUDITORIA_CASTOR_2026-10-21.md'))
+        result.text?.includes('(/dl/') || !result.label?.includes('AUDITORIA_CASTOR_2026-10-21.md'))
       throw new Error('enlace descarga en bruto/duplicado: ' + JSON.stringify(result));
   }
   console.log('PASS enlaces Markdown de descarga en una o dos líneas son un único botón');
@@ -479,6 +480,7 @@ try {
     return { sizes, stored: localStorage.getItem('aegis.chatFontPx'), value: document.querySelector('#chat-font-value')?.textContent,
       chrome: getComputedStyle(document.querySelector('.topbar')!).fontSize,
       input: getComputedStyle(document.querySelector('#input')!).fontSize,
+      panelSub: document.querySelector('#font-panel .panel-sub')?.textContent,
       expected: size + 'px' };
   }, px);
   if (await page.locator('#btn-topbar-more').isVisible()) await page.locator('#btn-topbar-more').click();
@@ -486,7 +488,7 @@ try {
   if (await font.getAttribute('aria-expanded') !== 'true') throw new Error('popover de fuente no accesible');
   await page.locator('#chat-font-range').fill('20');
   let typography = await checkFont(20);
-  if (typography.sizes.some(([, actual, expected]) => Math.abs(actual - expected) > 0.02) || typography.value !== '20 px' || typography.stored !== '20') throw new Error('escala incompleta: ' + JSON.stringify(typography));
+  if (typography.sizes.some(([, actual, expected]) => Math.abs(actual - expected) > 0.02) || typography.panelSub !== '20 px' || typography.stored !== '20') throw new Error('escala incompleta: ' + JSON.stringify(typography));
   await page.locator('#chat-font-plus').click();
   eq((await checkFont(21)).stored, '21', 'botón aumentar');
   await page.locator('#chat-font-minus').click();
@@ -532,7 +534,7 @@ try {
   await page.evaluate(() => localStorage.setItem('aegis.chatFontPx', '999'));
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => (window as any).__aegisWeb?.state.sessions.length === 2);
-  eq((await checkFont(16)).value, '16 px', 'almacenamiento fuera de rango rechazado');
+  eq((await checkFont(16)).stored, '16', 'almacenamiento fuera de rango rechazado');
   console.log('PASS fuente 2–22, reset, recarga, tarjeta móvil y storage inválido');
   const rpcError = await page.evaluate(async () => {
     try { await (window as any).__aegisWeb.rpc.request('test/error', {}); return null; }

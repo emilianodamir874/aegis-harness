@@ -113,30 +113,34 @@ try {
     eq(cerrado.barraOculta, true, 'la barra se oculta');
     ok(cerrado.textoIntacto, 'el texto del mensaje queda intacto');
 
-    // 4) Acciones por mensaje: existen, copian sin romper y "editar" llena el composer.
-    const actos = await page.evaluate(() => {
-      const el = document.querySelector('.msg-a');
-      const fila = el?.querySelector(':scope > .msg-acts');
-      return { fila: !!fila, botones: [...(fila?.querySelectorAll('.msg-act') || [])].map((b) => b.dataset.act), altura: fila ? Math.round(fila.querySelector('.msg-act').getBoundingClientRect().height) : 0 };
-    });
-    ok(actos.fila, 'cada mensaje del agente tiene su fila de acciones');
-    eq(actos.botones, ['copiar'], 'el mensaje del agente ofrece copiar');
-    if (movil) ok(actos.altura >= 30, 'en el telefono el boton es tocable: ' + actos.altura + 'px');
+    // 4) Acciones por mensaje: el mismo menu unico sirve para agente y usuario.
+    const actos = await page.evaluate(() => ({
+      msgActs: document.querySelectorAll('.msg-acts, .msg-act').length,
+      agente: document.querySelectorAll('.msg-a .act-btn').length,
+    }));
+    eq(actos.msgActs, 0, 'no quedan acciones duplicadas');
+    eq(actos.agente, 1, 'la respuesta tiene un unico disparador');
     await page.evaluate(() => {
       const app = globalThis.__aegisWeb;
       app.testUi.addUser('un prompt de usuario que se puede editar', false, []);
     });
-    await page.waitForTimeout(120);
+    await page.waitForSelector('.msg-user .act-btn');
     const editar = await page.evaluate(() => {
-      const usuarios = [...document.querySelectorAll('.msg-user')];
-      const el = usuarios[usuarios.length - 1];
-      const boton = el.querySelector('.msg-act[data-act="editar"]');
-      boton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      return { boton: !!boton, valor: document.querySelector('#input')?.value };
+      const el = [...document.querySelectorAll('.msg-user')].at(-1);
+      const boton = el?.querySelector('.act-btn');
+      boton?.click();
+      return { boton: !!boton };
     });
-    ok(editar.boton, 'el mensaje del usuario ofrece editar');
-    ok((editar.valor || '').includes('se puede editar'), 'editar carga el texto en el composer: ' + editar.valor);
-
+    await page.waitForSelector('body > .acts-menu');
+    const labelsUsuario = await page.locator('body > .acts-menu .act-t').allTextContents();
+    ok(editar.boton, 'el mensaje del usuario ofrece acciones');
+    ok(labelsUsuario.includes('Editar'), 'el menu de usuario ofrece Editar: ' + labelsUsuario.join('|'));
+    await page.keyboard.press('Escape');
+    const largo = 'prompt largo '.repeat(100);
+    await page.evaluate((texto) => globalThis.__aegisWeb.testUi.addUser(texto, false, []), largo);
+    await page.waitForTimeout(100);
+    const largoState = await page.evaluate(() => { const el = [...document.querySelectorAll('.msg-user')].at(-1); return { largo: el?.classList.contains('msg-largo'), h: el?.getBoundingClientRect().height, sh: el?.scrollHeight }; });
+    ok(largoState.largo && (largoState.h || 0) < (largoState.sh || 0), 'prompt largo plegado: ' + JSON.stringify(largoState));
     ok(await page.locator('.ir-final').count() === 1, 'existe la pildora de ir al final');
     eq(errores.length, 0, 'sin errores de pagina: ' + errores.join(' | '));
     await ctx.close();

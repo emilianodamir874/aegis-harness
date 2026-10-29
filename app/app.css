@@ -3626,6 +3626,7 @@ html.presentation .messages::-webkit-scrollbar { width: 8px; }
   opacity: 0;
   z-index: 2;
 }
+
 .msg-a:hover .act-btn,
 .msg-a:focus-within .act-btn,
 .msg-user:hover .act-btn,
@@ -4485,17 +4486,10 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .tool-diff[data-vivo="1"] { border-color: var(--warn, #d29922); }
 .tool-diff[data-vivo="1"] .tool-diff-count { color: var(--text-2); }
 /* ---------- lectura del transcript: acciones, buscar, ir al final, variantes ---------- */
-.msg-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; opacity: 0; transition: opacity .12s; }
-.msg-a:hover .msg-acts, .msg-user:hover .msg-acts, .msg-acts:focus-within { opacity: 1; }
-@media (hover: none) { .msg-acts { opacity: 1; } }
-.msg-act { border: 1px solid var(--border-soft); background: none; color: var(--text-3); font: inherit; font-size: 11px; padding: 2px 7px; min-height: 26px; border-radius: var(--r-sm); cursor: pointer; }
-.msg-act:hover { color: var(--text-1); border-color: var(--border); }
-.msg-act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-@media (max-width: 560px) { .msg-act { min-height: 32px; padding: 4px 10px; } }
 
 /* Prompt largo: se recorta y "ver todo" lo abre. */
-.msg-largo:not(.msg-abierto) > :not(.msg-acts) { max-height: 9.5em; overflow: hidden; position: relative; }
-.msg-largo:not(.msg-abierto) > :not(.msg-acts)::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3.2em; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }
+.msg-largo:not(.msg-abierto) { max-height: 9.5em; overflow: hidden; position: relative; }
+.msg-largo:not(.msg-abierto)::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3.2em; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }
 
 /* Buscar en la conversación. */
 .buscar-barra { position: sticky; top: 0; z-index: 6; order: -1; display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--bg-raise); border-bottom: 1px solid var(--border); }
