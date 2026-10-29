@@ -495,14 +495,19 @@ extensions:
     #[test]
     fn test_get_extension_by_name_falls_back_to_available_builtin() {
         fn spawn_builtin(_: tokio::io::DuplexStream, _: tokio::io::DuplexStream) {}
-        crate::builtin_extension::register_builtin_extension("memory", spawn_builtin);
+        crate::builtin_extension::register_builtin_extension("testbuiltin", spawn_builtin);
 
-        let extension = get_extension_by_name("memory").unwrap();
-
-        assert!(matches!(
-            extension,
-            ExtensionConfig::Builtin { ref name, .. } if name == "memory"
-        ));
+        // El fallback solo se consulta cuando la config no tiene una entrada con ese nombre. Con
+        // `Config::global()` el resultado dependia del store de la maquina: ahi `memory` esta
+        // guardada como extension de plataforma, gana la primera rama y el test nunca llegaba al
+        // registro de builtins.
+        let (config, _config_file, _secrets_file) = test_config("");
+        let extension = get_extension_by_name_with_config(&config, "testbuiltin").unwrap();
+        assert!(
+            extension.name() == "testbuiltin"
+                && matches!(extension, ExtensionConfig::Builtin { .. }),
+            "el fallback deberia resolver el builtin registrado, devolvio: {extension:?}"
+        );
     }
 
     #[test]
