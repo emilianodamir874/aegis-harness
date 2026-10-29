@@ -69,6 +69,42 @@ check('la composición de tokens separa cache de fresca', a.filas.some((f) => /c
 check('lista los chats más caros con su costo', a.filas.concat([a.secciones.join()]).length > 0 && /Chats más caros/.test(a.secciones.join()), 'ok');
 check('el panel entero entra en pantalla con el contenido cargado', a.dentro, `alto ${a.alto} · scroll ${a.conScroll}`);
 
+// ---------- un solo panel: el del pie no existe como panel propio ----------
+// El pedido fue explicito: el panel de abajo no debe existir; todo vive en el de arriba. El
+// readout del pie queda como indicador y, si se toca, abre ESE MISMO panel (uno solo en el DOM),
+// anclado al boton de las barras.
+await page.evaluate(() => document.querySelector('#usage-panel .panel-x')?.click());
+await page.waitForTimeout(300);
+const unico = await page.evaluate(() => {
+  const antes = document.querySelectorAll('#usage-panel').length;
+  document.querySelector('#meta-right')?.click();
+  return antes;
+});
+await page.waitForTimeout(1800);
+const desdeP = await page.evaluate(() => {
+  const paneles = document.querySelectorAll('#usage-panel').length;
+  const panel = document.querySelector('#usage-panel .panel');
+  const barra = document.querySelector('#btn-density')?.getBoundingClientRect();
+  const caja = panel?.getBoundingClientRect();
+  return {
+    paneles,
+    // "Anclado arriba" = el panel cuelga del boton de las barras: arranca por debajo suyo. No se
+    // exige coincidencia exacta de bordes porque el chasis clampa al viewport.
+    anclado: !!(barra && caja && caja.top >= barra.bottom - 10 && caja.top < barra.bottom + 40),
+    caja: caja ? [Math.round(caja.top), Math.round(caja.bottom)] : null,
+    barra: barra ? [Math.round(barra.top), Math.round(barra.bottom)] : null,
+    secciones: document.querySelectorAll('#usage-panel .gs-sec').length,
+  };
+});
+console.log('desde el pie:', JSON.stringify({ unico, ...desdeP }));
+check('hay un solo panel de gasto en el DOM', unico === 0 && desdeP.paneles === 1, `antes ${unico} · despues ${desdeP.paneles}`);
+check('tocar el readout del pie abre el panel de las barras, no uno propio',
+  desdeP.anclado && desdeP.secciones >= 6, JSON.stringify(desdeP));
+await page.evaluate(() => document.querySelector('#usage-panel .panel-x')?.click());
+await page.waitForTimeout(300);
+await page.evaluate(() => document.querySelector('#btn-density')?.click());
+await page.waitForTimeout(1600);
+
 // ---------- la ventana del modelo con datos reales de un turno ----------
 // Se inyecta el estado que manda message_usage (last + umbral) y se comprueba la cuenta: la
 // ventana es la última llamada, el techo se deriva del porcentaje de compactación, y el margen es

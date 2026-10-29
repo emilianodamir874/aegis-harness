@@ -2303,8 +2303,10 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     const mp: any = modelParts() || {};
     usagePanel = abrirPanel({
       id: 'usage-panel',
-      anchor: ($('#meta-right') as HTMLElement) || document.body,
-      anchorSel: '#meta-right',
+      // Un unico panel, y siempre en el mismo lugar: el boton de las barras del topbar. Si se
+      // abriera anclado al readout del pie, volveria a existir "el panel de abajo".
+      anchor: ($('#btn-density') as HTMLElement) || document.body,
+      anchorSel: '#btn-density',
       title: 'Gasto y uso',
       sub: (gastoDias === 0 ? 'todo el historial' : gastoDias === 1 ? 'hoy' : 'últimos ' + gastoDias + ' días')
         + (mp.model ? ' · ' + mp.model : ''),
@@ -2357,7 +2359,7 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     // siempre; la cifra en el pie aparece cuando hay algo que mostrar.
     if (s.used == null && s.cost == null) {
       el.textContent = 'gasto';
-      el.title = 'Gasto y uso: historial de llamadas y contexto de este chat';
+      el.title = 'Gasto y uso: historial de llamadas y ventana del modelo';
       el.dataset.level = 'na';
       el.style.cursor = 'pointer';
       el.onclick = () => {
@@ -2383,7 +2385,9 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     }
     if (s.cost != null) parts.push(fmtCost(s.cost));
     el.textContent = flag + parts.filter(Boolean).join('  ·  ');
-    el.title = usageLines().join(String.fromCharCode(10)) + String.fromCharCode(10) + String.fromCharCode(10) + 'Toque para ver el detalle en el chat.';
+    // El pie es un INDICADOR: no tiene panel propio. Al tocarlo abre el panel de las barras, que es
+    // el unico. Antes habia dos paneles con los mismos datos en lugares distintos.
+    el.title = usageLines().join(String.fromCharCode(10)) + String.fromCharCode(10) + String.fromCharCode(10) + 'Toque para abrir Gasto y uso.';
     // Rojo solo si NO hay compactacion pendiente y aun asi no entra. Con el umbral pasado el
     // color es ambar: hay algo que el motor va a resolver solo.
     el.dataset.level = pct == null ? 'na' : paso ? 'warm' : pct >= COMPACT_RATIO * 100 ? 'hot' : pct >= 50 ? 'warm' : 'ok';
