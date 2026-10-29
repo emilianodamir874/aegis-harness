@@ -4470,7 +4470,7 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .git-changes { margin: var(--s4) auto var(--s2); max-width: var(--measure); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-card); overflow: hidden; }
 .git-changes header { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--border-soft); }
 .git-changes .gc-ic { color: var(--text-3); font-size: 13px; line-height: 1; }
-.git-changes header b { font-size: 12.5px; font-weight: 600; }
+.git-changes header b { font-size: 12.5px; font-weight: 600; flex: none; white-space: nowrap; }
 .git-changes .gc-sub { color: var(--text-4); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .git-changes .gc-btn { margin-left: auto; width: 26px; height: 26px; border-radius: var(--r-sm); color: var(--text-3); font-size: 14px; line-height: 1; flex: none; }
 .git-changes .gc-btn + .gc-btn { margin-left: 0; }
