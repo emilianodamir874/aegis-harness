@@ -1573,7 +1573,12 @@ mod tests {
         let child = reloaded.get_session(&child_id, true).await.unwrap();
         assert_eq!(child.session_type, SessionType::SubAgent);
         assert_eq!(child.parent_session_id.as_deref(), Some(parent.id.as_str()));
-        assert_eq!(child.working_dir, child_dir.canonicalize().unwrap());
+        // El store guarda la ruta con `canonical_working_dir` (canonicaliza y pela el prefijo
+        // verbatim de Windows), asi que la expectativa usa la misma normalizacion.
+        assert_eq!(
+            child.working_dir,
+            crate::session::session_manager::canonical_working_dir(child_dir.clone())
+        );
         assert_eq!(child.provider_name.as_deref(), Some("openai"));
         assert_eq!(
             child.model_config.as_ref().unwrap().model_name,

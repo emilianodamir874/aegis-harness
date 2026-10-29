@@ -260,7 +260,11 @@ fn collect_files(
     let mut total_size: usize = 0;
 
     for path_str in paths {
-        if Path::new(path_str).is_absolute() {
+        // `has_root` covers the root-relative spelling (`/etc/passwd`): on Windows it is not
+        // `is_absolute`, yet joining it to the base escapes to the root of the base's drive, so
+        // it has to be refused for the same reason an absolute path is.
+        let requested = Path::new(path_str);
+        if requested.is_absolute() || requested.has_root() {
             return Err(format!("Absolute paths are not allowed: {}", path_str));
         }
 

@@ -1277,6 +1277,10 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test]
     async fn cmd_rejects_newline_in_command() {
+        // El guard solo existe cuando el shell configurado es cmd: bajo powershell un comando
+        // multilinea es valido y no hay nada que rechazar. El test fija cmd para no depender
+        // del AEGIS_SHELL del host (aqui corre con powershell).
+        let _shell = env_lock::lock_env([("AEGIS_SHELL", Some("cmd"))]);
         for command in ["echo a\necho b", "echo a\r\necho b", "echo a\recho b"] {
             let tool = ShellTool::new_for_test().unwrap();
             let result = tool
