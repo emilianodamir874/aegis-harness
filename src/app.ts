@@ -2355,16 +2355,29 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       };
       return;
     }
-    const pct = s.limit && s.used != null ? Math.round((s.used / s.limit) * 100) : null;
-    const flag = pct == null ? '' : pct >= COMPACT_RATIO * 100 ? '! ' : pct >= 50 ? '~ ' : '';
+    // `s.limit` NO es la ventana del modelo: es el UMBRAL de compactacion (1M x 0.839 en
+    // deepseek-v4.1-flash). Pasarse del umbral no es un error, es el disparador haciendo su
+    // trabajo: el motor compacta despues del turno. Antes eso se pintaba rojo con "0 libres", que
+    // se lee como que la app se rompio cuando en realidad esta todo bien.
+    const techo = s.limit;
+    const pct = techo && s.used != null ? Math.round((s.used / techo) * 100) : null;
+    const paso = pct != null && pct >= 100;
+    const flag = pct == null ? '' : paso ? '· ' : pct >= COMPACT_RATIO * 100 ? '~ ' : '';
     const parts = [];
     if (pct != null) parts.push(pct + '%');
-    if (s.used != null) parts.push(fmtTok(s.used) + (s.limit ? '/' + fmtTok(s.limit) : '') + ' tok');
+    if (s.used != null) {
+      // Pasado el umbral se dice cuanto sobra, no "0 libres".
+      parts.push(paso
+        ? fmtTok(s.used) + ' tok · ' + fmtTok(s.used - techo) + ' sobre el umbral, compacta solo'
+        : fmtTok(s.used) + (techo ? '/' + fmtTok(techo) : '') + ' tok');
+    }
     if (s.cost != null) parts.push(fmtCost(s.cost));
     el.textContent = flag + parts.filter(Boolean).join('  ·  ');
     el.title = usageLines().join(String.fromCharCode(10)) + String.fromCharCode(10) + String.fromCharCode(10) + 'Toque para ver el detalle en el chat.';
-    el.dataset.level = pct == null ? 'na' : pct >= COMPACT_RATIO * 100 ? 'hot' : pct >= 50 ? 'warm' : 'ok';
-    el.style.color = pct == null ? '' : pct >= COMPACT_RATIO * 100 ? 'var(--danger, #e5484d)' : pct >= 50 ? 'var(--warn, #d29922)' : '';
+    // Rojo solo si NO hay compactacion pendiente y aun asi no entra. Con el umbral pasado el
+    // color es ambar: hay algo que el motor va a resolver solo.
+    el.dataset.level = pct == null ? 'na' : paso ? 'warm' : pct >= COMPACT_RATIO * 100 ? 'hot' : pct >= 50 ? 'warm' : 'ok';
+    el.style.color = pct == null ? '' : paso ? 'var(--warn, #d29922)' : pct >= COMPACT_RATIO * 100 ? 'var(--danger, #e5484d)' : pct >= 50 ? 'var(--warn, #d29922)' : '';
     el.style.cursor = 'pointer';
     el.onclick = () => {
       try { openUsagePop(); } catch (err) { report('error', 'popover de contexto: ' + (err && err.message ? err.message : err)); console.error(err); }
