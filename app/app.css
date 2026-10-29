@@ -4514,3 +4514,206 @@ mark.buscar-hit.buscar-actual { background: rgba(210, 170, 70, .62); outline: 1p
 .var-nav:hover { color: var(--text-1); border-color: var(--border); }
 .var-pos { font-variant-numeric: tabular-nums; }
 .var-nota { color: var(--text-4); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+
+/* ==========================================================================
+   Modos de sesión: tres texturas, no el mismo chat con otro color.
+   plan    · cuaderno: hoja rayada, tinta, sin cajas
+   revisar · borrador: papel con doblez, ámbar de espera, diffs marcados
+   ejecutar· consola: tarjetas compactas y recibos monoespaciados
+   El modo vive en #messages[data-modo] y cada mensaje se sella con el suyo
+   (data-modo por nodo), así el historial no se re-pinta al cambiar de modo.
+   ========================================================================== */
+
+.modo-cinta {
+  position: sticky;
+  bottom: 0;
+  z-index: 6;
+  margin: var(--s3) auto var(--s1);
+  padding: 5px 12px;
+  width: fit-content;
+  max-width: calc(100% - var(--s5));
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+.modo-cinta[data-modo="plan"] { border-color: var(--border); color: var(--text-3); }
+.modo-cinta[data-modo="revisar"] { border-color: var(--warn-line); color: var(--warn); background: var(--warn-soft); }
+.modo-cinta[data-modo="ejecutar"] { border-color: var(--ok-line); color: var(--ok); background: var(--ok-soft); }
+
+/* ---------- plan · cuaderno ---------------------------------------------- */
+
+#messages[data-modo="plan"] { --hoja: #221f1b; --tinta: #e8e2d4; }
+
+/* Respuesta: hoja sin caja, con filete punteado al costado y aire arriba. */
+#messages .msg-a[data-modo="plan"] {
+  background: none;
+  border: 0;
+  border-left: 2px dotted var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  padding: 2px 0 2px var(--s4);
+  margin-left: var(--s1);
+  color: var(--tinta);
+  font-family: var(--serif);
+  font-size: 15.5px;
+  line-height: 1.62;
+}
+/* Renglones de cuaderno: se insinúan sin competir con el texto. */
+#messages .msg-a[data-modo="plan"] .content {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 26px,
+    rgba(245, 244, 239, 0.055) 26px,
+    rgba(245, 244, 239, 0.055) 27px
+  );
+  background-position: 0 1px;
+}
+/* Párrafo abierto: la pluma. */
+#messages .msg-a[data-modo="plan"] .pluma::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.16em;
+  background: var(--accent);
+  opacity: 0.75;
+  animation: pluma 1.15s steps(2, end) infinite;
+}
+@keyframes pluma { 0%, 45% { opacity: 0.75; } 50%, 100% { opacity: 0.12; } }
+
+/* Tu mensaje: nota al margen, no burbuja. */
+#messages .msg-user[data-modo="plan"] {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  margin-left: 0;
+  padding: 0 0 0 var(--s5);
+  color: var(--text-3);
+  font-style: italic;
+}
+#messages .msg-user[data-modo="plan"]::before {
+  content: "›";
+  position: absolute;
+  margin-left: calc(-1 * var(--s4));
+  color: var(--accent);
+  font-style: normal;
+  font-family: var(--mono);
+}
+#messages .msg-user[data-modo="plan"] { position: relative; }
+
+/* Lecturas: cita en línea en lugar de card. */
+#messages .tool.cita {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding: 0 0 0 var(--s4);
+  margin: 2px 0 2px var(--s1);
+  min-height: 0;
+}
+#messages .tool.cita .tool-ic { display: none; }
+#messages .tool.cita .tool-body { padding: 0; }
+#messages .tool.cita .tool-title { display: none; }
+#messages .tool.cita .tool-cita {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-4);
+  text-decoration: underline dotted var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: default;
+}
+#messages .tool.cita.err .tool-cita { color: var(--danger); text-decoration-color: var(--danger-line); }
+
+/* Razonamiento: una línea en el margen, sin caja. */
+#messages .msg-a[data-modo="plan"] .thought {
+  background: none;
+  border: 0;
+  border-left: 0;
+  padding-left: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-4);
+  max-height: 3.2em;
+}
+
+/* Separación entre turnos: filete tenue, como pasar de hoja. */
+#messages[data-modo="plan"] .msg-user + .msg-a { border-top: 1px solid var(--border-soft); padding-top: var(--s4); }
+
+/* ---------- revisar · borrador marcado ----------------------------------- */
+
+#messages .msg-a[data-modo="revisar"] {
+  background: var(--bg-card);
+  border: 1px solid var(--warn-line);
+  border-radius: 4px 14px 14px 14px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  padding: var(--s3) var(--s4);
+  position: relative;
+}
+/* Esquina doblada: el folio está en revisión, no cerrado. */
+#messages .msg-a[data-modo="revisar"]::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 16px;
+  height: 16px;
+  background: linear-gradient(225deg, var(--bg) 0 50%, var(--warn-line) 50% 100%);
+  border-top-right-radius: 13px;
+}
+#messages .msg-user[data-modo="revisar"] {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  padding-left: var(--s5);
+  color: var(--text-2);
+  text-decoration: underline;
+  text-decoration-color: var(--warn-line);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+#messages .tool.espera {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  animation: espera 1.6s ease-in-out infinite;
+}
+@keyframes espera {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 164, 91, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(217, 164, 91, 0.16); }
+}
+#messages .tool.espera .tool-title::after {
+  content: " · esperando tu sí";
+  color: var(--warn);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* ---------- ejecutar · consola ------------------------------------------- */
+
+#messages .tool[data-modo="ejecutar"] {
+  font-family: var(--mono);
+  font-size: 12px;
+  border-radius: 6px;
+}
+#messages .msg-a[data-modo="ejecutar"] {
+  border-left: 2px solid var(--ok-line);
+  border-radius: 2px 12px 12px 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #messages .msg-a[data-modo="plan"] .pluma::after,
+  #messages .tool.espera { animation: none; }
+}
+@media (max-width: 560px) {
+  #messages .msg-a[data-modo="plan"] { font-size: 15px; padding-left: var(--s3); }
+  .modo-cinta { font-size: 10px; }
+}

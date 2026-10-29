@@ -53,6 +53,7 @@ const entries = [
   { entry: 'tests/reload-smoke.ts', output: 'tests/reload-smoke.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/rewind-regen.ts', output: 'tests/rewind-regen.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/dedup-prompt.ts', output: 'tests/dedup-prompt.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
+  { entry: 'tests/modos.ts', output: 'tests/modos.mjs', options: { format: 'esm', platform: 'node', packages: 'external', bundle: true } },
   { entry: 'tests/run.ts', output: 'tests/run.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
 ];
 for (const item of entries) {
