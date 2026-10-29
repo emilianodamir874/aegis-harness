@@ -9,9 +9,9 @@ const entries = [
   // bundle unico del cliente: la carga inicial por el tunel pasa de 16 requests a 2
   { entry: 'src/client-bundle.ts', output: 'app/bundle.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0', bundle: true } },
   { entry: 'src/app.ts', output: 'app/app.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0', bundle: true } },
-  // Se emite aparte para que las pruebas de navegador puedan importar el convertidor de audio real
-  // (app.ts ya lo lleva inlineado en su bundle) y probar MediaRecorder -> WAV sin duplicar codigo.
-  { entry: 'src/app/audio-wav.ts', output: 'app/audio-wav.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
+
+
+
   { entry: 'src/skills.ts', output: 'app/skills.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/memory.ts', output: 'app/memory.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0', bundle: true } },
   { entry: 'src/artifacts.ts', output: 'app/artifacts.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
@@ -23,7 +23,7 @@ const entries = [
   { entry: 'src/onboarding.ts', output: 'app/onboarding.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/handoff.ts', output: 'app/handoff.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/split-view.ts', output: 'app/split-view.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
-  // El doctor se emite aparte (como audio-wav) para que un gate pueda importarlo, y ademas
+  // El doctor se emite aparte (igual que stats) para que un gate pueda importarlo, y ademas
   // entra al bundle: el boton vive en el topbar y no necesita carga diferida.
   { entry: 'src/doctor.ts', output: 'app/doctor.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/stats.ts', output: 'app/stats.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },

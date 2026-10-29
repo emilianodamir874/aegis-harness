@@ -10,7 +10,6 @@ import { md } from './app/markdown';
 import { sessionListHtml } from './app/sessions';
 import { remoteResultsHtml, emptyRemote } from './app/search';
 import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
-import { blobToWav16k, bytesToBase64 } from './app/audio-wav';
 import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
 import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
 import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/panel';
@@ -3579,206 +3578,12 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       }
     }
   }
-  // --- Dictado por voz + modo manos libres (2026-10-22) -----------------------------------
-  // Graba con MediaRecorder y manda el audio a _aegis/unstable/dictation/transcribe.
-  // Sobre la version 2026-10-15:
-  //   * VAD: corta solo tras ~900 ms de silencio despues de hablar (no hay que tocar nada).
-  //   * Cadena de proveedores: groq (whisper-large-v3-turbo) y, si falla, el modelo activo.
-  //   * En manos libres (debate + lectura) el texto se envia solo y, cuando termina la voz del
-  //     bot, el microfono se vuelve a abrir: la conversacion cierra el circulo sola.
-  // Un solo motor: whisper local (el mismo camino que usa piper para leer). Antes habia una
-  // cadena groq -> model que fallaba siempre en esta maquina: groq sin GROQ_API_KEY y 'model'
-  // mandando el audio al modelo de chat, que no transcribe.
-  var VOICE_PROVIDERS = ['local'];
-  var VOICE_MIN_MS = 450, VOICE_MAX_MS = 90000, VOICE_SILENCE_MS = 900, VOICE_RMS = 0.012;
-  var VOICE_IDLE_MS = 8000;   // auto-escucha sin voz: descarta y vuelve a abrir (no transcribe silencio)
-  var MIC: any = { rec: null, chunks: [], stream: null, ctx: null, analyser: null, buf: null, timer: 0, auto: false, granted: false, startedAt: 0, spoke: false, quietSince: 0, barge: false, bargeHits: 0 };
-
-  function micSecure() { return !!window.isSecureContext; }
-
-  function micInsert(txt) {
-    const t = document.getElementById('input') as HTMLTextAreaElement | null;
-    if (!t) return;
-    const s = t.selectionStart == null ? t.value.length : t.selectionStart;
-    const e = t.selectionEnd == null ? t.value.length : t.selectionEnd;
-    const pre = t.value.slice(0, s), post = t.value.slice(e);
-    const sep = (pre && !/\s$/.test(pre)) ? ' ' : '';
-    t.value = pre + sep + txt + post;
-    const pos = (pre + sep + txt).length;
-    try { t.setSelectionRange(pos, pos); } catch (err) {}
-    t.dispatchEvent(new Event('input', { bubbles: true }));
-    t.focus();
-  }
-
-  function micSetState(on) {
-    const btn = document.getElementById('btn-mic');
-    if (!btn) return;
-    btn.classList.toggle('rec', !!on);
-    btn.classList.toggle('barge', !!(on && MIC.barge));
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.title = on ? 'Grabando… tocá para cortar y transcribir' : 'Dictar por voz (corta solo cuando te quedás callado)';
-  }
-
-  function micStop(discard?) {
-    if (!MIC.rec) return;
-    if (discard) MIC.discard = true;
-    try { MIC.rec.stop(); } catch (e) {}
-  }
-
-  function micCleanup() {
-    try { if (MIC.stream) MIC.stream.getTracks().forEach(function (x) { x.stop(); }); } catch (e) {}
-    try { if (MIC.ctx && MIC.ctx.close) MIC.ctx.close(); } catch (e) {}
-    if (MIC.timer) { clearInterval(MIC.timer); MIC.timer = 0; }
-    MIC.stream = null; MIC.ctx = null; MIC.analyser = null; MIC.buf = null;
-  }
-
-  // VAD por energia: marca cuando hubo voz y pide el corte tras VOICE_SILENCE_MS de silencio.
-  function micWatch(stream) {
-    try {
-      const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
-      if (!AC) return;
-      const ctx = new AC();
-      const src = ctx.createMediaStreamSource(stream);
-      const an = ctx.createAnalyser();
-      an.fftSize = 1024;
-      src.connect(an);
-      MIC.ctx = ctx; MIC.analyser = an; MIC.buf = new Float32Array(an.fftSize);
-      MIC.timer = setInterval(function () {
-        if (!MIC.analyser || !MIC.buf) return;
-        MIC.analyser.getFloatTimeDomainData(MIC.buf);
-        let sum = 0;
-        for (let i = 0; i < MIC.buf.length; i++) sum += MIC.buf[i] * MIC.buf[i];
-        const rms = Math.sqrt(sum / MIC.buf.length);
-        const now = Date.now();
-        if (now - MIC.startedAt > VOICE_MAX_MS) { micStop(); return; }
-        // Barge-in: mientras el bot habla el micro tiene que quedar abierto aunque no haya voz
-        // (si se cierra por inactividad, un turno largo de voz ya no se puede interrumpir).
-        if (MIC.auto && !MIC.spoke && now - MIC.startedAt > VOICE_IDLE_MS && !(MIC.barge && AUD.playing)) {
-          micStop(true); return;
-        }
-        // Con el bot hablando (barge-in) el umbral sube: el eco del parlante no debe cortar.
-        const umbral = (MIC.barge && AUD.playing) ? 0.03 : VOICE_RMS;
-        if (rms >= umbral) {
-          MIC.spoke = true; MIC.quietSince = 0;
-          if (MIC.barge && AUD.playing) {
-            MIC.bargeHits = (MIC.bargeHits || 0) + 1;
-            if (MIC.bargeHits >= 3 && AUD.playing) {
-              report('barge', 'interrupcion: rms=' + rms.toFixed(3) + ' hits=' + MIC.bargeHits);
-              audStop();   // el usuario interrumpio: se corta la voz
-            }
-          }
-          return;
-        }
-        MIC.bargeHits = 0;
-        if (!MIC.spoke) return;
-        if (!MIC.quietSince) { MIC.quietSince = now; return; }
-        if (now - MIC.quietSince >= VOICE_SILENCE_MS) micStop();
-      }, 100);
-    } catch (e) { report('mic', 'VAD no disponible: ' + String((e && (e as any).message) || e)); }
-  }
-
-  function micTranscribe(blob, idx?, auto?) {
-    const i = idx || 0;
-    const provider = VOICE_PROVIDERS[i];
-    const btn = document.getElementById('btn-mic');
-    if (!provider) {
-      if (btn) btn.classList.remove('busy');
-      systemNote('No pude transcribir: no hay motor de dictado local disponible.');
-      handsFreeMaybe(600);
-      return;
-    }
-    if (btn) btn.classList.add('busy');
-    systemNote('Transcribiendo ' + Math.round(blob.size / 1024) + ' KB con ' + provider + '…');
-    // El motor local decodifica con symphonia, que no tiene decoder de Opus: el webm/opus que
-    // produce MediaRecorder se convierte a WAV 16 kHz mono en el navegador (src/app/audio-wav.ts).
-    // Sin esto el turno moria en "Internal error" (Failed to create audio decoder) y el dictado
-    // no funcionaba en Chrome/Android, que es justo donde esta el microfono.
-    blobToWav16k(blob).then(function (wav) {
-      const b64 = bytesToBase64(wav);
-      return rpc.request('_aegis/unstable/dictation/transcribe', { audio: b64, mimeType: 'audio/wav', provider: provider });
-    }).then(function (r) {
-      if (btn) btn.classList.remove('busy');
-      const txt = ((r && r.text) || '').trim();
-      if (!txt) { systemNote('La transcripción vino vacía (' + provider + ').'); handsFreeMaybe(600); return; }
-      micDeliver(txt, auto);
-    }).catch(function (e) {
-      const msg = String((e && e.message) || e).slice(0, 240);
-      report('dictado', provider + ' falló: ' + msg);
-      if (btn) btn.classList.remove('busy');
-      systemNote('Falló la transcripción: ' + msg);
-      handsFreeMaybe(1500);
-    });
-  }
-
-  // En manos libres el dictado se ENVIA; en manual se inserta en el cursor.
-  function micDeliver(txt, auto?) {
-    systemNote('Dictado: ' + txt.slice(0, 90));
-    if (auto && !state.busy) { sendText(txt); return; }
-    micInsert(txt);
-  }
-
-  function micStart(opts?) {
-    if (MIC.rec) { micStop(); return; }   // segundo toque: cortar y transcribir
-    if (!micSecure()) { systemNote('El micrófono necesita HTTPS (o localhost). Por esta dirección el navegador no lo permite: usá https://' + location.hostname + ':3789 (la misma UI con TLS) o la URL del túnel.'); return; }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { systemNote('Este navegador no soporta grabación de audio.'); return; }
-    MIC.auto = !!(opts && opts.auto);
-    // Cualquier escucha que arranque mientras el bot habla es barge-in (aunque venga del ciclo
-    // de manos libres, que reabre el micro sin pasar por audNext).
-    MIC.barge = !!(opts && opts.barge) || !!(AUD.playing && READ_ON);
-    MIC.bargeHits = 0;
-    MIC.discard = false;
-    MIC.spoke = false; MIC.quietSince = 0;
-    navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-      .then(function (st) {
-        MIC.granted = true;
-        MIC.stream = st;
-        const mt = (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) ? 'audio/webm;codecs=opus' : '';
-        MIC.chunks = [];
-        const rec = mt ? new MediaRecorder(st, { mimeType: mt }) : new MediaRecorder(st);
-        MIC.rec = rec;
-        MIC.startedAt = Date.now();
-        rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) MIC.chunks.push(ev.data); };
-        rec.onstop = function () {
-          const ms = Date.now() - MIC.startedAt;
-          const chunks = MIC.chunks; MIC.chunks = [];
-          const discard = MIC.discard;
-          const auto = MIC.auto;
-          MIC.discard = false;
-          MIC.auto = false;
-          MIC.rec = null;
-          micCleanup();
-          micSetState(false);
-          if (discard) { handsFreeMaybe(150); return; }   // sin voz: no hay nada que mandar, vuelve a escuchar
-          const blob = new Blob(chunks, { type: ((rec.mimeType || 'audio/webm').split(';')[0]) });
-          if (!blob.size) { systemNote('No se grabó audio.'); return; }
-          if (ms < VOICE_MIN_MS) { systemNote('Grabación muy corta (' + ms + ' ms): la descarto.'); return; }
-          micTranscribe(blob, 0, auto);
-        };
-        rec.start();
-        micSetState(true);
-        micWatch(st);
-        if (!MIC.auto) systemNote('Grabando… tocá el micrófono para cortar, o quedate callado ~1 s y corta solo.');
-      })
-      .catch(function (e) {
-        MIC.rec = null; MIC.auto = false; micSetState(false);
-        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
-          MIC.denied = true;   // no reintentar solo: el permiso lo tiene que dar el usuario
-          report('barge', 'permiso de microfono rechazado: ' + e.name);
-          systemNote('El navegador bloqueó el micrófono: sin permiso no puedo escucharte para interrumpir.');
-          return;
-        }
-        systemNote('No pude abrir el micrófono: ' + String((e && e.message) || e).slice(0, 140));
-      });
-  }
 
   // --- Modo debate: conversar antes de trabajar --------------------------------------------
   // Encendido: la sesion recibe un perfil de permisos temporal que niega shell/edit/write y cada
   // mensaje lleva una instruccion corta para discutir el plan. Cuando decis "dale" (o una de las
   // frases de VOICE_SETTLE) se restauran los permisos y ese mensaje ya se ejecuta.
   var DEBATE: any = DEBATE || { on: false, turns: 0, prevEffort: '' };
-  // Manos libres: se prende con Debate y sigue activo despues de decir "dale" (para escuchar
-  // el trabajo y poder seguir hablando). Se apaga apagando Debate.
-  var HF: any = { on: false };
   // El "dale" puede venir en cualquier parte de la frase (hablando: "bueno, dale, arranquemos").
   var VOICE_SETTLE = /(^|[\s,.;:¡!¿?])(dale|adelante|ejecut[aá]|hacelo|hacélo|metele|arranc[aá]|arranquemos|vamos)(?=$|[\s,.;:!?])/i;
   // Regla del operador: con open_design y opencode_go el modelo es SIEMPRE deepseek-v4.1-flash.
@@ -3813,7 +3618,6 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   function debateLoad() {
     if (!DEBATE) DEBATE = { on: false };
     try { DEBATE.on = localStorage.getItem(debateKeyFor(state.current && state.current.id)) === '1'; } catch (e) { DEBATE.on = false; }
-    if (HF) HF.on = false;   // el microfono se abre con un gesto (toggle), no al cargar el chat
     DEBATE.turns = 0;
     // Si quedo el perfil de solo lectura aplicado sin debate (cierre de pestana, crash), se
     // restaura; si el debate sigue prendido, se re-aplica.
@@ -3828,7 +3632,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     const b = document.getElementById('btn-debate');
     if (!b || !DEBATE) return;
     b.classList.toggle('on', !!DEBATE.on);
-    b.textContent = DEBATE.on ? 'Debate · ON' : (HF && HF.on ? 'Manos libres' : 'Debate');
+    b.textContent = DEBATE.on ? 'Debate · ON' : 'Debate';
     b.setAttribute('aria-pressed', DEBATE.on ? 'true' : 'false');
     b.title = DEBATE.on
       ? 'Modo debate ENCENDIDO: el bot conversa y NO puede usar herramientas. Decí "dale" para pasar a trabajar.'
@@ -3892,21 +3696,16 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     try { localStorage.setItem(debateKeyFor(state.current && state.current.id), next ? '1' : '0'); } catch (e) {}
     debateSyncBtn();
     if (next) {
-      HF.on = true;
-      if (!READ_ON) readToggle(true);   // sin voz del bot no hay ciclo manos libres
+      if (!READ_ON) readToggle(true);   // el debate se conversa: las respuestas se leen
       DEBATE.prevEffort = debateEffortNow() || 'off';
       // Siempre (idempotente): la opcion puede decir off mientras request_params trae max.
       // Desde v71 el server pisa el parametro crudo, que es el que viaja al API.
       await debateSetEffort('off');
       await enforceFixedModel();   // open_design/opencode_go: modelo fijo (regla del operador)
-      systemNote('Modo debate: micrófono abierto y respuestas en voz alta. Hablá; decí "dale" para que ejecute.');
-      if (!state.busy && !AUD.playing && !AUD.q.length) micStart({ auto: true });
-      else handsFreeMaybe(800);
+      systemNote('Modo debate: respuestas en voz alta. Escribí el plan y decí "dale" para que ejecute.');
     } else {
-      HF.on = false;
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
       await debateRestoreToolProfile();
-      if (MIC.rec) { if (MIC.spoke) micStop(); else micStop(true); }
       systemNote('Modo trabajo: herramientas habilitadas.');
     }
     debateSyncBtn();   // la etiqueta depende de DEBATE y de HF: refrescar despues de tocar HF
@@ -3945,7 +3744,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       await debateHide(1);
       if (DEBATE.prevEffort) await debateSetEffort(DEBATE.prevEffort);
       await debateRestoreToolProfile();
-      DEBATE.on = false; DEBATE.turns = 0; HF.on = false;
+      DEBATE.on = false; DEBATE.turns = 0;
       try { localStorage.setItem(debateKeyFor(cur.id), '0'); } catch (e) {}
       debateSyncBtn();
       systemNote('Debate cerrado sin plan: queda como conversación (no mando nada al agente).');
@@ -4018,31 +3817,9 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       return 0;
     }
   }
-  // Manos libres: microfono abierto + lectura encendida. El ciclo se cierra solo: escucha,
-  // transcribe, envia, el bot contesta, se lee y el microfono vuelve a abrirse.
-  function handsFreeOn() { return !!(HF && HF.on) && READ_ON; }
-  function handsFreeMaybe(delay?) {
-    if (!handsFreeOn() || state.busy || MIC.rec) return;
-    if (document.visibilityState !== 'visible') return;
-    if (MIC.denied) return;                    // permiso negado: no insistir
-    if (AUD.playing || AUD.q.length) return;   // no escuchar mientras habla el bot (se oiria a si mismo)
-    setTimeout(function () {
-      if (handsFreeOn() && !state.busy && !MIC.rec && !AUD.playing && !AUD.q.length) micStart({ auto: true });
-    }, typeof delay === 'number' ? delay : 700);
-  }
-
-  (function bindMic() {
-    const btn = document.getElementById('btn-mic');
-    if (btn) btn.addEventListener('click', function () {
-      // Con manos libres activo y sin grabar, el toque APAGA el ciclo (si no, no habria stop).
-      if (!MIC.rec && HF && HF.on) {
-        HF.on = false;
-        debateSyncBtn();
-        systemNote('Manos libres apagado. Tocá el micrófono otra vez para dictar a mano.');
-        return;
-      }
-      micStart();
-    });
+  // Unico interruptor que queda: el chip Debate. El microfono se fue de la UI (2026-10-29), asi
+  // que no hay toma de entrada ni ciclo manos libres: la lectura es un toggle aparte.
+  (function bindDebate() {
     const dbg = document.getElementById('btn-debate');
     if (dbg) dbg.addEventListener('click', function () { debateToggle(); });
   })();
@@ -4204,7 +3981,6 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       if (plan) debateFinishWithPlan(plan);
       else if (/fin del debate/i.test(textoDelTurno)) debateAutoClose();
     }
-    handsFreeMaybe(900);   // manos libres: el micro vuelve aunque la respuesta no se lea
   }
 
   async function send() {
@@ -6830,7 +6606,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     AUD.playing = true;
     a = a || new Audio(ttsUrlFor(READ.voiceName, t, READ.rate));
     AUD.cur = a;
-    var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); if (!AUD.playing && !AUD.q.length) handsFreeMaybe(); };
+    var segir = function () { AUD.playing = false; AUD.cur = null; audNext(); };
     // Sin caida a la voz del dispositivo (a pedido: la del telefono suena mal). Si el server no
     // responde, esta frase se saltea y avisa, en vez de sonar con la voz vieja.
     var fallar = function () {
@@ -6844,16 +6620,8 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     a.onerror = fallar;
     var pr = a.play();
     if (pr && pr.catch) pr.catch(fallar);
-    // Barge-in: mientras suena la voz, el micro queda escuchando para poder interrumpir.
-    // No depende del modo manos libres: alcanza con que la lectura este encendida. Si ya hay
-    // una toma abierta se la marca como barge; si no, se abre una (con permiso ya dado).
-    if (READ_ON && document.visibilityState === 'visible') {
-      if (MIC.rec) { MIC.barge = true; MIC.bargeHits = 0; }
-      else if (!MIC.denied) {
-        if (!MIC.bargeLog) { MIC.bargeLog = true; report('barge', 'abro el micro para interrumpir (granted=' + !!MIC.granted + ')'); }
-        micStart({ auto: true, barge: true });
-      }
-    }
+    // Sin microfono no hay barge-in: la lectura se corta con el boton (readToggle/readReset),
+    // no con la voz del operador. El corte por voz vivia en el VAD del micro, que ya no existe.
     audPrefetch();   // deja lista la frase siguiente
   }
   function audStop() {
@@ -6896,11 +6664,9 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     // terminar), y ahi los offsets se corrian y se hablaban pedazos ("ta y codigo.").
     var raw = readBlock(rawText);
     if (!raw) {
-      // Sin bloque "Para escuchar": en manos libres se lee la respuesta completa (el debate no
-      // trae ese encabezado). Fuera de manos libres, solo prosa corta y sin codigo.
+      // Sin bloque "Para escuchar" solo se lee prosa corta y sin codigo (el resto queda mudo).
       var texto = String(rawText || '');
-      if (HF && HF.on) raw = texto;
-      else if (READ_ON && texto.indexOf('```') < 0 && texto.length <= 1200) raw = texto;
+      if (READ_ON && texto.indexOf('```') < 0 && texto.length <= 1200) raw = texto;
     }
     if (!raw) return;
     var done = READ.consumed || 0;
@@ -6947,9 +6713,6 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   }
   function readToggle(force?) {
     READ_ON = (force === undefined) ? !READ_ON : !!force;
-    // El click es el gesto que permite pedir el microfono: se pide ahora para poder
-    // interrumpir la voz despues (sin gesto el permiso queda pendiente y nunca se abre).
-    if (READ_ON && !MIC.rec && !MIC.denied && micSecure()) micStart({ auto: true, barge: true });
     try { localStorage.setItem(readKeyFor(state.current && state.current.id), READ_ON ? '1' : '0'); } catch (e) {}
     var btn = document.getElementById('btn-read');
     if (btn) {
@@ -7293,7 +7056,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     else arrancar();
   })();
 
-  (window as any).__aegisWeb = { openTool, bargeLog: () => ({ rec: !!MIC.rec, barge: !!MIC.barge, granted: !!MIC.granted, denied: !!MIC.denied, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }), state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, abrirGasto: () => openUsagePop(), refrescarGasto: () => pedirRefrescoUso(), olvidarTurno: () => resetTransient(), thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
+  (window as any).__aegisWeb = { openTool, state, setConfig: setConfig, rpc: rpc, readBlock: readBlock, readHeading: readHeading, readPump: readPump, readToggle: readToggle, markHiddenTail: markHiddenTail, feed: streamAppend, toolFeed: toolUpsert, abrirGasto: () => openUsagePop(), refrescarGasto: () => pedirRefrescoUso(), olvidarTurno: () => resetTransient(), thinkKey: (u) => thoughtKeyFor(u), setSoft: (on) => { SOFT.on = !!on; }, setHub: (on) => { state.hubReplay = !!on; }, softText: (k) => SOFT.text.get(k) || '', hubText: (k) => HUB.text.get(k) || '', softKinds: () => [...SOFT.text.keys()],
     // Vista: densidad, modo presentación y la banda de lo que el modelo no ve.
     view: {
       density: () => density, cycleDensity, setDensity, densities: () => DENSITIES.slice(),
@@ -7329,8 +7092,6 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       abrirSesion: (entry) => openSession(entry),
       // Un probe reemplaza el aplicador para medir el orden de las llamadas sin red.
       setAplicar: (fn) => { aplicarConfig = typeof fn === 'function' ? fn : ((id, v) => setConfig(id, v)); } },
-    bargeNow: function () { return { rec: !!MIC.rec, barge: !!MIC.barge, playing: !!AUD.playing, hits: MIC.bargeHits || 0 }; },
-    micOff: function () { micStop(true); },   // solo para el probe de barge-in
     setRate: function (v) { var n = Number(v); if (n > 0.5 && n < 2) { READ.rate = n; try { localStorage.setItem('aegis.ttsRate', String(n)); } catch (e) {} readReset(true); return n; } return READ.rate; },
     goalFromText: goalFromText, gpOcultoPorTexto: gpOcultoPorTexto, noteGoalFrom: noteGoalFrom, fetchGoals: fetchGoals, renderGoals: renderGoals, goalsNow: function () { return state.goals; }, gpSetVisible: gpSetVisible, goalNow: function () { return state.goal; }, renderGoalBar: renderGoalBar, copyId: copySessionId, avisoVacio: avisoTurnoVacio, chunksTurn: () => chunksTurn, renderUsagePublic: renderUsage, metaRight: () => $('#meta-right'), usageDbg: () => state.usageDbg, usageState: () => state.usage, usageLines: () => usageLines(), usageReset: resetUsageForSession, md: (t) => md(t), read: { on: () => READ_ON, toggle: readToggle, pump: readPump, flush: readFlush, reset: readReset,
     live: { mark: markRun, running: isRunning, done: isDoneRecently, any: anyRunning },

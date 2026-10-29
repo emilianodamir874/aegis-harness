@@ -1,11 +1,10 @@
 // Verifica el modo debate/manos libres en el navegador real contra el serve vivo:
 //   1. el chip se renderiza con la etiqueta y el estado iniciales;
-//   2. al prenderlo, la sesion de prueba pasa a modo `chat` (sin herramientas), se enciende la
-//      lectura y el MICROFONO SE ABRE SOLO (sin tocar el boton del micro);
-//   3. al apagarlo, el server vuelve a `auto` y el microfono se cierra;
+//   2. al prenderlo, la sesion de prueba pasa a modo `chat` (sin herramientas) y se enciende
+//      la lectura en voz alta;
+//   3. al apagarlo, el server vuelve a `auto`;
 //   4. no hubo errores de pagina.
-// Usa el dispositivo de audio falso de Chromium con un WAV de silencio (2 s): el VAD no detecta
-// voz, asi que no se manda ningun turno. Crea un chat nuevo y lo archiva al final.
+// Ya no abre ningun dispositivo de entrada: el microfono se fue de la UI (2026-10-29).
 // OJO: archivo ASCII a proposito (evita mojibake al editarlo desde PowerShell).
 import { chromium } from 'playwright';
 import { readFile } from 'node:fs/promises';
@@ -13,7 +12,6 @@ import { readFile } from 'node:fs/promises';
 const cfg = JSON.parse(await readFile('C:/Aegis-Proyects/web/config.json', 'utf8'));
 const url = process.env.AEGIS_WEB_URL || 'http://127.0.0.1:3788';
 const cwd = cfg.cwd || 'C:/Aegis-Proyects';
-const wav = 'C:/Aegis-Proyects/web/tools/_silencio-2s.wav';
 
 const wsUrl = `ws://${cfg.publicHost}:${cfg.servePort}/acp?token=${cfg.secretKey}`;
 let id = 0;
@@ -33,12 +31,10 @@ await req('initialize', { protocolVersion: 1, clientCapabilities: {}, clientInfo
 
 const chipState = () => {
   const b = document.getElementById('btn-debate');
-  const mic = document.getElementById('btn-mic');
   const read = document.getElementById('btn-read');
   return {
     text: b ? b.textContent : null,
     pressed: b ? b.getAttribute('aria-pressed') : null,
-    micRec: !!(mic && mic.classList.contains('rec')),
     readOn: !!(read && read.classList.contains('on')),
   };
 };
@@ -53,10 +49,7 @@ async function waitFor(page, fn, ms) {
   }
 }
 
-const browser = await chromium.launch({
-  headless: true,
-  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--use-file-for-fake-audio-capture=' + wav],
-});
+const browser = await chromium.launch({ headless: true });
 let sid = '';
 let fallo = false;
 try {
@@ -88,12 +81,6 @@ try {
   if (!on.readOn) throw new Error('la lectura no se encendio con el debate');
   console.log('PASS lectura encendida junto con el debate');
 
-  const micOn = await waitFor(page, () => {
-    const m = document.getElementById('btn-mic');
-    return !!(m && m.classList.contains('rec'));
-  }, 6000);
-  if (!micOn) throw new Error('el microfono NO se abrio solo al prender debate');
-  console.log('PASS microfono abierto automaticamente (sin tocar el boton)');
 
   const load1 = await req('session/load', { sessionId: sid, cwd, mcpServers: [] });
   const modo1 = (load1.modes && load1.modes.currentModeId) || '';
@@ -106,12 +93,6 @@ try {
   if (off.text.trim() !== 'Debate' || off.pressed !== 'false') throw new Error('no apago: ' + JSON.stringify(off));
   console.log('PASS debate apagado ' + JSON.stringify(off));
 
-  const micOff = await waitFor(page, () => {
-    const m = document.getElementById('btn-mic');
-    return !(m && m.classList.contains('rec'));
-  }, 5000);
-  if (!micOff) throw new Error('el microfono quedo grabando despues de apagar debate');
-  console.log('PASS microfono cerrado al apagar debate');
 
   const load2 = await req('session/load', { sessionId: sid, cwd, mcpServers: [] });
   const modo2 = (load2.modes && load2.modes.currentModeId) || '';

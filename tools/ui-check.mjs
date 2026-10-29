@@ -318,8 +318,8 @@ await page.waitForTimeout(300);
 const limpio = await page.evaluate(() => document.querySelectorAll('#attachments .att-thumb').length);
 note(limpio === 0, 'quitar el adjunto limpia la miniatura');
 
-// 12. dictado: requiere microfono real. Se declara no verificado en vez de darlo por bueno.
-note(true, 'dictado declarado no verificable en headless', 'necesita MediaRecorder con microfono; lo cubre la prueba manual con el operador');
+// 12. el microfono se fue de la UI el 2026-10-29: el boton de dictado no debe existir.
+note(await page.evaluate(() => !document.getElementById('btn-mic')), 'el boton de dictado ya no esta en el DOM');
 
 // 13. sin errores de consola propios de los paneles
 note(consoleErrors.length === 0, 'consola sin errores', consoleErrors.slice(0, 3).join(' | '));

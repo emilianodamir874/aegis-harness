@@ -2012,16 +2012,11 @@ textarea:focus-visible { outline: none; }
 .composer textarea::placeholder { color: var(--text-4); }
 
 .attach-btn,
-.mic-btn,
 .read-btn { width: 32px; height: 32px; border-radius: var(--r-sm); color: var(--text-3); }
 .attach-btn:hover,
-.mic-btn:hover,
 .read-btn:hover { color: var(--text); }
-.attach-btn.busy,
-.mic-btn.busy { opacity: 0.4; pointer-events: none; }
+.attach-btn.busy { opacity: 0.4; pointer-events: none; }
 
-.mic-btn.rec { color: #ffb3bf; background: var(--danger-soft); animation: pulse 1.1s ease-in-out infinite; }
-.mic-btn.barge { box-shadow: 0 0 0 2px rgba(217, 119, 87, 0.5); }
 .read-btn.on { color: var(--accent-text); background: var(--accent-soft); box-shadow: inset 0 0 0 1px rgba(217, 119, 87, 0.28); }
 .read-btn.speaking { animation: pulse 1.1s ease-in-out infinite; }
 

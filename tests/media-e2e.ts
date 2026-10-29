@@ -1,9 +1,7 @@
-// TTS (lectura en voz alta) y microfono, contra el bundle real y un hub mockeado.
-// Se sirve la app desde 127.0.0.1 (contexto seguro: getUserMedia y audio funcionan) con un
-// servidor estatico minimo; el ACP se intercepta con routeWebSocket y /tts se mockea con un
-// WAV del repo (no se sintetiza nada real). El audio del micro NUNCA sale: la transcripcion
-// se responde en el mock.
-//
+// Lectura en voz alta (TTS) contra el bundle real y un hub mockeado.
+// Se sirve la app desde 127.0.0.1 con un servidor estatico minimo; el ACP se intercepta con
+// routeWebSocket y /tts se mockea con un WAV del repo (no se sintetiza nada real).
+// El microfono y el dictado se fueron de la UI el 2026-10-29: aca ya no hay nada que probar de eso.
 // Orden: micro primero. Encender la lectura abre el micro para barge-in (por diseño), y eso
 // ensuciaria el estado del dictado.
 import assert from 'node:assert/strict';
@@ -67,31 +65,16 @@ async function waitFor(cond: () => boolean, ms = 8000, label = 'condición') {
 
 const browser = await chromium.launch({
   headless: true,
-  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+  args: ['--autoplay-policy=no-user-gesture-required'],
 });
 try {
   const context = await browser.newContext();
-  await context.grantPermissions(['microphone'], { origin: base });
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text().slice(0, 140)); });
 
-  // Guarda el stream del mic para verificar el cleanup de pistas.
-  await page.addInitScript(() => {
-    const md = navigator.mediaDevices;
-    if (!md || !md.getUserMedia) return;
-    const orig = md.getUserMedia.bind(md);
-    (window as any).__streams = [];
-    md.getUserMedia = async (c) => {
-      const s = await orig(c);
-      (window as any).__streams.push(s);
-      return s;
-    };
-  });
-
-  const transcribes: any[] = [];
   await page.routeWebSocket(`ws://127.0.0.1:${port}/acp`, (ws: WebSocketRoute) => {
     ws.onMessage((raw) => {
       const m = JSON.parse(String(raw));
@@ -103,9 +86,6 @@ try {
         case 'session/load': return reply({ configOptions: [], modes: {} });
         case '_aegis/unstable/session/watch': return reply({ cursor: 1, replay: [], activeRunId: null });
         case '_aegis/unstable/session/info': return reply({ activeRunId: null });
-        case '_aegis/unstable/dictation/transcribe':
-          transcribes.push(m.params);
-          return reply({ text: 'hola desde el micro' });
         default: return reply({});
       }
     });
@@ -115,46 +95,6 @@ try {
   await page.waitForSelector('#session-list .sb-row');
   await page.click('.sb-row[data-id="s_media"] .sb-item');
   await page.waitForFunction(() => (window as any).__aegisWeb?.state?.current?.id === 's_media', null, { timeout: 8000 });
-
-  // ---------------------------------------------------------------- Microfono
-  assert.equal(await page.evaluate(() => window.isSecureContext), true, 'contexto seguro (127.0.0.1)');
-
-  await page.click('#btn-mic');
-  await page.waitForFunction(() => document.getElementById('btn-mic')?.classList.contains('rec'), null, { timeout: 8000 });
-  assert.equal(await page.evaluate(() => document.getElementById('btn-mic')?.getAttribute('aria-pressed')), 'true', 'mic: aria-pressed mientras graba');
-  assert.match(await page.evaluate(() => document.querySelector('#messages')?.textContent || ''), /Grabando/, 'mic: avisa que esta grabando');
-  await page.waitForTimeout(700); // > VOICE_MIN_MS (450)
-  await page.click('#btn-mic');
-  await waitFor(() => transcribes.length === 1, 10000, 'la transcripción');
-  await page.waitForFunction(() => (document.querySelector('#input') as HTMLTextAreaElement).value.includes('hola desde el micro'), null, { timeout: 8000 });
-  assert.ok(String(transcribes[0].audio || '').length > 100, 'mic: manda audio en base64');
-  assert.match(String(transcribes[0].mimeType || ''), /audio\//, 'mic: declara el mimeType');
-  assert.match(await page.evaluate(() => document.querySelector('#messages')?.textContent || ''), /Dictado: hola desde el micro/, 'mic: deja constancia del dictado');
-  const tracks = await page.evaluate(() => (window as any).__streams.flatMap((s: MediaStream) => s.getTracks().map((t) => t.readyState)));
-  assert.ok(tracks.length > 0 && tracks.every((t: string) => t === 'ended'), 'mic: libera las pistas al cortar (' + tracks.join(',') + ')');
-  assert.equal(await page.evaluate(() => document.getElementById('btn-mic')?.getAttribute('aria-pressed')), 'false', 'mic: aria-pressed al terminar');
-  await page.fill('#input', '');
-  console.log('PASS mic: graba, corta, transcribe por RPC, inserta el texto y libera el stream');
-
-  // Permiso denegado: mensaje claro, sin estado de grabacion.
-  await page.evaluate(() => {
-    navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new DOMException('denied', 'NotAllowedError')));
-  });
-  await page.click('#btn-mic');
-  await page.waitForFunction(() => (document.querySelector('#messages')?.textContent || '').includes('bloqueó el micrófono'), null, { timeout: 6000 });
-  assert.equal(await page.evaluate(() => document.getElementById('btn-mic')?.classList.contains('rec')), false, 'mic: denegado no deja el boton en grabacion');
-  console.log('PASS mic: permiso denegado se explica y no queda grabando');
-
-  // Navegador sin soporte: no rompe, avisa. Se restaura despues para no afectar la lectura.
-  await page.evaluate(() => {
-    const md = navigator.mediaDevices;
-    (window as any).__md = md;
-    Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
-  });
-  await page.click('#btn-mic');
-  await page.waitForFunction(() => (document.querySelector('#messages')?.textContent || '').includes('no soporta grabación'), null, { timeout: 6000 });
-  await page.evaluate(() => Object.defineProperty(navigator, 'mediaDevices', { value: (window as any).__md, configurable: true }));
-  console.log('PASS mic: navegador sin getUserMedia/MediaRecorder se informa');
 
   // ---------------------------------------------------------------- TTS
   const readBtn = page.locator('#btn-read');
