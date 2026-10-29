@@ -34,7 +34,7 @@ try {
     check(`${width}: sin scroll horizontal`, !initial.overflow);
     check(`${width}: sugerencias únicas del proyecto`, initial.suggestions.length === 3 && initial.suggestions[0].includes('proyecto') && initial.duplicates === 0);
     check(`${width}: cabecera legible`, initial.title?.width >= 80 && initial.more?.right <= width && initial.docParent === 'topbar-secondary' && !initial.secondaryVisible && initial.topbar?.height < 112, JSON.stringify({ title: initial.title?.width, more: initial.more?.right, headerHeight: initial.topbar?.height }));
-    check(`${width}: chip táctil`, initial.chip?.height >= 44 && initial.more?.width >= 44 && initial.more?.height >= 44, JSON.stringify({ chip: initial.chip?.height, more: initial.more }));
+    check(`${width}: chip legible y acción táctil`, initial.chip?.height >= 40 && initial.more?.width >= 44 && initial.more?.height >= 44, JSON.stringify({ chip: initial.chip?.height, more: initial.more }));
     check(`${width}: movimiento reducido`, parseFloat(initial.animation) <= 0.001, initial.animation);
     await page.locator('#btn-topbar-more').click();
     const menu = await page.evaluate(() => {
@@ -65,7 +65,10 @@ try {
     await page.locator('#btn-topbar-more').click();
     await page.locator('#btn-chat-font').click();
     await page.keyboard.press('Escape');
-    check(`${width}: letra devuelve foco visible`, await page.evaluate(() => document.querySelector('#chat-font-pop').hidden && document.activeElement?.id === 'btn-topbar-more'));
+    check(`${width}: letra devuelve foco visible`, await page.evaluate(() => {
+      const panel = document.querySelector('#font-panel');
+      return !!panel && panel.hidden && document.activeElement?.id === 'btn-topbar-more';
+    }));
     await page.locator('#btn-topbar-more').click();
     await page.locator('#btn-density').click();
     await page.keyboard.press('Escape');

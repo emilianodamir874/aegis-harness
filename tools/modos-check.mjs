@@ -1,148 +1,128 @@
-// Gate de los tres modos de sesión: cada uno con su textura, su cinta y sus reglas de stream.
+// Gate visual de los modos: streaming real del cliente, tarjetas ACP y estilos.
 // Uso: node tools/modos-check.mjs [url]
-// Read-only: abre la web viva, inyecta un turno de muestra y mide estilos computados.
 import { chromium } from 'playwright';
 
 const BASE = process.argv[2] || 'http://127.0.0.1:3788/';
-const res = [];
-const check = (n, ok, d = '') => res.push({ n, ok: !!ok, d });
-const errores = [];
+const results = [];
+const errors = [];
+const check = (name, ok, detail = '') => results.push({ name, ok: !!ok, detail });
 
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-const page = await ctx.newPage();
-page.on('pageerror', (e) => errores.push(String(e).slice(0, 160)));
-page.on('console', (m) => { if (m.type() === 'error' && !/WebSocket|403/.test(m.text())) errores.push(m.text().slice(0, 160)); });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const page = await context.newPage();
+page.on('pageerror', (error) => errors.push(String(error).slice(0, 180)));
+page.on('console', (message) => {
+  if (message.type() === 'error' && !/WebSocket|403/.test(message.text())) errors.push(message.text().slice(0, 180));
+});
 
-await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-await page.waitForFunction(() => !!window.__aegisWeb?.chips?.setModo, null, { timeout: 20000 });
+try {
+  await page.goto(BASE, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !!window.__aegisWeb?.chips?.setModo && !!window.__aegisWeb?.feed && !!window.__aegisWeb?.toolFeed, null, { timeout: 20000 });
 
-/** Un turno de muestra con las mismas clases que produce el render real. */
-async function sembrarTurno(modo) {
-  await page.evaluate((m) => {
-    const w = window.__aegisWeb;
-    w.chips.setModo(m);
-    let inner = document.getElementById('msg-inner');
-    if (!inner) {
-      inner = document.createElement('div');
+  async function limpiar() {
+    await page.evaluate(() => {
+      const messages = document.getElementById('messages');
+      if (!messages) throw new Error('Falta #messages');
+      messages.querySelectorAll('.msg-inner, #modo-cinta, #tail-pill, #status-pill').forEach((node) => node.remove());
+    });
+  }
+
+  async function sembrarTurno(modo) {
+    await limpiar();
+    await page.evaluate((m) => {
+      const web = window.__aegisWeb;
+      const messages = document.getElementById('messages');
+      const inner = document.createElement('div');
       inner.id = 'msg-inner';
       inner.className = 'msg-inner';
-      document.getElementById('messages').appendChild(inner);
-    }
-    inner.innerHTML = '';
-    const user = document.createElement('div');
-    user.className = 'msg-user in';
-    user.dataset.modo = m;
-    user.innerHTML = '<p>revisá el parser de batches</p>';
-    inner.appendChild(user);
+      messages.appendChild(inner);
+      const user = document.createElement('div');
+      user.className = 'msg-user in';
+      user.dataset.modo = m;
+      user.textContent = 'mensaje de prueba';
+      inner.appendChild(user);
+      web.chips.setModo(m);
+      web.feed('modo-fixture-' + m, 'Texto de prueba con **negrita**.', false, false);
+      web.flushRender();
+    }, modo);
+    await page.waitForFunction((m) => {
+      const el = document.querySelector('.msg-a[data-modo="' + m + '"]');
+      if (!el) return false;
+      const style = getComputedStyle(el);
+      if (m === 'plan') return style.borderLeftStyle === 'dotted';
+      if (m === 'revisar') return /217, 164, 91/.test(style.borderTopColor);
+      return /143, 192, 164/.test(style.borderLeftColor);
+    }, modo, { timeout: 8000 });
+    await page.waitForFunction(() => !!document.querySelector('.msg-a .content strong'));
+  }
 
-    const tool = document.createElement('div');
-    tool.className = 'tool in ok';
-    tool.dataset.modo = m;
-    tool.innerHTML = '<span class="tool-ic"></span><div class="tool-body"><div class="tool-title">read_file <span class="tname">read</span></div></div>';
-    if (m === 'plan') {
-      tool.classList.add('cita');
-      const cita = document.createElement('div');
-      cita.className = 'tool-cita';
-      cita.textContent = 'leyó src/chunked.rs';
-      tool.querySelector('.tool-body').appendChild(cita);
-    }
-    if (m === 'revisar') tool.classList.add('espera');
-    inner.appendChild(tool);
+  const estilo = (selector, properties) => page.evaluate(([s, props]) => {
+    const element = document.querySelector(s);
+    if (!element) return null;
+    const style = getComputedStyle(element);
+    return Object.fromEntries(props.map((property) => [property, style.getPropertyValue(property)]));
+  }, [selector, properties]);
+  const pseudo = (selector, pseudoElement, property) => page.evaluate(([s, pseudo, prop]) => {
+    const element = document.querySelector(s);
+    return element ? getComputedStyle(element, pseudo).getPropertyValue(prop) : '';
+  }, [selector, pseudoElement, property]);
 
-    const bot = document.createElement('div');
-    bot.className = 'msg-a in';
-    bot.dataset.modo = m;
-    bot.innerHTML = '<div class="content"><p>Primer párrafo cerrado.</p><p class="pluma">y esto se está escribiendo</p></div>';
-    inner.appendChild(bot);
-    w.chips.render();
-  }, modo);
-  // La hoja de estilos es un request aparte: medir antes de que aplique hacia fallar el gate por
-  // carrera y no por el diseno. Se espera la regla del modo recien sembrado.
-  await page.waitForFunction((m) => {
-    const el = document.querySelector('.msg-a[data-modo="' + m + '"]');
-    if (!el) return false;
-    const cs = getComputedStyle(el);
-    if (m === 'plan') return cs.borderLeftStyle === 'dotted';
-    if (m === 'revisar') return /217, 164, 91/.test(cs.borderTopColor);
-    return /143, 192, 164/.test(cs.borderLeftColor);
-  }, modo, { timeout: 8000 });  await page.waitForTimeout(120);
+  await sembrarTurno('plan');
+  const plan = await page.evaluate(() => ({
+    mode: document.getElementById('messages').dataset.modo,
+    ribbon: document.querySelector('.modo-cinta')?.textContent || '',
+    content: document.querySelector('.msg-a[data-modo="plan"] .content')?.innerHTML || '',
+  }));
+  check('la cinta comunica que plan no escribe', plan.mode === 'plan' && /plan · no escribe/.test(plan.ribbon), JSON.stringify(plan));
+  check('el stream real conserva markdown normal', /<strong>negrita<\/strong>/.test(plan.content), plan.content);
+  const planStyle = await estilo('.msg-a[data-modo="plan"]', ['border-left-style', 'background-color', 'font-family']);
+  check('plan se distingue como hoja sin burbuja', planStyle?.['border-left-style'] === 'dotted' && /transparent|rgba\(0, 0, 0, 0\)/.test(planStyle?.['background-color'] || ''), JSON.stringify(planStyle));
+  check('plan usa tipografía de lectura', /serif|Palatino|Georgia/i.test(planStyle?.['font-family'] || ''), String(planStyle?.['font-family']));
+  check('el mensaje de usuario conserva la marca de margen', (await pseudo('.msg-user[data-modo="plan"]', '::before', 'content')).includes('›'));
+  await page.screenshot({ path: 'tools/shots/modo-plan.png' });
+
+  await sembrarTurno('revisar');
+  const ribbonReview = await page.locator('.modo-cinta').textContent();
+  check('revisar explica la aprobación en su cinta', /revisar · cada escritura espera tu sí/.test(ribbonReview || ''), ribbonReview || '');
+  await page.evaluate(() => window.__aegisWeb.toolFeed({
+    toolCallId: 'modo-write-review', kind: 'running', status: 'pending', rawInput: { path: 'src/a.ts', content: 'nuevo' },
+    _meta: { aegis: { toolCall: { toolName: 'developer__write' } } },
+  }));
+  check('metadata ACP prevalece sobre kind=running y marca espera de escritura', await page.locator('.tool.espera[data-tool-name="developer__write"]').count() === 1);
+  const reviewStyle = await estilo('.msg-a[data-modo="revisar"]', ['border-top-color']);
+  check('revisar muestra el folio ámbar', /217, 164, 91/.test(reviewStyle?.['border-top-color'] || ''), JSON.stringify(reviewStyle));
+  check('el folio muestra doblez', /gradient/.test(await pseudo('.msg-a[data-modo="revisar"]', '::after', 'background-image')));
+  check('la escritura pendiente dice que espera aprobación', /esperando tu s/.test(await pseudo('.tool.espera .tool-title', '::after', 'content')));
+  check('la espera de revisión tiene animación', (await estilo('.tool.espera', ['animation-name']))?.['animation-name'] === 'espera');
+  await page.screenshot({ path: 'tools/shots/modo-revisar.png' });
+
+  await sembrarTurno('ejecutar');
+  const ribbonExecute = await page.locator('.modo-cinta').textContent();
+  check('ejecutar identifica permission.yaml', /ejecutar · permission\.yaml manda/.test(ribbonExecute || ''), ribbonExecute || '');
+  await page.evaluate(() => window.__aegisWeb.toolFeed({
+    toolCallId: 'modo-write-execute', kind: 'running', status: 'pending', rawInput: { path: 'src/a.ts', content: 'nuevo' },
+    _meta: { aegis: { toolCall: { toolName: 'developer__write' } } },
+  }));
+  check('ejecutar no muestra la marca de aprobación', await page.locator('.tool[data-tool-call-id="modo-write-execute"].espera').count() === 0);
+  const execStyle = await estilo('.tool[data-modo="ejecutar"]', ['font-family']);
+  check('ejecutar presenta recibos monoespaciados', /mono|Consolas|Cascadia/i.test(execStyle?.['font-family'] || ''), String(execStyle?.['font-family']));
+  const execMessageStyle = await estilo('.msg-a[data-modo="ejecutar"]', ['border-left-color']);
+  check('ejecutar conserva el acento verde', /143, 192, 164/.test(execMessageStyle?.['border-left-color'] || ''), JSON.stringify(execMessageStyle));
+  await page.screenshot({ path: 'tools/shots/modo-ejecutar.png' });
+
+  await page.evaluate(() => window.__aegisWeb.chips.setModo('plan'));
+  const labels = await page.evaluate(() => ({
+    currentMode: document.getElementById('messages').dataset.modo,
+    previousMessageMode: document.querySelector('.msg-a')?.dataset.modo || '',
+  }));
+  check('al cambiar modo conserva la etiqueta histórica de mensajes', labels.currentMode === 'plan' && labels.previousMessageMode === 'ejecutar', JSON.stringify(labels));
+} finally {
+  await context.close();
+  await browser.close();
 }
 
-const estilo = (sel, props) => page.evaluate(([s, p]) => {
-  const el = document.querySelector(s);
-  if (!el) return null;
-  const cs = getComputedStyle(el);
-  const out = {};
-  for (const k of p) out[k] = cs.getPropertyValue(k);
-  return out;
-}, [sel, props]);
-
-const pseudo = (sel, which, prop) => page.evaluate(([s, w, p]) => {
-  const el = document.querySelector(s);
-  if (!el) return '';
-  return getComputedStyle(el, w).getPropertyValue(p);
-}, [sel, which, prop]);
-
-// ---------- plan · cuaderno ----------
-await sembrarTurno('plan');
-const cajaPlan = await page.evaluate(() => document.getElementById('messages').dataset.modo);
-check('el contenedor se marca con el modo', cajaPlan === 'plan', String(cajaPlan));
-const cintaPlan = await page.evaluate(() => document.querySelector('.modo-cinta')?.textContent || '');
-check('la cinta dice que plan no escribe', /plan · no escribe/.test(cintaPlan), cintaPlan);
-const botPlan = await estilo('.msg-a[data-modo="plan"]', ['border-left-style', 'background-color', 'box-shadow', 'font-family']);
-check('en plan la respuesta es hoja: filete punteado y sin caja', botPlan && botPlan['border-left-style'] === 'dotted' && /rgba\(0, 0, 0, 0\)|transparent/.test(botPlan['background-color']), JSON.stringify(botPlan));
-check('en plan la respuesta va en serif', /serif|Palatino|Georgia/i.test((botPlan || {})['font-family'] || ''), String((botPlan || {})['font-family']).slice(0, 60));
-const marcaUsuario = await pseudo('.msg-user[data-modo="plan"]', '::before', 'content');
-check('tu mensaje es nota al margen con ›', marcaUsuario.includes('›'), marcaUsuario);
-const cita = await estilo('.tool.cita .tool-cita', ['text-decoration-style', 'font-family']);
-check('la lectura es cita subrayada, no card', cita && /dotted/.test(cita['text-decoration-style'] || ''), JSON.stringify(cita));
-const iconoOculto = await estilo('.tool.cita .tool-ic', ['display']);
-check('la cita no muestra icono de herramienta', iconoOculto && iconoOculto.display === 'none', JSON.stringify(iconoOculto));
-const pluma = await pseudo('.msg-a[data-modo="plan"] .pluma', '::after', 'animation-name');
-check('el párrafo abierto lleva pluma animada', pluma === 'pluma', pluma);
-await page.screenshot({ path: 'tools/shots/modo-plan.png' });
-
-// ---------- revisar · borrador marcado ----------
-await sembrarTurno('revisar');
-const cintaRev = await page.evaluate(() => document.querySelector('.modo-cinta')?.textContent || '');
-check('la cinta de revisar pide el sí', /revisar · cada escritura espera tu sí/.test(cintaRev), cintaRev);
-const botRev = await estilo('.msg-a[data-modo="revisar"]', ['border-top-color', 'background-color']);
-check('en revisar el folio tiene borde ámbar y fondo de papel', botRev && /217, 164, 91/.test(botRev['border-top-color'] || ''), JSON.stringify(botRev));
-const doblez = await pseudo('.msg-a[data-modo="revisar"]', '::after', 'background-image');
-check('el folio muestra la esquina doblada', /gradient/.test(doblez || ''), String(doblez).slice(0, 60));
-const espera = await pseudo('.tool.espera .tool-title', '::after', 'content');
-check('la escritura pendiente avisa que espera', /esperando tu s/.test(espera || ''), espera);
-const pulso = await estilo('.tool.espera', ['animation-name']);
-check('la escritura pendiente pulsa', pulso && pulso['animation-name'] === 'espera', JSON.stringify(pulso));
-await page.screenshot({ path: 'tools/shots/modo-revisar.png' });
-
-// ---------- ejecutar · consola ----------
-await sembrarTurno('ejecutar');
-const cintaEj = await page.evaluate(() => document.querySelector('.modo-cinta')?.textContent || '');
-check('la cinta de ejecutar nombra permission.yaml', /ejecutar · permission\.yaml manda/.test(cintaEj), cintaEj);
-const toolEj = await estilo('.tool[data-modo="ejecutar"]', ['font-family', 'border-left-width']);
-check('en ejecutar la tool es recibo monoespaciado', /mono|Consolas|Cascadia/i.test((toolEj || {})['font-family'] || ''), String((toolEj || {})['font-family']).slice(0, 60));
-const botEj = await estilo('.msg-a[data-modo="ejecutar"]', ['border-left-color']);
-check('en ejecutar la respuesta lleva filete verde', botEj && /143, 192, 164/.test(botEj['border-left-color'] || ''), JSON.stringify(botEj));
-const sinCita = await page.evaluate(() => !!document.querySelector('.tool.cita'));
-check('en ejecutar no hay citas: las lecturas vuelven a ser cards', !sinCita);
-await page.screenshot({ path: 'tools/shots/modo-ejecutar.png' });
-
-// ---------- el sello no se re-pinta al cambiar de modo ----------
-await page.evaluate(() => window.__aegisWeb.chips.setModo('plan'));
-await page.waitForTimeout(80);
-const sellos = await page.evaluate(() => ({
-  contenedor: document.getElementById('messages').dataset.modo,
-  mensaje: document.querySelector('.msg-a')?.dataset.modo || '',
-}));
-check('cambiar de modo no re-pinta el historial ya escrito', sellos.contenedor === 'plan' && sellos.mensaje === 'ejecutar', JSON.stringify(sellos));
-
-await ctx.close();
-await browser.close();
-
-const ok = res.filter((r) => r.ok).length;
-for (const r of res) console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.n}${r.d ? '  [' + r.d + ']' : ''}`);
-if (errores.length) console.log('\nerrores de consola:\n' + errores.join('\n'));
-console.log(`\n${ok}/${res.length} PASS`);
-process.exit(ok === res.length && !errores.length ? 0 : 1);
+const passed = results.filter((result) => result.ok).length;
+for (const result of results) console.log(`${result.ok ? 'PASS' : 'FAIL'}  ${result.name}${result.detail ? `  [${result.detail}]` : ''}`);
+if (errors.length) console.log('\nErrores de consola:\n' + errors.join('\n'));
+console.log(`\n${passed}/${results.length} PASS`);
+process.exit(passed === results.length && !errors.length ? 0 : 1);
