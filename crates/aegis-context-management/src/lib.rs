@@ -23,7 +23,7 @@ use aegis_provider_types::conversation::message::Message;
 use aegis_provider_types::conversation::token_usage::ProviderUsage;
 use anyhow::Result;
 
-pub use chunked::summarize_in_chunks;
+pub use chunked::{summarize_in_chunks, summarize_in_chunks_with_single_message_budget};
 pub use format::format_message_for_compacting;
 pub use model::{CompactionModel, ProviderModel, TokenEstimator};
 pub use provider::CompactingProvider;

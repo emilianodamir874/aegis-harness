@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 
 use crate::format::format_message_for_compacting;
 use crate::model::{CompactionModel, TokenEstimator};
-use crate::summarize::{summarize_with_policy, Summary};
+use crate::summarize::{summarize_with_retry_policy, Summary};
 use crate::templates::{render, Templates};
 
 const MAX_STAGES: usize = 8;
@@ -97,6 +97,30 @@ pub async fn summarize_in_chunks(
     input_budget: usize,
     output_budget: usize,
 ) -> Result<Summary> {
+    summarize_in_chunks_with_single_message_budget(
+        model,
+        estimator,
+        templates,
+        messages,
+        input_budget,
+        input_budget,
+        output_budget,
+    )
+    .await
+}
+
+/// Like [`summarize_in_chunks`], but lets one indivisible history message use
+/// the caller's reserved singleton input budget. Multi-message batches still use
+/// `input_budget` and source messages are never fragmented.
+pub async fn summarize_in_chunks_with_single_message_budget(
+    model: &dyn CompactionModel,
+    estimator: &dyn TokenEstimator,
+    templates: &Templates,
+    messages: &[Message],
+    input_budget: usize,
+    single_message_input_budget: usize,
+    output_budget: usize,
+) -> Result<Summary> {
     if messages.is_empty() {
         bail!("Cannot compact an empty visible history");
     }
@@ -121,13 +145,29 @@ pub async fn summarize_in_chunks(
                 chars = chars.saturating_add(size);
                 end += 1;
             }
-            while end > cursor + 1
-                && input_tokens(estimator, templates, &formatted[cursor..end]).await? > input_budget
-            {
+            let mut batch_tokens =
+                input_tokens(estimator, templates, &formatted[cursor..end]).await?;
+            while end > cursor + 1 && batch_tokens > input_budget {
                 end -= 1;
+                batch_tokens = input_tokens(estimator, templates, &formatted[cursor..end]).await?;
             }
-            if input_tokens(estimator, templates, &formatted[cursor..end]).await? > input_budget {
-                bail!("One history message exceeds the compaction input budget; original context preserved");
+            let allowed_budget = if end == cursor + 1 {
+                single_message_input_budget.max(input_budget)
+            } else {
+                input_budget
+            };
+            if end == cursor + 1 && batch_tokens > input_budget {
+                tracing::debug!(
+                    stage = stage + 1,
+                    message_index = cursor,
+                    input_tokens = batch_tokens,
+                    input_budget,
+                    allowed_budget,
+                    "Accepting oversized history message within the reserved compaction context"
+                );
+            }
+            if batch_tokens > allowed_budget {
+                bail!("One history message exceeds the compaction input budget ({batch_tokens} > {allowed_budget}); original context preserved");
             }
             pending.push_back((cursor, end));
             cursor = end;
@@ -141,7 +181,7 @@ pub async fn summarize_in_chunks(
                 bail!("Compaction exceeded its request limit; original context preserved");
             }
             let input = input_tokens(estimator, templates, &formatted[start..end]).await?;
-            match summarize_with_policy(
+            match summarize_with_retry_policy(
                 model,
                 Some(estimator),
                 templates,
@@ -293,6 +333,95 @@ mod tests {
                 ProviderUsage::new("fake".into(), Usage::new(Some(100), Some(20), Some(120))),
             ))
         }
+    }
+
+    #[tokio::test]
+    async fn oversized_single_message_fits_only_within_explicit_effective_budget() {
+        let message =
+            Message::user().with_text(format!("sentinel-A {} sentinel-L", "x".repeat(260_000)));
+        let formatted = format_message_for_compacting(&message);
+        let normal_input_budget = 64_000;
+        let message_tokens = input_tokens(&FakeEstimator, &Templates::default(), &[formatted])
+            .await
+            .unwrap();
+        assert!(message_tokens > normal_input_budget);
+        let singleton_budget = 107_008;
+        assert!(message_tokens <= singleton_budget);
+        let model = FakeModel {
+            calls: AtomicUsize::new(0),
+            malformed: false,
+        };
+        let summary = summarize_in_chunks_with_single_message_budget(
+            &model,
+            &FakeEstimator,
+            &Templates::default(),
+            std::slice::from_ref(&message),
+            normal_input_budget,
+            singleton_budget,
+            8192,
+        )
+        .await
+        .expect("the configured single-message overage must be accepted");
+        assert!(summary.message.as_concat_text().contains("|A|"));
+        assert_eq!(model.calls.load(Ordering::Relaxed), 1);
+
+        let error = summarize_in_chunks_with_single_message_budget(
+            &model,
+            &FakeEstimator,
+            &Templates::default(),
+            &[message],
+            normal_input_budget,
+            message_tokens - 1,
+            8192,
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("input budget"));
+        assert_eq!(model.calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn oversized_multi_message_batch_is_split_at_the_normal_budget() {
+        let model = FakeModel {
+            calls: AtomicUsize::new(0),
+            malformed: false,
+        };
+        let messages = vec![
+            Message::user().with_text(format!("sentinel-A {}", "a".repeat(5_000))),
+            Message::assistant().with_text(format!("sentinel-B {}", "b".repeat(5_000))),
+        ];
+        let first_message = input_tokens(
+            &FakeEstimator,
+            &Templates::default(),
+            &[format_message_for_compacting(&messages[0])],
+        )
+        .await
+        .unwrap();
+        let combined = input_tokens(
+            &FakeEstimator,
+            &Templates::default(),
+            &messages
+                .iter()
+                .map(format_message_for_compacting)
+                .collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+        assert!(combined > first_message);
+        let result = summarize_in_chunks_with_single_message_budget(
+            &model,
+            &FakeEstimator,
+            &Templates::default(),
+            &messages,
+            first_message,
+            first_message.saturating_add(1_000),
+            8192,
+        )
+        .await
+        .unwrap();
+        assert!(result.message.as_concat_text().contains("|A|"));
+        assert!(result.message.as_concat_text().contains("|B|"));
+        assert!(model.calls.load(Ordering::Relaxed) >= 3);
     }
 
     #[tokio::test]

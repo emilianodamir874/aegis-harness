@@ -133,10 +133,10 @@ pub async fn summarize(
     templates: &Templates,
     messages: &[Message],
 ) -> Result<Summary> {
-    summarize_with_policy(model, estimator, templates, messages, true).await
+    summarize_with_retry_policy(model, estimator, templates, messages, true).await
 }
 
-pub(crate) async fn summarize_with_policy(
+pub(crate) async fn summarize_with_retry_policy(
     model: &dyn CompactionModel,
     estimator: Option<&dyn TokenEstimator>,
     templates: &Templates,

@@ -25,6 +25,24 @@ use tracing::log::warn;
 pub use aegis_context_management::DEFAULT_COMPACTION_THRESHOLD;
 
 pub(crate) const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
+const COMPACTION_INPUT_RESERVE_PERCENT: usize = 10;
+const MAX_SINGLE_MESSAGE_OVERAGE: usize = 64_000;
+
+fn compaction_input_budgets(context_limit: usize, output_budget: usize) -> (usize, usize) {
+    let safe_input_budget = context_limit
+        .saturating_sub(output_budget)
+        .saturating_sub(context_limit / COMPACTION_INPUT_RESERVE_PERCENT);
+    let input_budget = context_limit
+        .saturating_mul(3)
+        .saturating_div(5)
+        .min(64_000)
+        .min(safe_input_budget);
+    let available_overage = safe_input_budget
+        .saturating_sub(input_budget)
+        .min(MAX_SINGLE_MESSAGE_OVERAGE);
+    let single_message_input_budget = input_budget.saturating_add(available_overage);
+    (input_budget, single_message_input_budget)
+}
 
 /// Optional per-process absolute cap for users who intentionally prefer early compaction.
 /// Without an explicit cap, the model's own context window and threshold apply.
@@ -395,12 +413,15 @@ async fn do_compact(
     let estimator = AegisTokenEstimator {
         counter: shared_token_counter().await.map_err(anyhow::Error::msg)?,
     };
-    let summary = aegis_context_management::summarize_in_chunks(
+    let (input_budget, single_message_input_budget) =
+        compaction_input_budgets(context_limit, output_budget);
+    let summary = aegis_context_management::summarize_in_chunks_with_single_message_budget(
         &model,
         &estimator,
         &compaction_templates()?,
         &agent_visible_messages,
-        (context_limit * 3 / 5).min(64_000),
+        input_budget,
+        single_message_input_budget,
         output_budget,
     )
     .await?;
@@ -1614,6 +1635,25 @@ mod tests {
                 .count()
                 == 10
         );
+    }
+
+    #[test]
+    fn single_message_budget_is_capped_by_output_and_context_reserves() {
+        let (input_budget, single_message_budget) = compaction_input_budgets(1_048_576, 32_768);
+        assert_eq!(input_budget, 64_000);
+        assert_eq!(single_message_budget, 128_000);
+        assert!(single_message_budget + 32_768 + 1_048_576 / 10 <= 1_048_576);
+
+        let (small_window_budget, small_window_single_message_budget) =
+            compaction_input_budgets(128_000, 8_192);
+        assert_eq!(small_window_budget, 64_000);
+        assert_eq!(small_window_single_message_budget, 107_008);
+        assert!(small_window_single_message_budget + 8_192 + 12_800 <= 128_000);
+
+        let (constrained_budget, constrained_single_message_budget) =
+            compaction_input_budgets(64_000, 16_000);
+        assert_eq!(constrained_budget, 38_400);
+        assert_eq!(constrained_single_message_budget, 41_600);
     }
 
     #[test]
