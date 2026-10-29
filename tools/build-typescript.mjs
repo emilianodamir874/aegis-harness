@@ -63,6 +63,16 @@ for (const item of entries) {
   const staged = join(root, 'dist-ts', item.output);
   await mkdir(resolve(staged, '..'), { recursive: true });
   await writeFile(staged, output);
+  // PUBLICACIÓN: el serve vive en dist-ts/server.mjs y sirve ../app (DIR = padre de dist-ts).
+  // El build escribía SOLO en dist-ts, así que cada arreglo quedaba en staging y el teléfono
+  // seguía bajando el bundle viejo de app/. Eso costó una sesión entera de diagnóstico: el
+  // bundle montado no era el compilado. Ahora el build publica los assets del cliente, y
+  // `AEGIS_NO_PUBLISH=1` lo deja en staging para probar sin tocar lo servido.
+  if (process.env.AEGIS_NO_PUBLISH !== '1' && item.output.startsWith('app/')) {
+    const live = join(root, item.output);
+    await mkdir(resolve(live, '..'), { recursive: true });
+    await copyFile(staged, live);
+  }
   console.log(item.entry + ' -> ' + item.output + ' (' + output.length + ' bytes)');
 }
 

@@ -32,6 +32,20 @@ import { cuerpoGasto, type Stats } from './app/gasto';
   window.addEventListener('error', (e) => report('error', (e.message || '') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')));
   window.addEventListener('unhandledrejection', (e) => report('rejection', String((e.reason && e.reason.message) || e.reason)));
 
+  // Aviso de bundle viejo: no carga nada, solo deja constancia en el log del servidor. Existe
+  // porque un build pisó un bundle.js parcheado a mano y eso costó una sesión entera de
+  // diagnóstico: si el archivo montado no es el que se va a generar, quiero verlo.
+  (() => {
+    try {
+      const montado = /bundle\.js\?v=([a-f0-9]{8})/.exec(document.documentElement.innerHTML);
+      fetch('/index.html', { cache: 'no-store' }).then((r) => r.text()).then((html) => {
+        const enDisco = /bundle\.js\?v=([a-f0-9]{8})/.exec(html);
+        if (!montado || !enDisco) return;
+        if (montado[1] !== enDisco[1]) report('stale', `bundle montado=${montado[1]} en disco=${enDisco[1]}: recargá (Ctrl+Shift+R)`);
+      }).catch(() => {});
+    } catch {}
+  })();
+
   // ---------- helpers ----------
   const greeting = () => {
     const h = new Date().getHours();
@@ -6484,8 +6498,8 @@ import { cuerpoGasto, type Stats } from './app/gasto';
     // teclado es intencion de escribir, y ahi lo que importa es ver el final), y al cerrarlo solo
     // si uno ya estaba abajo, para no moverlo de donde estaba leyendo.
     const alFondo = () => !!messages && messages.scrollHeight - messages.scrollTop - messages.clientHeight < 120;
-    const reanclar = (forzar?: boolean) => {
-      const alto = window.visualViewport?.height ?? window.innerHeight;
+    const reanclar = (forzar?: boolean, altoMedido?: number) => {
+      const alto = altoMedido ?? window.visualViewport?.height ?? window.innerHeight;
       const delta = alto - anterior;
       anterior = alto;
       if (!forzar && Math.abs(delta) < 40) return;
@@ -6497,8 +6511,23 @@ import { cuerpoGasto, type Stats } from './app/gasto';
       // abrir el teclado la distancia salta a ~360: hay que forzarlo.
       requestAnimationFrame(() => requestAnimationFrame(() => scrollBottom(true)));
     };
-    window.addEventListener('aegis:viewporth', () => reanclar());
-    window.addEventListener('resize', () => reanclar());
+    window.addEventListener('aegis:viewporth', (ev: Event) => {
+      const alto = (ev as CustomEvent<{ height?: number }>).detail?.height;
+      reanclar(false, Number(alto) || undefined);
+    });
+    // Red de seguridad propia: si ningún mecanismo del navegador avisa (ni resize, ni
+    // visualViewport, ni el observer del contenedor), el tamaño del campo de texto cambia igual
+    // cuando el teclado se abre. Es la tercera vía, y la única que depende solo del DOM.
+    if (input && 'ResizeObserver' in window) {
+      let ultimoAltoInput = input.clientHeight;
+      new ResizeObserver(() => {
+        const h = input.clientHeight;
+        if (h !== ultimoAltoInput) {
+          ultimoAltoInput = h;
+          requestAnimationFrame(() => requestAnimationFrame(() => scrollBottom(true)));
+        }
+      }).observe(input);
+    }    window.addEventListener('resize', () => reanclar());
     window.visualViewport?.addEventListener('resize', () => reanclar());
     input?.addEventListener('focus', () => setTimeout(() => reanclar(true), 260));
     // La via que SI funciona en el telefono: observar el alto del propio transcript. Android no

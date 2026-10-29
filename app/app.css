@@ -3037,7 +3037,14 @@ html[data-motion="reducido"] .density-pop { animation: none; }
     top: var(--mobile-visible-top, 0px);
     left: 0; right: 0;
     height: var(--mobile-visible-height, 100dvh);
+    /* Alto del teclado que el navegador NO nos reportó. Lo pone workspace-nav.js (0px cuando
+       el navegador ya recortó el layout o el visualViewport: en ese caso no hay que restar). */
+    --mobile-teclado: 0px;
   }
+  /* Con el campo enfocado el teclado está arriba de todo: si el navegador no recortó nada,
+     el .app se recorta acá. La cuenta es con las dos variables, así que si el navegador ya
+     recortó (--mobile-teclado = 0) no se resta dos veces. */
+  .app:has(#input:focus) { height: calc(var(--mobile-visible-height, 100dvh) - var(--mobile-teclado, 0px)); }
   .main { width: 100%; }
   .messages { width: 100%; }
 
