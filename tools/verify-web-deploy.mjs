@@ -141,7 +141,8 @@ try {
         // Wait for an ACP reply, not just a socket in CONNECTING state.
         await page.waitForFunction(() => window.__aegisWeb?.rpc?.ready === true, null, { timeout: 10000 }).catch(() => {});
         const initial = await page.evaluate(() => ({ ready: window.__aegisWeb?.rpc?.ready === true,
-          noSession: !window.__aegisWeb?.state?.current, controls: ['btn-activity', 'btn-changes', 'input'].every(id => !!document.getElementById(id)),
+          noSession: !window.__aegisWeb?.state?.current, controls: ['btn-activity', 'btn-files', 'btn-memory', 'btn-skills', 'btn-gasto-top', 'input'].every(id => !!document.getElementById(id)),
+          noLegacyChanges: !document.querySelector('#btn-changes, .aegis-changes, .git-changes'),
           visible: !!document.getElementById('welcome')?.getBoundingClientRect().width }));
         // A fresh browser context must not navigate/open a session or send any prompt.
         stage = 'actividad';
@@ -159,14 +160,13 @@ try {
           && !/No se pudo consultar \/pending\.json/.test(activity)
           && !/Formato de confirmaciones no disponible/.test(activity);
         await page.locator('.aegis-activity button').filter({ hasText: 'Cerrar' }).click();
-        stage = 'cambios';
-        if (viewport.width < 500) await page.locator('#btn-menu').click();
-        else await page.locator('#btn-changes').scrollIntoViewIfNeeded();
-        await page.locator('#btn-changes').click({ timeout: 4000 });
-        await page.locator('.aegis-changes').waitFor({ timeout: 8000 });
-        const changes = await page.locator('.aegis-changes').innerText();
-        const changesOk = /Sin sesión activa · no se consultó Git/.test(changes) && /Abrí una conversación/.test(changes)
-          && !/Git no informa cambios locales/.test(changes) && !/Panel no disponible/.test(changes);
+        stage = 'contrato-actual';
+        const runtimeContract = await page.evaluate(() => ({
+          noLegacyChanges: !document.querySelector('#btn-changes, .aegis-changes, .git-changes'),
+          controls: ['btn-activity', 'btn-files', 'btn-memory', 'btn-skills', 'btn-gasto-top', 'input'].every(id => !!document.getElementById(id)),
+          toolDiffCss: !!document.querySelector('style') || document.body.innerHTML.includes('tool-diff'),
+        }));
+        const changesOk = runtimeContract.noLegacyChanges && runtimeContract.controls;
         let mobileSwitch = true;
         if (viewport.width < 500) {
           // La barra inferior Chat/Actividad/Archivos se sacó del móvil (commit 3a56e1c): esas
@@ -219,7 +219,7 @@ try {
           if (!mobile.table || !mobile.composer) mobileGeometry = JSON.stringify(mobile.geometry);
         }
         const ok = main?.status() === 200 && initial.controls && initial.visible && initial.noSession && initial.ready
-          && wsSeen && wsConnected && activityNoFake && changesOk && mobileSwitch && mobileTable && focusedComposer && Object.values(errors).every(n => n === 0);
+          && wsSeen && wsConnected && activityNoFake && changesOk && initial.noLegacyChanges && mobileSwitch && mobileTable && focusedComposer && Object.values(errors).every(n => n === 0);
         gate(`Chromium ${label}`, ok, `DOM=${initial.visible} sinSesión=${initial.noSession} ACP=${initial.ready && wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} actividad=${activityNoFake} cambios=${changesOk} vistasMóvil=${mobileSwitch} tablaMóvil=${mobileTable} compositorFoco=${focusedComposer} ${mobileGeometry} errores=${JSON.stringify(errors)}`);
       } catch (e) { gate(`Chromium ${label}`, false, `${errorKind(e)} en ${stage} · locator=${String(e?.message || '').match(/waiting for locator\('([^']+)'\)/)?.[1] || 'desconocido'} · ACP=${wsConnected ? 'conectado' : wsSeen ? 'socket sin respuesta' : 'sin socket'} · errores=${JSON.stringify(errors)}`); }
       finally { await context.close(); }
