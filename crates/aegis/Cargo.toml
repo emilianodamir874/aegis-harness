@@ -33,14 +33,7 @@ tree-sitter = [
 ]
 live-voice = ["aegis-providers/live-websocket"]
 local-inference = [
-    "dep:candle-core",
-    "dep:candle-nn",
-    "dep:candle-transformers",
     "aegis-providers/local-inference-hf-hub",
-    "dep:tokenizers",
-    "dep:symphonia",
-    "dep:rubato",
-    "dep:byteorder",
 ]
 aws-providers = [
     "dep:aws-config",
@@ -50,7 +43,7 @@ aws-providers = [
     "dep:aws-sdk-sagemakerruntime",
     "dep:smithy-transport-reqwest",
 ]
-cuda = ["local-inference", "candle-core/cuda", "candle-nn/cuda", "aegis-providers/cuda"]
+cuda = ["local-inference", "aegis-providers/cuda"]
 vulkan = ["local-inference", "aegis-providers/vulkan"]
 mlx = ["local-inference", "aegis-providers/mlx"]
 rustls-tls = [
@@ -208,14 +201,6 @@ agent-client-protocol = { workspace = true, features = [
 agent-client-protocol-http = { workspace = true, features = ["server"], optional = true }
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 
-# For local Whisper transcription (optional, behind "local-inference" feature)
-candle-core = { workspace = true, optional = true }
-candle-nn = { workspace = true, optional = true }
-candle-transformers = { version = "0.11", default-features = false, optional = true }
-byteorder = { version = "1.5", default-features = false, features = ["std"], optional = true }
-tokenizers = { version = "0.23", default-features = false, features = ["onig"], optional = true }
-symphonia = { version = "0.6", default-features = false, features = ["aac", "adpcm", "alac", "isomp4", "mkv", "mp3", "pcm", "vorbis", "wav"], optional = true }
-rubato = { version = "5.0", default-features = false, optional = true }
 sys-info = { version = "0.9", default-features = false }
 
 schemars = { workspace = true, features = [
@@ -259,7 +244,7 @@ winapi = { workspace = true, features = ["accctrl", "aclapi", "fileapi", "handle
 keyring = { workspace = true, features = ["windows-native"], optional = true }
 ntapi = { version = "0.4.3", default-features = false }
 
-# Platform-specific GPU acceleration for Whisper and local inference
+# Platform-specific GPU acceleration for local inference
 [target.'cfg(target_os = "macos")'.dependencies]
 candle-core = { workspace = true, features = ["metal"], optional = true }
 candle-nn = { workspace = true, features = ["metal"], optional = true }
@@ -298,11 +283,6 @@ path = "examples/agent.rs"
 [[example]]
 name = "databricks_oauth"
 path = "examples/databricks_oauth.rs"
-
-[[example]]
-name = "test_whisper"
-path = "examples/test_whisper.rs"
-required-features = ["local-inference"]
 
 [[bin]]
 name = "aegis-acp"

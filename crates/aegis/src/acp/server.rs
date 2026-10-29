@@ -110,7 +110,6 @@ mod apps;
 mod config;
 mod custom_dispatch;
 mod diagnostics;
-mod dictation;
 mod dispatch;
 mod elicitation;
 mod extensions;

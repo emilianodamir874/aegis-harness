@@ -815,62 +815,6 @@ impl AegisAcpAgent {
         self.on_import_sources(req).await
     }
 
-    #[custom_method(DictationTranscribeRequest)]
-    async fn dispatch_dictation_transcribe(
-        &self,
-        req: DictationTranscribeRequest,
-    ) -> Result<DictationTranscribeResponse, agent_client_protocol::Error> {
-        self.on_dictation_transcribe(req).await
-    }
-
-    #[custom_method(DictationConfigRequest)]
-    async fn dispatch_dictation_config(
-        &self,
-        _req: DictationConfigRequest,
-    ) -> Result<DictationConfigResponse, agent_client_protocol::Error> {
-        self.on_dictation_config(_req).await
-    }
-
-    #[custom_method(DictationModelsListRequest)]
-    async fn dispatch_dictation_models_list(
-        &self,
-        _req: DictationModelsListRequest,
-    ) -> Result<DictationModelsListResponse, agent_client_protocol::Error> {
-        self.on_dictation_models_list(_req).await
-    }
-
-    #[custom_method(DictationModelDownloadRequest)]
-    async fn dispatch_dictation_model_download(
-        &self,
-        _req: DictationModelDownloadRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_dictation_model_download(_req).await
-    }
-
-    #[custom_method(DictationModelDownloadProgressRequest)]
-    async fn dispatch_dictation_model_download_progress(
-        &self,
-        _req: DictationModelDownloadProgressRequest,
-    ) -> Result<DictationModelDownloadProgressResponse, agent_client_protocol::Error> {
-        self.on_dictation_model_download_progress(_req).await
-    }
-
-    #[custom_method(DictationModelCancelRequest)]
-    async fn dispatch_dictation_model_cancel(
-        &self,
-        _req: DictationModelCancelRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_dictation_model_cancel(_req).await
-    }
-
-    #[custom_method(DictationModelDeleteRequest)]
-    async fn dispatch_dictation_model_delete(
-        &self,
-        _req: DictationModelDeleteRequest,
-    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.on_dictation_model_delete(_req).await
-    }
-
     #[custom_method(LocalInferenceModelsListRequest)]
     async fn dispatch_local_inference_models_list(
         &self,

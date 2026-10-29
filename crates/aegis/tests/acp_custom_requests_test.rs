@@ -792,8 +792,7 @@ fn test_custom_preferences_read_save() {
                 "keys": [
                     "autoCompactThreshold",
                     "aegisThinkingEffort",
-                    "voiceAutoSubmitPhrases",
-                    "voiceDictationPreferredMic"
+                    "voiceAutoSubmitPhrases"
                 ],
             }),
         )
@@ -805,7 +804,6 @@ fn test_custom_preferences_read_save() {
                 { "key": "autoCompactThreshold", "value": 0.7 },
                 { "key": "aegisThinkingEffort", "value": "high" },
                 { "key": "voiceAutoSubmitPhrases", "value": "send it" },
-                { "key": "voiceDictationPreferredMic", "value": null },
             ]))
         );
 
@@ -815,8 +813,6 @@ fn test_custom_preferences_read_save() {
             serde_json::json!({
                 "values": [
                     { "key": "aegisThinkingEffort", "value": "disabled" },
-                    { "key": "voiceDictationProvider", "value": "__disabled__" },
-                    { "key": "voiceDictationPreferredMic", "value": "mic-1" }
                 ],
             }),
         )
@@ -827,7 +823,7 @@ fn test_custom_preferences_read_save() {
             conn.cx(),
             "_aegis/unstable/preferences/read",
             serde_json::json!({
-                "keys": ["aegisThinkingEffort", "voiceDictationProvider", "voiceDictationPreferredMic"],
+                "keys": ["aegisThinkingEffort"],
             }),
         )
         .await
@@ -836,8 +832,6 @@ fn test_custom_preferences_read_save() {
             response.get("values"),
             Some(&serde_json::json!([
                 { "key": "aegisThinkingEffort", "value": "off" },
-                { "key": "voiceDictationProvider", "value": "__disabled__" },
-                { "key": "voiceDictationPreferredMic", "value": "mic-1" },
             ]))
         );
     });
@@ -867,12 +861,6 @@ fn test_custom_preferences_save_rejects_invalid_values() {
             serde_json::json!({
                 "values": [{ "key": "voiceAutoSubmitPhrases", "value": ["send"] }],
             }),
-            serde_json::json!({
-                "values": [{ "key": "voiceDictationProvider", "value": "bogus" }],
-            }),
-            serde_json::json!({
-                "values": [{ "key": "voiceDictationPreferredMic", "value": "" }],
-            }),
         ];
 
         for payload in invalid_payloads {
@@ -885,8 +873,8 @@ fn test_custom_preferences_save_rejects_invalid_values() {
             "_aegis/unstable/preferences/save",
             serde_json::json!({
                 "values": [
-                    { "key": "voiceDictationPreferredMic", "value": "mic-1" },
-                    { "key": "voiceDictationProvider", "value": "bogus" }
+                    { "key": "voiceAutoSubmitPhrases", "value": "send it" },
+                    { "key": "aegisThinkingEffort", "value": "bogus" }
                 ],
             }),
         )
@@ -897,7 +885,7 @@ fn test_custom_preferences_save_rejects_invalid_values() {
             conn.cx(),
             "_aegis/unstable/preferences/read",
             serde_json::json!({
-                "keys": ["voiceDictationPreferredMic"],
+                "keys": ["voiceAutoSubmitPhrases"],
             }),
         )
         .await
@@ -905,7 +893,7 @@ fn test_custom_preferences_save_rejects_invalid_values() {
         assert_eq!(
             response.get("values"),
             Some(&serde_json::json!([
-                { "key": "voiceDictationPreferredMic", "value": null },
+                { "key": "voiceAutoSubmitPhrases", "value": null },
             ]))
         );
     });

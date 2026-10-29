@@ -17,7 +17,6 @@ pub mod conversation {
     pub mod rewind;
 }
 pub mod aegis_apps;
-pub mod dictation;
 pub mod doctor;
 pub mod download_manager;
 pub mod elicitation;
