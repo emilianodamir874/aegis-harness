@@ -2,6 +2,7 @@
 // Puro: entra un string, sale un string; el unico helper externo es el escape de HTML.
 
 import { esc } from './format';
+import { esAscii, grafoSvg } from './diagrama';
 
   // ---------- markdown ----------
   const inline = (t) => {
@@ -92,6 +93,17 @@ import { esc } from './format';
         const body = parts[i].replace(/^[a-zA-Z0-9+#_.-]*[ \t]*\r?\n/, '').replace(/\r?\n$/, '');
         const cls = lang ? 'code-wrap lang' : 'code-wrap';
         const attr = lang ? ` data-lang="${esc(lang)}"` : '';
+        // Un bloque sin lenguaje que dibuja cajas o flechas es un diagrama, no código: se pinta
+        // como figura (monoespaciado apretado, sin botón Copiar que estorba).
+        const esGrafo = lang === 'grafo' || lang === 'diagrama' || lang === 'mmd' || lang === 'flow' || lang === 'flowchart';
+        if (esGrafo) {
+          const svg = grafoSvg(body);
+          if (svg) { html += svg; continue; }
+        }
+        if (!lang && esAscii(body)) {
+          html += `<figure class="diagrama"><pre>${esc(body)}</pre></figure>`;
+          continue;
+        }
         html += `<div class="${cls}"${attr}><button class="copy-code" type="button">Copiar</button><pre><code>${esc(body)}</code></pre></div>`;
       } else {
         const joinedDownloads = parts[i].replace(/\[([^\]\r\n]+)\]\s*\r?\n\s*\((\/dl\/[A-Za-z0-9._-]{1,120})\)/g, '[$1]($2)');
