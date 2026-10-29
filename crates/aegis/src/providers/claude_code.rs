@@ -1329,7 +1329,15 @@ mod tests {
 
     #[test]
     fn test_write_mcp_config_file_invalid_state_dir() {
-        assert!(write_mcp_config_file(Path::new("/dev/null"), "{}").is_err());
+        // A state dir that is a regular file cannot host the `claude-code`
+        // subdirectory on any platform. `/dev/null` was Windows-only wrong: it
+        // resolves to `C:\dev\null`, which `create_dir_all` creates happily, so
+        // the write succeeded and the assertion failed.
+        let parent = tempdir().unwrap();
+        let state_dir = parent.path().join("not-a-dir");
+        fs::write(&state_dir, b"x").unwrap();
+
+        assert!(write_mcp_config_file(&state_dir, "{}").is_err());
     }
 
     #[test]

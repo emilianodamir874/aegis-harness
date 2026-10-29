@@ -260,7 +260,18 @@ mod tests {
     }
     #[cfg(windows)]
     fn distinct_value_command() -> (&'static str, Vec<&'static str>) {
-        ("cmd", vec!["/C", "echo %RANDOM%%RANDOM%%RANDOM%"])
+        // `cmd.exe` seeds `%RANDOM%` the same way for back-to-back `/C`
+        // invocations, so it yields the identical string and cannot tell a
+        // re-run from a cached value. The PID plus the current tick is unique
+        // for every invocation without needing a temp file.
+        (
+            "powershell",
+            vec![
+                "-NoProfile",
+                "-Command",
+                "$PID.ToString() + [DateTime]::UtcNow.Ticks",
+            ],
+        )
     }
 
     #[cfg(unix)]

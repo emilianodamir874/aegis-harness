@@ -629,11 +629,17 @@ mod tests {
     }
 
     fn default_credentials_path(home: &str) -> String {
-        if cfg!(windows) {
-            format!("{home}/gcloud/application_default_credentials.json")
+        let subpath = if cfg!(windows) {
+            "gcloud\\application_default_credentials.json"
         } else {
-            format!("{home}/.config/gcloud/application_default_credentials.json")
-        }
+            ".config/gcloud/application_default_credentials.json"
+        };
+        // Misma construccion que `get_default_credentials_path`: `PathBuf::join`,
+        // para que la expectativa use el separador nativo y no uno hardcodeado.
+        std::path::Path::new(home)
+            .join(subpath)
+            .to_string_lossy()
+            .into_owned()
     }
 
     // Test fixtures for credentials
@@ -967,11 +973,7 @@ iXVBc2YmAuU8hiOFUPxtyQfNzG5fQ0rhJSewdtyWxIadJSLj6fsK+AEsNQ==
         "refresh_token": "test_refresh"
     }"#;
 
-        let expected_path = if cfg!(windows) {
-            "/home/testuser/gcloud/application_default_credentials.json".to_string()
-        } else {
-            "/home/testuser/.config/gcloud/application_default_credentials.json".to_string()
-        };
+        let expected_path = default_credentials_path("/home/testuser");
 
         context
             .fs_mock

@@ -999,7 +999,10 @@ mod tests {
             "/{endpoint}/v1internal:streamGenerateContent",
             |endpoint: String| {
                 match endpoint.as_str() {
-                    "sandbox" => (
+                    // The walk starts on `primary`, so the model-level 404 has
+                    // to happen there; a 429 on the first endpoint legitimately
+                    // ends the walk before any 404 is seen.
+                    "primary" | "sandbox" => (
                         axum::http::StatusCode::NOT_FOUND,
                         r#"{"error":{"code":404,"message":"Requested entity was not found.","status":"NOT_FOUND"}}"#
                             .to_string(),

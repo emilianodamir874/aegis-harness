@@ -505,6 +505,14 @@ mod tests {
         .unwrap();
 
         let pool = sm.storage().pool().await.unwrap();
+        // El trigger messages_fts_ai pasa content_json por json_each, y desde SQLite 3.45
+        // json_each aborta el INSERT cuando el JSON esta mal formado. Una fila corrupta solo
+        // puede existir en un store heredado o por una escritura externa, asi que el escenario
+        // se reproduce sacando el trigger mientras dura la insercion.
+        sqlx::query("DROP TRIGGER IF EXISTS messages_fts_ai")
+            .execute(pool)
+            .await
+            .unwrap();
         sqlx::query(
             r#"
             INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json)
