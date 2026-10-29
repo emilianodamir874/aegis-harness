@@ -100,3 +100,6 @@ aegisselftest/
 
 live-in-desktop-design
 ui/desktop/dist-web/
+
+# Artefactos de cada corrida del rig de evals: se regeneran, no se versionan.
+evals/harness/runs/
