@@ -197,7 +197,7 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
             .register_with_inventory::<TetrateProvider>(true, Some(registrations::refresh_only()));
         registry.register_with_inventory::<ExperientialProvider>(
             true,
-            Some(registrations::refresh_only()),
+            Some(registrations::experiential_inventory()),
         );
         registry.register_with_inventory::<XaiProvider>(false, Some(registrations::refresh_only()));
         registry.register_with_inventory::<XaiOAuthProvider>(

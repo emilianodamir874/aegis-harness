@@ -11,6 +11,7 @@ use crate::providers::chatgpt_codex::TokenCache as ChatGptCodexTokenCache;
 use crate::providers::claude_acp::{CLAUDE_ACP_BINARY, CLAUDE_ACP_PROVIDER_NAME};
 use crate::providers::codex_acp::CODEX_ACP_PROVIDER_NAME;
 use crate::providers::copilot_acp::{COPILOT_ACP_BINARY, COPILOT_ACP_PROVIDER_NAME};
+use crate::providers::experiential;
 use crate::providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME;
 use crate::providers::gemini_oauth::TokenCache as GeminiOAuthTokenCache;
 use crate::providers::google::{GOOGLE_API_HOST, GOOGLE_PROVIDER_NAME};
@@ -195,6 +196,24 @@ pub fn refresh_only() -> InventoryRegistration {
         identity: default_inventory_identity_resolver(),
         configured: None,
     }
+}
+
+/// El catalogo de Experiential depende de la cuenta, no de la clave: rotar la `xpl_` no cambia
+/// que modelos se pueden llamar. Si el secreto entra en la identidad, cada rotacion deja el
+/// inventario huerfano y el desplegable cae al catalogo estatico hasta que alguien refresque a
+/// mano. Solo el host entra, porque un gateway distinto si sirve otro catalogo.
+pub fn experiential_inventory() -> InventoryRegistration {
+    InventoryRegistration::new(true, || {
+        let config = crate::config::Config::global();
+        let mut identity = InventoryIdentityInput::new(
+            experiential::EXPERIENTIAL_PROVIDER_NAME,
+            experiential::EXPERIENTIAL_PROVIDER_NAME,
+        );
+        if let Ok(host) = config.get_param::<String>("EXPERIENTIAL_HOST") {
+            identity = identity.with_public("EXPERIENTIAL_HOST", host);
+        }
+        Ok(identity)
+    })
 }
 
 pub fn kimi_code_inventory() -> InventoryRegistration {
