@@ -85,7 +85,7 @@ export function abrirBuscar(): void {
       + '<button type="button" class="buscar-nav" data-dir="-1" aria-label="Coincidencia anterior">↑</button>'
       + '<button type="button" class="buscar-nav" data-dir="1" aria-label="Coincidencia siguiente">↓</button>'
       + '<button type="button" class="buscar-cerrar" aria-label="Cerrar búsqueda">×</button>';
-    cont.append(barra);
+    cont.prepend(barra); // arriba del transcript: sticky, no tapa el ultimo mensaje
     const campo = barra.querySelector('.buscar-input') as HTMLInputElement;
     campo.addEventListener('input', () => marcar(campo.value));
     campo.addEventListener('keydown', (e) => {

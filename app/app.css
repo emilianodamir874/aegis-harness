@@ -1,4 +1,4 @@
-﻿/* ============================================================================
+/* ============================================================================
    AEGIS WEB — sistema visual v5
    ----------------------------------------------------------------------------
    Una sola capa. Los valores de este archivo son la verdad: no hay overrides
@@ -4493,7 +4493,7 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .msg-largo:not(.msg-abierto) > :not(.msg-acts)::after { content: ""; position: absolute; inset: auto 0 0 0; height: 3.2em; background: linear-gradient(to bottom, transparent, var(--bg)); pointer-events: none; }
 
 /* Buscar en la conversación. */
-.buscar-barra { position: sticky; top: 0; z-index: 6; display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--bg-raise); border-bottom: 1px solid var(--border); }
+.buscar-barra { position: sticky; top: 0; z-index: 6; order: -1; display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--bg-raise); border-bottom: 1px solid var(--border); }
 .buscar-barra[hidden] { display: none; }
 .buscar-input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 5px 8px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text-1); }
 .buscar-input[aria-invalid="true"] { border-color: var(--danger); }
