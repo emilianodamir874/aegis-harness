@@ -14,7 +14,6 @@ import './memory';
 import './artifacts';
 import './workspace-nav';
 import './activity';
-import './changes';
 import './context-meter';
 import './session-mode';
 import './palette';

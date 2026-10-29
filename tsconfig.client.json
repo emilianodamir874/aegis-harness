@@ -20,7 +20,6 @@
                   "src/skills.ts",
                   "src/workspace-nav.ts",
                   "src/activity.ts",
-                  "src/changes.ts",
-                  "src/stats.ts"
+                                    "src/stats.ts"
               ]
 }

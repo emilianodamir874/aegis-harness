@@ -17,7 +17,6 @@ const entries = [
   { entry: 'src/artifacts.ts', output: 'app/artifacts.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/workspace-nav.ts', output: 'app/workspace-nav.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/activity.ts', output: 'app/activity.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
-  { entry: 'src/changes.ts', output: 'app/changes.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/context-meter.ts', output: 'app/context-meter.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/session-mode.ts', output: 'app/session-mode.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },
   { entry: 'src/palette.ts', output: 'app/palette.js', options: { format: 'esm', platform: 'browser', minify: process.env.AEGIS_BUILD_MINIFY !== '0' } },

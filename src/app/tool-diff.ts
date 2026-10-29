@@ -1,11 +1,17 @@
-// Los bloques ACP diff pertenecen al toolCallId; no se infiere autoría del estado de Git.
+// Diff por archivo DENTRO de la tarjeta de la herramienta (estilo Codex/Claude): una fila por
+// archivo, abierta por defecto si es corta, y actualizada en vivo mientras la herramienta corre.
+// Los bloques ACP `diff` pertenecen al toolCallId; no se infiere autoría del estado de Git.
 type DiffBlock = { type?: string; path?: unknown; oldText?: unknown; newText?: unknown };
 type ToolEvent = { content?: DiffBlock[]; rawInput?: Record<string, unknown>; _meta?: { aegis?: { toolCall?: { toolName?: string } } } };
 type ToolCard = HTMLElement & { __toolInput?: Record<string, unknown>; __diffKeys?: Set<string> };
+type Detalle = HTMLElement & { open?: boolean };
 
 const MAX_BYTES = 200_000;
 const MAX_CORE = 360;
 const MAX_VISIBLE = 240;
+// Abierto solo si entra cómodo en pantalla: en el teléfono un diff de 200 líneas abierto esconde
+// el resto del turno. Lo grande queda plegado y el usuario decide.
+const MAX_ABIERTO = 24;
 const splitLines = (text: string): string[] => text === '' ? [] : text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
 type Change = { kind: '+' | '-' | ' '; text: string };
 export type DiffView = { lines: Change[]; added: number | null; removed: number | null; clipped: boolean };
@@ -49,20 +55,42 @@ export function formatToolDiff(oldText: string | undefined, newText: string): Di
 const text = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 const pathLabel = (value: unknown): string => typeof value === 'string' && value.trim() ? value.trim() : 'Archivo sin ruta';
 
-function diffRow(path: string, oldText: string | undefined, newText: string, requested: boolean): HTMLElement {
+// El estado (en curso / listo) es independiente de quien describió el diff: se marca aparte para que
+// el chip desaparezca al completar aunque la fila la haya pintado el bloque ACP.
+function marcarEstado(row: Detalle, vivo: boolean): void {
+  row.dataset.vivo = vivo ? '1' : '0';
+  const summary = row.querySelector('summary');
+  if (!summary) return;
+  const chip = summary.querySelector('.tool-diff-live');
+  if (vivo && !chip) {
+    const c = document.createElement('span'); c.className = 'tool-diff-live'; c.textContent = 'en curso';
+    summary.insertBefore(c, summary.querySelector('.tool-diff-count'));
+  }
+  if (!vivo && chip) chip.remove();
+}
+
+function contar(view: DiffView, requested: boolean): string {
+  if (requested) return 'archivo nuevo';
+  if (view.added === null) return 'sin cambio visible';
+  if (!view.added && !view.removed) return 'sin cambios';
+  return `+${view.added} −${view.removed}`;
+}
+
+// El resumen del archivo: ruta, delta y (si aplica) el aviso de que el par no es el archivo entero.
+// El texto largo de limitaciones vive en el title: el cuerpo es el diff, no una disculpa.
+function llenarFila(row: Detalle, path: string, oldText: string | undefined, newText: string, requested: boolean, vivo: boolean, fuente: 'acp' | 'input'): void {
   const view = formatToolDiff(oldText, newText);
-  const row = document.createElement('details'); row.className = 'tool-diff' + (requested ? ' tool-diff-request' : '');
-  const summary = document.createElement('summary');
+  row.dataset.path = path;
+  // El par del ACP es el exacto: si ya lo tenemos, el rawInput de la herramienta no lo pisa.
+  row.dataset.fuente = fuente;
+  row.dataset.vivo = vivo ? '1' : '0';
+  const summary = row.querySelector('summary') || row.appendChild(document.createElement('summary'));
+  summary.replaceChildren();
   const label = document.createElement('span'); label.className = 'tool-diff-path'; label.textContent = path;
-  const count = document.createElement('span'); count.className = 'tool-diff-count';
-  count.textContent = requested ? 'solicitud' : view.added === null ? (oldText === undefined ? 'contenido' : 'vista recortada') : `+${view.added} −${view.removed}`;
-  summary.append(label, count); row.append(summary);
-  const note = document.createElement('p'); note.className = 'tool-diff-note';
-  note.textContent = requested
-    ? 'Contenido enviado; la versión anterior no se conoce.'
-    : oldText === undefined ? 'La herramienta no informó la versión anterior; no se puede calcular el cambio.'
-      : 'Edición completada; este par muestra el fragmento sustituido, no el diff ni el estado actual del archivo.';
-  row.append(note);
+  const count = document.createElement('span'); count.className = 'tool-diff-count'; count.textContent = contar(view, requested);
+  summary.append(label, count);
+  const previo = row.querySelector('pre.tool-diff-code');
+  if (previo) previo.remove();
   if (view.lines.length) {
     const code = document.createElement('pre'); code.className = 'tool-diff-code';
     for (const change of view.lines) {
@@ -71,9 +99,24 @@ function diffRow(path: string, oldText: string | undefined, newText: string, req
     }
     row.append(code);
   }
-  if (view.clipped) {
-    const note = document.createElement('p'); note.className = 'tool-diff-note'; note.textContent = 'Vista recortada; el contenido completo no se muestra aquí.'; row.append(note);
-  }
+  if (view.clipped) { const note = document.createElement('p'); note.className = 'tool-diff-note'; note.textContent = 'Vista recortada.'; row.append(note); }
+  row.title = requested
+    ? 'Archivo nuevo: no hay versión anterior.'
+    : oldText === undefined
+      ? 'La herramienta no informó la versión anterior; se muestra el contenido enviado.'
+      : 'Par antes/después de la edición. No es el diff completo del archivo ni su estado actual en Git.';
+  row.open = Math.min(view.lines.length || 1, MAX_VISIBLE) <= MAX_ABIERTO;
+  marcarEstado(row, vivo);
+}
+
+// Una fila por archivo: si llega otro update del mismo path, se reemplaza el contenido de ESA fila
+// (conservando lo que el usuario abrió o cerró a mano) en vez de apilar filas del mismo archivo.
+function filaPara(list: HTMLElement, path: string): Detalle {
+  const existente = [...list.querySelectorAll<Detalle>('.tool-diff')].find((row) => row.dataset.path === path);
+  if (existente) return existente;
+  const row = document.createElement('details') as Detalle;
+  row.className = 'tool-diff';
+  list.append(row);
   return row;
 }
 
@@ -83,33 +126,37 @@ export function renderInlineToolDiff(card: ToolCard, update: ToolEvent, status: 
   if (update.rawInput && typeof update.rawInput === 'object') card.__toolInput = update.rawInput;
   const name = update._meta?.aegis?.toolCall?.toolName;
   if (name) card.dataset.toolName = name;
+  let list = body.querySelector<HTMLElement>('.tool-diffs');
+  const asegurarLista = (): HTMLElement => {
+    if (!list) { list = document.createElement('div'); list.className = 'tool-diffs'; body.append(list); }
+    return list;
+  };
+  const vivo = status !== 'completed' && status !== 'failed';
+  // 1) Bloques ACP diff (el camino con el par exacto): valen en cualquier estado, también en curso.
   const blocks = Array.isArray(update.content) ? update.content.filter(b => b?.type === 'diff' && typeof b.newText === 'string') : [];
   if (blocks.length) {
-    let list = body.querySelector<HTMLElement>('.tool-diffs');
-    if (!list) { list = document.createElement('div'); list.className = 'tool-diffs'; body.append(list); }
+    const contenedor = asegurarLista();
     for (const block of blocks.slice(0, 12)) {
       const path = pathLabel(block.path), oldText = text(block.oldText), newText = block.newText as string;
-      const key = JSON.stringify([path, oldText, newText]);
+      const key = JSON.stringify([path, oldText, newText, vivo]);
       card.__diffKeys ||= new Set();
-      if (card.__diffKeys.has(key)) continue;
+      const fila = filaPara(contenedor, path);
+      if (card.__diffKeys.has(key)) { marcarEstado(fila, vivo); continue; }
       card.__diffKeys.add(key);
-      list.querySelector('.tool-diff-request')?.remove();
-      list.append(diffRow(path, oldText, newText, false));
+      llenarFila(fila, path, oldText, newText, oldText === undefined, vivo, 'acp');
     }
     return;
   }
-  // El camino developer__edit devuelve éxito/error persistidos, pero no emite bloque ACP
-  // Diff: el par before/after identifica exactamente la sustitución aplicada con éxito.
-  // No conocemos el resto del archivo ni su versión actual; write tampoco informa el
-  // contenido anterior. Mostrar esos límites sin atribuir cambios de shell o de Git.
-  if (status !== 'completed' || body.querySelector('.tool-diffs')) return;
+  // 2) developer__edit / developer__write: el par before/after del rawInput identifica la
+  // sustitución pedida. Se muestra YA (aunque la herramienta siga corriendo) y se vuelve a pintar
+  // al terminar, para que el archivo se vea en vivo y no recién al final del turno.
   const toolName = name || card.dataset.toolName || '';
   if (!/(?:^|__)(?:edit|write)$/.test(toolName)) return;
   const args = update.rawInput || card.__toolInput;
   if (!args || typeof args.path !== 'string') return;
   const before = text(args.before), after = text(args.after) ?? text(args.content);
   if (after === undefined || (before === undefined && !/(?:^|__)write$/.test(toolName))) return;
-  const requested = before === undefined;
-  const list = document.createElement('div'); list.className = 'tool-diffs';
-  list.append(diffRow(pathLabel(args.path), before, after, requested)); body.append(list);
+  const fila = filaPara(asegurarLista(), args.path);
+  if (fila.dataset.fuente === 'acp') { marcarEstado(fila, vivo); return; } // el ACP ya describió este archivo mejor que el rawInput
+  llenarFila(fila, pathLabel(args.path), before, after, before === undefined, vivo, 'input');
 }

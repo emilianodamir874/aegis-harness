@@ -172,7 +172,10 @@ const cwd = index >= 0 && index + 1 < args.length ? args[index + 1] : '';
 const scan = args.includes('--scan');
 try {
   if (!cwd || !isAbsolute(cwd)) throw new Error('Se requiere --cwd absoluto y autorizado');
-  process.stdout.write(JSON.stringify(scan ? escanearRepos(resolve(cwd)) : snapshot(resolve(cwd))));
+  const primero = snapshot(resolve(cwd));
+  // Si el propio cwd es un repo, eso es lo que se quiere ver; el escaneo es el plan B.
+  process.stdout.write(JSON.stringify(scan && (primero as { kind?: string }).kind === 'not-git'
+    ? escanearRepos(resolve(cwd)) : primero));
 } catch (error) {
   process.stdout.write(JSON.stringify({ kind: 'error', entries: [], truncated: false,
     error: String(error instanceof Error ? error.message : error).slice(0, 180) }));

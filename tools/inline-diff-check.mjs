@@ -40,21 +40,33 @@ try {
       document.querySelector('#welcome')?.remove();
       const id = 'tool-42';
       const update = event => app.testUi.update({ sessionId: 'chat-one', update: { sessionUpdate: 'tool_call_update', toolCallId: id, ...event } });
-      update({ status: 'in_progress', title: 'Edición', rawInput: { path: 'src/code.ts', before: 'antes', after: 'después' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } });
-      update({ content: [{ type: 'diff', path: 'src/code.ts', oldText: 'const x = 1;\n', newText: 'const x = 2;\n' }] });
-      update({ status: 'completed' });
-      const card = app.state.tools.get(id), details = card.querySelector('.tool-diff');
-      details.open = true;
-      const code = details.querySelector('pre');
-      const before = { label: details.querySelector('summary')?.innerText, removed: code.querySelector('.del')?.innerText, added: code.querySelector('.add')?.innerText,
-        overlap: code.getBoundingClientRect().right - innerWidth, count: card.querySelectorAll('.tool-diff').length };
-      update({ content: [{ type: 'diff', path: 'src/code.ts', oldText: 'const x = 1;\n', newText: 'const x = 2;\n' }] });
-      app.testUi.update({ sessionId: 'another', update: { sessionUpdate: 'tool_call', toolCallId: id, content: [{ type: 'diff', path: 'intruso', newText: 'evil' }] } });
-      return { ...before, afterCount: card.querySelectorAll('.tool-diff').length, intruder: card.textContent.includes('intruso') };
+    update({ status: 'in_progress', title: 'Edición', rawInput: { path: 'src/code.ts', before: 'antes', after: 'después' }, _meta: { aegis: { toolCall: { toolName: 'developer__edit' } } } });
+    // En vivo: el par del rawInput ya se ve con la herramienta corriendo, y la fila viene abierta.
+    const vivo = (() => {
+      const c = app.state.tools.get(id);
+      const fila = c?.querySelector('.tool-diff');
+      return { filas: c ? c.querySelectorAll('.tool-diff').length : 0, chip: !!c?.querySelector('.tool-diff-live'), abierta: !!fila?.open };
+    })();
+    update({ content: [{ type: 'diff', path: 'src/code.ts', oldText: 'const x = 1;\n', newText: 'const x = 2;\n' }] });
+    update({ status: 'completed' });
+    const card = app.state.tools.get(id), details = card.querySelector('.tool-diff');
+    details.open = true;
+    const code = details.querySelector('pre');
+    const antes = { label: details.querySelector('summary')?.innerText, removed: code.querySelector('.del')?.innerText, added: code.querySelector('.add')?.innerText,
+      overlap: code.getBoundingClientRect().right - innerWidth, count: card.querySelectorAll('.tool-diff').length,
+      chipFinal: !!card.querySelector('.tool-diff-live'), fuente: details.dataset.fuente, abierta: details.open };
+    update({ content: [{ type: 'diff', path: 'src/code.ts', oldText: 'const x = 1;\n', newText: 'const x = 2;\n' }] });
+    app.testUi.update({ sessionId: 'another', update: { sessionUpdate: 'tool_call', toolCallId: id, content: [{ type: 'diff', path: 'intruso', newText: 'evil' }] } });
+    return { vivo, ...antes, afterCount: card.querySelectorAll('.tool-diff').length, intruder: card.textContent.includes('intruso') };
     });
     await page.screenshot({ path: `${out}/inline-${width}.png` });
-    if (errors.length || measure.label?.replace(/\s+/g, '') !== 'src/code.ts+1−1' || measure.removed !== '-const x = 1;' || measure.added !== '+const x = 2;'
-      || measure.overlap > 1 || measure.count !== 1 || measure.afterCount !== 1 || measure.intruder) throw Error(JSON.stringify({ width, measure, errors }));
+  const label = (measure.label || '').replace(/\s+/g, '');
+  if (errors.length || !label.includes('src/code.ts') || !label.includes('+1') || !label.includes('−1')
+    || measure.removed !== '-const x = 1;' || measure.added !== '+const x = 2;'
+    || measure.overlap > 1 || measure.count !== 1 || measure.afterCount !== 1 || measure.intruder
+    || measure.fuente !== 'acp' || !measure.abierta
+    || !measure.vivo?.chip || !measure.vivo?.abierta || measure.vivo?.filas !== 1
+    || measure.chipFinal !== false) throw Error(JSON.stringify({ width, measure, errors }));
     checked++;
     console.log(`${width}: inline ACP diff, expansion, dedupe, aislamiento, sin desborde PASS`);
     await ctx.close();
