@@ -21,6 +21,7 @@ const INHERITED_SESSION_PARAM_KEYS: &[&str] = &[
     "enable_thinking",
     "preserve_thinking_context",
     "preserve_unsigned_thinking",
+    "service_tier",
 ];
 
 /// Request params aegis consumes itself: formats that forward unknown params into
@@ -34,6 +35,7 @@ pub fn is_aegis_internal_request_param(key: &str) -> bool {
             | "emit_clear_thinking"
             | "preserve_thinking_context"
             | "preserve_unsigned_thinking"
+            | "service_tier"
     )
 }
 

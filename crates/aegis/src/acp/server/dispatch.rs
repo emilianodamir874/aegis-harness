@@ -191,6 +191,12 @@ impl HandleDispatchFrom<Client> for AegisAcpHandler {
                                         Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
                                     }
                                 }
+                                "codex_fast_mode" => {
+                                    if let Err(e) = agent.on_set_codex_fast_mode(&session_id.0, &value_id.0).await {
+                                        responder.respond_with_error(e)?;
+                                        return Ok(());
+                                    }
+                                }
                                 other => {
                                     responder.respond_with_error(
                                         agent_client_protocol::Error::invalid_params().data(format!("Unsupported config option: {}", other))

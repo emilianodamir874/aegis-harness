@@ -384,7 +384,7 @@ pub(super) fn build_config_options(
         .collect();
     let (thinking_effort_options, current_thinking_effort) =
         build_thinking_effort_choices(model_config, effort_support);
-    vec![
+    let mut options = vec![
         SessionConfigOption::select(
             "provider",
             "Provider",
@@ -413,7 +413,31 @@ pub(super) fn build_config_options(
         )
         .description("Controls reasoning effort for models that support extended thinking.")
         .category(SessionConfigOptionCategory::ThoughtLevel),
-    ]
+    ];
+    if provider_selection == "chatgpt_codex" {
+        options.push(
+            SessionConfigOption::select(
+                "codex_fast_mode",
+                "Codex Fast mode",
+                if model_config
+                    .request_param::<String>("service_tier")
+                    .as_deref()
+                    == Some("priority")
+                {
+                    "on"
+                } else {
+                    "off"
+                },
+                vec![
+                    SessionConfigSelectOption::new("off", "Off"),
+                    SessionConfigSelectOption::new("on", "Fast"),
+                ],
+            )
+            .description("Prioriza velocidad en ChatGPT Codex.")
+            .category(SessionConfigOptionCategory::Model),
+        );
+    }
+    options
 }
 
 /// A provider that manages its own reasoning decides the menu: it mirrors the

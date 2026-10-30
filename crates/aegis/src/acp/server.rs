@@ -3182,6 +3182,58 @@ impl AegisAcpAgent {
         Ok(SetSessionModeResponse::new())
     }
 
+    async fn on_set_codex_fast_mode(
+        &self,
+        session_id: &str,
+        value: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let service_tier = match value {
+            "on" => "priority",
+            "off" => "",
+            _ => {
+                return Err(
+                    agent_client_protocol::Error::invalid_params().data("Expected 'on' or 'off'")
+                )
+            }
+        };
+        let agent = self.get_session_agent(session_id).await?;
+        let provider = agent
+            .provider(session_id)
+            .await
+            .internal_err_ctx("Failed to get provider")?;
+        if provider.get_name() != "chatgpt_codex" {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("Fast mode only applies to ChatGPT Codex"));
+        }
+        let mut model_config = agent
+            .model_config_for_session(session_id)
+            .await
+            .internal_err_ctx("Failed to resolve model config")?;
+        let mut params = model_config.request_params.take().unwrap_or_default();
+        if service_tier.is_empty() {
+            params.insert(
+                "service_tier".to_string(),
+                serde_json::Value::String("default".to_string()),
+            );
+            params.remove("fast_mode");
+        } else {
+            params.insert(
+                "service_tier".to_string(),
+                serde_json::Value::String(service_tier.to_string()),
+            );
+        }
+        model_config.request_params = if params.is_empty() {
+            None
+        } else {
+            Some(params)
+        };
+        agent
+            .switch_provider(session_id, "chatgpt_codex", model_config)
+            .await
+            .internal_err_ctx("Failed to update Codex Fast mode")?;
+        Ok(())
+    }
+
     async fn on_set_thinking_effort(
         &self,
         session_id: &str,
