@@ -972,11 +972,14 @@ pub(super) fn build_usage_updates(
     totals: &SessionUsageTotals,
     context_limit: usize,
 ) -> UsageUpdates {
-    // El reporte de la ultima inferencia no incluye lo que entro despues de ella (resultados de
-    // herramientas, mensajes del usuario mientras el modelo pensaba), asi que se queda corto:
-    // la UI mostraba 20k con la sesion en 200k. La conversacion cargada ya se estima por mensaje
-    // para el desglose; nunca reportar menos que eso.
-    let reportado = session.usage.total_tokens.unwrap_or(0).max(0) as u64;
+    // El numero oficial es el que reporto el proveedor: `usage.total_tokens` de la ultima
+    // inferencia es literalmente lo que llego al backend, sin estimacion. Ese reporte no
+    // incluye lo que entro despues de esa inferencia (resultados de herramientas, pedidos del
+    // usuario mientras el modelo pensaba), asi que durante un bucle de herramientas se queda
+    // corto hasta el proximo paso. Eso es correcto y `used_source` lo declara, para que el
+    // cliente no compare las dos cifras como si fueran la misma unidad. La estimacion por
+    // caracteres queda solo como respaldo: sesiones importadas y proveedores sin usage.
+    let reportado = to_nonnegative_u64(session.usage.total_tokens);
     let estimado = session
         .conversation
         .as_ref()
@@ -989,7 +992,10 @@ pub(super) fn build_usage_updates(
                 .sum::<u64>()
         })
         .unwrap_or(0);
-    let used = reportado.max(estimado);
+    let (used, used_source) = match reportado {
+        Some(tokens) => (tokens, USED_SOURCE_PROVIDER),
+        None => (estimado, USED_SOURCE_ESTIMATED),
+    };
     let ctx_limit = context_limit as u64;
     let accumulated_input_tokens =
         to_nonnegative_u64(totals.accumulated_usage.input_tokens).unwrap_or(0);
@@ -1011,6 +1017,7 @@ pub(super) fn build_usage_updates(
             session_id: session.id.clone(),
             update: AegisSessionUpdate::UsageUpdate(SessionUsageUpdate {
                 used,
+                used_source: Some(used_source.to_string()),
                 context_limit: ctx_limit,
                 accumulated_input_tokens,
                 accumulated_output_tokens,
@@ -1037,6 +1044,11 @@ pub(super) fn build_usage_updates(
 
 /// Breakdown row labels for `SessionUsageUpdate::context_breakdown`. ASCII
 /// Spanish (no accents) because clients render them verbatim.
+/// Origen de `SessionUsageUpdate::used`. Cliente y server comparten estos literales:
+/// `provider` es el reporte real de la ultima inferencia, `estimated` la estimacion por
+/// caracteres del historial cuando el proveedor no informo usage.
+const USED_SOURCE_PROVIDER: &str = "provider";
+const USED_SOURCE_ESTIMATED: &str = "estimated";
 const CONTEXT_PART_TURN_CONTEXT: &str = "turn-context (MOIM)";
 const CONTEXT_PART_TOOL_RESULTS: &str = "resultados de herramientas";
 const CONTEXT_PART_TOOL_CALLS: &str = "llamadas a herramientas";
@@ -3258,11 +3270,17 @@ impl AegisAcpAgent {
     ) -> Result<(), agent_client_protocol::Error> {
         let config = self.config()?;
         let agent = self.get_session_agent(session_id).await?;
-        let current_provider = agent
-            .provider(session_id)
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
             .await
-            .internal_err_ctx("Failed to get provider")?;
-        let current_provider_name = current_provider.get_name();
+            .internal_err_ctx("Failed to load session")?;
+        let current_provider_name = match session.provider_name.as_deref() {
+            Some(DEFAULT_PROVIDER_ID) | None => config
+                .get_aegis_provider()
+                .internal_err_ctx("Failed to resolve current provider")?,
+            Some(provider_name) => provider_name.to_string(),
+        };
         let current_model_config = agent
             .model_config_for_session(session_id)
             .await
@@ -4385,6 +4403,76 @@ print(\"hello, world\")
         assert_eq!(updates.standard.size, 258_000);
     }
 
+    /// El numero oficial es el reporte del proveedor, no la estimacion por caracteres: con el
+    /// historial grande la estimacion superaba al reporte y `used` mostraba un valor que nunca
+    /// llego al backend.
+    #[test]
+    fn test_build_usage_update_prefers_provider_report_over_character_estimate() {
+        let mut session = make_session_with_usage(
+            TokenUsage::new(Some(900), Some(100), Some(1000)),
+            TokenUsage::default(),
+        );
+        // ~40.000 caracteres => ~10.000 tokens estimados, diez veces el reporte real.
+        session.conversation = Some(Conversation::new_unvalidated(vec![Message::user()
+            .with_id("msg-big")
+            .with_text("x".repeat(40_000))]));
+        let totals = SessionUsageTotals {
+            accumulated_usage: session.accumulated_usage,
+            accumulated_cost: session.accumulated_cost,
+        };
+
+        let updates = build_usage_updates(&session, &totals, 258_000);
+        let usage = match updates.custom.update {
+            AegisSessionUpdate::UsageUpdate(usage) => usage,
+            other => panic!("expected usage update, got {other:?}"),
+        };
+
+        assert_eq!(
+            usage.used, 1000,
+            "debe reportar el total_tokens del proveedor"
+        );
+        assert_eq!(usage.used_source.as_deref(), Some(USED_SOURCE_PROVIDER));
+        assert_eq!(updates.standard.used, 1000);
+    }
+
+    /// Sesiones importadas y proveedores que no informan usage no tienen reporte: ahi si manda
+    /// la estimacion, y el origen lo declara para que el cliente no compare las dos cifras.
+    #[test]
+    fn test_build_usage_update_falls_back_to_estimate_without_provider_usage() {
+        let mut session = make_session_with_usage(TokenUsage::default(), TokenUsage::default());
+        session.conversation = Some(Conversation::new_unvalidated(vec![Message::user()
+            .with_id("msg-big")
+            .with_text("x".repeat(40_000))]));
+        let totals = SessionUsageTotals {
+            accumulated_usage: session.accumulated_usage,
+            accumulated_cost: session.accumulated_cost,
+        };
+
+        let updates = build_usage_updates(&session, &totals, 258_000);
+        let usage = match updates.custom.update {
+            AegisSessionUpdate::UsageUpdate(usage) => usage,
+            other => panic!("expected usage update, got {other:?}"),
+        };
+
+        // El valor exacto es chars/4 del contenido serializado: se compara contra el propio
+        // helper para no atar el test al envoltorio JSON, pero tiene que ser el del historial.
+        let esperado = estimate_message_tokens(
+            session
+                .conversation
+                .as_ref()
+                .unwrap()
+                .messages()
+                .first()
+                .unwrap(),
+        );
+        assert_eq!(usage.used, esperado);
+        assert!(
+            esperado > 9_000,
+            "la estimacion debe reflejar el historial grande, no el reporte ausente: {esperado}"
+        );
+        assert_eq!(usage.used_source.as_deref(), Some(USED_SOURCE_ESTIMATED));
+        assert_eq!(updates.standard.used, esperado);
+    }
     #[test]
     fn test_build_usage_update_reports_calibrated_context_breakdown() {
         let user = Message::user()
