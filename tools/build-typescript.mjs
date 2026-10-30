@@ -44,6 +44,7 @@ const entries = [
   { entry: 'tests/search-e2e.ts', output: 'tests/search-e2e.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/permission-e2e.ts', output: 'tests/permission-e2e.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/media-e2e.ts', output: 'tests/media-e2e.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
+  { entry: 'tests/combo-mobile.ts', output: 'tests/combo-mobile.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/client-regressions.ts', output: 'tests/client-regressions.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/server-regressions.ts', output: 'tests/server-regressions.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },
   { entry: 'tests/server-workspace-regressions.ts', output: 'tests/server-workspace-regressions.mjs', options: { format: 'esm', platform: 'node', packages: 'external' } },

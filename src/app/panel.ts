@@ -180,7 +180,13 @@ export function abrirPanel(opts: PanelOpts): PanelApi {
     if (t instanceof Element && t !== document.documentElement && t !== document.body) return;
     cerrar();                                     // se movio la pagina de fondo
   };
-  v.onResize = () => cerrar();
+  v.onResize = () => {
+    if (hoja) {
+      ajustar?.();
+      return;
+    }
+    cerrar();
+  };
 
   // El popover se ancla al disparador por coordenadas: si la pagina scrollea, se va con ella.
   // Con el host capturado se puede seguir; si no se puede, se cierra (que era el comportamiento

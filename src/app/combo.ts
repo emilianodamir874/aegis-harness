@@ -352,12 +352,19 @@ export function abrirCombo(opts: ComboOptions): ComboHandle {
     if (t instanceof Element && t.closest('.combo-panel')) return;
     cerrar('cancel');
   };
-  v.onResize = () => cerrar('cancel');
+  v.onResize = () => {
+    if (hoja) {
+      ajustarHoja?.();
+      return;
+    }
+    cerrar('cancel');
+  };
 
   document.addEventListener('pointerdown', v.onDoc, true);
   window.addEventListener('scroll', v.onScroll, true);
   window.addEventListener('resize', v.onResize);
 
+  root.querySelector('.combo-back')?.addEventListener('click', () => cerrar('cancel'));
   (root.querySelector('.combo-close') as HTMLElement).addEventListener('click', (e) => {
     e.stopPropagation();
     cerrar('cancel');
