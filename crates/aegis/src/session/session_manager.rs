@@ -932,6 +932,22 @@ pub(crate) fn role_to_string(role: &Role) -> &'static str {
     }
 }
 
+/// Tokens que el proveedor reporto para este paso, o `None` cuando no hay reporte.
+///
+/// La columna `messages.tokens` existia desde el esquema inicial y nunca se escribia: quedaba
+/// NULL en el 100 % de las filas. El dato ya viaja en `metadata.usage` (lo llena
+/// `MessageUsage::from_provider_usage`), asi que se persiste en la misma transaccion del INSERT.
+/// No se estima: si el proveedor no informo, la columna queda NULL y el consumidor lo distingue
+/// de un cero real.
+fn message_token_count(message: &Message) -> Option<i64> {
+    message
+        .metadata
+        .usage
+        .as_deref()
+        .and_then(|usage| usage.total_tokens)
+        .map(i64::from)
+}
+
 fn message_timestamp_to_datetime(timestamp: i64) -> Option<DateTime<Utc>> {
     let timestamp = if timestamp > MILLISECOND_TIMESTAMP_THRESHOLD {
         timestamp / 1000
@@ -2479,8 +2495,8 @@ impl SessionStorage {
 
         sqlx::query(
             r#"
-            INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json, tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         "#,
         )
         .bind(message_id)
@@ -2489,6 +2505,7 @@ impl SessionStorage {
         .bind(serde_json::to_string(&message.content)?)
         .bind(created)
         .bind(metadata_json)
+        .bind(message_token_count(message))
         .execute(&mut *tx)
         .await?;
 
@@ -2525,8 +2542,8 @@ impl SessionStorage {
 
             sqlx::query(
                 r#"
-            INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json, tokens)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         "#,
             )
             .bind(message_id)
@@ -2535,6 +2552,7 @@ impl SessionStorage {
             .bind(serde_json::to_string(&message.content)?)
             .bind(message.created)
             .bind(metadata_json)
+            .bind(message_token_count(message))
             .execute(&mut *tx)
             .await?;
         }
@@ -2589,7 +2607,7 @@ impl SessionStorage {
                 .await?;
             } else {
                 sqlx::query(
-                    "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json, tokens) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(message_id)
                 .bind(session_id)
@@ -2597,6 +2615,7 @@ impl SessionStorage {
                 .bind(serde_json::to_string(&message.content)?)
                 .bind(message.created)
                 .bind(serde_json::to_string(&message.metadata)?)
+                .bind(message_token_count(message))
                 .execute(&mut *tx)
                 .await?;
             }
