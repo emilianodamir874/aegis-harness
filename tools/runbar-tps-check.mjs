@@ -1,5 +1,5 @@
 // Comprueba en el navegador, contra la app servida, el contrato del ritmo de salida:
-//   · no hay tok/s instantáneo en el runbar,
+//   · el runbar muestra seis promedios de outputTokens recibidos del backend, no una tasa instantánea,
 //   · la fila de seis promedios (5s, 15s, 30s, 1m, 5m, 15m) vive como segunda línea del runbar,
 //     hermana del badge de fase y no dentro de él,
 //   · los promedios salen de usage del backend y se vacían sin datos,
@@ -72,17 +72,17 @@ try {
     check('la fila cae debajo del badge de fase', initial.belowPhase && initial.insideBar, JSON.stringify({ below: initial.belowPhase, inside: initial.insideBar }));
     await page.locator('#runbar').screenshot({ path: outDir + 'runbar-tps-' + s.name + '-vivo.png' });
 
-    // Una muestra de generación medida: 250 tok en 5 s. La ventana de 5 s la toma entera y las
-    // demás la diluyen por su ancho, así se comprueba que el denominador es la ventana y no la edad.
+    // Una muestra de usage medida: 250 outputTokens recién recibidos. Cada ventana los cuenta
+    // enteros y los divide por su propio ancho fijo.
     const sample = await page.evaluate(() => {
       const app = window.__aegisWeb;
-      app.state.speed.samples.push({ at: performance.now(), durationMs: 5000, tokens: 250 });
+      app.state.speed.samples.push({ at: performance.now(), tokens: 250 });
       app.speedWindowPaint();
       return [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim());
     });
-    check('seis promedios con una muestra medida', sample.join(',') === '5s50.0,15s16.7,30s8.3,1m4.2,5m0.8,15m0.3', JSON.stringify(sample));
+    check('una muestra reciente se cuenta completa en cada ventana y se divide por su ancho', sample.join(',') === '5s50.0,15s16.7,30s8.3,1m4.2,5m0.8,15m0.3', JSON.stringify(sample));
 
-    // Cierre del turno: promedio ponderado de generación + total de tokens.
+    // El promedio ponderado de generación en la nota final se mantiene como métrica aparte.
     const done = await page.evaluate(() => {
       const app = window.__aegisWeb;
       const st = app.state.speed;

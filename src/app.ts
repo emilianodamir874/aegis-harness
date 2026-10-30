@@ -2574,10 +2574,8 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   }
 
   // ---------- ritmo de salida ----------
-  // Solo usage del backend: los tokens son outputTokens y el tiempo es el que reporta el
-  // provider (generationMs) o, cuando no hay, el total de la solicitud.
-  // No hay tasa instantánea: el runbar muestra promedios móviles de salida para 5s, 15s, 30s,
-  // 1m, 5m y 15m. El texto visible nunca se usa para estimar tokens.
+  // Cada ventana cuenta outputTokens recibidos del backend durante sus últimos N segundos.
+  // El texto visible nunca se usa para estimar tokens.
   state.speed = state.speed || { samples: [], timer: 0, runOut: 0, runGen: 0, startedAt: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, runId: null, finished: false, note: null, noteMs: 0, sembrado: false };
   const SPEED_WINDOWS: Array<[number, string]> = [[5000, '5s'], [15000, '15s'], [30000, '30s'], [60000, '1m'], [300000, '5m'], [900000, '15m']];
 
@@ -2594,9 +2592,8 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     return el;
   }
 
-  // Cada muestra es un tramo [at - durationMs, at] con sus tokens. Una ventana toma la parte del
-  // tramo que cae dentro de ella y divide por el ancho fijo de la ventana: así 5s y 15m son
-  // promedios comparables y no "lo poco que hubo" dividido por lo poco que duró.
+  // La marca temporal es la llegada del usage al cliente; cada outputTokens se suma una sola
+  // vez a las ventanas que incluyen esa llegada y se divide por el ancho completo de la ventana.
   function speedWindowSummary(now = performance.now()) {
     const s = state.speed;
     s.samples = (s.samples || []).filter((x) => x.at >= now - 900000);
@@ -2604,10 +2601,9 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       const since = now - windowMs;
       let tokens = 0;
       for (const sample of s.samples) {
-        const overlap = Math.min(now, sample.at) - Math.max(since, sample.at - sample.durationMs);
-        if (overlap > 0) tokens += sample.tokens * overlap / sample.durationMs;
+        if (sample.at >= since) tokens += sample.tokens;
       }
-      return { label, value: tokens / (windowMs / 1000) };
+      return { label, tokens, value: tokens / (windowMs / 1000) };
     });
   }
 
@@ -2626,10 +2622,8 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       el.innerHTML = SPEED_WINDOWS.map(([, label]) => '<span class="runbar-speed-cell"><small>' + label + '</small><b>—</b></span>').join('');
     }
     el.title = hay
-      ? 'Tokens de salida por segundo promediados en ventanas móviles, medidos por el backend'
-      : s.sembrado
-        ? 'Promedios medidos por el backend: el último paso del turno entra en la ventana cuando ya pasó'
-        : 'Todavía no llegó usage de generación del backend en este turno: las ventanas se llenan al cerrar el primer paso';
+      ? 'Tokens de salida por segundo: suma de outputTokens del backend recibidos en cada ventana'
+      : 'Todavía no llegó usage de salida del backend en este turno';
     const celdas = [...el.querySelectorAll('.runbar-speed-cell')] as HTMLElement[];
     speedWindowSummary().forEach((x, i) => {
       const b = celdas[i]?.querySelector('b');
@@ -2656,17 +2650,14 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     const reqMs = Number(last.elapsedMs);
     const gen = Number.isFinite(genMs) && genMs > 0;
     const ms = gen ? genMs : (Number.isFinite(reqMs) && reqMs > 0 ? reqMs : 0);
-    if (!Number.isFinite(tokens) || tokens <= 0 || !ms) return;
-    s.latest = { value: tokens / (ms / 1000), kind: gen ? 'generation' : 'request', mid: '', order: -1 };
-    // El throughput de solicitud incluye TTFT y cola: sirve como último dato, no como muestra de
-    // las ventanas, que son de generación.
-    if (!gen) return;
-    // El paso no puede haber terminado después de ahora ni antes de que arrancara el run.
+    if (!Number.isFinite(tokens) || tokens <= 0) return;
+    if (ms) s.latest = { value: tokens / (ms / 1000), kind: gen ? 'generation' : 'request', mid: '', order: -1 };
     const ahora = performance.now();
-    const fin = Math.min(ahora, Math.max(ahora - ms, s.startedAt || ahora));
-    s.samples.unshift({ at: fin, durationMs: ms, tokens });
-    s.runOut += tokens;
-    s.runGen += genMs;
+    s.samples.unshift({ at: ahora, tokens });
+    if (gen) {
+      s.runOut += tokens;
+      s.runGen += genMs;
+    }
   }
 
   function speedSummary() {
@@ -2724,18 +2715,22 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     } else if (!state.busy) return;
     if (s.runId && state.runId && s.runId !== state.runId) return;
     if (!s.messages.has(mid) || s.seen.has(mid)) return;
+    const tokens = Number(update.usage.outputTokens);
+    if (!Number.isFinite(tokens) || tokens <= 0) return;
+    s.seen.add(mid);
+    // El usage alimenta las ventanas aunque falten datos temporales para calcular una tasa por paso.
+    const now = performance.now();
+    s.samples.push({ at: now, tokens });
     const rate = stepRate(update.usage);
     // Un elapsed demasiado breve no permite interpretar una tasa de solicitud estable.
-    if (!rate || (rate.kind === 'request' && rate.durationMs < 1000)) return;
-    s.seen.add(mid);
+    if (!rate || (rate.kind === 'request' && rate.durationMs < 1000)) {
+      paintSpeedWindows();
+      return;
+    }
     const order = [...s.messages].indexOf(mid);
     if (!s.latest || order >= s.latest.order) s.latest = { value: rate.value, kind: rate.kind, mid, order };
-    // Las ventanas son de generación: un throughput de solicitud incluye TTFT y cola, y meterlo
-    // en el promedio móvil mezclaría dos cosas distintas.
     if (rate.kind === 'generation') {
-      const now = performance.now();
-      s.samples.push({ at: now, durationMs: rate.durationMs, tokens: update.usage.outputTokens });
-      s.runOut += update.usage.outputTokens;
+      s.runOut += tokens;
       s.runGen += rate.durationMs;
     }
     if (s.finished && s.note) s.note.innerHTML = speedNoteHtml(s.noteMs, speedSummary());
