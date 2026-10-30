@@ -2296,17 +2296,18 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     const L = [];
     const m = modelSummary();
     if (m) L.push('Modelo: ' + m);
-    if (s.used != null) {
+    // La cifra de contexto es solo el total_tokens que reporto el proveedor: es lo que
+    // realmente llego al backend. No se estima. Mientras no haya reporte se dice, en vez de
+    // mostrar un cero que se leeria como una medicion.
+    if (s.usedSource === 'provider' && s.used != null) {
       const pct = s.limit ? Math.round((s.used / s.limit) * 100) : null;
-      L.push('Contexto: ' + fmtTok(s.used) + (s.limit ? ' de ' + fmtTok(s.limit) + ' tok (' + pct + '%)' : ' tok (el server no informo limite)'));
-      // Sin esto el popover mostraba una cifra sin decir de donde salia: el reporte real del
-      // proveedor y la estimacion por caracteres se veian identicos.
-      if (s.usedSource === 'provider') L.push('Origen de la cifra: medido (total_tokens que reporto el proveedor para la ultima inferencia)');
-      else if (s.usedSource === 'estimated') L.push('Origen de la cifra: estimado por caracteres (el proveedor no reporto uso)');
+      L.push('Contexto: ' + fmtTok(s.used) + (s.limit ? ' de ' + fmtTok(s.limit) + ' tok (' + pct + '%)' : ' tok (el server no informo limite)') + '  ·  medido por el proveedor');
       if (s.limit) {
         const trig = Math.round(compactTrig(s).at);
         L.push('Compacta sola a ~' + fmtTok(trig) + ' (' + Math.round(COMPACT_RATIO * 100) + '%)  ·  margen ' + fmtTok(Math.max(0, trig - s.used)) + ' tok');
       }
+    } else if (s.limit) {
+      L.push('Contexto: el proveedor todavia no informo uso para esta sesion (no se estima)  ·  limite ' + fmtTok(s.limit) + ' tok');
     }
     if (s.inTok != null || s.outTok != null) L.push('Acumulado: entrada ' + fmtTok(s.inTok || 0) + '  ·  salida ' + fmtTok(s.outTok || 0));
     const mu = s.last;
