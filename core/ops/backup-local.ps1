@@ -45,7 +45,8 @@ foreach ($repo in @(@{n='aegis-harness';p='C:\Aegis-Proyects'}, @{n='trading';p=
   if (Test-Path (Join-Path $repo.p '.git')) {
     $bare = Join-Path $dirs.mirror ($repo.n + '.git')
     if (Test-Path $bare) {
-      $o = git -C $bare remote update --prune 2>&1 | Out-String
+      # El mirror local toma los refs del checkout, no los remotos historicos de GitHub.
+      $o = git -C $bare fetch --prune origin '+refs/*:refs/*' 2>&1 | Out-String
     } else {
       $o = git clone --mirror $repo.p $bare 2>&1 | Out-String
     }
