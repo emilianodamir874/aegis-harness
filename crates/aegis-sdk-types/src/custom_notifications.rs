@@ -76,7 +76,14 @@ impl Default for AegisSessionUpdate {
 pub struct SessionUsageUpdate {
     pub used: u64,
     pub context_limit: u64,
-    pub accumulated_input_tokens: u64,
+    
+    /// De donde sale `used`. `provider` es el `total_tokens` que reporto la ultima
+    /// inferencia: es lo que realmente llego al backend. `estimated` es la estimacion por
+    /// caracteres del historial, que solo se usa cuando el proveedor no reporto nada. Las
+    /// dos cifras no son comparables, asi que el cliente tiene que declarar cual muestra.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used_source: Option<String>,
+pub accumulated_input_tokens: u64,
     pub accumulated_output_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accumulated_cost: Option<f64>,
