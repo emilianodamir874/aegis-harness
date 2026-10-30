@@ -121,14 +121,70 @@ try {
   await page.waitForTimeout(400);
   eq((await medir()).cells.join('|'), antesExtra, 'el texto visible no altera los promedios');
 
-  // 7) El runbar se limpia al cerrar el turno.
-  await page.evaluate(() => {
+  // 6) Al cerrar el turno las ventanas NO se vacian: el historial de la sesion queda en reposo.
+  const trasCierre = await page.evaluate(() => {
     window.__aegisWeb.speedReset();
     document.querySelector('#runbar').hidden = true;
+    const row = document.querySelector('#runbar-speed-windows');
+    return {
+      visible: !row.hidden && getComputedStyle(row).display !== 'none',
+      cells: [...row.querySelectorAll('.runbar-speed-cell')].map((n) => (n.textContent || '').trim()),
+      samples: window.__aegisWeb.state.speed.samples.length,
+      timer: window.__aegisWeb.state.speed.timer,
+    };
   });
-  await page.waitForTimeout(150);
-  const limpio = await medir();
-  ok(!limpio.hidden && limpio.display !== 'none' && limpio.cells.length === 6 && limpio.cells.every((x) => x.endsWith(String.fromCharCode(0x2014))), 'la fila queda visible y vacia, aun ocultando el runbar: ' + JSON.stringify(limpio));
+  ok(trasCierre.visible && trasCierre.cells.length === 6, 'la fila sigue visible con el runbar oculto: ' + JSON.stringify(trasCierre));
+  eq(trasCierre.samples, 5, 'speedReset conserva las muestras del turno cerrado');
+  eq(trasCierre.cells[0], '5s83.2', 'cerrado el turno la ventana sigue mostrando lo medido');
+  ok(trasCierre.timer !== 0, 'queda el timer para que las ventanas decaigan en reposo');
+
+  // 7) Pasados los 15 minutos las muestras se podan y las celdas quedan en CERO, no en "sin datos".
+  const expiradas = await page.evaluate(() => {
+    window.__aegisWeb.state.speed.samples.forEach((x) => { x.at = Date.now() - 901000; });
+    window.__aegisWeb.speedWindowPaint();
+    const row = document.querySelector('#runbar-speed-windows');
+    return {
+      cells: [...row.querySelectorAll('.runbar-speed-cell')].map((n) => (n.textContent || '').trim()),
+      samples: window.__aegisWeb.state.speed.samples.length,
+      timer: window.__aegisWeb.state.speed.timer,
+      title: row.getAttribute('title') || '',
+    };
+  });
+  ok(expiradas.cells.every((x) => /0(?:\.0)?$/.test(x)), 'ventanas en cero tras expirar: ' + JSON.stringify(expiradas.cells));
+  eq(expiradas.samples, 0, 'las muestras vencidas se podan');
+  eq(expiradas.timer, 0, 'sin muestras se apaga el timer');
+  ok(expiradas.title.includes('ultimos 15 minutos'), 'el title explica el cero por expiracion: ' + expiradas.title);
+
+  // 8) La serie es por sesion y sobrevive a recargar: se guarda con reloj de pared y se recarga igual.
+  const persistencia = await page.evaluate(() => {
+    const app = window.__aegisWeb;
+    const st = app.state.speed;
+    st.samples = [{ at: Date.now(), tokens: 500 }, { at: Date.now() - 30000, tokens: 100 }];
+    st.observed = true;
+    app.speedStore.guardar();
+    const guardado = JSON.parse(localStorage.getItem(app.speedStore.key('sesion-tps')) || 'null');
+    st.samples = [];
+    st.observed = false;
+    app.speedStore.cargar('sesion-tps');
+    const row = document.querySelector('#runbar-speed-windows');
+    return {
+      guardadas: guardado ? guardado.samples.length : -1,
+      recargadas: app.state.speed.samples.length,
+      observed: app.state.speed.observed,
+      cells: [...row.querySelectorAll('.runbar-speed-cell')].map((n) => (n.textContent || '').trim()),
+      otraSesion: localStorage.getItem(app.speedStore.key('otra-sesion')),
+      clave: app.speedStore.key('abc'),
+      retencion: app.speedStore.retention,
+    };
+  });
+  eq(persistencia.guardadas, 2, 'se guardaron las dos muestras');
+  eq(persistencia.recargadas, 2, 'al reabrir la sesion vuelven las muestras');
+  ok(persistencia.observed, 'la sesion recuerda que hubo salida del backend');
+  eq(persistencia.cells[0], '5s100', 'ventana 5s tras recargar: 500 / 5');
+  eq(persistencia.cells[3], '1m10.0', 'ventana 1m tras recargar: (500 + 100) / 60');
+  eq(persistencia.otraSesion, null, 'cada sesion tiene su propia clave');
+  eq(persistencia.clave, 'aegis.speed.abc', 'la clave se arma con el session id');
+  eq(persistencia.retencion, 900000, 'la retencion es la ventana mas larga');
 
   eq(errores.length, 0, 'sin errores de página: ' + errores.join(' | '));
   await ctx.close();

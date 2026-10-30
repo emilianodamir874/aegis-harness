@@ -79,7 +79,7 @@ try {
     // enteros y los divide por su propio ancho fijo.
     const sample = await page.evaluate(() => {
       const app = window.__aegisWeb;
-      app.state.speed.samples.push({ at: performance.now(), tokens: 250 });
+      app.state.speed.samples.push({ at: Date.now(), tokens: 250 });
       app.state.speed.observed = true;
       app.speedWindowPaint();
       return [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim());
@@ -108,7 +108,7 @@ try {
       document.querySelector('#runbar').hidden = true;
       const row = document.querySelector('#runbar-speed-windows');
       const visible = !row.hidden && getComputedStyle(row).display !== 'none';
-      window.__aegisWeb.state.speed.samples.forEach((sample) => { sample.at = performance.now() - 901000; });
+      window.__aegisWeb.state.speed.samples.forEach((sample) => { sample.at = Date.now() - 901000; });
       window.__aegisWeb.speedWindowPaint();
       return { visible, cells: [...row.querySelectorAll('.runbar-speed-cell')].map((n) => (n.textContent || '').trim()), timer: window.__aegisWeb.state.speed.timer };
     });

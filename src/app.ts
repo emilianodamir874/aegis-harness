@@ -2578,6 +2578,41 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   // El texto visible nunca se usa para estimar tokens.
   state.speed = state.speed || { samples: [], observed: false, timer: 0, runOut: 0, runGen: 0, startedAt: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, runId: null, finished: false, note: null, noteMs: 0, sembrado: false };
   const SPEED_WINDOWS: Array<[number, string]> = [[5000, '5s'], [15000, '15s'], [30000, '30s'], [60000, '1m'], [300000, '5m'], [900000, '15m']];
+  // Las muestras viven SPEED_RETENTION_MS (la ventana mas larga) y se guardan por sesion con reloj
+  // de pared: pasar a reposo, cambiar de chat o recargar la pagina NO borra el historial. Cuando
+  // expiran, las ventanas quedan en cero (hubo salida en esta sesion) en vez de volver a "sin datos".
+  const SPEED_RETENTION_MS = SPEED_WINDOWS[SPEED_WINDOWS.length - 1][0];
+  const speedStoreKey = (sid) => 'aegis.speed.' + (sid || 'sin-sesion');
+
+  function speedPodar(now = Date.now()) {
+    const s = state.speed;
+    s.samples = (s.samples || []).filter((x) => Number.isFinite(x && x.at) && x.at >= now - SPEED_RETENTION_MS &&
+      Number.isFinite(x && x.tokens) && x.tokens > 0);
+    return s.samples;
+  }
+
+  // La serie es de la sesion abierta, no de la pestaña: cada chat conserva sus propias ventanas.
+  function speedGuardar() {
+    const s = state.speed;
+    const sid = (state.current && state.current.id) || null;
+    s.sid = sid;
+    try {
+      localStorage.setItem(speedStoreKey(sid), JSON.stringify({ v: 1, sid, observed: !!s.observed, samples: s.samples }));
+    } catch (e) { /* cuota llena o modo privado: las ventanas siguen en memoria */ }
+  }
+
+  function speedCargarSesion(sid) {
+    const s = state.speed;
+    s.sid = sid || null;
+    let datos = null;
+    try { datos = JSON.parse(localStorage.getItem(speedStoreKey(s.sid)) || 'null'); } catch (e) { datos = null; }
+    const crudas = datos && Array.isArray(datos.samples) ? datos.samples : [];
+    s.samples = crudas.map((x) => ({ at: Number(x && x.at), tokens: Number(x && x.tokens) }));
+    s.observed = !!(datos && datos.observed) || s.samples.some((x) => Number.isFinite(x.tokens) && x.tokens > 0);
+    speedPodar();
+    if (s.samples.length) speedTimerStart();
+    paintSpeedWindows();
+  }
 
   function speedWindowsEl() {
     let el = $('#runbar-speed-windows');
@@ -2593,9 +2628,9 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
 
   // La marca temporal es la llegada del usage al cliente; cada outputTokens se suma una sola
   // vez a las ventanas que incluyen esa llegada y se divide por el ancho completo de la ventana.
-  function speedWindowSummary(now = performance.now()) {
+  function speedWindowSummary(now = Date.now()) {
     const s = state.speed;
-    s.samples = (s.samples || []).filter((x) => x.at >= now - 900000);
+    speedPodar(now);
     return SPEED_WINDOWS.map(([windowMs, label]) => {
       const since = now - windowMs;
       let tokens = 0;
@@ -2618,7 +2653,9 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       el.innerHTML = SPEED_WINDOWS.map(([, label]) => '<span class="runbar-speed-cell"><small>' + label + '</small><b>—</b></span>').join('');
     }
     el.title = hay
-      ? 'Output tokens por segundo en ventanas moviles; cero indica que no hubo salida en ese intervalo'
+      ? (s.samples.length
+        ? 'Output tokens por segundo en ventanas moviles; cero indica que no hubo salida en ese intervalo'
+        : 'Sin salida en los ultimos 15 minutos: las ventanas quedan en cero hasta el proximo turno')
       : 'Todavia no llego usage de salida del backend en esta sesion';
     const celdas = [...el.querySelectorAll('.runbar-speed-cell')] as HTMLElement[];
     windows.forEach((x, i) => {
@@ -2628,7 +2665,9 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       if (small) small.textContent = x.label;
     });
     el.hidden = false;
-    if (!state.busy && !s.samples.length && s.timer) { clearInterval(s.timer); s.timer = 0; }
+    // Sin muestras no hay nada que decaiga: el timer se apaga aunque el turno siga (un turno sin
+    // usage deja las ventanas en cero y no necesita repintarse cada segundo).
+    if (!s.samples.length && s.timer) { clearInterval(s.timer); s.timer = 0; }
   }
 
   function speedTimerStart() {
@@ -2656,9 +2695,10 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     const ms = gen ? genMs : (Number.isFinite(reqMs) && reqMs > 0 ? reqMs : 0);
     if (!Number.isFinite(tokens) || tokens <= 0) return;
     if (ms) s.latest = { value: tokens / (ms / 1000), kind: gen ? 'generation' : 'request', mid: '', order: -1 };
-    const ahora = performance.now();
+    const ahora = Date.now();
     s.samples.unshift({ at: ahora, tokens });
     s.observed = true;
+    speedGuardar();
     speedTimerStart();
     if (gen) {
       s.runOut += tokens;
@@ -2684,11 +2724,16 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     paintSpeedWindows();
   }
 
+  // Cierre de turno: se tiran los acumuladores del run, NUNCA el historial de ventanas. La serie
+  // queda en reposo, se poda por edad y se sigue pintando (decaendo a cero) hasta expirar.
   function speedReset() {
     const s = state.speed;
-    clearInterval(s.timer); s.timer = 0;
-    s.samples = []; s.observed = false; s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = 0;
+    s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = 0;
     s.runId = null; s.finished = true; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null; s.sembrado = false;
+    speedPodar();
+    speedGuardar();
+    if (s.samples.length) speedTimerStart();
+    else { clearInterval(s.timer); s.timer = 0; }
     paintSpeedWindows();
   }
 
@@ -2723,9 +2768,10 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     if (!Number.isFinite(tokens) || tokens <= 0) return;
     s.seen.add(mid);
     // El usage alimenta las ventanas aunque falten datos temporales para calcular una tasa por paso.
-    const now = performance.now();
+    const now = Date.now();
     s.samples.push({ at: now, tokens });
     s.observed = true;
+    speedGuardar();
     speedTimerStart();
     const rate = stepRate(update.usage);
     // Un elapsed demasiado breve no permite interpretar una tasa de solicitud estable.
@@ -2977,6 +3023,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       await aplicarPendientes(res.sessionId);
       resetTransient();
       clearMessages();
+      speedCargarSesion(res.sessionId);
       showWelcome('new');
       loadDraft(); readLoad(); debateLoad(); enforceFixedModel();
       updateTitle(); renderChips(); markActive(res.sessionId);
@@ -3200,6 +3247,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     state.current = { id, title: entry.title || 'Sesión', cwd: entry.cwd, configOptions: entry.configOptions || [], modes: entry.modes || {} };
     resetTransient();
     clearMessages();
+    speedCargarSesion(id);
     updateTitle(); markActive(id); closeDrawer(); loadDraft(); readLoad(); debateLoad(); enforceFixedModel();
     localStorage.setItem('gweb.last', id);
     // Las tarjetas de permiso que llegaron mientras se miraba otro chat se pintan recien cuando
@@ -7172,7 +7220,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
     draft: { save: saveDraft, load: loadDraft, key: draftKey },
-    engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, speedSeed, speedWindowSummary, speedWindowPaint: paintSpeedWindows, turnEndNote };
+    engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, speedSeed, speedWindowSummary, speedWindowPaint: paintSpeedWindows, speedStore: { guardar: speedGuardar, cargar: speedCargarSesion, key: speedStoreKey, podar: speedPodar, retention: SPEED_RETENTION_MS }, turnEndNote };
 
   if (CFG.host === 'mock') (window as any).__aegisWeb.testUi = { update: applyUpdate, usage: onAegisUpdate, rate: stepRate, pop: openUsagePop, busy: setBusy, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => { state.steers.set(mid, { el, text: '', atts: [] }); paintQueuedRunBar(); }, watchRevision: () => liveRunRevision };
 
