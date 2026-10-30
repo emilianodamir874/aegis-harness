@@ -1,0 +1,47 @@
+# scratch de sondas y backups: las sondas que valen la pena se versionan con nombre propio
+tools/_*
+server.mjs.bak-*
+tmp/
+
+# deps y salidas de node
+# buzon de descargas: lo que el agente deja para bajar (generado)
+outbox/
+node_modules/
+logs/
+*.log
+
+# SECRETOS: nunca versionar (auth.json estaba sin trackear y SIN ignorar: un git add -A lo commiteaba)
+auth.json
+config.json
+tunnel-access*.txt
+secrets.yaml
+*.lock
+
+# artefactos de una sola vez del deploy (se archivan en C:\aegis_archive)
+tools/shots/
+tools/*.out
+tools/*.err
+tools/*.json
+tools/patch-*.py
+tools/append-doc*.py
+tools/diag-stuck.*
+tools/brief-v*.log
+tools/brief-v*.mjs
+scripts/*.bak-*
+*.bak-pre-*
+*.bak-<motivo>-*
+
+# binarios y temporales
+*.exe
+*.pdb
+*.tmp
+tunnel-url.txt
+tunnel-url-2.txt
+
+# Build TypeScript aislado del servicio activo
+dist-ts/
+
+# cliente React (Vite): deps y salida de build
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo

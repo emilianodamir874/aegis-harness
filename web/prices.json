@@ -1,0 +1,48 @@
+{
+  "_comentario": "Estimaciones históricas por 1M tokens derivadas de una muestra de 2026-10-14, NO tarifas verificadas ni factura. inputEffective combina costo total (entrada, salida y cache) / tokens de entrada de esa muestra; NO aplicar además un cargo de salida ni asumir que reproduce otra mezcla. input/output son un ajuste estadístico, no precio contractual. null = costo no informado, NO gratis.",
+  "_derivado": "2026-10-14 por el agente sobre los mensajes con usage.cost del store (no inventado)",
+  "chatgpt_codex/gpt-6-luna": {
+    "inputEffective": 0.07862,
+    "basedOn": {
+      "calls": 2086,
+      "costUsd": 53.694558
+    },
+    "input": null,
+    "output": null,
+    "fitReliable": false,
+    "note": "derivado el 2026-10-27 del store: 2086 llamadas con costo reportado, 683,0M de entrada y 424,0M de cache read"
+  },
+  "chatgpt_codex/gpt-6-sol": {
+    "input": 2.0,
+    "output": 10.0,
+    "cacheReadRatio": 0.1,
+    "fitReliable": true,
+    "basedOn": {
+      "calls": 3498,
+      "costUsd": 238.68
+    },
+    "inputEffective": 0.6208
+  },
+  "open_design/deepseek-v4.1-flash-max": {
+    "inputEffective": 0.014249,
+    "basedOn": {
+      "calls": 3684,
+      "costUsd": 6.349
+    },
+    "input": null,
+    "output": null,
+    "fitReliable": false
+  },
+  "open_design/deepseek-v4.1-flash-low": {
+    "input": null,
+    "output": null,
+    "inputEffective": null,
+    "note": "el proveedor no reporta costo (suscripcion o sin datos)"
+  },
+  "open_design/deepseek-v4.1-flash": {
+    "input": null,
+    "output": null,
+    "inputEffective": null,
+    "note": "el proveedor no reporta costo (suscripcion o sin datos)"
+  }
+}

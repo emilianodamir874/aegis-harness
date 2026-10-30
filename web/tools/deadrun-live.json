@@ -1,0 +1,148 @@
+STAGE scan {"id":"20261012_23","msgs":323,"colgadas":2}
+STAGE scan {"id":"20261012_25","msgs":781,"colgadas":0}
+STAGE scan {"id":"20261012_24","msgs":8,"colgadas":0}
+STAGE scan {"id":"20261012_22","msgs":5,"colgadas":0}
+STAGE scan {"id":"20261012_20","msgs":213,"colgadas":0}
+STAGE scan {"id":"20261012_5","msgs":326,"colgadas":0}
+STAGE scan {"id":"20261011_6","msgs":1167,"colgadas":0}
+STAGE scan {"id":"20261012_19","msgs":226,"colgadas":0}
+STAGE replay-marca {"tools":198,"girando":0,"marcadas":2,"ejemplo":"shell · cd /d C:\Aegis-Proyects\src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppData...… · interrumpido (sin resultado)"}
+STAGE live-adoptado {"domAntes":{"nodes":3,"msgs":1},"domDespues":{"nodes":34,"msgs":7},"crecio":true,"watch":{"ticks":14,"softResyncs":2,"softMs":39,"maxSoftMs":21,"lastSoft":{"ms":18,"text":0,"tool":2,"user":0,"updated":0,"interrupted":0},"deferred":0},"ultimoTexto":null,"runbar":{"text":"Turno en curso (seguía corriendo al recargar)","time":"35.0 s","stop":true}}
+{
+ "escaneadas": [
+  {
+   "id": "20261012_23",
+   "msgs": 323,
+   "lastMessageAt": "2026-10-12T18:47:53Z",
+   "tools": 198,
+   "colgadas": 2,
+   "ejemplos": [
+    {
+     "status": "pending",
+     "title": "shell · cd /d C:\Aegis-Proyects\src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppDa"
+    },
+    {
+     "status": "pending",
+     "title": "shell · cd /d C:\\Aegis-Proyects\\web & node --check tools\\deadrun-live"
+    }
+   ]
+  },
+  {
+   "id": "20261012_25",
+   "msgs": 781,
+   "lastMessageAt": "2026-10-12T18:37:33Z",
+   "tools": 395,
+   "colgadas": 0,
+   "ejemplos": []
+  },
+  {
+   "id": "20261012_24",
+   "msgs": 8,
+   "lastMessageAt": "2026-10-12T17:55:16Z",
+   "tools": 5,
+   "colgadas": 0,
+   "ejemplos": []
+  },
+  {
+   "id": "20261012_22",
+   "msgs": 5,
+   "lastMessageAt": "2026-10-12T16:49:21Z",
+   "tools": 1,
+   "colgadas": 0,
+   "ejemplos": []
+  },
+  {
+   "id": "20261012_20",
+   "msgs": 213,
+   "lastMessageAt": "2026-10-12T16:43:19Z",
+   "tools": 109,
+   "colgadas": 0,
+   "ejemplos": []
+  },
+  {
+   "id": "20261012_5",
+   "msgs": 326,
+   "lastMessageAt": "2026-10-12T16:25:49Z",
+   "tools": 134,
+   "colgadas": 0,
+   "ejemplos": []
+  },
+  {
+   "id": "20261011_6",
+   "msgs": 1167,
+   "lastMessageAt": "2026-10-12T16:24:54Z",
+   "tools": 590,
+   "colgadas": 0,
+   "ejemplos": []
+  },
+  {
+   "id": "20261012_19",
+   "msgs": 226,
+   "lastMessageAt": "2026-10-12T16:13:28Z",
+   "tools": 151,
+   "colgadas": 0,
+   "ejemplos": []
+  }
+ ],
+ "elegida": {
+  "id": "20261012_23",
+  "msgs": 323,
+  "lastMessageAt": "2026-10-12T18:47:53Z",
+  "tools": 198,
+  "colgadas": 2,
+  "ejemplos": [
+   {
+    "status": "pending",
+    "title": "shell · cd /d C:\Aegis-Proyects\src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppDa"
+   },
+   {
+    "status": "pending",
+    "title": "shell · cd /d C:\\Aegis-Proyects\\web & node --check tools\\deadrun-live"
+   }
+  ]
+ },
+ "replayColgadas": {
+  "tools": 198,
+  "girando": 0,
+  "marcadas": 2,
+  "ejemplo": "shell · cd /d C:\Aegis-Proyects\src\\ui\\desktop & \"C:\\Users\\Emiliano\\AppData...… · interrumpido (sin resultado)"
+ },
+ "sid2": "20261012_26",
+ "runId2": "run_f9a2f07f-9d87-4222-81e0-1e5b15d2aebb",
+ "adoptMs2": 717,
+ "live": {
+  "domAntes": {
+   "nodes": 3,
+   "msgs": 1
+  },
+  "domDespues": {
+   "nodes": 34,
+   "msgs": 7
+  },
+  "crecio": true,
+  "watch": {
+   "ticks": 14,
+   "softResyncs": 2,
+   "softMs": 39,
+   "maxSoftMs": 21,
+   "lastSoft": {
+    "ms": 18,
+    "text": 0,
+    "tool": 2,
+    "user": 0,
+    "updated": 0,
+    "interrupted": 0
+   },
+   "deferred": 0
+  },
+  "ultimoTexto": null,
+  "runbar": {
+   "text": "Turno en curso (seguía corriendo al recargar)",
+   "time": "35.0 s",
+   "stop": true
+  }
+ },
+ "prompt2": {
+  "stopReason": "cancelled"
+ }
+}

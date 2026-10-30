@@ -1,0 +1,21 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const ctx = await b.newContext({ viewport: { width: 1280, height: 860 } });
+await ctx.addCookies([{ name: 'gw_auth', value: "1794758419335.coVEhFLb7tYbtbmDMP6krKU0mOtQC-OF50I_OVnB4dQ", url: 'http://127.0.0.1:3788' }]);
+const p = await ctx.newPage();
+const errs = [];
+p.on('pageerror', (e) => errs.push(String(e.message).slice(0, 110)));
+await p.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded' });
+await p.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state, null, { timeout: 20000 });
+await p.waitForTimeout(1200);
+const antes = await p.evaluate(() => {
+  const btn = document.getElementById('btn-logout');
+  const r = btn ? btn.getBoundingClientRect() : null;
+  return { existe: !!btn, visible: !!(r && r.width > 0), texto: btn ? btn.textContent.trim() : '', anchoCajon: Math.round(document.getElementById('sidebar').getBoundingClientRect().width) };
+});
+await p.click('#btn-logout');
+await p.waitForTimeout(2500);
+const despues = await p.evaluate(() => ({ url: location.pathname, hayFormulario: !!document.querySelector('input[type="password"], input[name="password"]') }));
+const cookies = (await ctx.cookies()).map((c) => c.name);
+console.log(JSON.stringify({ antes, despues, cookiesTrasSalir: cookies, errs }, null, 1));
+await b.close();

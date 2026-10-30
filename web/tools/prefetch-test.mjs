@@ -1,0 +1,42 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await ctx.addInitScript(() => {
+  window.__audio = [];
+  window.Audio = function (url) {
+    const txt = decodeURIComponent((url.match(/text=([^&]*)/) || [])[1] || '');
+    const o = { src: url, preload: '', paused: true, onended: null, onerror: null, _txt: txt };
+    o.play = () => { o.paused = false; window.__audio.push({ fase: 'play', largo: txt.length, texto: txt.slice(0, 40) }); window.__ultimo = o; return Promise.resolve(); };
+    o.pause = () => {};
+    o.load = () => { window.__audio.push({ fase: 'precarga', largo: txt.length, texto: txt.slice(0, 40) }); };
+    return o;
+  };
+  window.__avanzar = () => { const o = window.__ultimo; if (o && o.onended) { o.onended(); return true; } return false; };
+});
+const p = await ctx.newPage();
+const errs = [];
+p.on('pageerror', (e) => errs.push(String(e.message).slice(0, 120)));
+await p.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded' });
+await p.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state, null, { timeout: 25000 });
+await p.waitForTimeout(2500);
+await p.click('#btn-menu').catch(() => {});
+await p.waitForTimeout(700);
+await p.click('[data-id="20261016_9"]');
+await p.waitForTimeout(9000);
+const texto = '## 🔊 Para escuchar\n\nPrimera oracion corta de prueba. Segunda oracion un poco mas larga para sumar texto y ver como se agrupan las oraciones siguientes en un solo pedido. Tercera oracion tambien de prueba con algunos caracteres mas para completar el bloque y forzar un segundo pedido grande que deberia juntar varias oraciones juntas. Cuarta y ultima oracion del bloque para cerrar.';
+await p.evaluate(() => window.__aegisWeb.readToggle(true));
+// dos trozos encolados de una: el primero suena y el segundo queda esperando -> deberia precargarse
+await p.evaluate((t) => window.__aegisWeb.readPump('k', t, false), texto);
+await p.waitForTimeout(500);
+await p.evaluate((t) => window.__aegisWeb.readPump('k', t, false), texto);
+await p.waitForTimeout(1200);
+const tras1 = await p.evaluate(() => window.__audio.slice());
+await p.evaluate(() => window.__avanzar());
+await p.waitForTimeout(1200);
+const tras2 = await p.evaluate(() => window.__audio.slice());
+await p.evaluate(() => window.__avanzar());
+await p.waitForTimeout(1000);
+const tras3 = await p.evaluate(() => window.__audio.slice());
+const resumen = (arr, n) => arr.map((a) => a.fase + '(' + a.largo + ')').join(' + ');
+console.log(JSON.stringify({ tras_trozo1: resumen(tras1), tras_avanzar1: resumen(tras2), tras_avanzar2: resumen(tras3), errs }, null, 1));
+await b.close();

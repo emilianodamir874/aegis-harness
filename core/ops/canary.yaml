@@ -1,0 +1,6 @@
+# Prompt del turno canario del health-gate: minimo, barato, deterministico.
+# Si el provider barato no contesta esto, el harness no sirve para nada, aunque el puerto este abierto.
+version: 1.0.0
+title: canario del gate
+description: Verifica que el harness puede completar un turno real contra el provider barato.
+prompt: Responde unicamente con la palabra ok.

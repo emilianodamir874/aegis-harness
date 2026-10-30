@@ -1,0 +1,33 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })).newPage();
+const errs = [];
+p.on('pageerror', (e) => errs.push(String(e.message).slice(0, 130)));
+const medir = async (titulo, archivo) => {
+  await p.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded' });
+  await p.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state, null, { timeout: 25000 });
+  await p.waitForTimeout(2500);
+  await p.click('#btn-menu').catch(() => {});
+  await p.waitForTimeout(700);
+  const id = await p.evaluate((t) => { const f = [...document.querySelectorAll('[data-id]')].find((x) => (x.textContent || '').includes(t)); return f ? f.getAttribute('data-id') : null; }, titulo);
+  if (!id) return { titulo, error: 'no encontre la fila' };
+  await p.click('[data-id="' + id + '"]');
+  await p.waitForTimeout(11000);
+  const info = await p.evaluate(() => {
+    const tablas = [...document.querySelectorAll('#messages table')];
+    const fichas = tablas.filter((t) => !t.hasAttribute('data-cols'));
+    const hayLargaComoFicha = tablas.some((t) => t.querySelector('tbody td') && String(t.querySelector('tbody td').textContent).length > 60 && !t.hasAttribute('data-cols'));
+    const algunaLargaComoTabla = tablas.some((t) => t.hasAttribute('data-cols') && [...t.querySelectorAll('tbody td')].some((c) => String(c.textContent).length > 90));
+    const desbordes = tablas.filter((t) => t.getBoundingClientRect().right > document.documentElement.clientWidth + 1).length;
+    const marcas = document.querySelectorAll('.replay-cut').length;
+    const marca = document.querySelector('.replay-cut');
+    const sm = marca ? (() => { const r = marca.getBoundingClientRect(); return { x: Math.round(r.x), derecha: Math.round(r.right), dentro: r.left >= 0 && r.right <= document.documentElement.clientWidth }; })() : null;
+    return { tablas: tablas.length, fichas: fichas.length, hayLargaComoFicha, algunaLargaComoTabla, desbordes, marcas, marca };
+  });
+  await p.screenshot({ path: 'C:/Users/Emiliano/tmp/inv/' + archivo });
+  return { titulo, id, info };
+};
+const larga = await medir('inventory start', 'final-larga.png');
+const a52 = await medir('A52 alpha edge', 'final-a52.png');
+console.log(JSON.stringify({ larga, a52, errs }, null, 1));
+await b.close();

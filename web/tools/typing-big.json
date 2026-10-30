@@ -1,0 +1,154 @@
+STAGE export {"id":"20261011_6","m":1167,"bytes":19681075}
+STAGE export {"id":"20261011_9","m":836,"bytes":9349322}
+STAGE export {"id":"20261012_25","m":781,"bytes":3484924}
+STAGE import {"sid":"20261012_26"}
+STAGE replay {"ms":916}
+STAGE trasCargar {"renders":24,"renderMs":5.200000047683716,"maxRenderMs":1.300000011920929,"lastRenderMs":0.19999998807907104,"composerRuns":0,"composerMs":0,"maxComposerMs":0,"nodes":666,"msgs":133,"busy":false,"adopted":false}
+STAGE bigQuiet {"windowMs":15174,"keys":330,"p50":3.1,"p95":17.4,"max":23.6,"loads":0,"steers":0,"longTasks":0,"longMs":0,"maxLong":0,"renders":0,"renderAvgMs":0,"renderMaxMs":0,"composerRuns":330,"composerAvgMs":0.77,"nodeCount":12931,"msgCount":730}
+STAGE adopt {"ms":3649}
+STAGE A {"windowMs":25145,"keys":520,"p50":19,"p95":19.7,"max":248.2,"loads":0,"steers":10,"longTasks":0,"longMs":0,"maxLong":0,"renders":0,"renderAvgMs":0,"renderMaxMs":0,"composerRuns":520,"composerAvgMs":0.83,"nodeCount":12934,"msgCount":731}
+STAGE B {"windowMs":25435,"keys":540,"p50":18.9,"p95":19.5,"max":29.3,"loads":0,"steers":0,"longTasks":0,"longMs":0,"maxLong":0,"renders":0,"renderAvgMs":0,"renderMaxMs":0,"composerRuns":540,"composerAvgMs":0.83,"nodeCount":12934,"msgCount":731}
+{
+ "top3": [
+  {
+   "id": "20261011_6",
+   "m": 1167
+  },
+  {
+   "id": "20261011_9",
+   "m": 836
+  },
+  {
+   "id": "20261012_25",
+   "m": 781
+  }
+ ],
+ "exportSizes": [
+  {
+   "id": "20261011_6",
+   "m": 1167,
+   "bytes": 19681075
+  },
+  {
+   "id": "20261011_9",
+   "m": 836,
+   "bytes": 9349322
+  },
+  {
+   "id": "20261012_25",
+   "m": 781,
+   "bytes": 3484924
+  }
+ ],
+ "origen": {
+  "id": "20261012_25",
+  "msgs": 781,
+  "bytes": 3484924
+ },
+ "copia": {
+  "sid": "20261012_26",
+  "title": "Aegis session 20261011_5"
+ },
+ "cpuThrottle": 4,
+ "replayMs": 916,
+ "trasCargar": {
+  "renders": 24,
+  "renderMs": 5.200000047683716,
+  "maxRenderMs": 1.300000011920929,
+  "lastRenderMs": 0.19999998807907104,
+  "composerRuns": 0,
+  "composerMs": 0,
+  "maxComposerMs": 0,
+  "nodes": 666,
+  "msgs": 133,
+  "busy": false,
+  "adopted": false
+ },
+ "bigQuiet": {
+  "windowMs": 15174,
+  "keys": 330,
+  "p50": 3.1,
+  "p95": 17.4,
+  "max": 23.6,
+  "loads": 0,
+  "steers": 0,
+  "longTasks": 0,
+  "longMs": 0,
+  "maxLong": 0,
+  "renders": 0,
+  "renderAvgMs": 0,
+  "renderMaxMs": 0,
+  "composerRuns": 330,
+  "composerAvgMs": 0.77,
+  "nodeCount": 12931,
+  "msgCount": 730
+ },
+ "runId": "run_25565d1f-c617-4256-9c3c-f8701427fd78",
+ "adoptMs": 3649,
+ "A": {
+  "windowMs": 25145,
+  "keys": 520,
+  "p50": 19,
+  "p95": 19.7,
+  "max": 248.2,
+  "loads": 0,
+  "steers": 10,
+  "longTasks": 0,
+  "longMs": 0,
+  "maxLong": 0,
+  "renders": 0,
+  "renderAvgMs": 0,
+  "renderMaxMs": 0,
+  "composerRuns": 520,
+  "composerAvgMs": 0.83,
+  "nodeCount": 12934,
+  "msgCount": 731
+ },
+ "B": {
+  "windowMs": 25435,
+  "keys": 540,
+  "p50": 18.9,
+  "p95": 19.5,
+  "max": 29.3,
+  "loads": 0,
+  "steers": 0,
+  "longTasks": 0,
+  "longMs": 0,
+  "maxLong": 0,
+  "renders": 0,
+  "renderAvgMs": 0,
+  "renderMaxMs": 0,
+  "composerRuns": 540,
+  "composerAvgMs": 0.83,
+  "nodeCount": 12934,
+  "msgCount": 731
+ },
+ "prompt": {
+  "stopReason": "cancelled"
+ },
+ "D": {
+  "detenerMs": 5886,
+  "tras": {
+   "loads": 1,
+   "steers": 12,
+   "longTasks": 18,
+   "longMs": 2310,
+   "maxLong": 206,
+   "renders": 327,
+   "renderMs": 158.59999990463257,
+   "maxRenderMs": 3,
+   "lastRenderMs": 1,
+   "composerRuns": 1060,
+   "composerMs": 881.099999666214,
+   "maxComposerMs": 8.899999976158142,
+   "nodes": 12934,
+   "msgs": 731,
+   "busy": false,
+   "adopted": false
+  }
+ },
+ "promptFinal": {
+  "runId": "run_25565d1f-c617-4256-9c3c-f8701427fd78",
+  "stopReason": "cancelled"
+ }
+}

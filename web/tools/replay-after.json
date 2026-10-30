@@ -1,0 +1,57 @@
+{
+ "version": "v",
+ "sesion": {
+  "id": "20261011_6",
+  "msgs": 1167
+ },
+ "cargaMs": 3887,
+ "pintados": 1080,
+ "nodos": 13371,
+ "frames": 196,
+ "peorHueco": 4283,
+ "huecosSobre50": 192,
+ "longs": [
+  {
+   "s": 973,
+   "d": 106
+  },
+  {
+   "s": 1098,
+   "d": 105
+  },
+  {
+   "s": 1241,
+   "d": 91
+  },
+  {
+   "s": 1355,
+   "d": 80
+  },
+  {
+   "s": 1449,
+   "d": 55
+  },
+  {
+   "s": 1579,
+   "d": 61
+  },
+  {
+   "s": 2882,
+   "d": 65
+  }
+ ],
+ "longsTotalMs": 563,
+ "longsMax": 106,
+ "metrics": {
+  "renders": 485,
+  "renderMs": 64,
+  "maxRenderMs": 1
+ },
+ "t0": 35,
+ "tecleoPostCarga": {
+  "p50": 33.3,
+  "p95": 33.7,
+  "max": 33.8
+ },
+ "errores": []
+}

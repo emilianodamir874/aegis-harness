@@ -1,0 +1,22 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })).newPage();
+const errs = [];
+p.on('pageerror', (e) => errs.push(String(e.message).slice(0, 120)));
+await p.goto('http://127.0.0.1:3788/', { waitUntil: 'domcontentloaded' });
+await p.waitForFunction(() => window.__aegisWeb && window.__aegisWeb.state, null, { timeout: 25000 });
+await p.waitForTimeout(2500);
+await p.click('#btn-menu').catch(() => {});
+await p.waitForTimeout(700);
+await p.click('[data-id="20261016_9"]');
+await p.waitForTimeout(14000);
+const info = await p.evaluate(() => {
+  const marcas = document.querySelectorAll('.replay-cut').length;
+  const textos = [...document.querySelectorAll('#messages .msg-a .content')].map((c) => c.textContent || '');
+  const largoMax = textos.reduce((a, t) => Math.max(a, t.length), 0);
+  const ultimo = textos.length ? textos[textos.length - 1] : '';
+  return { marcas, mensajes: textos.length, textoMasLargo: largoMax, ultimoEmpieza: ultimo.slice(0, 60), ultimoTieneMarca: /omitidos del replay/.test(ultimo) };
+});
+await p.screenshot({ path: 'C:/Users/Emiliano/tmp/inv/sin-recorte.png' });
+console.log(JSON.stringify({ info, errs }, null, 1));
+await b.close();

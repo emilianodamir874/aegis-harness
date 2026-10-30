@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+fs.copyFileSync('C:/Aegis-Proyects/state/data/sessions/sessions.db', 'C:/Aegis-Proyects/tmp/g1.db');
+const db = new DatabaseSync('C:/Aegis-Proyects/tmp/g1.db', { readOnly: true });
+const rows = db.prepare("select session_id, id, role, timestamp, cast(content_json as text) as t from messages where cast(content_json as text) like '%/goal%' or cast(content_json as text) like '%/grind%' order by id desc limit 14").all();
+console.log('== mensajes con /goal o /grind (mas recientes) ==');
+for (const r of rows.reverse()) console.log('  [' + r.id + '] sesion ' + r.session_id + ' ' + r.role + ' ' + r.timestamp + ' :: ' + r.t.replace(/\s+/g, ' ').slice(0, 190));
+const cols = db.prepare("select name from pragma_table_info('sessions')").all().map(c => c.name);
+console.log('== columnas de sessions ==');
+console.log('  ' + cols.join(', '));
+const ext = db.prepare("select session_id, substr(cast(extension_data as text),1,400) as e from sessions where cast(extension_data as text) like '%goal%' order by rowid desc limit 3").all();
+console.log('== sesiones con goal en extension_data: ' + ext.length + ' ==');
+for (const e of ext) console.log('  ' + e.session_id + ' :: ' + e.e.replace(/\s+/g, ' '));
+db.close();
