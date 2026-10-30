@@ -36,6 +36,8 @@
 # Documentacion vigente del harness; el resto son instantaneas y proyectos aparte.
 /docs/*
 !/docs/monorepo.md
+!/docs/aegis-harness-estudio.md
+!/docs/harness-backend/
 
 # Checkouts previos: se archivan fuera de la raiz tras verificar la importacion.
 /src/.git/
