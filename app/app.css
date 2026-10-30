@@ -826,6 +826,10 @@ textarea:focus-visible { outline: none; }
 .chip-default[hidden] { display: none !important; }
 .debate-chip { white-space: nowrap; }
 .debate-chip::after { display: none; }
+.codex-fast-chip { white-space: nowrap; }
+.codex-fast-chip::after { display: none; }
+.codex-fast-chip.on,
+.codex-fast-chip[aria-pressed="true"] { border-color: var(--accent-line); color: var(--accent-text); background: var(--accent-soft); }
 .debate-chip.on,
 .debate-chip[aria-pressed="true"] { border-color: var(--accent-line); color: var(--accent-text); background: var(--accent-soft); }
 .debate-btn.on { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent-line); }

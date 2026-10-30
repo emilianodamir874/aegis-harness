@@ -5474,6 +5474,27 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
         effortOptions.length ? effChip : '', provNombre));
     }
 
+    if (provId === 'chatgpt_codex') {
+      const fastWrap = document.createElement('div');
+      fastWrap.className = 'chip-wrap';
+      const fastBtn = document.createElement('button');
+      fastBtn.id = 'btn-codex-fast';
+      fastBtn.type = 'button';
+      const fastOpt = opts.find((o) => o && o.id === 'codex_fast_mode');
+      const fastOn = String((fastOpt && fastOpt.currentValue) || 'off') === 'on';
+      fastBtn.className = 'chip codex-fast-chip' + (fastOn ? ' on' : '');
+      fastBtn.textContent = fastOn ? 'Fast' : 'Fast apagado';
+      fastBtn.setAttribute('aria-pressed', String(fastOn));
+      fastBtn.setAttribute('aria-label', 'Codex Fast mode: ' + (fastOn ? 'activado' : 'desactivado'));
+      fastBtn.title = 'Activa/desactiva Fast para esta sesión de ChatGPT Codex';
+      fastBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await aplicarConfig('codex_fast_mode', fastOn ? 'off' : 'on');
+      });
+      fastWrap.appendChild(fastBtn);
+      wrap.appendChild(fastWrap);
+    }
+
     // Chip de modo debate: vive con los chips de modelo/modo y no gasta lugar en el composer.
     const dwrap = document.createElement('div');
     dwrap.className = 'chip-wrap';
@@ -7207,6 +7228,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
         conocidos: () => Object.keys(effortsConocidos).map((k) => ({ key: k, values: effortsConocidos[k].values })),
       },
       catalogo: () => catalogo, cargarCatalogo, proveedorActivo, modeloActivo,
+      fastMode: () => String((opcionDe('codex_fast_mode') || {}).currentValue || 'off'),
       modo: () => modoActual,
       cintaModo: () => { const c = document.getElementById('modo-cinta'); return c ? c.textContent : ''; },
       setModo: (m) => aplicarModo(m), refrescarModo,
