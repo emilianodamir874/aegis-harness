@@ -38,34 +38,35 @@ try {
   await page.touchscreen.tap(box.x, box.y);
   await page.waitForTimeout(5000);
   const panel = await page.evaluate(() => {
-    const ov = document.getElementById('st-overlay') as HTMLElement;
-    const b = document.getElementById('st-box') as HTMLElement;
+    const root = document.getElementById('usage-panel') as HTMLElement;
+    const b = root.querySelector('.panel-body') as HTMLElement;
     return {
-      open: ov.dataset.open,
-      kpis: document.querySelectorAll('.st-kpi').length,
-      boxW: Math.round(b.getBoundingClientRect().width),
-      boxScrollW: b.scrollWidth,
-      close: !!document.getElementById('st-close'),
-      rows: document.querySelectorAll('table.st-t tr').length,
+      sheet: root.classList.contains('is-sheet'),
+      body: !!b,
+      big: (root.querySelector('.gs-big')?.textContent || '').replace(/\s+/g, ' ').trim(),
+      tabs: root.querySelectorAll('.gs-tab').length,
+      close: !!root.querySelector('.panel-x'),
+      disclosure: root.querySelectorAll('.gs-disclosure').length,
+      boxW: Math.round(root.getBoundingClientRect().width),
+      boxScrollW: b ? b.scrollWidth : -1,
     };
   });
-  check(panel.open === '1', 'panel abierto');
-  check(panel.kpis === 6, '6 KPIs (vio ' + panel.kpis + ')');
-  check(panel.boxW === 390 && panel.boxScrollW === 390, 'panel a pantalla completa sin desborde ' + JSON.stringify(panel));
-  check(panel.close && panel.rows > 0, 'boton cerrar y filas cargadas');
+  check(panel.sheet && panel.body, 'el panel abre como hoja a pantalla completa en el teléfono: ' + JSON.stringify(panel));
+  check(/US\$/.test(panel.big) && /llamadas/.test(panel.big), 'totales del período en el resumen: ' + panel.big);
+  check(panel.tabs === 4, '4 pestañas de período (vio ' + panel.tabs + ')');
+  check(panel.close && panel.disclosure >= 1, 'botón cerrar y desglose diferido presentes');
+  check(panel.boxW === 390 && panel.boxScrollW <= 390, 'cuerpo sin desborde horizontal ' + JSON.stringify({ w: panel.boxW, sw: panel.boxScrollW }));
 
-  // scrollear y cerrar con el ✕ fijo
-  await page.evaluate(() => (document.getElementById('st-box') as HTMLElement).scrollTo(0, 2400));
-  await page.waitForTimeout(400);
+  // Cerrar con el ✕ del panel, tocando de verdad.
   const x = await page.evaluate(() => {
-    const r = (document.getElementById('st-close') as HTMLElement).getBoundingClientRect();
+    const r = (document.querySelector('#usage-panel .panel-x') as HTMLElement).getBoundingClientRect();
     return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), visible: r.y >= 0 && r.y < window.innerHeight };
   });
-  check(x.visible, 'el ✕ sigue visible al scrollear (y=' + x.y + ')');
+  check(x.visible, 'el ✕ sigue visible con el panel abierto (y=' + x.y + ')');
   await page.touchscreen.tap(x.x, x.y);
   await page.waitForTimeout(600);
-  const closed = await page.evaluate(() => (document.getElementById('st-overlay') as HTMLElement).dataset.open);
-  check(closed === '0', 'el ✕ cierra el panel');
+  const closed = await page.evaluate(() => !!document.getElementById('usage-panel'));
+  check(!closed, 'el ✕ cierra el panel');
   check(errs.length === 0, 'sin errores de pagina: ' + JSON.stringify(errs));
   check(bad.length === 0, 'sin HTTP >= 400: ' + JSON.stringify(bad.slice(0, 4)));
   pass('UI movil 390x844 contra ' + url);

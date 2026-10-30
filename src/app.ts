@@ -13,7 +13,7 @@ import { readHeading, readBlock, readClean, ttsUrlFor } from './app/read';
 import { abrirAcciones, botonAcciones, cerrarAcciones, wireAccionesGlobales, type ActItem } from './app/acts';
 import { abrirCombo, comboAbierto, type ComboHandle, type ComboItem, type ComboSection } from './app/combo';
 import { abrirPanel, cerrarPanel, panelAbierto, type PanelApi } from './app/panel';
-import { cuerpoGasto, type Stats } from './app/gasto';
+import { cuerpoGasto, detalleGasto, resumenEnVivo, type Stats } from './app/gasto';
 import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdate, type Modo } from './app/modos';
 (() => {
   'use strict';
@@ -398,13 +398,13 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
         break;
       case 'agent_thought_chunk':
         if (u.content && u.content.type === 'text') {
-          speedStep(u.messageId, true);
+          speedStep(u.messageId);
           streamAppend(thoughtKeyFor(u), u.content.text, true, ocultoAlAgente(u._meta && u._meta.aegis, state.hideTail));
         }
         break;
       case 'tool_call':
       case 'tool_call_update':
-        speedStep(u.messageId, true);
+        speedStep(u.messageId);
         toolUpsert(u);
         break;
       case 'usage_update':
@@ -2407,18 +2407,51 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   // Un solo repintado por frame aunque lleguen diez usage_update seguidos: rearmar el HTML en
   // cada evento es lo que hacia que el panel se sintiera pesado durante un turno.
   let refrescoUso = 0;
+  // Qué secciones dejó desplegadas el operador. Vive fuera del DOM a propósito: el cuerpo se
+  // reemplaza entero al cambiar de período y, mientras carga, el bloque ni siquiera existe (solo
+  // queda el resumen); leer el estado del DOM pierde la preferencia. Guardada acá, el desglose
+  // vuelve abierto y montado en cuanto llegan los datos del período nuevo.
+  const gastoAbierto = new Set<string>();
+  function montarDetalle(det: HTMLDetailsElement): void {
+    const key = det.dataset.gsDetail || '';
+    const body = det.querySelector<HTMLElement>('.gs-disclosure-body');
+    if (!key || !body || body.dataset.loaded) return;
+    body.innerHTML = detalleGasto({ stats: gastoStats, ctx: (state.usage || {}) as any }, key);
+    body.dataset.loaded = 'true';
+  }
   function pintarUso(): void {
     if (!usagePanel) return;
-    usagePanel.body.innerHTML = cuerpoUso();
+    usagePanel.setBody(cuerpoUso());
+    for (const key of gastoAbierto) {
+      const det = usagePanel.body.querySelector<HTMLDetailsElement>('.gs-disclosure[data-gs-detail="' + key + '"]');
+      // Si este período no trae el bloque (sin desglose de contexto, por ejemplo) la preferencia
+      // queda guardada y se reabre sola cuando el bloque reaparezca.
+      if (!det) continue;
+      montarDetalle(det);
+      det.open = true;
+    }
     const nota = usagePanel.foot.querySelector('.gs-foot-note');
     if (nota) nota.textContent = notaPieUso();
-    // El historial llega despues de abrir: sin re-ubicar, el panel quedaba clavado donde estaba
-    // con la mitad del contenido fuera de la pantalla.
     usagePanel.reubicar();
+  }
+  function pintarUsoEnVivo(): void {
+    if (!usagePanel) return;
+    const usage = (state.usage || {}) as any;
+    const live = usagePanel.body.querySelector('.gs-live');
+    if (live) live.innerHTML = resumenEnVivo(usage);
+    const ctx = usagePanel.body.querySelector<HTMLDetailsElement>('.gs-disclosure[data-gs-detail="contexto"]');
+    if (!ctx && (usage.contextBreakdown || []).length) {
+      usagePanel.body.insertAdjacentHTML('beforeend', '<details class="gs-disclosure" data-gs-detail="contexto"><summary>Ver qué ocupa el contexto<span aria-hidden="true">+</span></summary><div class="gs-disclosure-body"></div></details>');
+    } else if (ctx?.dataset.loaded) {
+      const body = ctx.querySelector<HTMLElement>('.gs-disclosure-body');
+      if (body) body.innerHTML = detalleGasto({ stats: gastoStats, ctx: usage }, 'contexto');
+    }
+    const nota = usagePanel.foot.querySelector('.gs-foot-note');
+    if (nota) nota.textContent = notaPieUso();
   }
   function pedirRefrescoUso(): void {
     if (!usagePanel || refrescoUso) return;
-    refrescoUso = requestAnimationFrame(() => { refrescoUso = 0; pintarUso(); });
+    refrescoUso = requestAnimationFrame(() => { refrescoUso = 0; pintarUsoEnVivo(); });
   }
 
   function openUsagePop(): void {
@@ -2447,8 +2480,20 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       setDensity(b.dataset.dens as any);
       usagePanel.foot.querySelectorAll('.gs-dens-b').forEach((x) => x.classList.toggle('is-on', (x as HTMLElement).dataset.dens === b.dataset.dens));
     });
+    // `toggle` no burbujea: se escucha en captura desde el cuerpo, que es el que se repinta
+    // entero. Al desplegar se monta el detalle y la preferencia se guarda fuera del DOM.
+    usagePanel.body.addEventListener('toggle', (e) => {
+      const det = e.target as HTMLDetailsElement | null;
+      const key = det?.dataset ? det.dataset.gsDetail || '' : '';
+      if (!key) return;
+      if (det!.open) { montarDetalle(det!); gastoAbierto.add(key); }
+      else gastoAbierto.delete(key);
+    }, true);
     usagePanel.body.addEventListener('click', (e) => {
-      const b = (e.target as HTMLElement | null)?.closest('.gs-tab') as HTMLElement | null;
+      const t = e.target as HTMLElement | null;
+      const detail = t?.closest('summary')?.parentElement as HTMLDetailsElement | null;
+      if (detail?.dataset.gsDetail && !detail.open) montarDetalle(detail);
+      const b = t?.closest('.gs-tab') as HTMLElement | null;
       if (!b) return;
       const d = Number(b.dataset.dias);
       if (!Number.isFinite(d) || d === gastoDias) return;
@@ -2528,68 +2573,102 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     pedirRefrescoUso();
   }
 
-  // ---------- velocimetro de tokens/segundo ----------
-  // Solo usage del backend: la tasa sale de outputTokens y de los milisegundos que reporta el
-  // provider (generationMs), o del total de la solicitud cuando no hay generationMs.
-  // El texto visible NO se usa para estimar tokens/segundo.
-  // latest incluye el messageId para no llamar "actual" a un ritmo de otro paso.
-  state.speed = state.speed || { ticks: [], el: null, avgEl: null, timer: 0, runOut: 0, runGen: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, stepText: false, currentRate: false, runId: null, finished: false, note: null };
-  // El estilo vive en app.css (.runbar-tps / .runbar-avg), no inline: asi el numero se ve
-  // como metrica propia y no como parte de la frase del runbar.
-  function speedSpan(id, after) {
-    let el = $('#' + id);
+  // ---------- ritmo de salida ----------
+  // Solo usage del backend: los tokens son outputTokens y el tiempo es el que reporta el
+  // provider (generationMs) o, cuando no hay, el total de la solicitud.
+  // No hay tasa instantánea: el runbar muestra promedios móviles de salida para 5s, 15s, 30s,
+  // 1m, 5m y 15m. El texto visible nunca se usa para estimar tokens.
+  state.speed = state.speed || { samples: [], timer: 0, runOut: 0, runGen: 0, startedAt: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, runId: null, finished: false, note: null, noteMs: 0, sembrado: false };
+  const SPEED_WINDOWS: Array<[number, string]> = [[5000, '5s'], [15000, '15s'], [30000, '30s'], [60000, '1m'], [300000, '5m'], [900000, '15m']];
+
+  function speedWindowsEl() {
+    let el = $('#runbar-speed-windows');
     if (el) return el;
     const bar = $('#runbar');
     if (!bar) return null;
     el = document.createElement('span');
-    el.id = id;
+    el.id = 'runbar-speed-windows';
+    el.className = 'runbar-speed-windows';
     el.hidden = true;
-    if (after && after.parentNode) after.parentNode.insertBefore(el, after.nextSibling);
-    else bar.appendChild(el);
+    bar.appendChild(el);
     return el;
   }
-  function speedEl() {
-    const el = speedSpan('runbar-tps', $('#runbar-time'));
-    if (el) el.className = 'runbar-tps';
-    return el;
-  }
-  function speedAvgEl() {
-    const el = speedSpan('runbar-avg', $('#runbar-tps') || speedEl());
-    if (el) el.className = 'runbar-avg';
-    return el;
-  }
-  function speedRateLabel(rate, previous = false) {
-    return (previous ? 'última ' : '') + (rate.kind === 'generation' ? 'generación ' : 'solicitud ') + fmtTps(rate.value);
-  }
-  function speedLabel() {
+
+  // Cada muestra es un tramo [at - durationMs, at] con sus tokens. Una ventana toma la parte del
+  // tramo que cae dentro de ella y divide por el ancho fijo de la ventana: así 5s y 15m son
+  // promedios comparables y no "lo poco que hubo" dividido por lo poco que duró.
+  function speedWindowSummary(now = performance.now()) {
     const s = state.speed;
-    // Solo mediciones del backend (usage): nada de caracteres visibles ni relojes propios.
-    // Un paso sin usage todavia no tiene numero, y la ultima medicion se rotula "ultima".
-    if (s.currentRate && s.latest?.mid === s.stepId) return speedRateLabel(s.latest);
-    return s.latest ? speedRateLabel(s.latest, true) : '— tok/s';
+    s.samples = (s.samples || []).filter((x) => x.at >= now - 900000);
+    return SPEED_WINDOWS.map(([windowMs, label]) => {
+      const since = now - windowMs;
+      let tokens = 0;
+      for (const sample of s.samples) {
+        const overlap = Math.min(now, sample.at) - Math.max(since, sample.at - sample.durationMs);
+        if (overlap > 0) tokens += sample.tokens * overlap / sample.durationMs;
+      }
+      return { label, value: tokens / (windowMs / 1000) };
+    });
   }
-  const compactRunBar = () => window.matchMedia('(max-width: 560px)').matches;
-  function speedBadge(el, label) {
+
+  // La fila existe desde que arranca el run, aunque todavía no haya llegado ningún usage: un turno
+  // adoptado a mitad de camino tiene que mostrar las seis ventanas (aunque sea con raya) en vez de
+  // un hueco, y el title dice qué falta. Solo se oculta al terminar el turno.
+  function paintSpeedWindows() {
+    const el = speedWindowsEl();
     if (!el) return;
-    el.dataset.fullLabel = label;
-    el.textContent = compactRunBar()
-      ? label.replace(/^última generación /, 'últ. ').replace(/^última solicitud /, 'últ. sol. ').replace(/^generación /, '').replace(/^solicitud /, 'sol. ')
-      : label;
-    el.title = label === '— tok/s' ? 'Sin usage del backend en este paso: el ritmo no se estima por caracteres'
-      : label.startsWith('última ') ? 'Última medición del backend (paso anterior): ' + label
-      : label.startsWith('solicitud ') ? 'Throughput de solicitud completa (no generación): ' + label
-      : label.startsWith('generación ') ? 'Ritmo medido por el backend: ' + label
-      : label;
-    el.hidden = !label;
+    const icon = $('#runbar-phase .rp-head .ui-ico');
+    const bar = $('#runbar');
+    if (icon && bar) el.style.setProperty('--speed-indent', Math.round(Math.max(0, icon.getBoundingClientRect().left - bar.getBoundingClientRect().left)) + 'px');
+    const s = state.speed;
+    const hay = s.samples.length > 0;
+    if (!el.innerHTML) {
+      el.innerHTML = SPEED_WINDOWS.map(([, label]) => '<span class="runbar-speed-cell"><small>' + label + '</small><b>—</b></span>').join('');
+    }
+    el.title = hay
+      ? 'Tokens de salida por segundo promediados en ventanas móviles, medidos por el backend'
+      : s.sembrado
+        ? 'Promedios medidos por el backend: el último paso del turno entra en la ventana cuando ya pasó'
+        : 'Todavía no llegó usage de generación del backend en este turno: las ventanas se llenan al cerrar el primer paso';
+    const celdas = [...el.querySelectorAll('.runbar-speed-cell')] as HTMLElement[];
+    speedWindowSummary().forEach((x, i) => {
+      const b = celdas[i]?.querySelector('b');
+      if (b) b.textContent = hay ? fmtTps(x.value).replace(' tok/s', '') : '—';
+      const small = celdas[i]?.querySelector('small');
+      if (small) small.textContent = x.label;
+    });
+    el.hidden = false;
   }
-  function speedPaint() {
-    speedBadge(speedEl(), speedLabel());
-    const avgEl = speedAvgEl();
-    if (!avgEl) return;
-    // El promedio incluye sólo generación medida y aparece al cerrar el turno.
-    avgEl.textContent = '';
-    avgEl.hidden = true;
+
+  // Turno adoptado a mitad de camino: los pasos que se midieron antes de entrar a este chat no
+  // llegaron como message_usage a esta pestaña, pero el backend ya los informó y el cliente guarda
+  // el último en state.last. Se siembra esa muestra una sola vez, ubicada donde corresponde según
+  // el reloj del run: si el paso terminó hace 20 s cae en las ventanas de 30s en adelante, igual
+  // que si se hubiera medido acá. Nada se estima por caracteres: son los tokens del backend.
+  function speedSeed() {
+    const s = state.speed;
+    const last = (state as any).last;
+    const prev = s.sembrado;
+    s.sembrado = true;
+    if (prev || !last) return;
+    const tokens = Number(last.outputTokens);
+    const genMs = Number(last.generationMs);
+    const reqMs = Number(last.elapsedMs);
+    const gen = Number.isFinite(genMs) && genMs > 0;
+    const ms = gen ? genMs : (Number.isFinite(reqMs) && reqMs > 0 ? reqMs : 0);
+    if (!Number.isFinite(tokens) || tokens <= 0 || !ms) return;
+    s.latest = { value: tokens / (ms / 1000), kind: gen ? 'generation' : 'request', mid: '', order: -1 };
+    // El throughput de solicitud incluye TTFT y cola: sirve como último dato, no como muestra de
+    // las ventanas, que son de generación.
+    if (!gen) return;
+    // El paso no puede haber terminado después de ahora ni antes de que arrancara el run.
+    const ahora = performance.now();
+    const fin = Math.min(ahora, Math.max(ahora - ms, s.startedAt || ahora));
+    s.samples.unshift({ at: fin, durationMs: ms, tokens });
+    s.runOut += tokens;
+    s.runGen += genMs;
   }
+
   function speedSummary() {
     const s = state.speed;
     return {
@@ -2599,101 +2678,78 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
       out: s.runOut
     };
   }
+
   function speedStart() {
     const s = state.speed;
-    s.ticks = []; s.latest = null; s.runOut = 0; s.runGen = 0;
-    s.runId = state.runId || null; s.finished = false; s.seen.clear(); s.messages.clear(); s.stepId = null; s.stepText = false; s.currentRate = false; s.note = null;
+    s.samples = []; s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = performance.now();
+    s.runId = state.runId || null; s.finished = false; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null; s.sembrado = false;
     clearInterval(s.timer);
-    s.timer = setInterval(speedPaint, 300);
-    speedPaint();
+    s.timer = setInterval(paintSpeedWindows, 1000);
+    paintSpeedWindows();
   }
+
   function speedReset() {
     const s = state.speed;
     clearInterval(s.timer); s.timer = 0;
-    s.ticks = []; s.latest = null; s.finished = true; s.runId = null; s.seen.clear(); s.messages.clear(); s.stepId = null; s.stepText = false; s.currentRate = false; s.note = null;
-    s.runOut = 0; s.runGen = 0;
-    speedBadge($('#runbar-tps'), '');
-    const avg = $('#runbar-avg'); if (avg) { avg.textContent = ''; avg.hidden = true; }
+    s.samples = []; s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = 0;
+    s.runId = null; s.finished = true; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null; s.sembrado = false;
+    const el = speedWindowsEl();
+    if (el) { el.innerHTML = ''; el.hidden = true; }
   }
-  function speedStep(messageId, nonText = false) {
+
+  function speedStep(messageId) {
     const s = state.speed;
     if (!messageId || !state.busy || state.replaying || state.hubReplay || s.finished) return;
     s.messages.add(messageId);
-    if (s.stepId === messageId) {
-      // Una fase de pensamiento/herramienta con el mismo id no hereda como actual
-      // la métrica ya medida para una fase anterior del mismo mensaje.
-      if (nonText && (s.stepText || s.currentRate)) { s.stepText = false; s.currentRate = false; s.ticks = []; speedPaint(); }
-      else if (!nonText && (!s.stepText || s.currentRate)) { s.stepText = true; s.currentRate = false; s.ticks = []; speedPaint(); }
-      return;
-    }
     s.stepId = messageId;
-    s.stepText = !nonText;
-    s.currentRate = false;
-    s.ticks = [];
-    speedPaint(); // La medición previa sigue disponible, pero se etiqueta como "última".
   }
+
   function speedChunk(text, messageId?) {
     if (!text) return;
     const s = state.speed;
     if (!state.busy || state.replaying || state.hubReplay || s.finished) return;
-    // El texto visible no mide tokens: solo sirve para saber en que paso estamos.
-    if (!messageId) { s.currentRate = false; s.stepId = null; speedPaint(); return; }
-    speedStep(messageId);
-    speedPaint();
+    if (messageId) speedStep(messageId);
   }
+
   function speedExact(update) {
     const s = state.speed;
     const mid = update?.messageId;
-    // El load y el replay del hub incluyen message_usage antiguos. Nunca sumarlos
-    // al run vivo, ni aceptar uso sin messageId (no se puede deduplicar).
+    // El load y el replay del hub incluyen message_usage antiguos: nunca sumarlos al run vivo,
+    // ni aceptar usage sin messageId (no se puede deduplicar).
     if (state.replaying || state.hubReplay || !mid || !update?.usage) return;
     if (s.finished) {
-      // El terminal puede adelantarse al último usage: sólo admitir un mensaje
-      // cuyo chunk ya pertenecía a ESTE run. No contaminar el siguiente turno.
+      // El terminal puede adelantarse al último usage: sólo se admite un mensaje cuyo chunk ya
+      // pertenecía a ESTE run, para no contaminar el turno siguiente.
       if (!s.note || !s.messages.has(mid)) return;
     } else if (!state.busy) return;
     if (s.runId && state.runId && s.runId !== state.runId) return;
-    if (!s.messages.has(mid)) return; // prueba de pertenencia al run (no basta state.busy)
-    if (s.seen.has(mid)) return;
+    if (!s.messages.has(mid) || s.seen.has(mid)) return;
     const rate = stepRate(update.usage);
     // Un elapsed demasiado breve no permite interpretar una tasa de solicitud estable.
     if (!rate || (rate.kind === 'request' && rate.durationMs < 1000)) return;
     s.seen.add(mid);
     const order = [...s.messages].indexOf(mid);
-    // Usage tardío suma al promedio, pero nunca reemplaza una medición posterior.
-    if (!s.latest || order >= s.latest.order) {
-      s.latest = { value: rate.value, kind: rate.kind, mid, order };
-      s.currentRate = mid === s.stepId;
-    }
+    if (!s.latest || order >= s.latest.order) s.latest = { value: rate.value, kind: rate.kind, mid, order };
+    // Las ventanas son de generación: un throughput de solicitud incluye TTFT y cola, y meterlo
+    // en el promedio móvil mezclaría dos cosas distintas.
     if (rate.kind === 'generation') {
+      const now = performance.now();
+      s.samples.push({ at: now, durationMs: rate.durationMs, tokens: update.usage.outputTokens });
       s.runOut += update.usage.outputTokens;
       s.runGen += rate.durationMs;
     }
-    if (s.finished) {
-      const sum = speedSummary();
-      s.note.innerHTML = speedNoteHtml(s.noteMs, sum);
-      const bar = $('#runbar');
-      if (bar && !bar.hidden && bar.classList.contains('done')) {
-        const el = speedEl();
-        speedBadge(el, sum.last === null ? '' : speedRateLabel({ value: sum.last, kind: sum.kind }));
-        const avg = speedAvgEl();
-        if (avg) { avg.textContent = sum.avg === null ? '' : 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok'; avg.hidden = sum.avg === null; }
-      }
-    } else speedPaint();
+    if (s.finished && s.note) s.note.innerHTML = speedNoteHtml(s.noteMs, speedSummary());
+    paintSpeedWindows();
   }
+
   function speedFinish() {
     const s = state.speed;
     clearInterval(s.timer); s.timer = 0; s.finished = true;
     const sum = speedSummary();
-    const el = speedEl();
-    speedBadge(el, sum.last === null ? '' : speedRateLabel({ value: sum.last, kind: sum.kind }));
-    const avgEl = speedAvgEl();
-    if (avgEl) {
-      avgEl.textContent = sum.avg === null ? '' : 'prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok';
-      avgEl.hidden = sum.avg === null;
-    }
+    paintSpeedWindows();
     return sum;
   }
+
   const stopNote = (sr) => {
     if (!sr || sr === 'end_turn') return;
     const m = {
@@ -3255,11 +3311,12 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     el.hidden = false;
     // El punto late solo en las fases donde trabaja el modelo (ver .rp-dot en app.css): es la
     // diferencia entre "esta trabajando" y "esta esperando que hagas algo vos".
-    el.innerHTML = uiIcon(PHASE_ICON[next] || 'dot', { size: 12 })
+    el.innerHTML = '<span class="rp-head">' + uiIcon(PHASE_ICON[next] || 'dot', { size: 12 })
       + '<span class="rp-dot" aria-hidden="true"></span>'
       + '<span class="rp-name">' + esc(PHASE_LABEL[next] || next) + '</span>'
-      + '<span class="rp-since"></span>';
+      + '<span class="rp-since"></span></span>';
     phasePaint();
+    paintSpeedWindows();
   }
   // Mantener una etiqueta corta en teléfonos, sin perder el diagnóstico completo.
   function setRunBarText(full) {
@@ -3269,6 +3326,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     bar.dataset.fullStatus = full;
     renderRunBarText();
   }
+  const compactRunBar = () => window.matchMedia('(max-width: 560px)').matches;
   function renderRunBarText() {
     const bar = $('#runbar'), el = $('#runbar-text');
     if (!bar || !el) return;
@@ -3298,8 +3356,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   window.addEventListener('resize', () => {
     renderRunBarText();
     paintQueuedRunBar();
-    const el = $('#runbar-tps');
-    if (el) speedBadge(el, el.dataset.fullLabel || '');
+    paintSpeedWindows();
   });
   const paintRunBar = () => {
     paintQueuedRunBar();
@@ -3362,7 +3419,6 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   // así se ve aunque la barra de arriba ya se haya ido.
   function speedNoteHtml(ms, sum) {
     const parts = ['fin del turno · ' + fmtElapsed(ms)];
-    if (sum.last !== null) parts.push(speedRateLabel({ value: sum.last, kind: sum.kind }));
     if (sum.avg !== null) parts.push('prom generación ' + fmtTps(sum.avg) + ' · ' + sum.out + ' tok');
     return esc(parts[0]) + parts.slice(1).map((p) => ' · <span class="te-tps">' + esc(p) + '</span>').join('');
   }
@@ -4463,8 +4519,14 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     stopOrphanWatch(); // en adoptado vigila watchAdoptedRun
     if (runId) state.runId = runId;
     const text = note || ADOPTED_NOTE;
-    if (!state.busy) setBusy(true, text, startedAt);
-    else if (!$('#runbar')?.classList.contains('cancelling')) setRunBarText(text); // no pisamos "Deteniendo…"
+    if (!state.busy) {
+      setBusy(true, text, startedAt);
+      // El run ya venía andando: si el cronómetro del ritmo no existe, se arranca acá y se siembra
+      // con lo último que informó el backend, para que las ventanas tengan números y no un hueco.
+      if (!state.speed.timer) speedStart();
+      speedSeed();
+      paintSpeedWindows();
+    } else if (!$('#runbar')?.classList.contains('cancelling')) setRunBarText(text); // no pisamos "Deteniendo…"
     startRunWatch();
   }
 
@@ -7109,7 +7171,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     perChat: { load: readLoad, key: readKeyFor, now: () => READ_ON },
     append: (t) => streamAppend('test-msg', t, false, false),
     draft: { save: saveDraft, load: loadDraft, key: draftKey },
-    engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, turnEndNote };
+    engine: (m, v) => { if (m) READ.engine = m; if (v) READ.voiceName = v; try { localStorage.setItem('aegis.ttsEngine', READ.engine); localStorage.setItem('aegis.ttsVoice', READ.voiceName); } catch (e) {} readReset(true); return READ.engine + '|' + READ.voiceName; }, block: (t) => readBlock(t), clean: (t) => readClean(t), state: () => READ }, drainRender, flushRender, showWelcome, refreshSessions, slashCommands: () => state.slash.slice(), dropSocket: () => { try { rpc.ws.close(); } catch {} }, probeRun: activeRunId, resync: resyncAdoptedRun, adopt: adoptRun, pendingSteers: loadPending, stopWatch: stopRunWatch, startWatch: startRunWatch, watchTick: watchAdoptedRun, softResync, sweepTools: sweepInterruptedTools, metrics: METRICS, watchDbg: WATCH_DBG, hub: () => ({ soportado: state.hubWatch, sid: state.hubWatchSid, cursor: state.hubCursor, watchers: state.hubWatchers, replay: state.hubReplay }), hubWatchNow: startHubWatch, hubRewatch, hubWatchSession: watchSession, hubUnwatch: () => (state.hubWatchSid ? hubUnwatch(state.hubWatchSid) : null), hubInfo: runIdFromInfo, resetMetrics: () => { METRICS.renders = 0; METRICS.renderMs = 0; METRICS.maxRenderMs = 0; METRICS.composerRuns = 0; METRICS.composerMs = 0; METRICS.maxComposerMs = 0; }, speedStart, speedFeed: speedChunk, speedFinish, speedReset, speedSummary, speedSeed, speedWindowSummary, speedWindowPaint: paintSpeedWindows, turnEndNote };
 
   if (CFG.host === 'mock') (window as any).__aegisWeb.testUi = { update: applyUpdate, usage: onAegisUpdate, rate: stepRate, pop: openUsagePop, busy: setBusy, run: applyActiveRunId, reconcile: hubOrphanTick, addUser, identifyUserBubble, steerDelivered: markSteerDelivered, seedSteer: (mid, el) => { state.steers.set(mid, { el, text: '', atts: [] }); paintQueuedRunBar(); }, watchRevision: () => liveRunRevision };
 

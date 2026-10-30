@@ -156,21 +156,32 @@ try {
     await page.waitForSelector('#chips .chip[aria-haspopup="menu"]', { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(400);
   }
+  // El chip de modelo/proveedor abre un combo (role=dialog), no el menu de fila: anuncia QUÉ abre
+  // con aria-haspopup=dialog y si está abierto con aria-expanded.
   const chipInfo = await page.evaluate(() => {
-    const b = document.querySelector('#chips .chip[aria-haspopup="menu"]') as HTMLElement | null;
-    return b ? { haspopup: b.getAttribute('aria-haspopup'), expanded: b.getAttribute('aria-expanded'), text: b.textContent } : null;
+    const b = document.querySelector('#chips .chip') as HTMLElement | null;
+    return b ? { haspopup: b.getAttribute('aria-haspopup'), expanded: b.getAttribute('aria-expanded'), text: b.textContent, cls: b.className } : null;
   });
-  check(chipInfo && chipInfo.haspopup === 'menu' && chipInfo.expanded === 'false', 'chip anuncia menu y estado: ' + JSON.stringify(chipInfo));
-  await page.locator('#chips .chip[aria-haspopup="menu"]').first().click();
+  check(!!chipInfo, 'hay un chip de modelo/proveedor con sesión abierta: ' + JSON.stringify(chipInfo));
+  check(chipInfo!.haspopup === 'dialog' && chipInfo!.expanded === 'false', 'chip anuncia el diálogo y su estado: ' + JSON.stringify(chipInfo));
+  await page.locator('#chips .chip').first().click();
   await page.waitForTimeout(250);
   const chipOpen = await page.evaluate(() => {
-    const b = document.querySelector('#chips .chip[aria-haspopup="menu"]') as HTMLElement;
-    return { expanded: b.getAttribute('aria-expanded'), menu: !!document.querySelector('.menu[role="menu"]') };
+    const b = document.querySelector('#chips .chip') as HTMLElement;
+    return {
+      expanded: b.getAttribute('aria-expanded'),
+      dialog: !!document.querySelector('.combo-panel[role="dialog"]'),
+      opciones: document.querySelectorAll('.combo-panel [role="option"]').length,
+    };
   });
-  check(chipOpen.expanded === 'true' && chipOpen.menu, 'chip abierto anuncia expanded y menu: ' + JSON.stringify(chipOpen));
+  check(chipOpen.expanded === 'true' && chipOpen.dialog && chipOpen.opciones > 0, 'chip abierto anuncia expanded y trae el combo con opciones: ' + JSON.stringify(chipOpen));
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(150);
-  check(await page.evaluate(() => (document.querySelector('#chips .chip[aria-haspopup="menu"]') as HTMLElement).getAttribute('aria-expanded')) === 'false', 'Esc cierra el chip');
+  await page.waitForTimeout(200);
+  const chipClosed = await page.evaluate(() => ({
+    expanded: (document.querySelector('#chips .chip') as HTMLElement).getAttribute('aria-expanded'),
+    dialog: !!document.querySelector('.combo-panel[role="dialog"]'),
+  }));
+  check(chipClosed.expanded === 'false' && !chipClosed.dialog, 'Esc cierra el combo y baja expanded: ' + JSON.stringify(chipClosed));
 
   // --- panel de Skills: abre, busca, cierra y devuelve el foco
   await page.click('#btn-skills');

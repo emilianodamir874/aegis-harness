@@ -1,12 +1,13 @@
-// Verifica que el ritmo de generacion (tok/s) se vea y diga lo mismo en sus tres lugares:
-// el badge del runbar en vivo (estimado), el badge + promedio al cerrar el turno, la marca de
-// fin de turno que queda en la conversacion, y la fila del popover de contexto.
+// Comprueba en el navegador, contra la app servida, el contrato del ritmo de salida:
+//   · no hay tok/s instantáneo en el runbar,
+//   · la fila de seis promedios (5s, 15s, 30s, 1m, 5m, 15m) vive como segunda línea del runbar,
+//     hermana del badge de fase y no dentro de él,
+//   · los promedios salen de usage del backend y se vacían sin datos,
+//   · la nota de fin de turno conserva el promedio ponderado.
 //
 // Uso: node tools/runbar-tps-check.mjs [url]
 // Escribe capturas en C:/Users/Emiliano/backups/runbar-tps-<escenario>.png
-//
-// Es read-only sobre el serve: carga la pagina, alimenta el velocimetro con los hooks de
-// __aegisWeb (speedStart/speedFeed/speedFinish) y mira el DOM. No manda prompts.
+// Es read-only sobre el serve: alimenta el velocímetro con los hooks de __aegisWeb y mira el DOM.
 
 import { chromium } from 'playwright';
 
@@ -34,85 +35,99 @@ try {
     await page.goto(url, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => !!(window.__aegisWeb && window.__aegisWeb.state), null, { timeout: 20000 });
 
-    // Runbar visible, como durante un turno.
     await page.evaluate(() => {
+      const app = window.__aegisWeb;
       document.querySelector('#runbar').hidden = false;
-      document.querySelector('#runbar-text').textContent = 'Aegis esta trabajando…';
+      document.querySelector('#runbar-text').textContent = 'Aegis está trabajando…';
       document.querySelector('#runbar-time').textContent = '3.4 s';
-      window.__aegisWeb.speedStart();
+      app.view?.setPhase?.('writing');
+      app.speedReset();
+      app.speedStart();
     });
+    await page.waitForTimeout(200);
 
-    // En vivo: 6 tandas de 400 chars cada 250 ms (≈2400 chars en 1,5 s ≈ 400 tok/s estimados).
-    for (let i = 0; i < 6; i++) {
-      await page.evaluate(() => window.__aegisWeb.speedFeed('x'.repeat(400)));
-      await page.waitForTimeout(250);
-    }
-    await page.waitForTimeout(320);
-    const live = await page.evaluate(() => {
-      const el = document.querySelector('#runbar-tps');
-      const cs = getComputedStyle(el);
+    const initial = await page.evaluate(() => {
+      const row = document.querySelector('#runbar-speed-windows');
+      const phase = document.querySelector('#runbar-phase');
+      const bar = document.querySelector('#runbar');
+      const rr = row?.getBoundingClientRect();
+      const pr = phase?.getBoundingClientRect();
+      const br = bar?.getBoundingClientRect();
       return {
-        text: el.textContent, hidden: el.hidden, bg: cs.backgroundColor,
-        border: cs.borderTopWidth, font: cs.fontFamily, size: cs.fontSize, weight: cs.fontWeight, color: cs.color
+        cells: [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').replace(/\s+/g, ' ').trim()),
+        hidden: !!row?.hidden,
+        display: row ? getComputedStyle(row).display : null,
+        parent: row?.parentElement?.id || null,
+        insidePhase: !!document.querySelector('#runbar-phase #runbar-speed-windows'),
+        instant: !!document.querySelector('#runbar-tps') || !!document.querySelector('#runbar-avg'),
+        belowPhase: !!(rr && pr && rr.top >= pr.bottom - 2),
+        insideBar: !!(rr && br && rr.left >= br.left - 1 && rr.right <= br.right + 1 && rr.bottom <= br.bottom + 1),
+        width: rr ? Math.round(rr.width) : 0
       };
     });
-    check('badge en vivo con etiqueta ~N tok/s', /^~\d+(\.\d+)? tok\/s$/.test(live.text), JSON.stringify(live.text));
-    check('badge visible durante el stream', !live.hidden);
-    check('badge es una pill (fondo + borde propios, no hereda el texto del runbar)',
-      live.bg !== 'rgba(0, 0, 0, 0)' && parseFloat(live.border) > 0,
-      `bg=${live.bg} border=${live.border}`);
-    check('badge en monoespaciada y negrita', /mono|consol|courier/i.test(live.font) && Number(live.weight) >= 600,
-      `font=${live.font} weight=${live.weight}`);
+    check('no existe tok/s instantáneo', !initial.instant);
+    check('seis ventanas en orden y vacías', initial.cells.length === 6 && initial.cells.map((x) => x.replace(/[^0-9a-z]/gi, '')).join(',') === '5s,15s,30s,1m,5m,15m' && initial.cells.every((x) => x.endsWith('—')), JSON.stringify(initial.cells));
+    check('la fila se ve sin datos', !initial.hidden && initial.display !== 'none');
+    check('la fila es hermana del badge de fase, no hija', initial.parent === 'runbar' && !initial.insidePhase, JSON.stringify({ parent: initial.parent, inside: initial.insidePhase }));
+    check('la fila cae debajo del badge de fase', initial.belowPhase && initial.insideBar, JSON.stringify({ below: initial.belowPhase, inside: initial.insideBar }));
     await page.locator('#runbar').screenshot({ path: outDir + 'runbar-tps-' + s.name + '-vivo.png' });
 
-    // Cierre del turno: exacto del ultimo paso + promedio ponderado + total.
+    // Una muestra de generación medida: 250 tok en 5 s. La ventana de 5 s la toma entera y las
+    // demás la diluyen por su ancho, así se comprueba que el denominador es la ventana y no la edad.
+    const sample = await page.evaluate(() => {
+      const app = window.__aegisWeb;
+      app.state.speed.samples.push({ at: performance.now(), durationMs: 5000, tokens: 250 });
+      app.speedWindowPaint();
+      return [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim());
+    });
+    check('seis promedios con una muestra medida', sample.join(',') === '5s50.0,15s16.7,30s8.3,1m4.2,5m0.8,15m0.3', JSON.stringify(sample));
+
+    // Cierre del turno: promedio ponderado de generación + total de tokens.
     const done = await page.evaluate(() => {
-      const st = window.__aegisWeb.state.speed;
-      st.exact = 43.26; st.runOut = 4123; st.runGen = 98000;
-      document.querySelector('#runbar').classList.add('done'); // como runBarDone
-      const sum = window.__aegisWeb.speedFinish();
-      const badge = document.querySelector('#runbar-tps');
-      const avg = document.querySelector('#runbar-avg');
-      const order = [...document.querySelectorAll('#runbar > *')].map((n) => n.id || n.className);
+      const app = window.__aegisWeb;
+      const st = app.state.speed;
+      st.runOut = 4123; st.runGen = 98000;
+      document.querySelector('#runbar').classList.add('done');
+      const sum = app.speedFinish();
       return {
-        sum, badge: badge.textContent, badgeHidden: badge.hidden, badgeBg: getComputedStyle(badge).backgroundColor,
-        avg: avg.textContent, avgHidden: avg.hidden, order
+        sum,
+        cells: [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim()),
+        instant: !!document.querySelector('#runbar-tps') || !!document.querySelector('#runbar-avg')
       };
     });
-    check('badge exacto al cerrar (43.3 tok/s)', done.badge === '43.3 tok/s', JSON.stringify(done.badge));
-    check('promedio del turno (prom 42.1 tok/s · 4123 tok)', done.avg === 'prom 42.1 tok/s · 4123 tok', JSON.stringify(done.avg));
-    check('badge verde en done', done.badgeBg.includes('85, 165, 131'), done.badgeBg);
-    check('orden del runbar: texto · tiempo · badge · promedio · detener',
-      done.order.join(',') === 'runbar-spin,runbar-text,runbar-time,runbar-tps,runbar-avg,runbar-stop', done.order.join(','));
+    check('el promedio del turno sale de la generación medida', done.sum.avg === 42.07142857142857 && done.sum.out === 4123, JSON.stringify(done.sum));
+    check('las ventanas siguen visibles al terminar', done.cells.length === 6);
+    check('no reaparece tasa instantánea al cerrar', !done.instant);
     await page.locator('#runbar').screenshot({ path: outDir + 'runbar-tps-' + s.name + '-fin.png' });
 
-    // Marca de fin de turno en la conversacion (es lo unico que queda cuando el runbar se va).
+    // La nota que queda en la conversación cuando el runbar se va.
     const note = await page.evaluate(() => {
+      window.__aegisWeb.state.speed.runOut = 4123;
+      window.__aegisWeb.state.speed.runGen = 98000;
       window.__aegisWeb.turnEndNote(12300);
       const el = [...document.querySelectorAll('.turn-end')].pop();
       const tps = el.querySelector('.te-tps');
-      return { text: el.textContent, tpsFont: tps ? getComputedStyle(tps).fontFamily : null, html: el.innerHTML.length };
+      return { text: el.textContent, font: tps ? getComputedStyle(tps).fontFamily : null };
     });
-    check('marca de fin de turno con el ritmo',
-      note.text.includes('fin del turno · 12.3 s') && note.text.includes('43.3 tok/s') && note.text.includes('prom 42.1 tok/s · 4123 tok'),
+    check('la nota trae tiempo y promedio, sin tasa instantánea',
+      note.text.includes('fin del turno · 12.3 s') && note.text.includes('prom generación 42.1 tok/s · 4123 tok') && !/últim[ao]/.test(note.text),
       JSON.stringify(note.text));
-    check('el ritmo de la marca va en monoespaciada', /mono|consol|courier/i.test(note.tpsFont || ''), String(note.tpsFont));
+    check('el promedio de la nota va en monoespaciada', /mono|consol|courier/i.test(note.font || ''), String(note.font));
 
-    // Popover de contexto: el mismo numero, calculado de message_usage.
-    const pop = await page.evaluate(() => {
+    // El panel de gasto no revienta ni pierde el desglose abierto al refrescarse en vivo.
+    const panel = await page.evaluate(() => {
       const w = window.__aegisWeb;
-      w.state.usage = {
-        used: 412000, limit: 500000, inTok: 1234567, outTok: 45678, cost: 3.21,
-        last: { inputTokens: 90000, outputTokens: 3000, cacheReadTokens: 45000, elapsedMs: 12300, timeToFirstTokenMs: 2100 }
-      };
+      w.state.usage = { used: 412000, limit: 500000, inTok: 1234567, outTok: 45678, cost: 3.21, contextBreakdown: [{ label: 'sistema', tokens: 12000 }] };
       w.renderUsagePublic();
       document.querySelector('#btn-gasto-top').click();
-      const popEl = document.querySelector('#usage-pop');
-      return { hidden: popEl.hidden, rows: [...popEl.querySelectorAll('.up-row')].map((r) => r.textContent) };
+      const body = document.querySelector('#usage-panel .gs-disclosure[data-gs-detail="contexto"] summary');
+      body?.click();
+      const before = document.querySelector('#usage-panel .gs-disclosure[data-gs-detail="contexto"]')?.open;
+      w.refrescarGasto();
+      const detail = document.querySelector('#usage-panel .gs-disclosure[data-gs-detail="contexto"]');
+      return { open: !!before, stillThere: !!detail, stillOpen: !!detail?.open, hasBody: (detail?.querySelector('.gs-disclosure-body')?.innerHTML || '').length > 0 };
     });
-    check('el popover abre y su fila "ultimo paso" trae el ritmo',
-      !pop.hidden && pop.rows.some((r) => r.includes('ultimo paso') && r.includes('294 tok/s')),
-      JSON.stringify(pop.rows.slice(0, 2)));
+    check('el desglose de contexto sobrevive al refresco en vivo', panel.open && panel.stillThere && panel.stillOpen && panel.hasBody, JSON.stringify(panel));
 
     check('sin errores de consola', errors.length === 0, errors.slice(0, 2).join(' | '));
     await ctx.close();
@@ -121,5 +136,5 @@ try {
   await browser.close();
 }
 
-console.log(fails.length ? `\n${fails.length} falla(s).` : '\ntok/s visible y consistente en runbar, conversacion y popover.');
+console.log(fails.length ? `\n${fails.length} falla(s).` : '\nseis promedios de salida en el runbar, sin tasa instantánea.');
 if (fails.length) process.exit(1);

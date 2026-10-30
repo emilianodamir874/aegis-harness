@@ -234,74 +234,96 @@ try {
     const ui = app.testUi;
     const notify = (id: string, output: number, gen?: number) => ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: id, usage: { outputTokens: output, elapsedMs: 2100, timeToFirstTokenMs: 2100, ...(gen === undefined ? {} : { generationMs: gen }) } } });
     const chunk = (id: string) => ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: id, content: { type: 'text', text: 'prueba' } } });
+    const cells = () => [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim());
     ui.run('run-usage');
-    // Una notificación antigua justo después del arranque y un usage sin mensaje no pertenecen al run.
+    // Una notificación anterior al run y un usage sin mensaje no pertenecen a este turno.
     notify('old', 999);
     ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', usage: { outputTokens: 999, elapsedMs: 2100, timeToFirstTokenMs: 100 } } });
     chunk('step1');
     app.state.hubReplay = true; notify('step1', 20); app.state.hubReplay = false;
-    notify('step1', 20, 2000); notify('step1', 20, 2000); // replay duplicado después del vivo
-    chunk('step2'); // nuevo paso: jamás debe mostrar la etiqueta exacta de step1
-    const stale = document.querySelector('#runbar-tps')?.textContent || '';
-    notify('step2', 20); // TTFT=elapsed; solicitud total: popover, no generación
+    notify('step1', 20, 2000); notify('step1', 20, 2000); // replay y duplicados del mismo messageId
+    const afterFirst = { summary: app.speedSummary(), cells: cells() };
+    chunk('step2');
+    notify('step2', 20, 2000);
+    const live = { summary: app.speedSummary(), cells: cells() };
     chunk('step3'); // usage genuino que llega después del terminal
-    const live = app.speedSummary();
-    const pop = (() => { ui.pop(); return document.querySelector('#usage-pop')?.textContent || ''; })();
     ui.run(null);
     const beforeLate = app.speedSummary();
-    notify('old', 999); // jamás hubo chunk de old en ESTE run
-    notify('step3', 40, 2000); // chunk de step3 sí pertenece a este turno
+    notify('old', 999);
+    notify('step3', 40, 2000);
     notify('step3', 40, 2000); notify('step1', 20, 2000); // duplicados luego del terminal
     const afterLate = app.speedSummary();
     const note = document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '';
-    return { live, beforeLate, afterLate, pop, note, stale };
+    return {
+      afterFirst, live, beforeLate, afterLate, note,
+      cellsLate: cells(),
+      instant: !!document.querySelector('#runbar-tps') || !!document.querySelector('#runbar-avg'),
+      insidePhase: !!document.querySelector('#runbar-phase #runbar-speed-windows')
+    };
   }, A);
-  eq(rates.stale, 'última generación 10.0 tok/s', 'el paso nuevo distingue el ritmo anterior');
-  eq(rates.live.out, 20, 'uso único por messageId/run');
-  eq(rates.live.avg, 10, 'promedio solo generación');
-  eq(rates.beforeLate.out, 20, 'fin de turno mantiene generación');
-  eq(rates.afterLate.out, 60, 'usage tardío del run suma una vez; ajenos ignorados');
-  eq(rates.afterLate.avg, 15, 'promedio ponderado actualizado tras terminal');
-  if (!rates.note.includes('prom generación 15.0 tok/s')) throw new Error('etiqueta de velocidad errónea: ' + JSON.stringify(rates));
-  console.log('PASS uso ordenado/deduplicado por mensaje y run, replay y etiquetas de solicitud/generación');
-  const newRun = await page.evaluate((sid) => {
+  eq(rates.afterFirst.summary.out, 20, 'uso único por messageId/run');
+  eq(rates.live.summary.out, 40, 'dos pasos suman una vez cada uno');
+  eq(rates.beforeLate.out, 40, 'fin de turno mantiene la generación medida');
+  eq(rates.afterLate.out, 80, 'usage tardío del run suma una vez; ajenos ignorados');
+
+  // Tres pasos medidos de 2 s cada uno: 20 + 20 + 40 tok en 6 s de generación = 13,3 tok/s.
+  if (Math.abs((rates.afterLate.avg ?? 0) - 80 / 6) > 1e-9) throw new Error('promedio ponderado de generación: ' + String(rates.afterLate.avg));
+  if (!rates.note.includes('prom generación 13.3 tok/s') || !rates.note.includes('80 tok')) throw new Error('promedio del turno en la nota: ' + JSON.stringify(rates.note));
+  if (!/fin del turno/.test(rates.note)) throw new Error('la nota perdió el tiempo del turno: ' + JSON.stringify(rates.note));
+  if (rates.instant) throw new Error('quedan nodos de tasa instantánea en el runbar');
+  if (rates.insidePhase) throw new Error('la fila de promedios quedó dentro del badge de fase');
+  const labels = rates.cellsLate.map((x) => x.slice(0, x.length - (x.match(/[\d.,—]+$/) || [''])[0].length));
+  eq(labels.join(','), '5s,15s,30s,1m,5m,15m', 'las seis ventanas van en orden');
+  const nums = rates.cellsLate.map((x) => Number((x.match(/[\d.]+$/) || ['NaN'])[0]));
+  if (nums.some((n) => !isFinite(n) || n <= 0)) throw new Error('ventanas sin valor con muestras: ' + JSON.stringify(rates.cellsLate));
+  if (!(nums[0] > nums[1] && nums[1] > nums[2] && nums[2] > nums[3] && nums[3] > nums[4])) throw new Error('ventanas no decrecientes con el ancho: ' + JSON.stringify(rates.cellsLate));
+  console.log('PASS uso ordenado/deduplicado por mensaje y run, y seis promedios móviles de salida');
+  const emptyRun = await page.evaluate((sid) => {
     const app = (window as any).__aegisWeb, ui = app.testUi;
-    ui.run('run-new');
-    const chunk = (id: string) => ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: id, content: { type: 'text', text: 'prueba' } } });
-    const usage = (id: string, gen: number) => ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: id, usage: { outputTokens: 30, elapsedMs: 3000, timeToFirstTokenMs: 3000, generationMs: gen } } });
-    usage('step3', 1000); // pertenece al run anterior, aunque haya llegado tarde
-    chunk('step-new'); usage('step-new', 1000);
-    const exact = document.querySelector('#runbar-tps')?.textContent || '';
-    // Paso tool-only: no tener etiqueta exacta vieja hasta que haya contenido propio.
-    ui.update({ sessionId: sid, update: { sessionUpdate: 'tool_call', messageId: 'tool-new', toolCallId: 'tool-new', title: 'tool mock', status: 'in_progress' } });
-    const afterTool = document.querySelector('#runbar-tps')?.textContent || '';
-    usage('tool-new', 0); // sin contenido observado: nunca incluir en promedio de generación
-    const summary = app.speedSummary();
+    ui.run('run-empty');
+    const cells = [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim());
+    const windows = document.querySelector<HTMLElement>('#runbar-speed-windows');
+    const res = { cells, hidden: !!windows?.hidden, shown: !!windows && getComputedStyle(windows).display !== 'none', instant: !!document.querySelector('#runbar-tps') };
     ui.run(null);
-    return { exact, afterTool, summary };
+    return res;
   }, A);
-  eq(newRun.exact, 'generación 30.0 tok/s', 'run nuevo usa generationMs aun si TTFT=elapsed');
-  eq(newRun.afterTool, 'última generación 30.0 tok/s', 'tool-only marca el ritmo anterior');
-  eq(newRun.summary.out, 30, 'run nuevo no hereda tokens ni acepta usage anterior/tool-only');
-  eq(newRun.summary.avg, 30, 'promedio sólo generación observada del run nuevo');
-  const requestRate = await page.evaluate((sid) => {
+  eq(emptyRun.cells.length, 6, 'las seis ventanas existen antes del primer usage');
+  if (!emptyRun.cells.every((x) => x.endsWith('—'))) throw new Error('ventanas inventan un número sin usage: ' + JSON.stringify(emptyRun.cells));
+  if (emptyRun.hidden || !emptyRun.shown) throw new Error('fila de promedios oculta sin usage: ' + JSON.stringify(emptyRun));
+  if (emptyRun.instant) throw new Error('badge instantáneo creado sin usage');
+  console.log('PASS ventanas vacías antes del primer usage, sin tasa inventada');
+  // Turno adoptado a mitad de camino: los pasos medidos antes de entrar al chat no llegaron como
+  // message_usage a esta pestaña. Se siembra el último que informó el backend y tiene que caer en
+  // las ventanas como si se hubiera medido acá, una sola vez y solo si es generación.
+  const adopt = await page.evaluate(() => {
     const app = (window as any).__aegisWeb, ui = app.testUi;
-    ui.run('run-request');
-    const initial = document.querySelector<HTMLElement>('#runbar-tps')!;
-    const pending = { text: initial.textContent, hidden: initial.hidden };
-    ui.update({ sessionId: sid, update: { sessionUpdate: 'tool_call', messageId: 'request-tool', toolCallId: 'request-tool', title: 'tool mock', status: 'in_progress' } });
-    ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: 'request-tool', usage: { outputTokens: 70, elapsedMs: 3500, timeToFirstTokenMs: 3500 } } });
-    const request = { text: initial.textContent, title: initial.title };
-    ui.update({ sessionId: sid, update: { sessionUpdate: 'tool_call', messageId: 'request-tool-next', toolCallId: 'request-tool-next', title: 'otro tool mock', status: 'in_progress' } });
-    const previous = { text: initial.textContent, title: initial.title };
-    const avg = app.speedSummary().avg;
-    ui.run(null);
-    return { pending, request, previous, avg };
-  }, A);
-  if (requestRate.pending.text !== '— tok/s' || requestRate.pending.hidden || requestRate.request.text !== 'solicitud 20.0 tok/s' ||
-      !requestRate.request.title.includes('no generación') || requestRate.previous.text !== 'última solicitud 20.0 tok/s' || requestRate.avg !== null)
-    throw new Error('ritmo de solicitud o estado pendiente engañoso: ' + JSON.stringify(requestRate));
-  console.log('PASS cambio de run, tool-only y throughput de solicitud diferenciado');
+    const cells = () => [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim());
+    ui.busy(true, 'Turno adoptado');
+    app.speedStart();
+    app.state.last = { outputTokens: 300, generationMs: 5000, elapsedMs: 6000 };
+    app.speedSeed();
+    app.speedWindowPaint();
+    const row = document.querySelector<HTMLElement>('#runbar-speed-windows');
+    const seeded = { cells: cells(), title: row?.title || '', samples: app.state.speed.samples.length };
+    app.speedSeed();
+    const twice = app.state.speed.samples.length;
+    // Solo throughput de solicitud: sirve como último dato, no entra en las ventanas.
+    app.speedReset();
+    app.speedStart();
+    app.state.last = { outputTokens: 40, elapsedMs: 5000, generationMs: null };
+    app.speedSeed();
+    app.speedWindowPaint();
+    const request = { samples: app.state.speed.samples.length, cells: cells() };
+    ui.busy(false);
+    return { seeded, twice, request };
+  });
+  eq(adopt.seeded.cells.join(','), '5s60.0,15s20.0,30s10.0,1m5.0,5m1.0,15m0.3', 'siembra del turno adoptado: 300 tok en 5 s repartidos en las seis ventanas: ' + JSON.stringify(adopt.seeded.cells));
+  eq(adopt.seeded.samples, 1, 'la siembra agrega una sola muestra');
+  eq(adopt.twice, 1, 'sembrar dos veces no duplica la muestra');
+  if (!/backend/.test(adopt.seeded.title)) throw new Error('title de la fila sembrada: ' + adopt.seeded.title);
+  eq(adopt.request.samples, 0, 'el throughput de solicitud no entra en las ventanas de generación');
+  if (!adopt.request.cells.every((x) => x.endsWith('—'))) throw new Error('sin generación medida las ventanas no inventan número: ' + JSON.stringify(adopt.request.cells));
+  console.log('PASS turno adoptado siembra las ventanas con el último usage del backend, sin estimar');
   await page.evaluate(() => {
     const app = (window as any).__aegisWeb;
     app.testUi.run('mock-run');
@@ -313,30 +335,27 @@ try {
   console.log('PASS fin de run por hub libera la barra sin recargar');
 
   await page.evaluate(() => { const pop = document.querySelector<HTMLElement>('#usage-pop'); if (pop) pop.hidden = true; });
-  // Tres teléfonos, sin session/prompt: el run y el usage son solamente mocks de UI.
-  // Se mide el layout real (CSS + JS), no solo el texto: la tasa y Detener deben caber.
+  // Tres teléfonos: el runbar tiene dos renglones (estado + promedios) y ninguno puede desbordar.
   for (const width of [360, 390, 430]) {
     await page.setViewportSize({ width, height: 780 });
     const snapshot = await page.evaluate((sid) => {
       const app = (window as any).__aegisWeb, ui = app.testUi;
-      const bar = document.querySelector<HTMLElement>('#runbar')!;
       const text = document.querySelector<HTMLElement>('#runbar-text')!;
       const queued = document.querySelector<HTMLElement>('#runbar-queued');
       ui.busy(true, 'Turno en curso (lo arrancó otra conexión)');
       ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: 'mobile-live-' + innerWidth, content: { type: 'text', text: 'prueba' } } });
-      const speed = app.state.speed;
-      app.speedStart(); // restablece estado: sin usage no hay tasa
-      // La función de pintado se ejecuta con el tick periódico; esperar afuera.
+      app.speedStart();
       return { text: text.textContent, title: text.title, initialQueue: !!queued && !queued.hidden };
     }, A);
-    await page.waitForFunction(() => (document.querySelector('#runbar-tps')?.textContent || '') === '— tok/s', null, { timeout: 2000 });
+    await page.waitForTimeout(150);
     const live = await page.evaluate((sid) => {
       const app = (window as any).__aegisWeb, ui = app.testUi;
-      const bar = document.querySelector<HTMLElement>('#runbar')!, badge = document.querySelector<HTMLElement>('#runbar-tps')!;
+      const bar = document.querySelector<HTMLElement>('#runbar')!;
       const queued = document.querySelector<HTMLElement>('#runbar-queued');
       const stop = document.querySelector<HTMLElement>('#btn-stop')!;
       const rect = (el: HTMLElement) => el.getBoundingClientRect();
       const text = document.querySelector<HTMLElement>('#runbar-text')!;
+      const windows = document.querySelector<HTMLElement>('#runbar-speed-windows')!;
       ui.seedSteer('mobile-steer-' + innerWidth, ui.addUser('indicación local mock', false, [], { queued: true }));
       const pending = document.querySelector<HTMLElement>('#runbar-queued')!;
       const withQueue = { text: pending.textContent, visible: !pending.hidden && getComputedStyle(pending).display !== 'none', bounds: rect(pending), title: pending.title };
@@ -345,29 +364,50 @@ try {
       const meta = document.querySelector<HTMLElement>('.composer-meta')!;
       const composer = document.querySelector<HTMLElement>('.composer')!;
       const input = document.querySelector<HTMLElement>('#input')!;
-      return { rate: badge.textContent, title: badge.title, bounds: rect(badge), bar: rect(bar), meta: rect(meta), composer: rect(composer), input: rect(input), stop: rect(stop), statusRect: rect(text), statusClipped: text.scrollWidth > text.clientWidth + 1, statusVisible: getComputedStyle(text).display !== 'none', elapsed: rect(elapsed), avgDisplay: getComputedStyle(document.querySelector('#runbar-avg')!).display, queue: withQueue, afterDelivery: pending.hidden, status: text.textContent, siblings: bar.parentElement === meta && meta.children.length === 3, hintsHidden: getComputedStyle(document.querySelector('#meta-left')!).display === 'none' && getComputedStyle(document.querySelector('#meta-right')!).display === 'none' };
+      return {
+        cells: [...windows.querySelectorAll('.runbar-speed-cell')].map((n) => (n.textContent || '').trim()),
+        windows: rect(windows), bar: rect(bar), meta: rect(meta), composer: rect(composer), input: rect(input), stop: rect(stop),
+        statusRect: rect(text), statusClipped: text.scrollWidth > text.clientWidth + 1, statusVisible: getComputedStyle(text).display !== 'none',
+        elapsed: rect(elapsed), queue: withQueue, afterDelivery: pending.hidden, status: text.textContent,
+        siblings: bar.parentElement === meta && meta.children.length === 3,
+        hintsHidden: getComputedStyle(document.querySelector('#meta-left')!).display === 'none' && getComputedStyle(document.querySelector('#meta-right')!).display === 'none',
+        instant: !!document.querySelector('#runbar-tps') || !!document.querySelector('#runbar-avg')
+      };
     }, A);
     if (snapshot.text !== 'Trabaja' || !snapshot.title.includes('otra conexión') || snapshot.initialQueue) throw new Error('estado móvil inicial falso: ' + JSON.stringify(snapshot));
-    if (live.rate !== '— tok/s' || !live.title.includes('Sin usage') || !live.queue.visible || live.queue.text !== 'pendiente' || !live.queue.title.includes('indicación') || !live.afterDelivery) throw new Error('badge estimado o cola incorrecta: ' + JSON.stringify(live));
-    if (live.avgDisplay !== 'none') throw new Error('promedio debe quedar sólo en nota de conversación en móvil');
+    if (live.cells.length !== 6 || !live.cells.every((x) => x.endsWith('—'))) throw new Error('ventanas sin usage en móvil: ' + JSON.stringify(live.cells));
+    if (!live.queue.visible || live.queue.text !== 'pendiente' || !live.queue.title.includes('indicación') || !live.afterDelivery) throw new Error('cola incorrecta: ' + JSON.stringify(live));
+    if (live.instant) throw new Error('nodo de tasa instantánea en móvil');
     const fits = (x: DOMRect) => x.left >= live.bar.left - 1 && x.right <= live.bar.right + 1 && x.top >= live.bar.top - 1 && x.bottom <= live.bar.bottom + 1;
-    if (![live.bounds, live.queue.bounds, live.statusRect, live.elapsed].every(fits) || live.bar.height > 28 || live.meta.height > 36 || live.statusRect.width < 24 || live.statusClipped || !live.statusVisible || !live.siblings || !live.hintsHidden || live.composer.bottom > live.meta.top || live.input.width < 90 || live.stop.width < 40 || live.stop.height < 40 || live.stop.right > width || live.stop.left < 0) throw new Error('runbar con overflow/segunda línea a ' + width + 'px: ' + JSON.stringify(live));
+    if (![live.queue.bounds, live.statusRect, live.elapsed, live.windows].every(fits)) throw new Error('runbar con contenido fuera de la barra a ' + width + 'px: ' + JSON.stringify(live));
+    if (live.bar.height > 46 || live.meta.height > 62) throw new Error('runbar demasiado alta a ' + width + 'px: ' + JSON.stringify({ bar: live.bar.height, meta: live.meta.height }));
+    if (live.windows.width > live.bar.width + 1) throw new Error('la fila de promedios desborda a ' + width + 'px: ' + JSON.stringify({ win: live.windows.width, bar: live.bar.width }));
+    if (live.statusRect.width < 24 || live.statusClipped || !live.statusVisible || !live.siblings || !live.hintsHidden || live.composer.bottom > live.meta.top || live.input.width < 90 || live.stop.width < 40 || live.stop.height < 40 || live.stop.right > width || live.stop.left < 0) throw new Error('runbar con overflow/segunda línea a ' + width + 'px: ' + JSON.stringify(live));
     await page.evaluate((sid) => {
       const app = (window as any).__aegisWeb, ui = app.testUi;
       ui.update({ sessionId: sid, update: { sessionUpdate: 'agent_message_chunk', messageId: 'mobile-exact-' + innerWidth, content: { type: 'text', text: 'prueba' } } });
       ui.usage({ sessionId: sid, update: { sessionUpdate: 'message_usage', messageId: 'mobile-exact-' + innerWidth, usage: { outputTokens: 36, elapsedMs: 2200, generationMs: 1200 } } });
     }, A);
-    eq(await page.locator('#runbar-tps').textContent(), '30.0 tok/s', 'ritmo exacto corto en móvil');
+    await page.waitForTimeout(150);
+    const measured = await page.evaluate(() => [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim()));
+    // 36 tokens generados en 1,2 s: entran completos en la ventana de 5 s, así que 36 / 5 = 7,2.
+    if (!measured[0]?.endsWith('7.2')) throw new Error('promedio de 5s en móvil: ' + JSON.stringify(measured));
     await page.locator('#btn-stop').click(); // cancelación UI mock; no envía prompt ni contacta backend real
     const cancelling = await page.evaluate(() => ({ text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, disabled: (document.querySelector('#btn-stop') as HTMLButtonElement).disabled }));
     if (cancelling.text !== 'Deteniendo…' || cancelling.title !== 'Deteniendo…' || !cancelling.disabled) throw new Error('cancelación móvil no compacta: ' + JSON.stringify(cancelling));
     await page.evaluate(() => (window as any).__aegisWeb.testUi.busy(false, 'Respuesta completa'));
-    const done = await page.evaluate(() => {
-      const bar = document.querySelector<HTMLElement>('#runbar')!, rate = document.querySelector<HTMLElement>('#runbar-tps')!;
-      return { text: document.querySelector('#runbar-text')?.textContent, title: document.querySelector<HTMLElement>('#runbar-text')?.title, rate: rate.textContent, full: rate.title, hidden: bar.hidden, note: document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '', stop: getComputedStyle(document.querySelector('#btn-stop')!).display };
-    });
-    if (done.text !== 'Terminado' || done.title !== 'Respuesta completa' || !done.full?.includes('generación 30.0') || !done.note.includes('prom generación 30.0 tok/s') || done.stop !== 'none' || done.hidden) throw new Error('resumen de fin de turno móvil: ' + JSON.stringify(done));
-    console.log('PASS runbar móvil ' + width + 'px: vivo/pendiente/exacto/fin sin recorte');
+    const done = await page.evaluate(() => ({
+      text: document.querySelector('#runbar-text')?.textContent,
+      title: document.querySelector<HTMLElement>('#runbar-text')?.title,
+      hidden: document.querySelector<HTMLElement>('#runbar')!.hidden,
+      note: document.querySelector('#msg-inner .turn-end:last-of-type')?.textContent || '',
+      cells: [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim()),
+      stop: getComputedStyle(document.querySelector('#btn-stop')!).display,
+      instant: !!document.querySelector('#runbar-tps') || !!document.querySelector('#runbar-avg')
+    }));
+    if (done.text !== 'Terminado' || done.title !== 'Respuesta completa' || !done.note.includes('prom generación 30.0 tok/s') || done.stop !== 'none' || done.hidden) throw new Error('resumen de fin de turno móvil: ' + JSON.stringify(done));
+    if (done.instant || done.cells.length !== 6) throw new Error('runbar de fin de turno en móvil: ' + JSON.stringify(done));
+    console.log('PASS runbar móvil ' + width + 'px: estado + seis promedios sin recorte');
   }
   await page.waitForFunction(() => (document.querySelector('#runbar') as HTMLElement)?.hidden, null, { timeout: 7500 });
   if (await page.locator('#btn-stop').isVisible()) throw new Error('Detener visible tras 6s de fin de turno');
@@ -378,17 +418,18 @@ try {
     ui.busy(true, 'Estado del agente en escritorio');
     const meta = document.querySelector<HTMLElement>('.composer-meta')!;
     const bar = document.querySelector<HTMLElement>('#runbar')!;
-    const speed = document.querySelector<HTMLElement>('#runbar-tps')!;
+    const windows = document.querySelector<HTMLElement>('#runbar-speed-windows')!;
     const right = document.querySelector<HTMLElement>('#meta-right')!;
     (window as any).__aegisWeb.renderUsagePublic();
     const result = { siblings: bar.parentElement === meta && right.parentElement === meta,
       barWidth: bar.getBoundingClientRect().width, metaHeight: meta.getBoundingClientRect().height,
-      rightHidden: getComputedStyle(right).display === 'none', speedStillInside: speed.parentElement === bar,
+      rightHidden: getComputedStyle(right).display === 'none', rowInsideBar: windows.parentElement === bar,
+      windowsWidth: windows.getBoundingClientRect().width,
       stopSize: document.querySelector('#btn-stop')!.getBoundingClientRect().width };
     ui.busy(false, 'Respuesta completa');
     return result;
   });
-  if (!desktop.siblings || !desktop.speedStillInside || !desktop.rightHidden || desktop.barWidth < 400 || desktop.metaHeight > 36 || desktop.stopSize < 40) throw new Error('meta compartida escritorio: ' + JSON.stringify(desktop));
+  if (!desktop.siblings || !desktop.rowInsideBar || !desktop.rightHidden || desktop.barWidth < 400 || desktop.metaHeight > 62 || desktop.windowsWidth > desktop.barWidth + 1 || desktop.stopSize < 40) throw new Error('meta compartida escritorio: ' + JSON.stringify(desktop));
   console.log('PASS runbar escritorio comparte meta sin pisar velocidad al renderizar uso');
   const downloadMd = '[descargar AUDITORIA_CASTOR_2026-10-21.md](/dl/AUDITORIA_CASTOR_2026-10-21.md)';
   const downloadVariants = [downloadMd, '[descargar AUDITORIA_CASTOR_2026-10-21.md]\n(/dl/AUDITORIA_CASTOR_2026-10-21.md)'];

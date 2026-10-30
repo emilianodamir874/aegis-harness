@@ -2071,7 +2071,7 @@ textarea:focus-visible { outline: none; }
 .composer-meta:has(.runbar:not([hidden])) #meta-left,
 .composer-meta:has(.runbar:not([hidden])) #meta-right { display: none; }
 
-.runbar { display: flex; align-items: center; gap: 8px; }
+.runbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 0; }
 .runbar-spin {
   flex: none;
   width: 11px; height: 11px;
@@ -3098,7 +3098,6 @@ html[data-motion="reducido"] .density-pop { animation: none; }
   .composer { border-radius: var(--r-md); }
   .composer .send { width: 34px; height: 34px; }
   .composer .send.stop { width: 40px; height: 40px; }
-  .runbar-tps { font-size: 10.5px; padding: 0 5px; }
   .runbar-time { font-size: 10.5px; }
   .composer-meta { gap: 5px; padding: 5px 2px 0; }
 }
@@ -3405,6 +3404,18 @@ html[data-motion="reducido"] .density-pop { animation: none; }
   white-space: nowrap;
 }
 .runbar-phase[hidden] { display: none; }
+.runbar-phase .rp-head { display: inline-flex; align-items: center; gap: 5px; min-height: 19px; }
+.runbar-speed-windows {
+  display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 2px 10px;
+  min-width: 0;
+  padding: 2px 0 0 var(--speed-indent, 26px);
+  font-family: var(--mono); font-variant-numeric: tabular-nums; line-height: 1.05;
+}
+.runbar-speed-windows[hidden] { display: none; }
+.runbar-speed-cell { display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; }
+.runbar-speed-cell small { color: var(--text-4); font-size: 8.5px; }
+.runbar-speed-cell b { color: var(--text-2); font-size: 9.5px; font-weight: 600; }
+.runbar.done .runbar-speed-cell b { color: var(--ok); }
 .runbar-phase .ui-ico { color: var(--accent); }
 .runbar-phase .rp-name { font-variant-numeric: tabular-nums; }
 .runbar-phase .rp-since:not(:empty)::before { content: "· "; color: var(--text-4); }
@@ -4438,6 +4449,24 @@ html[data-motion="reducido"] .runbar-phase .rp-dot { animation: none; }
 .gs-s-n { grid-column: 2; font-size: 9.5px; color: var(--text-4); text-align: right; }
 
 .gs-nota { font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--text-4); }
+.gs-disclosure { margin: 7px 0 10px; border-top: 1px solid var(--border-soft); }
+.gs-disclosure summary { display: flex; align-items: center; justify-content: space-between; min-height: 34px; color: var(--text-2); font-size: 11.5px; cursor: pointer; list-style: none; }
+.gs-disclosure summary::-webkit-details-marker { display: none; }
+.gs-disclosure summary span { color: var(--text-4); font-size: 16px; }
+.gs-disclosure[open] summary span { transform: rotate(45deg); }
+.gs-disclosure-body { display: grid; gap: 4px; padding-bottom: 8px; }
+.gs-overview { margin-bottom: 5px; }
+.gs-live { display: grid; gap: 5px; }
+@media (max-width: 560px) { .gs-disclosure summary { min-height: 42px; font-size: 13px; } }
+
+/* En el teléfono la fila de promedios pierde la sangría del icono y aprieta el interletraje:
+   seis celdas tienen que entrar en el ancho de la barra, no desbordarla. */
+@media (max-width: 560px) {
+  .runbar-speed-windows { gap: 1px 7px; padding-left: 0; }
+  .runbar-speed-cell { gap: 2px; }
+  .runbar-speed-cell small { font-size: 8px; }
+  .runbar-speed-cell b { font-size: 9px; }
+}
 
 /* ---------- móvil ---------- */
 @media (max-width: 560px) {

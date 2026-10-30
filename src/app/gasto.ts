@@ -289,9 +289,41 @@ function procedencia(s: Stats): string {
     + fila('la más cara', usd(p.max));
 }
 
-/**
- * Cuerpo completo del panel. `s` es null mientras carga; `error` si el fetch falló.
- */
+/** El primer pantallazo: totales útiles, sin dibujar listas ni barras todavía. */
+function resumenPeriodo(s: Stats): string {
+  const t = s.totals || {};
+  const pw = s.planWindow || {};
+  const proyeccion = t.cost != null && pw.factor ? t.cost / pw.factor : null;
+  return '<div class="gs-duo gs-overview">'
+    + '<div class="gs-big"><b>' + usd(t.cost) + '</b><span>' + nf.format(t.calls || 0) + ' llamadas · ' + nf.format(t.sessions || 0) + ' chats</span></div>'
+    + '<div class="gs-kpi"><b>' + (proyeccion == null ? '—' : usd(proyeccion)) + '</b><span>proyección mensual</span></div>'
+    + '</div>'
+    + (t.cacheHitPct != null ? fila('cache', Math.round(t.cacheHitPct) + '% de la entrada') : '')
+    + (t.compactionCalls ? fila('compactaciones', String(t.compactionCalls) + ' · ' + usd(t.compactionCost)) : '');
+}
+
+function disclosure(key: 'periodo' | 'contexto', label: string): string {
+  return '<details class="gs-disclosure" data-gs-detail="' + key + '">'
+    + '<summary>' + esc(label) + '<span aria-hidden="true">+</span></summary>'
+    + '<div class="gs-disclosure-body"></div></details>';
+}
+
+/** Solo se llama al desplegar una sección; los datos siguen disponibles sin cargar el DOM inicial. */
+export function detalleGasto(o: { stats: Stats | null; ctx: CtxUso }, key: string): string {
+  if (key === 'periodo' && o.stats && !o.stats._error) {
+    return porDia(o.stats) + porModelo(o.stats) + composicion(o.stats)
+      + sesionesCaras(o.stats) + llamadasCaras(o.stats) + procedencia(o.stats);
+  }
+  if (key === 'contexto') return desglose(o.ctx) || '<div class="gs-nota">El desglose aparece cuando el servidor lo informa.</div>';
+  return '';
+}
+
+/** Resumen pequeño que puede repintarse durante el turno sin reconstruir los detalles desplegados. */
+export function resumenEnVivo(ctx: CtxUso): string {
+  return ventanaModelo(ctx) + sesionActual(ctx);
+}
+
+/** Cuerpo completo del panel. Las listas pesadas se montan al desplegar cada sección. */
 export function cuerpoGasto(o: { dias: number; stats: Stats | null; cargando: boolean; error?: string; ctx: CtxUso }): string {
   let out = tabsPeriodo(o.dias, o.cargando);
   if (o.error) {
@@ -302,17 +334,10 @@ export function cuerpoGasto(o: { dias: number; stats: Stats | null; cargando: bo
     out += sec('Gasto del período') + '<div class="gs-nota">No se pudo leer el historial: ' + esc(o.stats._error) + '</div>';
   } else {
     out += sec('Gasto del período', (o.stats.days ? o.stats.days + ' días' : 'todo el historial'));
-    out += periodo(o.stats);
-    out += porDia(o.stats);
-    out += porModelo(o.stats);
-    out += composicion(o.stats);
-    out += sesionesCaras(o.stats);
-    out += llamadasCaras(o.stats);
-    out += procedencia(o.stats);
+    out += resumenPeriodo(o.stats);
+    out += disclosure('periodo', 'Ver desglose del período');
   }
-  // Este chat va al final: es el dato mas chico y el que cambia solo mientras hay un turno.
-  out += ventanaModelo(o.ctx);
-  out += desglose(o.ctx);
-  out += sesionActual(o.ctx);
+  out += '<div class="gs-live">' + resumenEnVivo(o.ctx) + '</div>';
+  if ((o.ctx.contextBreakdown || []).length) out += disclosure('contexto', 'Ver qué ocupa el contexto');
   return out;
 }

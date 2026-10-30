@@ -1,6 +1,8 @@
 // Prueba del panel "Gasto y uso" (#usage-panel) en desktop 1440x950.
 // Read-only sobre /stats.json. El panel se abre desde el ÚNICO disparador que queda: el botón de
 // barras del topbar (#btn-gasto-top). El readout del pie (#meta-right) está oculto a propósito.
+// Contrato: el panel abre compacto (totales + proyección + fila de cache) y las listas pesadas
+// —barras por día, modelos, composición, chats y llamadas caras— se montan recién al desplegar.
 import { chromium } from 'playwright';
 import { baseUrl, check, pass, openPage } from './lib.js';
 
@@ -35,6 +37,7 @@ try {
     const panel = document.querySelector<HTMLElement>('#usage-panel')!;
     const r = panel.getBoundingClientRect();
     const txt = (sel: string) => (panel.querySelector(sel)?.textContent || '').replace(/\s+/g, ' ').trim();
+    const det = panel.querySelector<HTMLDetailsElement>('.gs-disclosure[data-gs-detail="periodo"]');
     return {
       titulo: txt('.panel-title, h2'),
       sub: txt('.panel-sub'),
@@ -43,6 +46,9 @@ try {
       big: txt('.gs-big'),
       kpi: txt('.gs-kpi'),
       barras: panel.querySelectorAll('.gs-bar').length,
+      hayDisclosure: !!det,
+      abierto: !!det?.open,
+      cuerpoVacio: (det?.querySelector('.gs-disclosure-body')?.innerHTML || '') === '',
       filas: [...panel.querySelectorAll('.gs-r')].map((n) => (n.textContent || '').replace(/\s+/g, ' ').trim()),
       enPantalla: r.top >= -1 && r.bottom <= window.innerHeight + 1 && r.left >= -1 && r.right <= window.innerWidth + 1,
     };
@@ -50,26 +56,40 @@ try {
   check(/Gasto y uso/.test(p1.titulo), 'título del panel: ' + p1.titulo);
   check(p1.tabs.length >= 3 && p1.tabOn.length === 1, 'pestañas de período con una activa: ' + p1.tabs.join(',') + ' · on=' + p1.tabOn);
   check(/US\$/.test(p1.big) && /llamadas/.test(p1.big) && /chats/.test(p1.big), 'gasto del período con llamadas y chats: ' + p1.big);
-  check(/al mes/.test(p1.kpi), 'proyección mensual: ' + p1.kpi);
-  check(p1.barras >= 3, 'barras por día: ' + p1.barras);
-  check(p1.filas.some((t) => /cache/i.test(t)) && p1.filas.some((t) => /compactaci/i.test(t)), 'filas de cache y compactaciones: ' + JSON.stringify(p1.filas));
-  check(p1.enPantalla, 'el panel entra en pantalla: ' + JSON.stringify({ top: p1.titulo, ok: p1.enPantalla }));
+  check(/proyección mensual/.test(p1.kpi) && /US\$/.test(p1.kpi), 'proyección mensual: ' + p1.kpi);
+  check(p1.barras === 0 && p1.hayDisclosure && !p1.abierto && p1.cuerpoVacio, 'el desglose pesado no se monta al abrir: ' + JSON.stringify({ barras: p1.barras, det: p1.hayDisclosure, abierto: p1.abierto }));
+  check(p1.filas.some((t) => /cache/i.test(t)), 'fila de cache en el resumen: ' + JSON.stringify(p1.filas.slice(0, 4)));
+  check(p1.enPantalla, 'el panel compacto entra en pantalla: ' + JSON.stringify({ titulo: p1.titulo, ok: p1.enPantalla }));
 
-  // Cambiar de período tiene que cambiar los datos, no solo la etiqueta.
+  // Al desplegar, el detalle se arma una sola vez y trae barras, cache y compactaciones.
+  await page.locator('#usage-panel .gs-disclosure[data-gs-detail="periodo"] summary').click();
+  await page.waitForFunction(() => !!document.querySelector('#usage-panel .gs-disclosure[data-gs-detail=periodo] .gs-disclosure-body .gs-bar'));
+  const detalle = (await page.locator('#usage-panel .gs-disclosure[data-gs-detail="periodo"] .gs-disclosure-body').textContent()) || '';
+  check(/cache/i.test(detalle), 'el desglose desplegado trae la fila de cache: ' + detalle.slice(0, 180));
+  check(/Gasto por día/.test(detalle) && /Por modelo/.test(detalle) && /Qué se paga/.test(detalle), 'el desglose desplegado trae las tres secciones pesadas: ' + detalle.slice(0, 180));
+  const antesBarras = await page.locator('#usage-panel .gs-disclosure-body .gs-bar').count();
+  check(antesBarras >= 3, 'barras por día al desplegar: ' + antesBarras);
+
+  // Cambiar de período cambia los datos y respeta lo que el operador ya abrió.
   const antes = p1.sub;
-  const antesBarras = p1.barras;
   const otro = p1.tabs.find((d) => d && d !== p1.tabOn[0]) || '7';
   await page.click(`#usage-panel .gs-tab[data-dias="${otro}"]`);
   await page.waitForTimeout(2500);
-  const p2 = await page.evaluate(() => ({
-    sub: (document.querySelector('#usage-panel .panel-sub')?.textContent || '').trim(),
-    on: (document.querySelector('#usage-panel .gs-tab.is-on') as HTMLElement | null)?.dataset.dias || '',
-    barras: document.querySelectorAll('#usage-panel .gs-bar').length,
-    big: (document.querySelector('#usage-panel .gs-big')?.textContent || '').replace(/\s+/g, ' ').trim(),
-  }));
+  const p2 = await page.evaluate(() => {
+    const det = document.querySelector<HTMLDetailsElement>('#usage-panel .gs-disclosure[data-gs-detail="periodo"]');
+    return {
+      sub: (document.querySelector('#usage-panel .panel-sub')?.textContent || '').trim(),
+      on: (document.querySelector('#usage-panel .gs-tab.is-on') as HTMLElement | null)?.dataset.dias || '',
+      barras: document.querySelectorAll('#usage-panel .gs-disclosure-body .gs-bar').length,
+      big: (document.querySelector('#usage-panel .gs-big')?.textContent || '').replace(/\s+/g, ' ').trim(),
+      abierto: !!det?.open,
+      cargado: !!(det?.querySelector<HTMLElement>('.gs-disclosure-body')?.dataset.loaded),
+    };
+  });
   check(p2.on === otro, 'pestaña activa cambió a ' + otro + ': ' + p2.on);
   check(p2.sub !== antes, 'subtítulo cambió con el período: ' + antes + ' → ' + p2.sub);
-  check(p2.barras !== antesBarras || /US\$/.test(p2.big), 'los datos del período cambiaron (barras ' + antesBarras + ' → ' + p2.barras + ')');
+  check(p2.abierto && p2.cargado, 'el desglose abierto sobrevive al cambio de período: ' + JSON.stringify(p2));
+  check(p2.barras > 0 || /US\$/.test(p2.big), 'los datos del período cambiaron (barras ' + antesBarras + ' → ' + p2.barras + ')');
 
   // El endpoint crudo que alimenta el panel.
   const raw = await page.evaluate(async () => {
