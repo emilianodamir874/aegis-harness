@@ -972,29 +972,15 @@ pub(super) fn build_usage_updates(
     totals: &SessionUsageTotals,
     context_limit: usize,
 ) -> UsageUpdates {
-    // El numero oficial es el que reporto el proveedor: `usage.total_tokens` de la ultima
-    // inferencia es literalmente lo que llego al backend, sin estimacion. Ese reporte no
-    // incluye lo que entro despues de esa inferencia (resultados de herramientas, pedidos del
-    // usuario mientras el modelo pensaba), asi que durante un bucle de herramientas se queda
-    // corto hasta el proximo paso. Eso es correcto y `used_source` lo declara, para que el
-    // cliente no compare las dos cifras como si fueran la misma unidad. La estimacion por
-    // caracteres queda solo como respaldo: sesiones importadas y proveedores sin usage.
-    let reportado = to_nonnegative_u64(session.usage.total_tokens);
-    let estimado = session
-        .conversation
-        .as_ref()
-        .map(|conversation| {
-            conversation
-                .messages()
-                .iter()
-                .filter(|message| message.is_agent_visible())
-                .map(estimate_message_tokens)
-                .sum::<u64>()
-        })
-        .unwrap_or(0);
-    let (used, used_source) = match reportado {
+    // Solo el reporte del proveedor: `usage.total_tokens` de la ultima inferencia es
+    // literalmente lo que llego al backend. No se estima el contexto. Ese reporte no incluye
+    // lo que entro despues de esa inferencia (resultados de herramientas, pedidos del usuario
+    // mientras el modelo pensaba), asi que durante un bucle de herramientas se queda corto
+    // hasta el proximo paso: eso es lo medido, no un defecto. Cuando el proveedor no informa
+    // usage la cifra queda en cero y `used_source` lo dice, en vez de inventar un numero.
+    let (used, used_source) = match to_nonnegative_u64(session.usage.total_tokens) {
         Some(tokens) => (tokens, USED_SOURCE_PROVIDER),
-        None => (estimado, USED_SOURCE_ESTIMATED),
+        None => (0, USED_SOURCE_NONE),
     };
     let ctx_limit = context_limit as u64;
     let accumulated_input_tokens =
@@ -1044,11 +1030,11 @@ pub(super) fn build_usage_updates(
 
 /// Breakdown row labels for `SessionUsageUpdate::context_breakdown`. ASCII
 /// Spanish (no accents) because clients render them verbatim.
-/// Origen de `SessionUsageUpdate::used`. Cliente y server comparten estos literales:
-/// `provider` es el reporte real de la ultima inferencia, `estimated` la estimacion por
-/// caracteres del historial cuando el proveedor no informo usage.
+/// Origen de `SessionUsageUpdate::used`. La cifra de contexto es siempre el reporte del
+/// proveedor; `none` significa que todavia no informo usage para esta sesion y el cliente
+/// debe decirlo en vez de mostrar un cero como si fuera una medicion.
 const USED_SOURCE_PROVIDER: &str = "provider";
-const USED_SOURCE_ESTIMATED: &str = "estimated";
+const USED_SOURCE_NONE: &str = "none";
 const CONTEXT_PART_TURN_CONTEXT: &str = "turn-context (MOIM)";
 const CONTEXT_PART_TOOL_RESULTS: &str = "resultados de herramientas";
 const CONTEXT_PART_TOOL_CALLS: &str = "llamadas a herramientas";
@@ -4435,8 +4421,7 @@ print(\"hello, world\")
         assert_eq!(updates.standard.used, 1000);
     }
 
-    /// Sesiones importadas y proveedores que no informan usage no tienen reporte: ahi si manda
-    /// la estimacion, y el origen lo declara para que el cliente no compare las dos cifras.
+    /// Sin reporte del proveedor no hay cifra: cero y origen `none`. No se estima el contexto.
     #[test]
     fn test_build_usage_update_falls_back_to_estimate_without_provider_usage() {
         let mut session = make_session_with_usage(TokenUsage::default(), TokenUsage::default());
@@ -4454,24 +4439,12 @@ print(\"hello, world\")
             other => panic!("expected usage update, got {other:?}"),
         };
 
-        // El valor exacto es chars/4 del contenido serializado: se compara contra el propio
-        // helper para no atar el test al envoltorio JSON, pero tiene que ser el del historial.
-        let esperado = estimate_message_tokens(
-            session
-                .conversation
-                .as_ref()
-                .unwrap()
-                .messages()
-                .first()
-                .unwrap(),
+        assert_eq!(
+            usage.used, 0,
+            "sin reporte del proveedor no hay cifra de contexto"
         );
-        assert_eq!(usage.used, esperado);
-        assert!(
-            esperado > 9_000,
-            "la estimacion debe reflejar el historial grande, no el reporte ausente: {esperado}"
-        );
-        assert_eq!(usage.used_source.as_deref(), Some(USED_SOURCE_ESTIMATED));
-        assert_eq!(updates.standard.used, esperado);
+        assert_eq!(usage.used_source.as_deref(), Some(USED_SOURCE_NONE));
+        assert_eq!(updates.standard.used, 0);
     }
     #[test]
     fn test_build_usage_update_reports_calibrated_context_breakdown() {
