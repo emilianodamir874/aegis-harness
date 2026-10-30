@@ -256,6 +256,44 @@ fn get_reasoning_effort(model_name: &str) -> String {
     }
 }
 
+// Fast mode del backend Codex (medido 2026-10-30 contra chatgpt.com/backend-api/codex):
+// el catalogo del endpoint /models publica service_tiers[].id = "priority" (name "Fast") y
+// additional_speed_tiers = ["fast"], pero el literal "fast" se rechaza con 400
+// "Unsupported service_tier: fast"; "priority" responde 200 y sube la generacion de ~42 a ~134 tok/s
+// en gpt-6-sol. El valor se resuelve, en orden: request_params del modelo, env
+// CHATGPT_CODEX_SERVICE_TIER, config.yaml CHATGPT_CODEX_SERVICE_TIER. "default"/"standard"/vacio
+// no manda el campo.
+fn service_tier_for_config(model_config: &ModelConfig) -> Option<&'static str> {
+    let pedido = model_config
+        .request_params
+        .as_ref()
+        .and_then(|params| {
+            params
+                .get("service_tier")
+                .or_else(|| params.get("fast_mode"))
+        })
+        .and_then(|value| match value {
+            Value::Bool(flag) => Some(if *flag {
+                "priority".to_string()
+            } else {
+                String::new()
+            }),
+            Value::String(text) => Some(text.clone()),
+            _ => None,
+        })
+        .or_else(|| std::env::var("CHATGPT_CODEX_SERVICE_TIER").ok())
+        .or_else(|| {
+            crate::config::Config::global()
+                .get_param::<String>("CHATGPT_CODEX_SERVICE_TIER")
+                .ok()
+        });
+
+    match pedido?.trim().to_lowercase().as_str() {
+        "priority" | "fast" | "on" | "true" | "1" => Some("priority"),
+        _ => None,
+    }
+}
+
 fn reasoning_effort_for_config(model_config: &ModelConfig) -> Option<String> {
     use aegis_providers::thinking::ThinkingEffort;
 
@@ -321,6 +359,10 @@ fn create_codex_request(
         payload_obj.insert("tools".to_string(), json!(tools_spec));
         payload_obj.insert("tool_choice".to_string(), json!("auto"));
         payload_obj.insert("parallel_tool_calls".to_string(), json!(true));
+    }
+
+    if let Some(service_tier) = service_tier_for_config(model_config) {
+        payload_obj.insert("service_tier".to_string(), json!(service_tier));
     }
 
     if let Some(reasoning_effort) = reasoning_effort {
@@ -1346,6 +1388,41 @@ mod tests {
         let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
         assert_eq!(payload["reasoning"]["effort"], "xhigh");
         assert!(payload.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn test_create_codex_request_fast_mode_via_request_params() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("service_tier".to_string(), json!("fast"));
+        let mut config = ModelConfig::new("gpt-6-sol");
+        config.request_params = Some(params);
+
+        let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+        // El backend rechaza el literal "fast" (400 Unsupported service_tier: fast) y solo acepta
+        // el id que publica su catalogo: priority.
+        assert_eq!(payload["service_tier"], "priority");
+    }
+
+    #[test]
+    fn test_create_codex_request_fast_mode_boolean_param() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("fast_mode".to_string(), json!(true));
+        let mut config = ModelConfig::new("gpt-6-sol");
+        config.request_params = Some(params);
+
+        let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+        assert_eq!(payload["service_tier"], "priority");
+    }
+
+    #[test]
+    fn test_create_codex_request_fast_mode_off_omits_field() {
+        let mut params = std::collections::HashMap::new();
+        params.insert("service_tier".to_string(), json!("default"));
+        let mut config = ModelConfig::new("gpt-6-sol");
+        config.request_params = Some(params);
+
+        let payload = create_codex_request(&config, "sys", &[], &[]).unwrap();
+        assert!(payload.get("service_tier").is_none());
     }
 
     #[test]
