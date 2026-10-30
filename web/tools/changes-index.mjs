@@ -161,8 +161,11 @@ function escanearRepos(cwd2) {
     }
     if (nombre.toLowerCase() === "core" && !isGitProject(hijo, nombre)) {
       const ops = join(hijo, "ops");
+      const physical = join(cwd2, "harness", "core", "ops");
       if (isGitProject(ops, "core/ops")) {
         repos.push({ root: ops, rel: "core/ops", files: contarCambios(ops), truncated: false });
+      } else if (isGitProject(physical, "core/ops")) {
+        repos.push({ root: physical, rel: "core/ops", files: contarCambios(physical), truncated: false });
       }
       continue;
     }

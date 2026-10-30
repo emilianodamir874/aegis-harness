@@ -130,6 +130,12 @@ try {
   const legacyScan = await run(legacy, ['--scan']);
   assert.equal(legacyScan.kind, 'repos');
   assert(legacyScan.repos.some((item: any) => item.rel === 'web' && item.files === 1), 'shell web con logs abiertos resuelve proyecto fisico');
+  await mkdir(join(legacy, 'core', 'ops'), { recursive: true });
+  await mkdir(join(legacy, 'harness', 'core'));
+  await mkdir(join(mono, 'core', 'ops'), { recursive: true });
+  await symlink(join(mono, 'core', 'ops'), join(legacy, 'harness', 'core', 'ops'), process.platform === 'win32' ? 'junction' : 'dir');
+  const legacyOps = await run(legacy, ['--scan']);
+  assert(legacyOps.repos.some((item: any) => item.rel === 'core/ops'), 'shell core/ops con logs abiertos resuelve proyecto fisico');
 
   const notGit = await run(temp);
   assert.equal(notGit.kind, 'not-git');

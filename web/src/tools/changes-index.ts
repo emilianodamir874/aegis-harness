@@ -176,8 +176,11 @@ function escanearRepos(cwd: string): object {
     // core conserva bin/state en el padre; solo ops es codigo del monorepo.
     if (nombre.toLowerCase() === 'core' && !isGitProject(hijo, nombre)) {
       const ops = join(hijo, 'ops');
+      const physical = join(cwd, 'harness', 'core', 'ops');
       if (isGitProject(ops, 'core/ops')) {
         repos.push({ root: ops, rel: 'core/ops', files: contarCambios(ops), truncated: false });
+      } else if (isGitProject(physical, 'core/ops')) {
+        repos.push({ root: physical, rel: 'core/ops', files: contarCambios(physical), truncated: false });
       }
       continue;
     }
