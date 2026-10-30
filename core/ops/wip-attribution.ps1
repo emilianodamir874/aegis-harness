@@ -6,12 +6,12 @@
 # o se descarta con una razon escrita.
 #
 # Uso:
-#   core\ops\wip-attribution.ps1                 # repo src
-#   core\ops\wip-attribution.ps1 -Repo C:\Aegis-Proyects\web
+#   core\ops\wip-attribution.ps1                 # monorepo del harness
+#   core\ops\wip-attribution.ps1 -Repo C:\Aegis-Proyects\trading
 #   core\ops\wip-attribution.ps1 -Tsv out.tsv
 
 param(
-  [string]$Repo = 'C:\Aegis-Proyects\src',
+  [string]$Repo = 'C:\Aegis-Proyects',
   [string]$Tsv
 )
 
