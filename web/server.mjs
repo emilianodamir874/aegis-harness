@@ -1208,7 +1208,7 @@ ${Buffer.concat(chunks).toString("utf8")}
           const item = entry;
           if (typeof item.path !== "string" || typeof item.staged !== "string" || typeof item.worktree !== "string" || typeof item.diff !== "string") return false;
           if (!item.path || isAbsolute(item.path) || item.path.includes("\\") || item.path.split("/").some((part) => !part || part === "." || part === "..")) return false;
-          return !denied(item.path) && !denied(resolve(gitRoot, item.path));
+          return !denied(item.path) && !denied(resolve(repoTarget, item.path));
         });
         reply(200, { kind: "git", cwd: actual, root: gitRoot, entries, truncated: result.truncated === true || entries.length !== result.entries.length });
       } catch {
