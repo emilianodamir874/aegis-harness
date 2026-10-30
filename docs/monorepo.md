@@ -12,7 +12,7 @@ Los tres `.git` originales quedan archivados en `archive/git-before-monorepo-202
 
 ## Carpeta fisica dedicada (2026-10-30)
 
-La raiz Git fisica y el codigo viven en `C:\Aegis-Proyects\harness`: `src/`, `web/`, `core/ops/`, `docs/`, `.git/`, `.gitignore` y `README.md`. En `C:\Aegis-Proyects` persisten enlaces de compatibilidad para `src/`, `web/`, `docs/` y `core/ops/`; los procesos y sesiones antiguas usan sus rutas originales. El Git del directorio padre desaparece; trabajar desde `harness` para commits, build y status. El runtime real sigue fuera del repo: `C:\Aegis-Proyects\state`, `target`, `core/bin`, `core/state`.
+La raiz Git fisica y el codigo viven en `C:\Aegis-Proyects\harness`: `src/`, `web/`, `core/ops/`, `docs/`, `.git/`, `.gitignore` y `README.md`. En `C:\Aegis-Proyects` hay junctions de compatibilidad para `src/` y `docs/`. `web/` y `core/ops/` historicos siguen siendo carpetas fisicas de runtime: mantienen logs abiertos por procesos ajenos y exponen el codigo trasladado mediante enlaces por subcarpeta/archivo. Los procesos y sesiones antiguas usan sus rutas originales. El Git del directorio padre desaparece; trabajar desde `harness` para commits, build y status. El runtime real sigue fuera del repo: `C:\Aegis-Proyects\state`, `target`, `core/bin`, `core/state`.
 
 Las rutas existentes en scripts y sesiones usan los enlaces sin cambiar identidades de workspace. El indexador de cambios admite explicitamente junctions de los cuatro subproyectos y `core/ops`. Evitar `git add -A` desde `harness`. Si hay que deshacer el traslado fisico, usar el script y log de `core/tmp` y comprobar el estado antes de retirar enlaces.
 
