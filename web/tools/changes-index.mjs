@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { lstatSync, readdirSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 const MAX_FILES = 60;
 const MAX_DIFF = 8192;
 const MAX_TOTAL_DIFF = 96e3;
@@ -75,7 +75,8 @@ function snapshot(cwd2) {
   } catch {
     return { kind: "not-git", cwd: cwd2, entries: [], truncated: false };
   }
-  const status = git(cwd2, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"], 1024 * 1024);
+  const prefix = relative(root, cwd2).replaceAll("\\", "/");
+  const status = git(cwd2, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", "--", "."], 1024 * 1024);
   const records = status.toString("utf8").split("\0");
   const entries = [];
   let totalDiff = 0;
@@ -91,13 +92,14 @@ function snapshot(cwd2) {
       continue;
     }
     const path = record.slice(3);
+    if (prefix && !path.startsWith(prefix + "/")) continue;
     if (!safePath(root, path)) continue;
     const staged = record[0], worktree = record[1];
-    const entry = { path, staged, worktree, diff: "" };
+    const entry = { path: prefix ? path.slice(prefix.length + 1) : path, staged, worktree, diff: "" };
     if (worktree !== "?") {
       const patches = [
-        ...staged !== " " ? [{ patch: diff(cwd2, path, true), side: "staged" }] : [],
-        ...worktree !== " " ? [{ patch: diff(cwd2, path, false), side: "worktree" }] : []
+        ...staged !== " " ? [{ patch: diff(root, path, true), side: "staged" }] : [],
+        ...worktree !== " " ? [{ patch: diff(root, path, false), side: "worktree" }] : []
       ];
       for (const { patch, side } of patches) {
         if (side === "staged") {
@@ -123,7 +125,7 @@ function snapshot(cwd2) {
 const IGNORAR = /^(?:\.|state$|node_modules$|dist-ts$|dist$|build$|target$|vendor$|\.git$)/i;
 function contarCambios(repo) {
   try {
-    const status = git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--no-renames"], 512 * 1024);
+    const status = git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--no-renames", "--", "."], 512 * 1024);
     return status.toString("utf8").split("\0").filter((r) => r.length >= 4 && r[2] === " ").length;
   } catch {
     return 0;
@@ -145,7 +147,7 @@ function escanearRepos(cwd2) {
     } catch {
       continue;
     }
-    if (!tope || resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase()) continue;
+    if (!tope || resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase() && !(resolve(tope).toLowerCase() === resolve(cwd2).toLowerCase() && ["src", "web", "core", "docs"].includes(nombre.toLowerCase()))) continue;
     const files = contarCambios(hijo);
     repos.push({ root: hijo, rel: nombre, files, truncated: false });
   }
@@ -160,7 +162,7 @@ const scan = args.includes("--scan");
 try {
   if (!cwd || !isAbsolute(cwd)) throw new Error("Se requiere --cwd absoluto y autorizado");
   const primero = snapshot(resolve(cwd));
-  process.stdout.write(JSON.stringify(scan && primero.kind === "not-git" ? escanearRepos(resolve(cwd)) : primero));
+  process.stdout.write(JSON.stringify(scan ? escanearRepos(resolve(cwd)) : primero));
 } catch (error) {
   process.stdout.write(JSON.stringify({
     kind: "error",

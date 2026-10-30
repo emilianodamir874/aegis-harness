@@ -18,6 +18,12 @@ function wsInside(path) {
   });
 }
 const WS_DEFAULTS_FILE = join(process.env.AEGIS_PATH_ROOT || "C:/Aegis-Proyects/state", "config", "workspaces.defaults.json");
+const SENSITIVE_SEGMENT = /^(?:state|config|credentials|\.git|\.ssh|\.aws|\.config|appdata)$/i;
+const SENSITIVE_FILE = /^(?:\.env(?:\..*)?|auth\.json|config\.(?:json|ya?ml)|permission\.ya?ml|secrets?\.ya?ml|secrets?\.json|credentials?(?:\..*)?|tokens\.json|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))$/i;
+function esRutaSensible(path) {
+  const partes = String(path || "").split(/[\\/]+/).filter(Boolean);
+  return partes.some((parte) => SENSITIVE_SEGMENT.test(parte) || SENSITIVE_FILE.test(parte));
+}
 const fileQueues = /* @__PURE__ */ new Map();
 function withFileQueue(file, operation) {
   const previous = fileQueues.get(file) || Promise.resolve();
@@ -796,7 +802,8 @@ const handler = async (req, res) => {
 `
     );
     if (url.pathname === "/tts" && req.method === "GET") {
-      if (tunneled && !authed(req)) {
+      const ttsToken = url.searchParams.get("token");
+      if (!authed(req) && !verifyToken(ttsToken ?? void 0)) {
         res.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
         res.end(JSON.stringify({ error: "unauthorized", login: "/login" }));
         return;
@@ -1062,6 +1069,11 @@ ${Buffer.concat(chunks).toString("utf8")}
         reply(400, { error: "sessionId requerido" });
         return;
       }
+      const suppliedRepo = url.searchParams.get("repo");
+      if (url.searchParams.getAll("repo").length > 1 || suppliedRepo !== null && (!isAbsolute(suppliedRepo) || /[\x00-\x1f\x7f]/.test(suppliedRepo))) {
+        reply(400, { error: "repo invalido" });
+        return;
+      }
       const suppliedCwd = url.searchParams.get("cwd");
       if (url.searchParams.getAll("cwd").length > 1 || suppliedCwd !== null && (!isAbsolute(suppliedCwd) || /[\x00-\x1f\x7f]/.test(suppliedCwd))) {
         reply(400, { error: "cwd invalido" });
@@ -1101,7 +1113,7 @@ ${Buffer.concat(chunks).toString("utf8")}
         reply(403, { error: "cwd no coincide con sesion" });
         return;
       }
-      const denied = (path) => /(?:^|[\\/])(?:state|config|\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.(?:json|ya?ml)|secrets?\.ya?ml|permission\.ya?ml|tokens\.json|credentials?(?:\.[^\\/]*)?|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      const denied = esRutaSensible;
       const inside = (path, root) => {
         const p = resolve(path).toLowerCase();
         const r = resolve(root).toLowerCase();
@@ -1126,10 +1138,21 @@ ${Buffer.concat(chunks).toString("utf8")}
           reply(403, { error: "cwd no permitido" });
           return;
         }
+        let repoTarget = actual;
+        if (suppliedRepo !== null) {
+          const pedido = resolve(suppliedRepo);
+          const realPedido = await realpath(pedido).catch(() => "");
+          const okRepo = !!realPedido && !denied(pedido) && !denied(realPedido) && wsInside(pedido) && roots.some(({ root, actual: rootReal }) => rootReal && inside(pedido, root) && inside(realPedido, rootReal));
+          if (!okRepo) {
+            reply(403, { error: "repo no permitido" });
+            return;
+          }
+          repoTarget = realPedido;
+        }
         const output = await new Promise((ok, fail) => {
           execFile(
             process.execPath,
-            [join(DIR, "tools", "changes-index.mjs"), "--cwd", actual],
+            [join(DIR, "tools", "changes-index.mjs"), "--cwd", repoTarget],
             { encoding: "utf8", timeout: 35e3, maxBuffer: 1024 * 1024, windowsHide: true },
             (error, stdout) => error ? fail(error) : ok(stdout)
           );
@@ -1137,9 +1160,38 @@ ${Buffer.concat(chunks).toString("utf8")}
         const data2 = JSON.parse(output);
         if (!data2 || typeof data2 !== "object" || !("kind" in data2)) throw new Error("invalid result");
         const result = data2;
-        if (result.kind === "not-git") {
-          reply(200, { kind: "not-git", cwd: actual, entries: [], truncated: false });
-          return;
+        if (result.kind === "not-git" || result.kind === "git" && suppliedRepo === null && typeof result.root === "string" && resolve(result.root).toLowerCase() === actual.toLowerCase()) {
+          if (suppliedRepo === null) {
+            try {
+              const scanOut = await new Promise((ok, fail) => {
+                execFile(
+                  process.execPath,
+                  [join(DIR, "tools", "changes-index.mjs"), "--cwd", actual, "--scan"],
+                  { encoding: "utf8", timeout: 25e3, maxBuffer: 512 * 1024, windowsHide: true },
+                  (error, stdout) => error ? fail(error) : ok(stdout)
+                );
+              });
+              const scan = JSON.parse(scanOut);
+              if (scan.kind === "repos" && Array.isArray(scan.repos)) {
+                const repos = scan.repos.slice(0, 40).flatMap((item) => {
+                  const r = item;
+                  if (typeof r.root !== "string" || typeof r.rel !== "string" || !isAbsolute(r.root)) return [];
+                  if (!wsInside(r.root) || denied(r.root) || !inside(r.root, actual)) return [];
+                  const files = typeof r.files === "number" && Number.isSafeInteger(r.files) && r.files >= 0 ? r.files : 0;
+                  return [{ root: resolve(r.root), rel: String(r.rel).slice(0, 80), files }];
+                });
+                if (repos.length) {
+                  reply(200, { kind: "repos", cwd: actual, repos, entries: [], truncated: false });
+                  return;
+                }
+              }
+            } catch {
+            }
+          }
+          if (result.kind === "not-git") {
+            reply(200, { kind: "not-git", cwd: actual, entries: [], truncated: false });
+            return;
+          }
         }
         if (result.kind !== "git" || typeof result.root !== "string" || !isAbsolute(result.root) || !Array.isArray(result.entries)) {
           throw new Error("invalid result");
@@ -1177,7 +1229,7 @@ ${Buffer.concat(chunks).toString("utf8")}
       }
       const raw = url.searchParams.get("path") || "";
       const resolvedPath = resolve(raw);
-      const deny = (path) => /(?:^|[\\/])(?:\.git|\.ssh|\.aws|\.config|AppData|\.env(?:\..*)?|auth\.json|config\.json|config\.ya?ml|permission\.ya?ml|secrets\.ya?ml|tokens\.json|id_(?:rsa|ed25519)|[^\\/]+\.(?:pem|key|p12|pfx|db|sqlite[0-9]*))(?:[\\/]|$)/i.test(path);
+      const deny = esRutaSensible;
       const allowed = (path) => wsInside(path) && !deny(path);
       if (!raw || !allowed(resolvedPath)) {
         res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store", ...SEC });
@@ -1579,8 +1631,7 @@ ${Buffer.concat(chunks).toString("utf8")}
         "handoff.js",
         "split-view.js",
         "stats.js",
-        "activity.js",
-        "changes.js"
+        "activity.js"
       ];
       const versions = await Promise.all(assets.map(async (asset) => {
         try {
