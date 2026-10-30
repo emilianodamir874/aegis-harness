@@ -1026,6 +1026,32 @@ fn test_provider_switching_updates_session_state() {
 
 #[test]
 #[serial]
+fn test_provider_switch_does_not_construct_unconfigured_current_provider() {
+    let _env = env_lock::lock_env([
+        ("OPEN_DESIGN_API_KEY", None::<&str>),
+        ("OPENAI_API_KEY", None::<&str>),
+    ]);
+    write_acp_global_config(
+        "AEGIS_MODEL: deepseek-v4.1-flash\nAEGIS_PROVIDER: open_design\nAEGIS_DISABLE_KEYRING: true\n",
+    );
+
+    run_test(async {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let config = TestConnectionConfig {
+            current_model: "deepseek-v4.1-flash".to_string(),
+            ..Default::default()
+        };
+        let mut conn = AcpServerConnection::new(config, openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.clone();
+
+        conn.set_config_option(&session_id, "provider", "openai")
+            .await
+            .expect("provider switch should not initialize the unconfigured current provider");
+    });
+}
+#[test]
+#[serial]
 fn test_custom_unknown_method() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async {

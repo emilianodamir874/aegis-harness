@@ -808,15 +808,41 @@ pub trait Session: std::fmt::Debug {
     ) -> anyhow::Result<TestOutput>;
 }
 
+/// Apunta `AEGIS_PATH_ROOT` al store temporal de los tests y devuelve ese valor al salir.
+///
+/// Respetar un `AEGIS_PATH_ROOT` heredado del entorno hacia que la suite escribiera en el store
+/// vivo de la maquina que corre los tests: config.yaml reemplazado (`AEGIS_PROVIDER: openai`,
+/// `OPENAI_HOST` de un fixture muerto), claves de fixture en secrets.yaml y proveedores
+/// `custom_shared_secret_test_*` en custom_providers, que despues aparecian como proveedores
+/// reales en el desplegable y en el inventario.
+struct PathRootOverride {
+    previous: Option<std::ffi::OsString>,
+}
+
+impl PathRootOverride {
+    fn install(root: &std::path::Path) -> Self {
+        let previous = std::env::var_os("AEGIS_PATH_ROOT");
+        std::env::set_var("AEGIS_PATH_ROOT", root);
+        Self { previous }
+    }
+}
+
+impl Drop for PathRootOverride {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(value) => std::env::set_var("AEGIS_PATH_ROOT", value),
+            None => std::env::remove_var("AEGIS_PATH_ROOT"),
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub fn run_test<F>(fut: F)
 where
     F: Future<Output = ()> + Send + 'static,
 {
     let _guard = ACP_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner());
-    if std::env::var_os("AEGIS_PATH_ROOT").is_none() {
-        std::env::set_var("AEGIS_PATH_ROOT", ACP_CONFIG_ROOT.path());
-    }
+    let _root_override = PathRootOverride::install(ACP_CONFIG_ROOT.path());
     register_builtin_extensions(aegis_mcp::BUILTIN_EXTENSIONS.clone());
 
     let handle = std::thread::Builder::new()
