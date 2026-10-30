@@ -78,7 +78,8 @@ try {
   git('-C', join(fixture, 'subrepo'), 'init', '-q');
   await writeFile(join(fixture, 'subrepo', 'a.txt'), 'uno\n');
   const scan = await run(fixture, ['--scan']);
-  assert.equal(scan.kind, 'git', 'con repo en el cwd el scan no hace falta');
+  assert.equal(scan.kind, 'repos', 'el escaneo explicito lista subproyectos dentro de un repo');
+  assert(scan.repos.some((item: any) => item.rel === 'subrepo'));
   await mkdir(join(temp, 'suelto'));
   const padre = await run(join(temp, 'suelto'), ['--scan']);
   assert.equal(padre.kind, 'not-git', 'una carpeta sin repos adentro sigue siendo not-git');
@@ -89,6 +90,28 @@ try {
   assert.equal(afuera.entries.length, 0, 'el escaneo no trae entradas de archivos');
   assert(afuera.repos.every((r: any) => r.files === 0) || afuera.repos.some((r: any) => r.files > 0),
     'los conteos son numeros');
+
+  const mono = join(temp, 'mono');
+  await mkdir(join(mono, 'web'), { recursive: true });
+  await mkdir(join(mono, 'src'), { recursive: true });
+  execFileSync('git', ['-C', mono, 'init', '-q'], { stdio: 'pipe' });
+  await writeFile(join(mono, 'web', 'client.txt'), 'original\n');
+  await writeFile(join(mono, 'src', 'backend.txt'), 'original\n');
+  execFileSync('git', ['-C', mono, 'add', 'web/client.txt', 'src/backend.txt'], { stdio: 'pipe' });
+  execFileSync('git', ['-C', mono, '-c', 'user.email=fixture@invalid.test', '-c', 'user.name=Fixture', 'commit', '-qm', 'fixture'], { stdio: 'pipe' });
+  await writeFile(join(mono, 'web', 'client.txt'), 'original\ncambio web\n');
+  await writeFile(join(mono, 'src', 'backend.txt'), 'original\ncambio src\n');
+  const monoScan = await run(mono, ['--scan']);
+  assert.equal(monoScan.kind, 'repos', 'selector de proyectos dentro del monorepo');
+  assert.equal(monoScan.repos.find((item: any) => item.rel === 'web')?.files, 1);
+  assert.equal(monoScan.repos.find((item: any) => item.rel === 'src')?.files, 1);
+  const monoWeb = await run(join(mono, 'web'));
+  assert.equal(monoWeb.kind, 'git');
+  assert.equal(resolve(monoWeb.root), resolve(mono));
+  assert.deepEqual(monoWeb.entries.map((item: any) => item.path), ['client.txt']);
+  assert(monoWeb.entries[0].diff.includes('+cambio web'));
+  assert.equal(monoWeb.entries[0].worktreeAdded, 1);
+  assert.equal(monoWeb.entries[0].worktreeRemoved, 0);
 
   const notGit = await run(temp);
   assert.equal(notGit.kind, 'not-git');

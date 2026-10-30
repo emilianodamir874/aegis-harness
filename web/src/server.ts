@@ -1317,8 +1317,9 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
         const data: unknown = JSON.parse(output);
         if (!data || typeof data !== 'object' || !('kind' in data)) throw new Error('invalid result');
         const result = data as { kind: unknown; cwd?: unknown; root?: unknown; entries?: unknown; truncated?: unknown };
-        if (result.kind === 'not-git') {
-          // El cwd no es repo, pero puede tener repos adentro (C:/Aegis-Proyects: web, src, core).
+        if (result.kind === 'not-git' || (result.kind === 'git' && suppliedRepo === null &&
+          typeof result.root === 'string' && resolve(result.root).toLowerCase() === actual.toLowerCase())) {
+          // El cwd puede contener proyectos dentro del monorepo o repos independientes.
           if (suppliedRepo === null) {
             try {
               const scanOut = await new Promise<string>((ok, fail) => {
@@ -1339,8 +1340,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
               }
             } catch { /* si el escaneo falla, not-git sigue siendo la verdad */ }
           }
-          reply(200, { kind: 'not-git', cwd: actual, entries: [], truncated: false });
-          return;
+          if (result.kind === 'not-git') { reply(200, { kind: 'not-git', cwd: actual, entries: [], truncated: false }); return; }
         }
         if (result.kind !== 'git' || typeof result.root !== 'string' || !isAbsolute(result.root) || !Array.isArray(result.entries)) {
           throw new Error('invalid result');

@@ -12,7 +12,7 @@ import { build } from 'esbuild';
 
 const cache = resolve('node_modules/.cache');
 await mkdir(cache, { recursive: true });
-// Fixture fuera del checkout web (no hereda .git), dentro de una ruta permitida por el servidor.
+// Fixture dentro de una ruta permitida; el Git raiz del harness puede heredarse.
 const dir = await mkdtemp(join(resolve('C:/Aegis-Proyects/core/tmp'), 'changes-http-'));
 const workspace = join(dir, 'workspace');
 const repo = join(workspace, 'repo');
@@ -81,7 +81,7 @@ try {
   await new Promise<void>((ok, fail) => reservation.close(error => error ? fail(error) : ok()));
   child = spawn(process.execPath, [join(dir, 'server.mjs')], {
     cwd: dir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, AEGIS_PATH_ROOT: store, AEGIS_WORKSPACE_ROOTS: [workspace, inheritedCwd].join(';'),
+    env: { ...process.env, GIT_CEILING_DIRECTORIES: dir, AEGIS_PATH_ROOT: store, AEGIS_WORKSPACE_ROOTS: [workspace, inheritedCwd].join(';'),
       AEGIS_SERVE_BIN: join(dir, 'nonexistent-serve.exe'), AEGIS_WEB_PORT: String(port), AEGIS_WEB_TLS_DIR: '' },
   });
   let output = '';

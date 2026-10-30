@@ -7,7 +7,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { lstatSync, readdirSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 interface Entry {
   path: string;
@@ -91,7 +91,8 @@ function snapshot(cwd: string): object {
   }
   // -z is mandatory: filenames may contain spaces, tabs and newlines.
   // --no-renames yields D + A rather than the two-path rename record.
-  const status = git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames'], 1024 * 1024);
+  const prefix = relative(root, cwd).replaceAll('\\', '/');
+  const status = git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames', '--', '.'], 1024 * 1024);
   const records = status.toString('utf8').split('\0');
   const entries: Entry[] = [];
   let totalDiff = 0;
@@ -101,15 +102,16 @@ function snapshot(cwd: string): object {
     if (entries.length >= MAX_FILES) { truncated = true; break; }
     if (record.length < 4 || record[2] !== ' ') { truncated = true; continue; }
     const path = record.slice(3);
+    if (prefix && !path.startsWith(prefix + '/')) continue;
     if (!safePath(root, path)) continue;
     const staged = record[0], worktree = record[1];
-    const entry: Entry = { path, staged, worktree, diff: '' };
+    const entry: Entry = { path: prefix ? path.slice(prefix.length + 1) : path, staged, worktree, diff: '' };
     // Untracked files have no Git diff; never read their contents. Counts are
     // independent of the display budget (and never inferred from a clipped patch).
     if (worktree !== '?') {
       const patches = [
-        ...(staged !== ' ' ? [{ patch: diff(cwd, path, true), side: 'staged' as const }] : []),
-        ...(worktree !== ' ' ? [{ patch: diff(cwd, path, false), side: 'worktree' as const }] : []),
+        ...(staged !== ' ' ? [{ patch: diff(root, path, true), side: 'staged' as const }] : []),
+        ...(worktree !== ' ' ? [{ patch: diff(root, path, false), side: 'worktree' as const }] : []),
       ];
       for (const { patch, side } of patches) {
         if (side === 'staged') { entry.stagedAdded = patch.added; entry.stagedRemoved = patch.removed; }
@@ -125,16 +127,14 @@ function snapshot(cwd: string): object {
   return { kind: 'git', cwd, root, entries, truncated };
 }
 
-// Un directorio de trabajo puede NO ser repo y tener repos adentro: C:/Aegis-Proyects no es un
-// repositorio, pero web/, src/ y core/ sí. Devolver "no-git" ahí es verdad y no sirve de nada; se
-// listan los hijos directos que son repos con cuántos archivos cambiados tiene cada uno. Sin
-// diffs: el diff se pide después, solo del repo que el operador abra.
+// Un workspace puede contener subcarpetas de un monorepo y tambien repos independientes.
+// El escaneo devuelve proyectos con conteos, nunca diffs; el diff se pide solo al abrir uno.
 type RepoResumen = { root: string; rel: string; files: number; truncated: boolean };
 const IGNORAR = /^(?:\.|state$|node_modules$|dist-ts$|dist$|build$|target$|vendor$|\.git$)/i;
 
 function contarCambios(repo: string): number {
   try {
-    const status = git(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--no-renames'], 512 * 1024);
+    const status = git(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--no-renames', '--', '.'], 512 * 1024);
     return status.toString('utf8').split('\0').filter((r) => r.length >= 4 && r[2] === ' ').length;
   } catch { return 0; }
 }
@@ -156,7 +156,9 @@ function escanearRepos(cwd: string): object {
     try {
       tope = git(hijo, ['rev-parse', '--show-toplevel']).toString('utf8').trim();
     } catch { continue; } // no es repo
-    if (!tope || resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase()) continue; // repo de un padre
+    if (!tope || (resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase()
+      && !(resolve(tope).toLowerCase() === resolve(cwd).toLowerCase()
+        && ['src', 'web', 'core', 'docs'].includes(nombre.toLowerCase())))) continue;
     const files = contarCambios(hijo);
     repos.push({ root: hijo, rel: nombre, files, truncated: false });
   }
@@ -173,9 +175,8 @@ const scan = args.includes('--scan');
 try {
   if (!cwd || !isAbsolute(cwd)) throw new Error('Se requiere --cwd absoluto y autorizado');
   const primero = snapshot(resolve(cwd));
-  // Si el propio cwd es un repo, eso es lo que se quiere ver; el escaneo es el plan B.
-  process.stdout.write(JSON.stringify(scan && (primero as { kind?: string }).kind === 'not-git'
-    ? escanearRepos(resolve(cwd)) : primero));
+  // El escaneo explicito conserva el selector de proyectos aun dentro del monorepo.
+  process.stdout.write(JSON.stringify(scan ? escanearRepos(resolve(cwd)) : primero));
 } catch (error) {
   process.stdout.write(JSON.stringify({ kind: 'error', entries: [], truncated: false,
     error: String(error instanceof Error ? error.message : error).slice(0, 180) }));
