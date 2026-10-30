@@ -1305,6 +1305,7 @@ const handler = async (req: IncomingMessage, res: ServerResponse) => {
           const pedido = resolve(suppliedRepo);
           const realPedido = await realpath(pedido).catch(() => '');
           const okRepo = !!realPedido && !denied(pedido) && !denied(realPedido) && wsInside(pedido)
+            && inside(pedido, lexical) && inside(realPedido, actual)
             && roots.some(({ root, actual: rootReal }) => rootReal && inside(pedido, root) && inside(realPedido, rootReal));
           if (!okRepo) { reply(403, { error: 'repo no permitido' }); return; }
           repoTarget = realPedido;

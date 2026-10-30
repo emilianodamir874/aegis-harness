@@ -185,6 +185,9 @@ try {
   assert.equal(resolve(selectedData.root), resolve(monorepo));
   assert.deepEqual(selectedData.entries.map(item => item.path), ['tracked.txt'], 'solo rutas relativas a web/');
   assert.ok(selectedData.entries[0].diff.includes('+cambio monorepo'));
+  const sibling = await fetch(endpoint('fixture-mono-web') + '&repo=' + encodeURIComponent(join(monorepo, 'src')),
+    { headers: { Cookie: cookie! }, signal: AbortSignal.timeout(10000) });
+  assert.equal(sibling.status, 403, 'el repo pedido debe estar dentro del cwd de la sesion');
   const direct = await authorized('fixture-mono-web');
   assert.equal(direct.status, 200);
   assert.deepEqual((await direct.json() as { entries: { path: string }[] }).entries.map(item => item.path), ['tracked.txt']);
