@@ -2039,6 +2039,7 @@ textarea:focus-visible { outline: none; }
 
 .composer-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -3411,6 +3412,7 @@ html[data-motion="reducido"] .density-pop { animation: none; }
   padding: 2px 0 0 var(--speed-indent, 26px);
   font-family: var(--mono); font-variant-numeric: tabular-nums; line-height: 1.05;
 }
+.composer-meta > .runbar-speed-windows { flex: 0 0 100%; padding-left: 0; }
 .runbar-speed-windows[hidden] { display: none; }
 .runbar-speed-cell { display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; }
 .runbar-speed-cell small { color: var(--text-4); font-size: 8.5px; }

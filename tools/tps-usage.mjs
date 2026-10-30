@@ -122,10 +122,13 @@ try {
   eq((await medir()).cells.join('|'), antesExtra, 'el texto visible no altera los promedios');
 
   // 7) El runbar se limpia al cerrar el turno.
-  await page.evaluate(() => { window.__aegisWeb.speedReset(); });
+  await page.evaluate(() => {
+    window.__aegisWeb.speedReset();
+    document.querySelector('#runbar').hidden = true;
+  });
   await page.waitForTimeout(150);
   const limpio = await medir();
-  ok(limpio.hidden || limpio.cells.length === 0, 'la fila se oculta al resetear: ' + JSON.stringify(limpio));
+  ok(!limpio.hidden && limpio.display !== 'none' && limpio.cells.length === 6 && limpio.cells.every((x) => x.endsWith(String.fromCharCode(0x2014))), 'la fila queda visible y vacia, aun ocultando el runbar: ' + JSON.stringify(limpio));
 
   eq(errores.length, 0, 'sin errores de página: ' + errores.join(' | '));
   await ctx.close();

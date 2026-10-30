@@ -2576,19 +2576,18 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
   // ---------- ritmo de salida ----------
   // Cada ventana cuenta outputTokens recibidos del backend durante sus últimos N segundos.
   // El texto visible nunca se usa para estimar tokens.
-  state.speed = state.speed || { samples: [], timer: 0, runOut: 0, runGen: 0, startedAt: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, runId: null, finished: false, note: null, noteMs: 0, sembrado: false };
+  state.speed = state.speed || { samples: [], observed: false, timer: 0, runOut: 0, runGen: 0, startedAt: 0, latest: null as null | { value: number; kind: 'generation' | 'request'; mid: string; order: number }, seen: new Set<string>(), messages: new Set<string>(), stepId: null, runId: null, finished: false, note: null, noteMs: 0, sembrado: false };
   const SPEED_WINDOWS: Array<[number, string]> = [[5000, '5s'], [15000, '15s'], [30000, '30s'], [60000, '1m'], [300000, '5m'], [900000, '15m']];
 
   function speedWindowsEl() {
     let el = $('#runbar-speed-windows');
     if (el) return el;
-    const bar = $('#runbar');
-    if (!bar) return null;
+    const parent = $('#runbar')?.parentElement;
+    if (!parent) return null;
     el = document.createElement('span');
     el.id = 'runbar-speed-windows';
     el.className = 'runbar-speed-windows';
-    el.hidden = true;
-    bar.appendChild(el);
+    parent.appendChild(el);
     return el;
   }
 
@@ -2607,32 +2606,37 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     });
   }
 
-  // La fila existe desde que arranca el run, aunque todavía no haya llegado ningún usage: un turno
-  // adoptado a mitad de camino tiene que mostrar las seis ventanas (aunque sea con raya) en vez de
-  // un hueco, y el title dice qué falta. Solo se oculta al terminar el turno.
+  // La fila permanece en composer-meta durante toda la sesion, incluso cuando se oculta el runbar.
+  // Las ventanas siguen decayendo con un timer independiente del streaming.
   function paintSpeedWindows() {
     const el = speedWindowsEl();
     if (!el) return;
-    const icon = $('#runbar-phase .rp-head .ui-ico');
-    const bar = $('#runbar');
-    if (icon && bar) el.style.setProperty('--speed-indent', Math.round(Math.max(0, icon.getBoundingClientRect().left - bar.getBoundingClientRect().left)) + 'px');
     const s = state.speed;
-    const hay = s.samples.length > 0;
+    const windows = speedWindowSummary();
+    const hay = s.observed || s.samples.length > 0;
     if (!el.innerHTML) {
       el.innerHTML = SPEED_WINDOWS.map(([, label]) => '<span class="runbar-speed-cell"><small>' + label + '</small><b>—</b></span>').join('');
     }
     el.title = hay
-      ? 'Tokens de salida por segundo: suma de outputTokens del backend recibidos en cada ventana'
-      : 'Todavía no llegó usage de salida del backend en este turno';
+      ? 'Output tokens por segundo en ventanas moviles; cero indica que no hubo salida en ese intervalo'
+      : 'Todavia no llego usage de salida del backend en esta sesion';
     const celdas = [...el.querySelectorAll('.runbar-speed-cell')] as HTMLElement[];
-    speedWindowSummary().forEach((x, i) => {
+    windows.forEach((x, i) => {
       const b = celdas[i]?.querySelector('b');
       if (b) b.textContent = hay ? fmtTps(x.value).replace(' tok/s', '') : '—';
       const small = celdas[i]?.querySelector('small');
       if (small) small.textContent = x.label;
     });
     el.hidden = false;
+    if (!state.busy && !s.samples.length && s.timer) { clearInterval(s.timer); s.timer = 0; }
   }
+
+  function speedTimerStart() {
+    const s = state.speed;
+    if (!s.timer) s.timer = setInterval(paintSpeedWindows, 1000);
+  }
+
+  paintSpeedWindows();
 
   // Turno adoptado a mitad de camino: los pasos que se midieron antes de entrar a este chat no
   // llegaron como message_usage a esta pestaña, pero el backend ya los informó y el cliente guarda
@@ -2654,6 +2658,8 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     if (ms) s.latest = { value: tokens / (ms / 1000), kind: gen ? 'generation' : 'request', mid: '', order: -1 };
     const ahora = performance.now();
     s.samples.unshift({ at: ahora, tokens });
+    s.observed = true;
+    speedTimerStart();
     if (gen) {
       s.runOut += tokens;
       s.runGen += genMs;
@@ -2672,20 +2678,18 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
 
   function speedStart() {
     const s = state.speed;
-    s.samples = []; s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = performance.now();
+    s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = performance.now();
     s.runId = state.runId || null; s.finished = false; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null; s.sembrado = false;
-    clearInterval(s.timer);
-    s.timer = setInterval(paintSpeedWindows, 1000);
+    speedTimerStart();
     paintSpeedWindows();
   }
 
   function speedReset() {
     const s = state.speed;
     clearInterval(s.timer); s.timer = 0;
-    s.samples = []; s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = 0;
+    s.samples = []; s.observed = false; s.latest = null; s.runOut = 0; s.runGen = 0; s.startedAt = 0;
     s.runId = null; s.finished = true; s.seen.clear(); s.messages.clear(); s.stepId = null; s.note = null; s.sembrado = false;
-    const el = speedWindowsEl();
-    if (el) { el.innerHTML = ''; el.hidden = true; }
+    paintSpeedWindows();
   }
 
   function speedStep(messageId) {
@@ -2721,6 +2725,8 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     // El usage alimenta las ventanas aunque falten datos temporales para calcular una tasa por paso.
     const now = performance.now();
     s.samples.push({ at: now, tokens });
+    s.observed = true;
+    speedTimerStart();
     const rate = stepRate(update.usage);
     // Un elapsed demasiado breve no permite interpretar una tasa de solicitud estable.
     if (!rate || (rate.kind === 'request' && rate.durationMs < 1000)) {
@@ -2739,7 +2745,7 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
 
   function speedFinish() {
     const s = state.speed;
-    clearInterval(s.timer); s.timer = 0; s.finished = true;
+    s.finished = true;
     const sum = speedSummary();
     paintSpeedWindows();
     return sum;

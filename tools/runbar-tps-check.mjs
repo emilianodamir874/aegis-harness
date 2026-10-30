@@ -42,6 +42,7 @@ try {
       document.querySelector('#runbar-time').textContent = '3.4 s';
       app.view?.setPhase?.('writing');
       app.speedReset();
+      app.state.busy = true;
       app.speedStart();
     });
     await page.waitForTimeout(200);
@@ -58,7 +59,9 @@ try {
         hidden: !!row?.hidden,
         display: row ? getComputedStyle(row).display : null,
         parent: row?.parentElement?.id || null,
+        parentClass: row?.parentElement?.classList.contains('composer-meta') || false,
         insidePhase: !!document.querySelector('#runbar-phase #runbar-speed-windows'),
+        insideMeta: row?.parentElement?.classList.contains('composer-meta') || false,
         instant: !!document.querySelector('#runbar-tps') || !!document.querySelector('#runbar-avg'),
         belowPhase: !!(rr && pr && rr.top >= pr.bottom - 2),
         insideBar: !!(rr && br && rr.left >= br.left - 1 && rr.right <= br.right + 1 && rr.bottom <= br.bottom + 1),
@@ -68,8 +71,8 @@ try {
     check('no existe tok/s instantáneo', !initial.instant);
     check('seis ventanas en orden y vacías', initial.cells.length === 6 && initial.cells.map((x) => x.replace(/[^0-9a-z]/gi, '')).join(',') === '5s,15s,30s,1m,5m,15m' && initial.cells.every((x) => x.endsWith('—')), JSON.stringify(initial.cells));
     check('la fila se ve sin datos', !initial.hidden && initial.display !== 'none');
-    check('la fila es hermana del badge de fase, no hija', initial.parent === 'runbar' && !initial.insidePhase, JSON.stringify({ parent: initial.parent, inside: initial.insidePhase }));
-    check('la fila cae debajo del badge de fase', initial.belowPhase && initial.insideBar, JSON.stringify({ below: initial.belowPhase, inside: initial.insideBar }));
+    check('metricas en composer-meta, fuera del runbar', initial.parentClass && initial.insideMeta && !initial.insidePhase, JSON.stringify({ parent: initial.parent, insideMeta: initial.insideMeta, insidePhase: initial.insidePhase }));
+    check('fila debajo del runbar en composer-meta', initial.belowPhase && initial.insideMeta, JSON.stringify({ below: initial.belowPhase, insideMeta: initial.insideMeta }));
     await page.locator('#runbar').screenshot({ path: outDir + 'runbar-tps-' + s.name + '-vivo.png' });
 
     // Una muestra de usage medida: 250 outputTokens recién recibidos. Cada ventana los cuenta
@@ -77,6 +80,7 @@ try {
     const sample = await page.evaluate(() => {
       const app = window.__aegisWeb;
       app.state.speed.samples.push({ at: performance.now(), tokens: 250 });
+      app.state.speed.observed = true;
       app.speedWindowPaint();
       return [...document.querySelectorAll('#runbar-speed-windows .runbar-speed-cell')].map((n) => (n.textContent || '').trim());
     });
@@ -87,6 +91,7 @@ try {
       const app = window.__aegisWeb;
       const st = app.state.speed;
       st.runOut = 4123; st.runGen = 98000;
+      app.state.busy = false;
       document.querySelector('#runbar').classList.add('done');
       const sum = app.speedFinish();
       return {
@@ -98,7 +103,16 @@ try {
     check('el promedio del turno sale de la generación medida', done.sum.avg === 42.07142857142857 && done.sum.out === 4123, JSON.stringify(done.sum));
     check('las ventanas siguen visibles al terminar', done.cells.length === 6);
     check('no reaparece tasa instantánea al cerrar', !done.instant);
-    await page.locator('#runbar').screenshot({ path: outDir + 'runbar-tps-' + s.name + '-fin.png' });
+    await page.locator('.composer-meta').screenshot({ path: outDir + 'runbar-tps-' + s.name + '-fin.png' });
+    const idle = await page.evaluate(() => {
+      document.querySelector('#runbar').hidden = true;
+      const row = document.querySelector('#runbar-speed-windows');
+      const visible = !row.hidden && getComputedStyle(row).display !== 'none';
+      window.__aegisWeb.state.speed.samples.forEach((sample) => { sample.at = performance.now() - 901000; });
+      window.__aegisWeb.speedWindowPaint();
+      return { visible, cells: [...row.querySelectorAll('.runbar-speed-cell')].map((n) => (n.textContent || '').trim()), timer: window.__aegisWeb.state.speed.timer };
+    });
+    check('metricas visibles con runbar oculto y muestras expiradas', idle.visible && idle.timer === 0 && idle.cells.length === 6 && idle.cells.every((x) => /0(?:\.0)?$/.test(x)), JSON.stringify(idle));
 
     // La nota que queda en la conversación cuando el runbar se va.
     const note = await page.evaluate(() => {
@@ -136,5 +150,5 @@ try {
   await browser.close();
 }
 
-console.log(fails.length ? `\n${fails.length} falla(s).` : '\nseis promedios de salida en el runbar, sin tasa instantánea.');
+console.log(fails.length ? `\n${fails.length} falla(s).` : '\nmetricas rolling persistentes en composer-meta, sin tasa instantánea.');
 if (fails.length) process.exit(1);
