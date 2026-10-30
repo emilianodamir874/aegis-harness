@@ -152,6 +152,13 @@ function escanearRepos(cwd2) {
   const repos = [];
   for (const nombre of nombres.slice(0, 40)) {
     const hijo = join(cwd2, nombre);
+    if (nombre.toLowerCase() === "web" && !isGitProject(hijo, nombre)) {
+      const physical = join(cwd2, "harness", "web");
+      if (isGitProject(physical, nombre)) {
+        repos.push({ root: physical, rel: "web", files: contarCambios(physical), truncated: false });
+      }
+      continue;
+    }
     if (nombre.toLowerCase() === "core" && !isGitProject(hijo, nombre)) {
       const ops = join(hijo, "ops");
       if (isGitProject(ops, "core/ops")) {

@@ -164,6 +164,15 @@ function escanearRepos(cwd: string): object {
   const repos: RepoResumen[] = [];
   for (const nombre of nombres.slice(0, 40)) {
     const hijo = join(cwd, nombre);
+    // El web historico puede conservar logs abiertos por otros procesos: queda un shell
+    // de runtime con enlaces a codigo, mientras el Git fisico vive en harness/web.
+    if (nombre.toLowerCase() === 'web' && !isGitProject(hijo, nombre)) {
+      const physical = join(cwd, 'harness', 'web');
+      if (isGitProject(physical, nombre)) {
+        repos.push({ root: physical, rel: 'web', files: contarCambios(physical), truncated: false });
+      }
+      continue;
+    }
     // core conserva bin/state en el padre; solo ops es codigo del monorepo.
     if (nombre.toLowerCase() === 'core' && !isGitProject(hijo, nombre)) {
       const ops = join(hijo, 'ops');

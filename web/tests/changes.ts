@@ -122,6 +122,14 @@ try {
   assert.equal(linked.kind, 'repos', 'selector sigue alias a subproyectos Git fisicos');
   assert.deepEqual(linked.repos.map((item: any) => item.rel).sort(), ['src', 'web']);
   assert.equal(linked.repos.find((item: any) => item.rel === 'web')?.files, 1);
+  const legacy = join(temp, 'legacy');
+  await mkdir(join(legacy, 'web'), { recursive: true });
+  await mkdir(join(legacy, 'harness'));
+  await symlink(mono, join(legacy, 'harness', 'src'), process.platform === 'win32' ? 'junction' : 'dir');
+  await symlink(join(mono, 'web'), join(legacy, 'harness', 'web'), process.platform === 'win32' ? 'junction' : 'dir');
+  const legacyScan = await run(legacy, ['--scan']);
+  assert.equal(legacyScan.kind, 'repos');
+  assert(legacyScan.repos.some((item: any) => item.rel === 'web' && item.files === 1), 'shell web con logs abiertos resuelve proyecto fisico');
 
   const notGit = await run(temp);
   assert.equal(notGit.kind, 'not-git');
