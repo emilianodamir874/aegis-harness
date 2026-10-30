@@ -1,7 +1,7 @@
 # ops — scripts de operación de Aegis
 
-Scripts de despliegue y mantenimiento del nodo Aegis (Windows). Se versionan acá para tener
-historia de los cambios; antes vivían sin control de versiones.
+Scripts de despliegue y mantenimiento del nodo Aegis (Windows). Los operativos se versionan
+en el monorepo `C:\Aegis-Proyects` junto con `src/` y `web/` (ver `docs/monorepo.md`).
 
 ## Despliegue del binario (cadena)
 
@@ -11,10 +11,9 @@ estado (`state\last-build.json`), no parseando el log del build (es UTF-16 y el 
 solo compila y mueve el puntero. Igual que `swap.ps1 -Restart`, hay que correrlo desprendido
 si se lanza desde un turno del agente.
 
-1. `build.ps1 -Tag vNN [-Crate serve|cli]` → compila el **harness** (`-p aegis-server --bin
-   aegis-serve`, features `rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http,code-mode`) y copia
-   a `core\bin\aegis-vNN.exe` con verificacion de SHA256 + `--version`. **No toca el puntero.** Con
-   `-Crate cli` compila el binario interactivo viejo (`aegis`), que ya no se despliega.
+1. `build.ps1 -Tag vNN` → compila el **harness** (`-p aegis-server --bin
+   aegis-serve`, features `rustls-tls,scheduler,bundled-mcp,chat-recall,acp-http`) y copia
+   a `core\bin\aegis-vNN.exe` con verificación de SHA256 + `--version`. **No toca el puntero.**
    `build-and-swap.ps1` queda como camino legacy: llama a `web\tools\build-safe.ps1` y deja
    `features` vacio en `last-build.json`.
 2. `swap.ps1 -Tag vNN -Restart -DelaySecs 20` → escribe el puntero, **rehace el hardlink
