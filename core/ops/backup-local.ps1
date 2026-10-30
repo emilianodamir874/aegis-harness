@@ -41,14 +41,14 @@ robocopy 'C:\Aegis-Proyects\state\config' $cfgDst /E /NFL /NDL /NJH /NJS /NP /R:
 L "config -> $cfgDst"
 
 # 3) mirror del monorepo del harness y del proyecto de trading
-foreach ($repo in @(@{n='aegis-harness';p='C:\Aegis-Proyects'}, @{n='trading';p='C:\Aegis-Proyects\trading'})) {
+foreach ($repo in @(@{n='aegis-harness';p='C:\Aegis-Proyects\harness'}, @{n='trading';p='C:\Aegis-Proyects\trading'})) {
   if (Test-Path (Join-Path $repo.p '.git')) {
     $bare = Join-Path $dirs.mirror ($repo.n + '.git')
     if (Test-Path $bare) {
       # El mirror local toma los refs del checkout, no los remotos historicos de GitHub.
       $o = git -C $bare fetch --prune origin '+refs/*:refs/*' 2>&1 | Out-String
     } else {
-      $o = git clone --mirror $repo.p $bare 2>&1 | Out-String
+      $o = git clone --mirror --no-hardlinks $repo.p $bare 2>&1 | Out-String
     }
     $sz = [math]::Round((Get-ChildItem $bare -Recurse -File -Force -EA 0 | Measure-Object Length -Sum).Sum/1MB,1)
     L "mirror $($repo.n) -> $bare ($sz MB) " + (($o -replace '\s+',' ') -replace '^(.{0,120}).*','$1')
