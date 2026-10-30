@@ -2299,6 +2299,10 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     if (s.used != null) {
       const pct = s.limit ? Math.round((s.used / s.limit) * 100) : null;
       L.push('Contexto: ' + fmtTok(s.used) + (s.limit ? ' de ' + fmtTok(s.limit) + ' tok (' + pct + '%)' : ' tok (el server no informo limite)'));
+      // Sin esto el popover mostraba una cifra sin decir de donde salia: el reporte real del
+      // proveedor y la estimacion por caracteres se veian identicos.
+      if (s.usedSource === 'provider') L.push('Origen de la cifra: medido (total_tokens que reporto el proveedor para la ultima inferencia)');
+      else if (s.usedSource === 'estimated') L.push('Origen de la cifra: estimado por caracteres (el proveedor no reporto uso)');
       if (s.limit) {
         const trig = Math.round(compactTrig(s).at);
         L.push('Compacta sola a ~' + fmtTok(trig) + ' (' + Math.round(COMPACT_RATIO * 100) + '%)  ·  margen ' + fmtTok(Math.max(0, trig - s.used)) + ' tok');
@@ -2539,6 +2543,13 @@ import { CINTAS, cortaElStream, esModo, modoDesdeHerramientas, nombreToolDeUpdat
     const s = state.usage || (state.usage = {});
     const t = u.used ?? u.totalTokens;
     if (t != null) s.used = t;
+    // Origen de la cifra de contexto. `provider` es el total_tokens que el proveedor reporto
+    // para la ultima inferencia: es lo que realmente llego al backend. Ese reporte no incluye
+    // lo que entro DESPUES de esa inferencia (resultados de herramientas, pedidos del usuario
+    // mientras el modelo pensaba), asi que en un bucle de herramientas se queda corto hasta el
+    // proximo paso. `estimated` es la estimacion por caracteres del historial y solo aparece
+    // cuando el proveedor no informo usage. Las dos cifras no son comparables.
+    if (u.usedSource) s.usedSource = u.usedSource;
     if (u.contextLimit != null) s.limit = u.contextLimit;
     if (u.accumulatedCost != null) s.cost = u.accumulatedCost;
     if (u.cost != null && s.cost == null) s.cost = u.cost;
