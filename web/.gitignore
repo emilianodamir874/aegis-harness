@@ -8,6 +8,7 @@ tmp/
 outbox/
 node_modules/
 logs/
+state/
 *.log
 
 # SECRETOS: nunca versionar (auth.json estaba sin trackear y SIN ignorar: un git add -A lo commiteaba)
