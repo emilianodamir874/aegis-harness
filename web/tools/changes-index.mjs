@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { lstatSync, readdirSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 const MAX_FILES = 60;
 const MAX_DIFF = 8192;
@@ -131,23 +131,35 @@ function contarCambios(repo) {
     return 0;
   }
 }
+function isGitProject(path, name) {
+  try {
+    const top = resolve(git(path, ["rev-parse", "--show-toplevel"]).toString("utf8").trim()).toLowerCase();
+    const real = resolve(realpathSync(path)).toLowerCase();
+    if (top === real) return true;
+    if (["src", "web", "core", "docs"].includes(name.toLowerCase()) && top === resolve(real, "..").toLowerCase()) return true;
+    return name.toLowerCase() === "core/ops" && top === resolve(real, "..", "..").toLowerCase();
+  } catch {
+    return false;
+  }
+}
 function escanearRepos(cwd2) {
   let nombres;
   try {
-    nombres = readdirSync(cwd2, { withFileTypes: true }).filter((d) => d.isDirectory() && !IGNORAR.test(d.name)).map((d) => d.name).sort();
+    nombres = readdirSync(cwd2, { withFileTypes: true }).filter((d) => (d.isDirectory() || d.isSymbolicLink() && ["src", "web", "core", "docs"].includes(d.name.toLowerCase())) && !IGNORAR.test(d.name)).map((d) => d.name).sort();
   } catch {
     return { kind: "not-git", cwd: cwd2, repos: [], entries: [], truncated: false };
   }
   const repos = [];
   for (const nombre of nombres.slice(0, 40)) {
     const hijo = join(cwd2, nombre);
-    let tope;
-    try {
-      tope = git(hijo, ["rev-parse", "--show-toplevel"]).toString("utf8").trim();
-    } catch {
+    if (nombre.toLowerCase() === "core" && !isGitProject(hijo, nombre)) {
+      const ops = join(hijo, "ops");
+      if (isGitProject(ops, "core/ops")) {
+        repos.push({ root: ops, rel: "core/ops", files: contarCambios(ops), truncated: false });
+      }
       continue;
     }
-    if (!tope || resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase() && !(resolve(tope).toLowerCase() === resolve(cwd2).toLowerCase() && ["src", "web", "core", "docs"].includes(nombre.toLowerCase()))) continue;
+    if (!isGitProject(hijo, nombre)) continue;
     const files = contarCambios(hijo);
     repos.push({ root: hijo, rel: nombre, files, truncated: false });
   }

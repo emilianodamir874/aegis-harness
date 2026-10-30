@@ -6,7 +6,7 @@
  * node changes-index.mjs --cwd <authorized-directory> -> {kind, cwd, entries, truncated}
  */
 import { execFileSync } from 'node:child_process';
-import { lstatSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 interface Entry {
@@ -139,11 +139,23 @@ function contarCambios(repo: string): number {
   } catch { return 0; }
 }
 
+function isGitProject(path: string, name: string): boolean {
+  try {
+    const top = resolve(git(path, ['rev-parse', '--show-toplevel']).toString('utf8').trim()).toLowerCase();
+    const real = resolve(realpathSync(path)).toLowerCase();
+    if (top === real) return true;
+    if (['src', 'web', 'core', 'docs'].includes(name.toLowerCase())
+      && top === resolve(real, '..').toLowerCase()) return true;
+    return name.toLowerCase() === 'core/ops' && top === resolve(real, '..', '..').toLowerCase();
+  } catch { return false; }
+}
+
 function escanearRepos(cwd: string): object {
   let nombres: string[];
   try {
     nombres = readdirSync(cwd, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && !IGNORAR.test(d.name))
+      .filter((d) => (d.isDirectory() || (d.isSymbolicLink() && ['src', 'web', 'core', 'docs'].includes(d.name.toLowerCase())))
+        && !IGNORAR.test(d.name))
       .map((d) => d.name)
       .sort();
   } catch {
@@ -152,13 +164,15 @@ function escanearRepos(cwd: string): object {
   const repos: RepoResumen[] = [];
   for (const nombre of nombres.slice(0, 40)) {
     const hijo = join(cwd, nombre);
-    let tope: string;
-    try {
-      tope = git(hijo, ['rev-parse', '--show-toplevel']).toString('utf8').trim();
-    } catch { continue; } // no es repo
-    if (!tope || (resolve(tope).toLowerCase() !== resolve(hijo).toLowerCase()
-      && !(resolve(tope).toLowerCase() === resolve(cwd).toLowerCase()
-        && ['src', 'web', 'core', 'docs'].includes(nombre.toLowerCase())))) continue;
+    // core conserva bin/state en el padre; solo ops es codigo del monorepo.
+    if (nombre.toLowerCase() === 'core' && !isGitProject(hijo, nombre)) {
+      const ops = join(hijo, 'ops');
+      if (isGitProject(ops, 'core/ops')) {
+        repos.push({ root: ops, rel: 'core/ops', files: contarCambios(ops), truncated: false });
+      }
+      continue;
+    }
+    if (!isGitProject(hijo, nombre)) continue;
     const files = contarCambios(hijo);
     repos.push({ root: hijo, rel: nombre, files, truncated: false });
   }

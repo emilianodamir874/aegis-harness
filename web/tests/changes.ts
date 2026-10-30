@@ -113,6 +113,16 @@ try {
   assert.equal(monoWeb.entries[0].worktreeAdded, 1);
   assert.equal(monoWeb.entries[0].worktreeRemoved, 0);
 
+  // Raiz del workspace fuera del Git fisico: los alias son junctions a subproyectos.
+  const alias = join(temp, 'alias');
+  await mkdir(alias);
+  await symlink(join(mono, 'web'), join(alias, 'web'), process.platform === 'win32' ? 'junction' : 'dir');
+  await symlink(join(mono, 'src'), join(alias, 'src'), process.platform === 'win32' ? 'junction' : 'dir');
+  const linked = await run(alias, ['--scan']);
+  assert.equal(linked.kind, 'repos', 'selector sigue alias a subproyectos Git fisicos');
+  assert.deepEqual(linked.repos.map((item: any) => item.rel).sort(), ['src', 'web']);
+  assert.equal(linked.repos.find((item: any) => item.rel === 'web')?.files, 1);
+
   const notGit = await run(temp);
   assert.equal(notGit.kind, 'not-git');
   const missing = await run(join(temp, 'inexistente'));

@@ -1,6 +1,6 @@
 # C:\Aegis-Proyects
 
-Mapa del proyecto. El codigo del harness vive en un unico repositorio Git en esta raiz desde el 2026-10-30: `src/` (Rust), `web/` (Node y cliente), `core/ops/` (scripts operativos seleccionados). Ver `docs/monorepo.md`. El runtime, los builds y los datos permanecen fuera de Git.
+Mapa del proyecto. El repositorio Git fisico vive en `C:\Aegis-Proyects\harness` desde el 2026-10-30; las rutas originales en esta carpeta se conservan como enlaces de compatibilidad: `src/` (Rust), `web/` (Node y cliente), `core/ops/` (scripts operativos seleccionados). Ver `docs/monorepo.md`. El runtime, los builds y los datos permanecen fuera de Git.
 
 ## Que es cada carpeta
 
