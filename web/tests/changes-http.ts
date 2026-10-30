@@ -17,6 +17,9 @@ const dir = await mkdtemp(join(resolve('C:/Aegis-Proyects/core/tmp'), 'changes-h
 const workspace = join(dir, 'workspace');
 const repo = join(workspace, 'repo');
 const nongit = join(workspace, 'nongit');
+const monorepo = join(workspace, 'monorepo');
+const emptyMonorepo = join(workspace, 'empty-monorepo');
+const monoWeb = join(monorepo, 'web');
 const outside = join(dir, 'elsewhere');
 const foreignRepo = join(outside, 'repo');
 const inheritedCwd = join(foreignRepo, 'authorized-child');
@@ -24,7 +27,8 @@ const store = join(dir, 'fixture-store');
 const marker = join(store, 'sweep-ran.txt');
 let child: ChildProcess | undefined;
 try {
-  await Promise.all([mkdir(repo, { recursive: true }), mkdir(nongit, { recursive: true }), mkdir(inheritedCwd, { recursive: true }),
+  await Promise.all([mkdir(repo, { recursive: true }), mkdir(nongit, { recursive: true }), mkdir(monoWeb, { recursive: true }),
+    mkdir(emptyMonorepo, { recursive: true }), mkdir(inheritedCwd, { recursive: true }),
     mkdir(store), mkdir(join(dir, 'app')), mkdir(join(dir, 'tools'))]);
   const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], {
     timeout: 5000, windowsHide: true, stdio: 'pipe', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: 'NUL' },
@@ -41,6 +45,15 @@ try {
   await writeFile(join(foreignRepo, 'foreign.txt'), 'OUTSIDE_REPO_MARKER\n');
   // Su cwd está permitido por la allowlist, pero la raíz de Git NO: defensa independiente.
   await writeFile(join(inheritedCwd, 'child.txt'), 'untracked\n');
+  git(monorepo, 'init', '-q');
+  await mkdir(join(monorepo, 'src'));
+  await writeFile(join(monoWeb, 'tracked.txt'), 'original\n');
+  await writeFile(join(monorepo, 'src', 'other.txt'), 'original\n');
+  git(monorepo, 'add', '.');
+  git(monorepo, '-c', 'user.email=fixture@invalid.test', '-c', 'user.name=Fixture', 'commit', '-qm', 'fixture');
+  await writeFile(join(monoWeb, 'tracked.txt'), 'original\ncambio monorepo\n');
+  await writeFile(join(monorepo, 'src', 'other.txt'), 'original\ncambio ajeno\n');
+  git(emptyMonorepo, 'init', '-q');
 
   const dbDir = join(store, 'data', 'sessions');
   await mkdir(dbDir, { recursive: true });
@@ -52,6 +65,9 @@ try {
   const addSession = db.prepare('INSERT INTO sessions (id, working_dir) VALUES (?, ?)');
   addSession.run('fixture-repo', repo);
   addSession.run('fixture-nongit', nongit);
+  addSession.run('fixture-monorepo', monorepo);
+  addSession.run('fixture-mono-web', monoWeb);
+  addSession.run('fixture-empty-monorepo', emptyMonorepo);
   addSession.run('fixture-foreign', inheritedCwd);
   addSession.run('fixture-outside', foreignRepo);
   db.close();
@@ -155,6 +171,26 @@ try {
   const noGit = await authorized('fixture-nongit');
   assert.equal(noGit.status, 200);
   assert.deepEqual((await noGit.json() as { kind: string; entries: unknown[] }).kind, 'not-git');
+  const select = await authorized('fixture-monorepo');
+  assert.equal(select.status, 200, 'selector de proyectos dentro de Git');
+  const projects = await select.json() as { kind: string; repos: { rel: string; root: string; files: number }[] };
+  assert.equal(projects.kind, 'repos');
+  assert.ok(projects.repos.some(item => item.rel === 'web' && resolve(item.root) === resolve(monoWeb) && item.files === 1));
+  assert.ok(projects.repos.some(item => item.rel === 'src' && item.files === 1));
+  const selected = await fetch(endpoint('fixture-monorepo') + '&repo=' + encodeURIComponent(monoWeb),
+    { headers: { Cookie: cookie! }, signal: AbortSignal.timeout(10000) });
+  assert.equal(selected.status, 200, 'abrir subproyecto Git');
+  const selectedData = await selected.json() as { kind: string; root: string; entries: { path: string; diff: string }[] };
+  assert.equal(selectedData.kind, 'git');
+  assert.equal(resolve(selectedData.root), resolve(monorepo));
+  assert.deepEqual(selectedData.entries.map(item => item.path), ['tracked.txt'], 'solo rutas relativas a web/');
+  assert.ok(selectedData.entries[0].diff.includes('+cambio monorepo'));
+  const direct = await authorized('fixture-mono-web');
+  assert.equal(direct.status, 200);
+  assert.deepEqual((await direct.json() as { entries: { path: string }[] }).entries.map(item => item.path), ['tracked.txt']);
+  const empty = await authorized('fixture-empty-monorepo');
+  assert.equal(empty.status, 200, 'scan sin subproyectos responde');
+  assert.equal((await empty.json() as { kind: string }).kind, 'git');
   const foreign = await authorized('fixture-foreign');
   assert.equal(foreign.status, 403, 'cwd almacenado permitido pero Git root fuera del workspace');
   assert.ok(!(await foreign.text()).includes('OUTSIDE_REPO_MARKER'));
